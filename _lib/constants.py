@@ -51,6 +51,7 @@ def parse_constants(
     *,
     base_dir: Path | None = None,
     start_counter: int = 0,
+    stop_at_reset: bool = False,
 ) -> list[Const]:
     """Parse a constants file.
 
@@ -59,9 +60,23 @@ def parse_constants(
 
     `start_counter` lets callers parse a child file directly without going
     through the parent.
+
+    `stop_at_reset` halts parsing at the first `const_def` or `const_value =`
+    encountered (the *initial* counter setup, if any, doesn't count — only
+    resets that change the counter to a new value mid-stream). Useful for
+    files that define an enum (e.g. pokemon species) followed by unrelated
+    constants that share the file but reset the counter.
     """
     out: list[Const] = []
-    _parse_into(path, out, [start_counter], base_dir, set())
+    _parse_into(
+        path,
+        out,
+        [start_counter],
+        base_dir,
+        seen=set(),
+        stop_at_reset=stop_at_reset,
+        seen_first_token=[False],
+    )
     return out
 
 
@@ -70,7 +85,10 @@ def _parse_into(
     out: list[Const],
     counter_box: list[int],
     base_dir: Path | None,
+    *,
     seen: set[Path],
+    stop_at_reset: bool,
+    seen_first_token: list[bool],
 ) -> None:
     resolved = path.resolve()
     if resolved in seen:
@@ -85,25 +103,40 @@ def _parse_into(
 
             m = _CONST_DEF_RE.match(line)
             if m:
+                if stop_at_reset and seen_first_token[0]:
+                    return
                 counter_box[0] = _to_int(m.group(1)) if m.group(1) else 0
+                seen_first_token[0] = True
                 continue
 
             m = _CONST_VALUE_RE.match(line)
             if m:
+                if stop_at_reset and seen_first_token[0]:
+                    return
                 counter_box[0] = _to_int(m.group(1))
+                seen_first_token[0] = True
                 continue
 
             m = _CONST_RE.match(line)
             if m:
                 out.append(Const(name=m.group(1), value=counter_box[0]))
                 counter_box[0] += 1
+                seen_first_token[0] = True
                 continue
 
             m = _INCLUDE_RE.match(line)
             if m and base_dir is not None:
                 child = base_dir / m.group(1)
                 if child.exists():
-                    _parse_into(child, out, counter_box, base_dir, seen)
+                    _parse_into(
+                        child,
+                        out,
+                        counter_box,
+                        base_dir,
+                        seen=seen,
+                        stop_at_reset=stop_at_reset,
+                        seen_first_token=seen_first_token,
+                    )
                 continue
 
             m = _EQU_RE.match(line)
