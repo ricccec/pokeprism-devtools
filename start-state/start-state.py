@@ -40,12 +40,12 @@ from _lib import paths, savefile, symfile  # noqa: E402
 
 import apply  # noqa: E402
 import inventory  # noqa: E402
+import launcher  # noqa: E402
 
 INVENTORY_PATH = Path(__file__).parent / "inventory.json"
 STATE_PATH = Path(__file__).parent / "state.json"
 PRESETS_DIR = Path(__file__).parent / "presets"
 SAV_BACKUPS_DIR = Path(__file__).parent / "sav-backups"
-SAMEBOY_PATH = "/Applications/SameBoy.app/Contents/MacOS/sameboy"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -208,22 +208,13 @@ def _pretty_path(path: Path, root: Path) -> str:
 
 def _launch(rom_path: Path) -> int:
     """Spawn SameBoy with the ROM. SameBoy auto-loads the adjacent .sav."""
-    import shutil
     import subprocess
 
-    cmd: list[str] | None = None
-    if Path(SAMEBOY_PATH).exists():
-        cmd = [SAMEBOY_PATH, str(rom_path)]
-    elif shutil.which("sameboy") is not None:
-        cmd = ["sameboy", str(rom_path)]
-    elif sys.platform == "darwin":
-        # Last-ditch: ask macOS to open the ROM with the registered handler.
-        cmd = ["open", "-a", "SameBoy", str(rom_path)]
-
+    cmd, _trackable = launcher.build_cmd(rom_path)
     if cmd is None:
         print(
             f"\nWARNING: SameBoy not found. ROM and patched .sav are ready "
-            f"at:\n  {rom_path}\nLaunch manually.",
+            f"at:\n  {rom_path}\nLaunch manually, or set $SAMEBOY_BIN.",
             file=sys.stderr,
         )
         return 0
@@ -234,6 +225,7 @@ def _launch(rom_path: Path) -> int:
     except OSError as e:
         print(f"failed to launch: {e}", file=sys.stderr)
         return 1
+    launcher.focus_after_launch()
     return 0
 
 
