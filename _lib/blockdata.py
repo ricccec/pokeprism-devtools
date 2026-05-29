@@ -107,11 +107,16 @@ def load(
     blockdata_off = rom_offset(blockdata_bank, blockdata_addr)
     decompressed, _consumed = lz.decompress(rom, blockdata_off)
     expected = width * height
-    if len(decompressed) != expected:
+    if len(decompressed) < expected:
         raise ValueError(
             f"map {name or f'({group},{map_id})'} blockdata decompressed to "
-            f"{len(decompressed)} bytes, expected {expected} ({width}x{height})"
+            f"{len(decompressed)} bytes, need at least {expected} ({width}x{height})"
         )
+    # The game's ReadMapBlocks copies exactly width*height bytes; trailing
+    # data in the compressed stream is ignored. A handful of maps in
+    # pokeprism encode more than they need (e.g. SEVII_ISLAND_1, the
+    # BATTLE_TOWER_* rooms). Truncate so callers see only the live grid.
+    blocks = decompressed[:expected]
 
     return BlockData(
         name=name,
@@ -120,7 +125,7 @@ def load(
         width=width,
         height=height,
         border_block=border_block,
-        blocks=decompressed,
+        blocks=blocks,
     )
 
 
