@@ -49,6 +49,8 @@ WRITABLE_FIELDS: dict[str, dict[str, object]] = {
     "wMapNumber":     {"size": 1,  "block": "MapData"},
     "wYCoord":        {"size": 1,  "block": "MapData"},
     "wXCoord":        {"size": 1,  "block": "MapData"},
+    "wScreenSave":    {"size": 30, "block": "MapData"},  # not user-writable;
+                                                          # cleared on map change
     # Pokemon block
     "wPartyCount":    {"size": 1,  "block": "PokemonData"},
     "wPartySpecies":  {"size": 7,  "block": "PokemonData"},  # 6 species + 0xFF terminator
@@ -390,10 +392,19 @@ def _apply_state(sav: savefile.SaveFile, state: dict, inv: dict) -> list[str]:
         mdef = next((m for m in inv["maps"] if m["name"] == map_["name"]), None)
         if mdef is None:
             raise ValueError(f"unknown map: {map_['name']}")
+        # wScreenSave (30 bytes near the end of wMapData) is the saved tile
+        # buffer MAPSETUP_CONTINUE uses to redraw the overworld on boot.
+        # If it contains the previous map's tiles, the new map renders
+        # glitched. Clear it. Don't touch other wMapData fields (dig,
+        # backup warps, wWarpNumber, etc.) — MAPSETUP_CONTINUE uses them
+        # and zeroing breaks rendering entirely.
+        ss = offsets["wScreenSave"]
+        sav.write_bytes(ss["sav_offset"], bytes(ss["size"]))
         sav.write_byte(off("wMapGroup"), mdef["group"])
         sav.write_byte(off("wMapNumber"), mdef["map_id"])
         changes.append(
-            f"map = {map_['name']} (group {mdef['group']}, id {mdef['map_id']})"
+            f"map = {map_['name']} (group {mdef['group']}, id {mdef['map_id']}); "
+            f"cleared wScreenSave"
         )
 
     if "x" in map_:
