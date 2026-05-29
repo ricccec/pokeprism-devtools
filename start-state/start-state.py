@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """start-state — launch pokeprism in a custom initial state.
 
-Reads a `state.json` describing the desired initial state, patches a
-template `.sav` accordingly (recomputing both SRAM checksums), and spawns
-SameBoy. Press A on "Continue" in the game's main menu to land in the
-overworld with the configured state.
+Default behaviour (TTY, no flags): drop into the interactive TUI in
+`tui.py`. The TUI edits state.json on the fly, watches the .sym for
+rebuilds, and manages the SameBoy subprocess.
+
+One-shot behaviour (any of `--no-tui`, `--out`, `--no-launch`,
+`--inventory-only`, or non-TTY stdin): read `state.json`, patch a
+template `.sav` (recomputing both SRAM checksums), and spawn SameBoy.
+Press A on "Continue" in the game's main menu.
 
 The first run (or any run after a rebuild) refreshes `inventory.json`
 next to this script — a catalog of every map, pokemon, item, move, and
-event flag plus the .sav file offsets needed to patch. Subsequent runs
-reuse the cached inventory.
+event flag plus the .sav file offsets needed to patch.
 
 Usage:
-    start-state.py                       # patch + launch (uses default state)
+    start-state.py                       # interactive TUI (default on TTY)
+    start-state.py --no-tui              # one-shot patch + launch
     start-state.py --no-launch           # patch only, don't spawn SameBoy
     start-state.py --inventory-only      # rebuild inventory, print summary
     start-state.py --state PATH          # alternate state.json
@@ -94,22 +98,49 @@ def main(argv: list[str] | None = None) -> int:
         help="don't reset NPC objects on map change (default: zero NPC slots "
         "and update the player struct to the new coords)",
     )
+    p.add_argument(
+        "--no-tui",
+        action="store_true",
+        help="skip the interactive menu; use the one-shot patch+launch flow",
+    )
     args = p.parse_args(argv)
 
     root = paths.repo_root()
     sym_path_resolved = paths.sym_path(root, debug=args.debug)
 
-    inv = inventory.load_or_build(
-        root,
-        sym_path_resolved,
-        INVENTORY_PATH,
-        force=args.rebuild_inventory,
-    )
-
     if args.inventory_only:
+        inv = inventory.load_or_build(
+            root, sym_path_resolved, INVENTORY_PATH,
+            force=args.rebuild_inventory,
+        )
         inventory.print_summary(inv)
         return 0
 
+    # Default to TUI when interactive. Any explicit non-interactive intent
+    # (--no-tui, --out, --no-launch) or a piped stdin falls through to the
+    # one-shot patch+launch flow.
+    one_shot = (
+        args.no_tui or args.out is not None or args.no_launch
+        or not sys.stdin.isatty()
+    )
+    if not one_shot:
+        import tui
+        return tui.run(
+            root=root,
+            sym_path=sym_path_resolved,
+            debug=args.debug,
+            state_path=args.state,
+            inventory_path=INVENTORY_PATH,
+            presets_dir=PRESETS_DIR,
+            sav_backups_dir=SAV_BACKUPS_DIR,
+            keep_people=args.keep_people,
+            rebuild_inventory=args.rebuild_inventory,
+        )
+
+    inv = inventory.load_or_build(
+        root, sym_path_resolved, INVENTORY_PATH,
+        force=args.rebuild_inventory,
+    )
     state = apply.load_state(args.state, PRESETS_DIR)
     print(f"State loaded from {args.state if args.state.exists() else 'presets/default.json'}")
 
