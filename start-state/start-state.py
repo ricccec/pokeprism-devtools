@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from _lib import constants, maps, paths, savefile, symfile  # noqa: E402
+from _lib import blockdata, constants, maps, paths, savefile, symfile  # noqa: E402
 
 INVENTORY_PATH = Path(__file__).parent / "inventory.json"
 STATE_PATH = Path(__file__).parent / "state.json"
@@ -180,7 +180,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Backed up {target_sav.name} → {_pretty_path(backup, root)}")
 
     # Apply state and recompute checksums.
-    changes = _apply_state(sav, state, inv)
+    changes = _apply_state(
+        sav,
+        state,
+        inv,
+        rom_path=rom_path,
+        syms=symfile.SymFile.load(sym_path_resolved),
+    )
     _recompute_checksums(sav, inv)
 
     sav.write(target_sav)
@@ -344,7 +350,14 @@ def _looks_like_real_save(sav: savefile.SaveFile, inv: dict) -> bool:
     return v1 == 0x63 and v2 == 0x7F
 
 
-def _apply_state(sav: savefile.SaveFile, state: dict, inv: dict) -> list[str]:
+def _apply_state(
+    sav: savefile.SaveFile,
+    state: dict,
+    inv: dict,
+    *,
+    rom_path: Path,
+    syms: symfile.SymFile,
+) -> list[str]:
     """Mutate the save in place and return a list of human-readable changes.
 
     State schema (all keys optional):
@@ -354,8 +367,11 @@ def _apply_state(sav: savefile.SaveFile, state: dict, inv: dict) -> list[str]:
             "map": {"name": "CAPER_HOUSE", "x": 2, "y": 2}
         }
 
-    Out of scope for v1 (will arrive in follow-up commits):
-        party, items, event_flags.
+    If any of map.{name,x,y} is set, wScreenSave is recomputed from the
+    target map's ROM blockdata so the overworld renders correctly. See
+    docs/blockdata-plan.md for why.
+
+    Out of scope for v1: party, items, event_flags.
     """
     changes: list[str] = []
     offsets = inv["sram_offsets"]
@@ -388,31 +404,49 @@ def _apply_state(sav: savefile.SaveFile, state: dict, inv: dict) -> list[str]:
         sav.write_bytes(off("wBadges"), bytes(int(x) & 0xFF for x in b))
         changes.append(f"wBadges = {b}")
 
+    # Resolve final (group, map_id, x, y), defaulting to the template's
+    # values for fields the user didn't touch.
+    final_group = sav.data[off("wMapGroup")]
+    final_map = sav.data[off("wMapNumber")]
+    final_x = sav.data[off("wXCoord")]
+    final_y = sav.data[off("wYCoord")]
+    map_state_changed = False
+    map_label = None
+
     if "name" in map_:
         mdef = next((m for m in inv["maps"] if m["name"] == map_["name"]), None)
         if mdef is None:
             raise ValueError(f"unknown map: {map_['name']}")
-        # wScreenSave (30 bytes near the end of wMapData) is the saved tile
-        # buffer MAPSETUP_CONTINUE uses to redraw the overworld on boot.
-        # If it contains the previous map's tiles, the new map renders
-        # glitched. Clear it. Don't touch other wMapData fields (dig,
-        # backup warps, wWarpNumber, etc.) — MAPSETUP_CONTINUE uses them
-        # and zeroing breaks rendering entirely.
-        ss = offsets["wScreenSave"]
-        sav.write_bytes(ss["sav_offset"], bytes(ss["size"]))
-        sav.write_byte(off("wMapGroup"), mdef["group"])
-        sav.write_byte(off("wMapNumber"), mdef["map_id"])
-        changes.append(
-            f"map = {map_['name']} (group {mdef['group']}, id {mdef['map_id']}); "
-            f"cleared wScreenSave"
-        )
-
+        final_group = mdef["group"]
+        final_map = mdef["map_id"]
+        map_label = map_["name"]
+        map_state_changed = True
     if "x" in map_:
-        sav.write_byte(off("wXCoord"), int(map_["x"]) & 0xFF)
-        changes.append(f"wXCoord = {map_['x']}")
+        final_x = int(map_["x"]) & 0xFF
+        map_state_changed = True
     if "y" in map_:
-        sav.write_byte(off("wYCoord"), int(map_["y"]) & 0xFF)
-        changes.append(f"wYCoord = {map_['y']}")
+        final_y = int(map_["y"]) & 0xFF
+        map_state_changed = True
+
+    if map_state_changed:
+        sav.write_byte(off("wMapGroup"), final_group)
+        sav.write_byte(off("wMapNumber"), final_map)
+        sav.write_byte(off("wXCoord"), final_x)
+        sav.write_byte(off("wYCoord"), final_y)
+        # Recompute wScreenSave from ROM so MAPSETUP_CONTINUE's
+        # LoadNeighboringBlockData overlays consistent data (otherwise the
+        # area around the player renders as stale tiles or zeros).
+        bd = blockdata.load(
+            rom_path, syms, final_group, final_map, name=map_label or ""
+        )
+        ss_bytes = blockdata.compute_screen_save(bd, final_x, final_y)
+        sav.write_bytes(off("wScreenSave"), ss_bytes)
+
+        label = map_label or f"(group {final_group}, id {final_map})"
+        changes.append(
+            f"map = {label} at ({final_x}, {final_y}); "
+            f"recomputed wScreenSave from {bd.width}x{bd.height} block grid"
+        )
 
     return changes
 
