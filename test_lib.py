@@ -15,7 +15,7 @@ from pathlib import Path
 # Make `_lib` importable when invoked as a script.
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _lib import constants, paths, savefile, symfile  # noqa: E402
+from _lib import constants, maps, paths, savefile, symfile  # noqa: E402
 
 
 def check(label: str, cond: bool, detail: str = "") -> None:
@@ -74,6 +74,31 @@ def main() -> None:
     # counter still advances correctly. The "real" flags are EVENT_*.
     flag_names = [c.name for c in all_consts if c.name.startswith("EVENT_")]
     check("EVENT_* count is sensible", len(flag_names) >= 1000, f"{len(flag_names)} EVENT_* parsed")
+
+    print("\nmaps.py")
+    map_defs = maps.parse_maps(root / "constants" / "map_dimension_constants.asm")
+    check("non-empty", len(map_defs) > 100, f"{len(map_defs)} maps")
+    first = map_defs[0]
+    check(
+        "first map is INTRO_OUTSIDE group=1 id=1",
+        first.name == "INTRO_OUTSIDE" and first.group == 1 and first.map_id == 1,
+        str(first),
+    )
+    azalea = next((m for m in map_defs if m.name == "AZALEA_TOWN"), None)
+    check("AZALEA_TOWN parses", azalea is not None, str(azalea))
+
+    print("\nconstants.py — stop_at_reset")
+    pokemon = constants.parse_constants(
+        root / "constants" / "pokemon_constants.asm",
+        start_counter=1,
+        stop_at_reset=True,
+    )
+    check(
+        "pokemon enum gives BULBASAUR=1 .. LIBABEEL=254",
+        pokemon[0].name == "BULBASAUR" and pokemon[0].value == 1
+        and pokemon[-1].name == "LIBABEEL" and pokemon[-1].value == 254,
+        f"first={pokemon[0]} last={pokemon[-1]}",
+    )
 
     print("\nsavefile.py — checksum")
     check("empty checksum is 0", savefile.checksum16(b"") == 0)
