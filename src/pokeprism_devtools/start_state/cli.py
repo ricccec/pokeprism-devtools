@@ -10,21 +10,21 @@ One-shot behaviour (any of `--no-tui`, `--out`, `--no-launch`,
 template `.sav` (recomputing both SRAM checksums), and spawn SameBoy.
 Press A on "Continue" in the game's main menu.
 
-The first run (or any run after a rebuild) refreshes `inventory.json`
-next to this script — a catalog of every map, pokemon, item, move, and
-event flag plus the .sav file offsets needed to patch.
+Runtime artifacts (inventory.json, state.json, sav-backups/, presets/)
+live under `<pokeprism>/.devtools/`. The first run (or any run after a
+rebuild) refreshes `.devtools/inventory.json` from the .sym.
 
 Usage:
-    start-state.py                       # interactive TUI (default on TTY)
-    start-state.py --no-tui              # one-shot patch + launch
-    start-state.py --no-launch           # patch only, don't spawn SameBoy
-    start-state.py --inventory-only      # rebuild inventory, print summary
-    start-state.py --state PATH          # alternate state.json
-    start-state.py --template PATH       # alternate template .sav
-    start-state.py --out PATH            # write patched .sav elsewhere
-    start-state.py --rebuild-inventory   # force inventory rebuild
-    start-state.py --debug               # use the debug ROM's .sym
-    start-state.py --keep-people         # don't reset NPC slots on map change
+    start-state                          # interactive TUI (default on TTY)
+    start-state --no-tui                 # one-shot patch + launch
+    start-state --no-launch              # patch only, don't spawn SameBoy
+    start-state --inventory-only         # rebuild inventory, print summary
+    start-state --state PATH             # alternate state.json
+    start-state --template PATH          # alternate template .sav
+    start-state --out PATH               # write patched .sav elsewhere
+    start-state --rebuild-inventory      # force inventory rebuild
+    start-state --debug                  # use the debug ROM's .sym
+    start-state --keep-people            # don't reset NPC slots on map change
 """
 
 from __future__ import annotations
@@ -34,18 +34,9 @@ import datetime as dt
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from pokeprism_devtools import paths, savefile, symfile
 
-from _lib import paths, savefile, symfile  # noqa: E402
-
-import apply  # noqa: E402
-import inventory  # noqa: E402
-import launcher  # noqa: E402
-
-INVENTORY_PATH = Path(__file__).parent / "inventory.json"
-STATE_PATH = Path(__file__).parent / "state.json"
-PRESETS_DIR = Path(__file__).parent / "presets"
-SAV_BACKUPS_DIR = Path(__file__).parent / "sav-backups"
+from . import apply, inventory, launcher
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -63,10 +54,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--state",
         type=Path,
-        default=STATE_PATH,
+        default=None,
         help="state.json describing the desired initial state "
-        "(default: tools/start-state/state.json; if missing, uses "
-        "presets/default.json)",
+        "(default: <repo>/.devtools/state.json; if missing, falls back to "
+        "<repo>/.devtools/presets/default.json, then to a no-op state)",
     )
     p.add_argument(
         "--template",
@@ -106,11 +97,18 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     root = paths.repo_root()
+    devtools_dir = root / ".devtools"
+    devtools_dir.mkdir(parents=True, exist_ok=True)
+    inventory_path = devtools_dir / "inventory.json"
+    state_path = args.state if args.state is not None else devtools_dir / "state.json"
+    presets_dir = devtools_dir / "presets"
+    sav_backups_dir = devtools_dir / "sav-backups"
+
     sym_path_resolved = paths.sym_path(root, debug=args.debug)
 
     if args.inventory_only:
         inv = inventory.load_or_build(
-            root, sym_path_resolved, INVENTORY_PATH,
+            root, sym_path_resolved, inventory_path,
             force=args.rebuild_inventory,
         )
         inventory.print_summary(inv)
@@ -124,25 +122,31 @@ def main(argv: list[str] | None = None) -> int:
         or not sys.stdin.isatty()
     )
     if not one_shot:
-        import tui
+        from . import tui
         return tui.run(
             root=root,
             sym_path=sym_path_resolved,
             debug=args.debug,
-            state_path=args.state,
-            inventory_path=INVENTORY_PATH,
-            presets_dir=PRESETS_DIR,
-            sav_backups_dir=SAV_BACKUPS_DIR,
+            state_path=state_path,
+            inventory_path=inventory_path,
+            presets_dir=presets_dir,
+            sav_backups_dir=sav_backups_dir,
             keep_people=args.keep_people,
             rebuild_inventory=args.rebuild_inventory,
         )
 
     inv = inventory.load_or_build(
-        root, sym_path_resolved, INVENTORY_PATH,
+        root, sym_path_resolved, inventory_path,
         force=args.rebuild_inventory,
     )
-    state = apply.load_state(args.state, PRESETS_DIR)
-    print(f"State loaded from {args.state if args.state.exists() else 'presets/default.json'}")
+    state = apply.load_state(state_path, presets_dir)
+    if state_path.exists():
+        state_source = state_path
+    elif (presets_dir / "default.json").exists():
+        state_source = presets_dir / "default.json"
+    else:
+        state_source = "built-in no-op default"
+    print(f"State loaded from {state_source}")
 
     rom_path = paths.rom_path(root, debug=args.debug)
     target_sav = args.out if args.out is not None else rom_path.with_suffix(".sav")
@@ -177,9 +181,9 @@ def main(argv: list[str] | None = None) -> int:
 
     # Back up the existing target so we never silently destroy progress.
     if target_sav.exists():
-        SAV_BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+        sav_backups_dir.mkdir(parents=True, exist_ok=True)
         ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup = SAV_BACKUPS_DIR / f"{target_sav.stem}-{ts}.sav"
+        backup = sav_backups_dir / f"{target_sav.stem}-{ts}.sav"
         backup.write_bytes(target_sav.read_bytes())
         print(f"Backed up {target_sav.name} → {_pretty_path(backup, root)}")
 

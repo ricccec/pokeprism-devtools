@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pokeprism-devtools"
+version = "0.1.0"
+description = "Python devtools for the pokeprism Pokémon Crystal disassembly fork"
+requires-python = ">=3.10"
+dependencies = ["questionary"]
+
+[project.scripts]
+start-state = "pokeprism_devtools.start_state.cli:main"
+sym-lookup  = "pokeprism_devtools.sym_lookup:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

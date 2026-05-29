@@ -13,24 +13,24 @@ when any of `map.{name,x,y}` is touched. See
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _lib import blockdata, people, savefile, symfile  # noqa: E402
+from pokeprism_devtools import blockdata, people, savefile, symfile
 
 
 def load_state(path: Path, presets_dir: Path) -> dict:
-    """Load `state.json` or fall back to `presets/default.json`."""
+    """Load `state.json`, falling back to `presets/default.json`, then to {}.
+
+    An empty dict means "leave the template unchanged" — that's the
+    out-of-the-box behaviour on a fresh pokeprism checkout that hasn't
+    yet seeded `.devtools/presets/default.json`.
+    """
     if path.exists():
         return json.loads(path.read_text())
     default = presets_dir / "default.json"
-    if not default.exists():
-        raise FileNotFoundError(
-            f"no state at {path} and no default preset at {default}"
-        )
-    return json.loads(default.read_text())
+    if default.exists():
+        return json.loads(default.read_text())
+    return {}
 
 
 def looks_like_real_save(sav: savefile.SaveFile, inv: dict) -> bool:

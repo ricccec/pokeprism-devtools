@@ -1,86 +1,98 @@
-# tools/
+# pokeprism-devtools
 
-Python 3 devtools for working on pokeprism. See
-[`../docs/devtools.md`](../docs/devtools.md) for the user-facing reference,
-[`../docs/devtools-plan.md`](../docs/devtools-plan.md) for the plan/roadmap,
-and [`../docs/debug-mode.md`](../docs/debug-mode.md) for the in-codebase
-debug features (in-game debug menus + the `DEBUG_MODE` build flag).
+Python devtools for working on [pokeprism](https://github.com/ricccec/pokeprism)
+— a Pokémon Crystal disassembly fork (RGBDS 0.7.0, ~2MB GBC ROM hack).
 
-## Layout
+User-facing reference: [`docs/devtools.md`](docs/devtools.md).
+Plan/status: [`docs/devtools-plan.md`](docs/devtools-plan.md).
+Map-blockdata design record: [`docs/blockdata-plan.md`](docs/blockdata-plan.md).
+
+## What's in here
 
 ```
-tools/
-├── README.md
-├── requirements.txt        — Python deps (questionary, for the start-state TUI)
-├── test_lib.py             — smoke test for _lib/
-├── _lib/                   — shared parsers / helpers (imported, not run)
-│   ├── paths.py            — find repo root, ROM, .sym, .map, .sav
-│   ├── symfile.py          — parse RGBDS .sym files
-│   ├── constants.py        — parse constants/*.asm enums
-│   ├── maps.py             — parse map_dimension_constants.asm
-│   ├── savefile.py         — SaveFile I/O + checksum + GB charset encoder
-│   ├── lz.py               — LZ decompressor (port of home/decompress.asm)
-│   ├── blockdata.py        — read map blockdata from ROM, compute wScreenSave
-│   └── people.py           — reset player struct + clear NPC slots
-├── sym-lookup/             — query the .sym by label or address
-│   └── sym-lookup.py
-└── start-state/            — launch the game in an arbitrary state
-    ├── start-state.py      — CLI entrypoint
-    ├── tui.py              — questionary-driven dev-server menu
-    ├── inventory.py        — build/refresh the .sym → .sav offset catalog
-    ├── apply.py            — mutate a .sav from a state.json
-    ├── launcher.py         — locate SameBoy (Spotlight / $SAMEBOY_BIN), launch + focus
-    ├── test_maps.py        — sweep every map through apply (regression check)
-    ├── presets/            — example state.json files (checked in)
-    │   └── default.json
-    ├── inventory.json      — generated, gitignored
-    ├── state.json          — user's working state, gitignored
-    └── sav-backups/        — auto-backups before .sav overwrite, gitignored
+src/pokeprism_devtools/
+├── paths.py            — find repo root, ROM, .sym, .map, .sav
+├── symfile.py          — parse RGBDS .sym files
+├── constants.py        — parse constants/*.asm enums
+├── maps.py             — parse map_dimension_constants.asm
+├── savefile.py         — SaveFile I/O + checksum + GB charset encoder
+├── lz.py               — LZ decompressor (port of home/decompress.asm)
+├── blockdata.py        — read map blockdata from ROM, compute wScreenSave
+├── people.py           — reset player struct + clear NPC slots
+├── sym_lookup.py       — `sym-lookup` CLI: query the .sym by label or address
+└── start_state/
+    ├── cli.py          — `start-state` CLI entrypoint
+    ├── tui.py          — questionary-driven dev-server menu
+    ├── inventory.py    — build/refresh the .sym → .sav offset catalog
+    ├── apply.py        — mutate a .sav from a state.json
+    ├── launcher.py     — locate SameBoy and spawn it (Spotlight / $SAMEBOY_BIN)
+    └── test_maps.py    — sweep every map through apply (regression check)
+tests/test_lib.py       — stdlib smoke test against real build artifacts
+docs/                   — devtools.md, devtools-plan.md, blockdata-plan.md
 ```
 
 ## Setup
 
-Python 3.10+. The shared `_lib/` is stdlib-only. The `start-state` TUI
-needs one external package, `questionary`, pinned in `requirements.txt`:
+Requires Python 3.10+ and a clone of pokeprism with a built ROM (the tools
+read its `.sym`). Install via `pipx` so the CLIs land on your `$PATH`:
 
 ```bash
-# Recommended on macOS / PEP 668 systems
-python3 -m venv .venv && .venv/bin/pip install -r tools/requirements.txt
+pipx install -e /path/to/pokeprism-devtools
 ```
 
-If `questionary` isn't installed, the TUI prints a one-line hint and
-exits — the non-interactive flow (`--no-tui`) is stdlib-only and works
-either way. See [`../docs/devtools.md`](../docs/devtools.md#setup) for
-install alternatives.
+This exposes two commands:
 
-The tools find the repo root by walking up from cwd until they hit
-`Makefile` + `main.asm`, so they run from anywhere inside the repo.
+| Command       | Purpose                                                    |
+|---------------|------------------------------------------------------------|
+| `start-state` | Launch the game in an arbitrary state (the headline tool). |
+| `sym-lookup`  | Query the `.sym` by label or address.                      |
 
-A built ROM is required (the tools read its `.sym`). Run `make nodebug`
-(or `make` for the debug build) once first.
+Both anchor themselves to your pokeprism repo by walking the current
+working directory up until they find `Makefile` + `main.asm`, so run them
+from anywhere inside your pokeprism checkout:
 
-If SameBoy isn't at `/Applications/SameBoy.app` (the canonical macOS
-path), `launcher.py` finds it via Spotlight automatically. To skip the
-lookup or point at a specific build, set `SAMEBOY_BIN` to the inner
-binary path.
+```bash
+cd /path/to/pokeprism
+start-state --inventory-only
+sym-lookup TryLoadSaveFile
+```
+
+Runtime artifacts (`inventory.json`, `state.json`, `sav-backups/`, plus
+optional `presets/`) live under `<pokeprism>/.devtools/` — they're
+per-game, so one tool install can serve multiple pokeprism clones without
+collisions.
+
+If SameBoy isn't at `/Applications/SameBoy.app`, set `$SAMEBOY_BIN` to the
+inner binary path, or let `start-state` find it via Spotlight on macOS.
 
 ## Quick start
 
 ```bash
-# Interactive dev-server TUI (bare invocation on a TTY)
-./tools/start-state/start-state.py
-./tools/start-state/start-state.py --no-tui          # skip the menu, one-shot
+cd /path/to/pokeprism            # any subdirectory works too
+
+# Interactive dev-server TUI (default on a TTY)
+start-state
+start-state --no-tui             # bypass the TUI, one-shot patch + launch
 
 # Query the .sym
-./tools/sym-lookup/sym-lookup.py TryLoadSaveFile
-./tools/sym-lookup/sym-lookup.py --addr 01:a020
-./tools/sym-lookup/sym-lookup.py --prefix wParty -n 5
+sym-lookup TryLoadSaveFile
+sym-lookup --addr 01:a020
+sym-lookup --prefix wParty -n 5
 
 # Smoke test (after rebuilding the ROM)
-python3 tools/test_lib.py
+python /path/to/pokeprism-devtools/tests/test_lib.py
 
 # Regression sweep: every map through the apply pipeline (~0.1s, 448 maps)
-python3 tools/start-state/test_maps.py
+python -m pokeprism_devtools.start_state.test_maps
 ```
 
-See [`../docs/devtools.md`](../docs/devtools.md) for full per-tool usage.
+See [`docs/devtools.md`](docs/devtools.md) for full per-tool usage.
+
+## Development
+
+`pipx install -e <path>` installs in editable mode — changes to source in
+this repo take effect immediately, no reinstall needed.
+
+To pick up new `[project.scripts]` entries, run
+`pipx install --force /path/to/pokeprism-devtools` (only required when
+the entry-point list itself changes).

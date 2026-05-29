@@ -20,11 +20,8 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from _lib import paths, symfile  # noqa: E402
+from pokeprism_devtools import paths, symfile
 
 
 def main(argv: list[str] | None = None) -> int:

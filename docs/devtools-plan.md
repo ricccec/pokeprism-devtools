@@ -1,9 +1,19 @@
 # Pokeprism DevTools — Implementation Plan
 
+> **Historical document.** This was the original plan, written while the
+> tools still lived inside `pokeprism/tools/`. The code has since been
+> extracted to `pokeprism-devtools` (this repo), restructured as an
+> installable package, and rerouted to `<pokeprism>/.devtools/` for
+> runtime artifacts. Paths in this doc like `tools/_lib/blockdata.py`
+> refer to the *historical* layout; their modern equivalents are under
+> `src/pokeprism_devtools/`. The asm cross-references, design decisions,
+> and verification plans are still accurate. Cross-doc links to
+> `debug-mode.md` point at a file that lives in the
+> [pokeprism repo](https://github.com/ricccec/pokeprism), not here.
+
 ## Status snapshot (read me first)
 
-This doc is the original plan, kept as a record of intent. For the current
-user-facing reference of what's shipped, see
+For the current user-facing reference of what's shipped, see
 [`devtools.md`](devtools.md). At a glance:
 
 | Phase | Status | Notes |
