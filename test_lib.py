@@ -102,13 +102,30 @@ def main() -> None:
 
     print("\nsavefile.py — checksum")
     check("empty checksum is 0", savefile.checksum16(b"") == 0)
-    # For byte=0x42: e = 0x42, d = (0+0-0x42)&0xFF = 0xBE → 0xBE42.
-    # The asm's `adc d; sub e` always biases d by -e on the first byte.
     sb = savefile.checksum16(b"\x42")
-    check("single-byte 0x42 → 0xBE42", sb == 0xBE42, f"got ${sb:04x}")
-    # Overflow case: e wraps to 0 with carry; d advances by +1-e_new.
+    check("single-byte 0x42 → 0x0042", sb == 0x0042, f"got ${sb:04x}")
+    # Overflow case: low byte wraps from 0xFF to 0x00, high byte bumps to 1.
     val = savefile.checksum16(b"\xff\x01")
-    check("overflow 0xFF,0x01 → 0x0200", val == 0x0200, f"got ${val:04x}")
+    check("overflow 0xFF,0x01 → 0x0100", val == 0x0100, f"got ${val:04x}")
+    # Four 0xFF bytes: low cycles FF→FE→FD→FC, high bumps three times.
+    val = savefile.checksum16(b"\xff" * 4)
+    check("four 0xFF → 0x03FC", val == 0x03FC, f"got ${val:04x}")
+
+    print("\nsavefile.py — encode_name")
+    # "Adam" + 4 terminators: 0x80 ('A'), 0xa3 ('d'), 0xa0 ('a'),
+    # 0xac ('m'), then four 0x50 ('@'). Confirmed against the real save.
+    enc = savefile.encode_name("Adam", 8)
+    check(
+        "encode 'Adam' to 8 bytes",
+        enc == bytes([0x80, 0xA3, 0xA0, 0xAC, 0x50, 0x50, 0x50, 0x50]),
+        f"got {enc.hex()}",
+    )
+    enc = savefile.encode_name("RED", 8)
+    check(
+        "encode 'RED' to 8 bytes",
+        enc == bytes([0x91, 0x84, 0x83, 0x50, 0x50, 0x50, 0x50, 0x50]),
+        f"got {enc.hex()}",
+    )
 
     print("\nsavefile.py — offset math")
     off = savefile.sram_to_file_offset(1, 0xA009)  # sPlayerData
@@ -129,11 +146,15 @@ def main() -> None:
                 "expected $63 / $7f. Skipping checksum cross-check.)"
             )
         else:
+            # sGameData = sPlayerData..sExtraData (the next SRAM section).
+            # No sGameDataEnd label exists in the .sym, but the gap between
+            # sPokemonData and sExtraData is exactly the PokemonData size
+            # (sGameData ends where sExtraData starts).
             game_data_start = savefile.sram_to_file_offset(
                 1, syms["sPlayerData"].addr
             )
             game_data_end = savefile.sram_to_file_offset(
-                1, syms["sPokemonDataEnd"].addr
+                1, syms["sExtraData"].addr
             )
             computed = savefile.checksum16(
                 sf.read(game_data_start, game_data_end - game_data_start)

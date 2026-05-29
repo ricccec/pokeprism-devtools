@@ -44,24 +44,17 @@ def checksum16(data: bytes) -> int:
         ld de, 0
     .loop:
         ld a, [hli]
-        add e        ; e = (e + byte) & 0xFF (sets carry)
-        ld e, a
-        adc d        ; a = d + carry
-        sub e        ; a = (d + carry) - e   ← weird but correct
-        ld d, a      ; d = ((d + carry) - e) & 0xFF
-        ; ... loop
+        add e        ; a = (e + byte) & 0xFF, CF = (e + byte > 0xFF)
+        ld e, a      ; e = new low byte
+        adc d        ; a = a + d + CF
+        sub e        ; a = (a + d + CF) - a = d + CF (mod 256)
+        ld d, a      ; d = (d + CF) & 0xFF
 
-    The high-byte update is `d = (d + carry) - e` in 8-bit arithmetic. We
-    replicate that exactly here rather than approximating with a 16-bit sum.
+    The clever `adc d; sub e` pair leaves `d + carry_from_add_e` in `a`.
+    Net effect: a plain 16-bit running sum (every byte that wraps the low
+    byte bumps the high byte by 1). I.e. just `sum(data) & 0xFFFF`.
     """
-    d = 0
-    e = 0
-    for byte in data:
-        new_e = (e + byte) & 0xFF
-        carry = 1 if (e + byte) > 0xFF else 0
-        d = (d + carry - new_e) & 0xFF
-        e = new_e
-    return (d << 8) | e
+    return sum(data) & 0xFFFF
 
 
 class SaveFile:
@@ -106,3 +99,39 @@ class SaveFile:
             raise ValueError(f"u16 value {value} out of range.")
         self.data[offset] = value & 0xFF
         self.data[offset + 1] = (value >> 8) & 0xFF
+
+
+# Character encoding from macros/charmap.asm. Only the printable subset
+# needed for names — punctuation/special tokens (<PLAYER>, <RIVAL>, ...)
+# can be added later if a use case appears.
+TERMINATOR = 0x50  # "@"
+
+_CHARMAP: dict[str, int] = {}
+_CHARMAP[" "] = 0x7F
+_CHARMAP["@"] = TERMINATOR
+for i, ch in enumerate("ABCDEFGHIJKLMNOPQRSTUVWXYZ"):
+    _CHARMAP[ch] = 0x80 + i
+for i, ch in enumerate("abcdefghijklmnopqrstuvwxyz"):
+    _CHARMAP[ch] = 0xA0 + i
+for i, ch in enumerate("0123456789"):
+    _CHARMAP[ch] = 0xF6 + i
+
+
+def encode_name(text: str, length: int) -> bytes:
+    """Encode a player/mon name to fixed-length GB charset bytes.
+
+    Pads with the terminator (0x50 = "@"). Raises if `text` is too long or
+    contains an unmappable character.
+    """
+    if len(text) >= length:
+        raise ValueError(
+            f"name '{text}' is too long: max {length - 1} chars + terminator"
+        )
+    out = bytearray()
+    for ch in text:
+        if ch not in _CHARMAP:
+            raise ValueError(f"character {ch!r} not in name charset")
+        out.append(_CHARMAP[ch])
+    while len(out) < length:
+        out.append(TERMINATOR)
+    return bytes(out)

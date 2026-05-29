@@ -29,7 +29,7 @@ tools will pick up whichever ROM is present.
 |---------------------------------------|------------|------------------------------------------------------------------|
 | [`sym-lookup`](#sym-lookup)           | shipped    | Query the `.sym` file by label or address.                       |
 | [`test_lib.py`](#smoke-test)          | shipped    | Smoke test for `_lib/` parsers (run after each rebuild).         |
-| [`start-state`](#start-state)         | partial    | Phase A (inventory build) shipped. Phase B (launcher) + TUI next. |
+| [`start-state`](#start-state)         | partial    | Phases A + B (inventory + save patcher) shipped. TUI next. |
 | `flag-finder`                         | planned    | Cross-reference `EVENT_*` set/check sites across the codebase.   |
 | `map-inspect`                         | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
 | `sram-diff`                           | planned    | Diff two `.sav` files field-by-field using the SRAM layout.      |
@@ -196,17 +196,67 @@ The inventory file is gitignored — it's regenerated from the build
 artifacts so it doesn't need to live in source control. A sibling tool
 or external script can read it; it's stable JSON.
 
-### Phase B — patch .sav + launch (planned)
+### Phase B — patch .sav + launch (shipped)
 
-Will read a `state.json` describing the desired initial state, mutate the
-`.sav` next to the ROM accordingly (recomputing the SRAM checksums in
-`_lib/savefile.py`), and spawn SameBoy. The user presses A on "Continue"
-in the game's main menu and lands in the overworld with the configured
-state.
+Reads a `state.json` describing the desired initial state, mutates the
+`.sav` next to the ROM accordingly (recomputing both SRAM checksums), and
+spawns SameBoy. Press A on "Continue" in the game's main menu and you
+land in the overworld with the configured state.
+
+**Prerequisite**: a "template" .sav — a real save the game has written
+(validity bytes intact, valid checksum). To create one: run
+`pokeprism.gbc` or `pokeprism_nodebug.gbc` in SameBoy once, play through
+the intro to reach the overworld, then **save the game in-game** (Start →
+Save). That writes `pokeprism*.sav` next to the ROM. After that,
+`start-state` will use it as the template.
+
+Schema for `tools/start-state/state.json` (or a `presets/*.json`):
+
+```json
+{
+  "player": {
+    "name": "RED",
+    "money": 9999,
+    "badges": [0, 0, 0]
+  },
+  "map": {
+    "name": "CAPER_HOUSE",
+    "x": 2,
+    "y": 2
+  }
+}
+```
+
+All fields are optional — fields you don't set are left untouched in the
+template. `map.name` is any `MAP_*` constant; consult `inventory.json` for
+the full list. Badges is a 3-byte array `[naljo, rijon, other]` where each
+byte is a bitmask of earned badges.
+
+**Out of scope in v1** (will arrive in follow-up commits): party, items,
+event flags. Those fields are left untouched in the template — so if you
+need a Larvitar in your party, save the game with the larvitar caught and
+use that as the template.
+
+Usage:
+
+```bash
+./tools/start-state/start-state.py                # patch the .sav next to
+                                                  # the ROM and launch SameBoy
+./tools/start-state/start-state.py --no-launch    # patch only, don't run
+./tools/start-state/start-state.py --out PATH     # write somewhere else
+                                                  # (implies --no-launch)
+./tools/start-state/start-state.py --template PATH # use a different .sav
+                                                  # as input (preserves the
+                                                  # ROM's .sav)
+./tools/start-state/start-state.py --state PATH   # alternate state.json
+```
+
+Existing `.sav` files are backed up to `tools/start-state/sav-backups/`
+before being overwritten — you can always recover.
 
 ### TUI (planned)
 
-A `questionary`-driven menu on top of Phase B for editing `state.json`
+A `questionary`-driven menu on top of Phase B for editing the state
 interactively.
 
 ---
