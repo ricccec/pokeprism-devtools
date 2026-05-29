@@ -7,8 +7,23 @@ the `DEBUG_MODE` build flag, see [`debug-mode.md`](debug-mode.md).
 
 ## Setup
 
-Python 3.10+ is required. The shared library (`tools/_lib/`) is stdlib-only;
-no `pip install` step is needed yet.
+Python 3.10+ is required. The shared library (`tools/_lib/`) is stdlib-only.
+The only external dependency is `questionary`, used by the `start-state`
+TUI; pin in `tools/requirements.txt`. Install it however you prefer — a
+venv is the safest, or `--break-system-packages` if you don't mind:
+
+```bash
+# Option A: venv (recommended on macOS with Homebrew Python / PEP 668)
+python3 -m venv .venv && .venv/bin/pip install -r tools/requirements.txt
+# then run tools via .venv/bin/python tools/start-state/start-state.py
+
+# Option B: user install, opting out of PEP 668
+python3 -m pip install --user --break-system-packages -r tools/requirements.txt
+```
+
+If `questionary` isn't installed, the TUI prints a one-line hint and
+exits cleanly; the non-interactive flow (`--no-tui`) is stdlib-only and
+works either way.
 
 The tools find the repo root automatically by walking up from the current
 working directory until they hit `Makefile` + `main.asm`, so they can be run
@@ -29,7 +44,7 @@ tools will pick up whichever ROM is present.
 |---------------------------------------|------------|------------------------------------------------------------------|
 | [`sym-lookup`](#sym-lookup)           | shipped    | Query the `.sym` file by label or address.                       |
 | [`test_lib.py`](#smoke-test)          | shipped    | Smoke test for `_lib/` parsers (run after each rebuild).         |
-| [`start-state`](#start-state)         | partial    | Inventory + save patcher + map-change support shipped. TUI next. |
+| [`start-state`](#start-state)         | partial    | Inventory + save patcher + map-change support + dev-server TUI shipped. Party / items / event flags pending. |
 | `flag-finder`                         | planned    | Cross-reference `EVENT_*` set/check sites across the codebase.   |
 | `map-inspect`                         | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
 | `sram-diff`                           | planned    | Diff two `.sav` files field-by-field using the SRAM layout.      |
@@ -300,10 +315,94 @@ plus `sExtraChecksum` over `sExtraData`) are recomputed and written.
   may show one row/column of incorrect tiles at the very edge. Walking
   refreshes it.
 
-### TUI (planned)
+### TUI (dev-server mode)
 
-A `questionary`-driven menu on top of the launcher for editing the state
-interactively.
+Bare `start-state.py` on a TTY drops you into a `questionary`-driven
+interactive menu. The TUI is long-lived: edits autosave, SameBoy is
+managed as a subprocess, and the inventory is refreshed in-process when
+the ROM is rebuilt.
+
+```bash
+./tools/start-state/start-state.py            # opens the TUI
+./tools/start-state/start-state.py --no-tui   # bypass; use the one-shot flow
+```
+
+The TUI also bypasses itself when stdin isn't a TTY (piped input) or any
+of `--out`, `--no-launch`, `--inventory-only` is set.
+
+#### Menu
+
+```
+=========================================================
+  pokeprism start-state  —  dev server
+=========================================================
+
+  Build:   pokeprism_nodebug.gbc    sym mtime: 2026-05-29 16:46:58
+  State:   tools/start-state/state.json
+           player: name='RED'  money=9999  badges=[0, 0, 0]
+           map:    EMBER_BROOK  at (10, 8)
+  SameBoy: not running
+
+? What now?
+» Launch  (patch .sav, spawn SameBoy)
+  Edit player...
+  Edit map / position...
+  Reset state from preset...
+  ───────────────────────────────
+  Edit party        — v2 — coming soon
+  Edit items        — v2 — coming soon
+  Edit event flags  — v2 — coming soon
+  ───────────────────────────────
+  Quit
+```
+
+#### What's editable
+
+| Field           | Notes                                                           |
+|-----------------|-----------------------------------------------------------------|
+| Player name     | 1–7 chars, GB charset (validated on input).                     |
+| Money           | 0–999,999.                                                      |
+| Badges          | 3 bytes — Naljo / Rijon / Other — each a 0–255 bitmask.         |
+| Map name        | Tab-autocomplete from the inventory (~448 maps; fuzzy match).   |
+| X / Y coord    | Range derived from the destination map's block grid (× 2 tiles per block); falls back to 0–255 if the map is unset. |
+
+Party / items / event flags are surfaced as disabled menu entries
+("v2 — coming soon"); editing them is on the roadmap (see
+[`devtools-plan.md`](devtools-plan.md#future-work--known-v1-limitations)).
+
+#### Dev-server semantics
+
+- **Autosave**: every successful edit writes `state.json` immediately.
+  Ctrl-C never loses the current state. (The file is gitignored;
+  `presets/*.json` are read-only from the TUI's perspective.)
+- **Inventory watching**: between menu cycles the TUI polls the `.sym`
+  mtime. When it changes (you rebuilt the ROM in another terminal), the
+  TUI prints `(detected new build — refreshing inventory from .sym)`
+  and rebuilds `inventory.json` in-process. The next launch picks up the
+  new symbols. You don't have to restart the TUI.
+- **SameBoy lifecycle**: the menu's first option is **Launch** until a
+  SameBoy process is running, then becomes **Re-launch**. On Re-launch,
+  the previous SameBoy is `terminate()`d (then `kill()`ed if it doesn't
+  exit within 2s) and a fresh one is spawned with the new `.sav`. If you
+  close SameBoy yourself in between, the TUI notices and just spawns a
+  fresh one.
+- **Quit**: leaves a running SameBoy alone (with a closing note).
+
+#### Reset from preset
+
+Select a JSON file from `tools/start-state/presets/`; the TUI copies it
+into `state.json` (after a confirm prompt). Presets are never written
+back from the TUI — they're stable starting points you can `git diff`
+against your working state.
+
+### One-shot mode
+
+When invoked with `--no-tui` (or `--out`, `--no-launch`,
+`--inventory-only`, or non-TTY stdin), `start-state.py` patches the
+`.sav` from `state.json` and either launches SameBoy or exits, exactly
+as before the TUI shipped. The map-change pipeline (block-data load,
+`wScreenSave`, people reset) is identical in both modes — the TUI calls
+the same `apply` module.
 
 ---
 

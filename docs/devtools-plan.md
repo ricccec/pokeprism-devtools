@@ -14,8 +14,9 @@ user-facing reference of what's shipped, see
 | `start-state` Phase A (inventory) | ✓ shipped | `tools/start-state/inventory.json`, regenerated from `.sym` |
 | `start-state` Phase B (patch + launch) | ✓ shipped | player name, money, badges, map+coords; party/items/event flags deferred |
 | Map-change support (LZ + blockdata + wScreenSave + people-reset) | ✓ shipped | required additional modules `_lib/{lz,blockdata,people}.py`; see [`blockdata-plan.md`](blockdata-plan.md) |
-| TUI (`questionary` menu) | pending | next on the roadmap |
-| Final pass of `docs/devtools.md` | pending | user-facing reference is current as of map-change work; add TUI section when shipped |
+| TUI (`questionary` dev-server) | ✓ shipped | `tools/start-state/tui.py`; watches `.sym`, manages SameBoy lifecycle; party/items/flags surfaced as disabled v2 entries |
+| Final pass of `docs/devtools.md` | ✓ shipped | TUI section + setup notes (PEP 668 install caveats) added |
+| v2 fields in `state.json` (party, items, event flags) | pending | menu placeholders exist; .sav writers not yet implemented |
 | Other tools (`flag-finder`, `map-inspect`, `sram-diff`, etc.) | pending | sketched only; no implementation yet |
 
 Future work / deferred items live at the bottom of this doc under
@@ -477,7 +478,8 @@ Default behaviour after this lands: clear-then-load, so teleported maps feel
 zero-NPC behaviour.
 
 ### Other planned items
-- TUI on top of `start-state` (`questionary`-driven menu).
-- Party/items/event-flag editing in `state.json` (v1 leaves party untouched).
+- Party/items/event-flag editing in `state.json` (v1 leaves these
+  untouched; the TUI surfaces them as disabled menu entries to telegraph
+  the roadmap).
 - Connection-aware `wScreenSave` for player positions at map edges (today
   uses zero-padding outside the map — wrong for maps with N/S/E/W connections).
