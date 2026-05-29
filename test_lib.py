@@ -15,7 +15,7 @@ from pathlib import Path
 # Make `_lib` importable when invoked as a script.
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _lib import constants, maps, paths, savefile, symfile  # noqa: E402
+from _lib import constants, lz, maps, paths, savefile, symfile  # noqa: E402
 
 
 def check(label: str, cond: bool, detail: str = "") -> None:
@@ -74,6 +74,32 @@ def main() -> None:
     # counter still advances correctly. The "real" flags are EVENT_*.
     flag_names = [c.name for c in all_consts if c.name.startswith("EVENT_")]
     check("EVENT_* count is sensible", len(flag_names) >= 1000, f"{len(flag_names)} EVENT_* parsed")
+
+    print("\nlz.py")
+    # Round-trip every (X.lz, X) pair under tilesets/ that the build left
+    # behind. These are real compressed assets fed through the game's own
+    # compressor (utils/lzcomp); decompressing must reproduce them byte-for-byte.
+    pairs = [
+        (p, p.with_suffix(""))
+        for p in (root / "tilesets").glob("*.lz")
+        if p.with_suffix("").exists()
+    ]
+    if not pairs:
+        print("  (no .lz pairs found — run `make nodebug` to generate them)")
+    else:
+        fails = []
+        for lzp, rawp in pairs:
+            try:
+                decompressed, consumed = lz.decompress(lzp.read_bytes())
+                if decompressed != rawp.read_bytes() or consumed != lzp.stat().st_size:
+                    fails.append(lzp.name)
+            except Exception as e:
+                fails.append(f"{lzp.name} ({e})")
+        check(
+            f"round-trip {len(pairs)} (.lz, raw) pairs",
+            not fails,
+            f"{len(fails)} fail" if fails else "all match byte-for-byte",
+        )
 
     print("\nmaps.py")
     map_defs = maps.parse_maps(root / "constants" / "map_dimension_constants.asm")
