@@ -1,49 +1,51 @@
 # Devtools Reference
 
-User-facing reference for the Python devtools under [`/tools/`](../tools/).
-For the rationale, roadmap, and architecture decisions, see
-[`devtools-plan.md`](devtools-plan.md). For the in-codebase debug menu and
-the `DEBUG_MODE` build flag, see [`debug-mode.md`](debug-mode.md).
+User-facing reference for `pokeprism-devtools` — a standalone Python CLI
+suite that sits alongside pokeprism (not inside it). For the rationale,
+roadmap, and architecture decisions, see [`devtools-plan.md`](devtools-plan.md).
+For pokeprism's in-codebase debug menu and the `DEBUG_MODE` build flag,
+see [debug-mode.md](https://github.com/ricccec/pokeprism/blob/main/docs/debug-mode.md)
+in the pokeprism repo.
 
 ## Setup
 
-Python 3.10+ is required. The shared library (`tools/_lib/`) is stdlib-only.
-The only external dependency is `questionary`, used by the `start-state`
-TUI; pin in `tools/requirements.txt`. Install it however you prefer — a
-venv is the safest, or `--break-system-packages` if you don't mind:
+Python 3.10+ is required. The only external runtime dependency is
+`questionary` (the `start-state` TUI), pulled in automatically by
+`pyproject.toml`. The recommended install is `pipx`, which gives you the
+`start-state` and `sym-lookup` commands on `$PATH`:
 
 ```bash
-# Option A: venv (recommended on macOS with Homebrew Python / PEP 668)
-python3 -m venv .venv && .venv/bin/pip install -r tools/requirements.txt
-# then run tools via .venv/bin/python tools/start-state/start-state.py
-
-# Option B: user install, opting out of PEP 668
-python3 -m pip install --user --break-system-packages -r tools/requirements.txt
+pipx install -e /path/to/pokeprism-devtools
 ```
 
-If `questionary` isn't installed, the TUI prints a one-line hint and
-exits cleanly; the non-interactive flow (`--no-tui`) is stdlib-only and
-works either way.
+The `-e` makes the install editable — changes to source in this repo take
+effect immediately. If you ever change the `[project.scripts]` table,
+re-run with `--force` to refresh the entry-point shims.
 
-The tools find the repo root automatically by walking up from the current
-working directory until they hit `Makefile` + `main.asm`, so they can be run
-from anywhere inside the repo:
+The tools find your pokeprism checkout by walking up from the current
+working directory until they hit `Makefile` + `main.asm`, so they can be
+run from anywhere inside it:
 
 ```bash
-./tools/sym-lookup/sym-lookup.py TryLoadSaveFile     # from repo root
-cd engine && ../tools/sym-lookup/sym-lookup.py ...   # works the same
+cd /path/to/pokeprism
+sym-lookup TryLoadSaveFile                # from repo root
+cd engine && sym-lookup TryLoadSaveFile   # works the same
 ```
 
-Each tool requires a built ROM — specifically the `.sym` file that's emitted
-alongside it. Run `make nodebug` (release) or `make` (debug) once first; the
-tools will pick up whichever ROM is present.
+Each tool requires a built ROM — specifically the `.sym` file emitted
+alongside it. Run `make nodebug` (release) or `make` (debug) inside
+pokeprism once first; the tools will pick up whichever ROM is present.
+
+Runtime artifacts (`inventory.json`, `state.json`, `sav-backups/`, and
+optional `presets/`) live under `<pokeprism>/.devtools/`. The tool creates
+the directory on first run.
 
 ## Status
 
 | Tool                                  | Status     | Purpose                                                          |
 |---------------------------------------|------------|------------------------------------------------------------------|
 | [`sym-lookup`](#sym-lookup)           | shipped    | Query the `.sym` file by label or address.                       |
-| [`test_lib.py`](#smoke-test)          | shipped    | Smoke test for `_lib/` parsers (run after each rebuild).         |
+| [`test_lib.py`](#smoke-test)          | shipped    | Smoke test for the library (run after each rebuild).             |
 | [`test_maps.py`](#map-sweep)          | shipped    | Sweep every map through the `start-state` apply pipeline.        |
 | [`start-state`](#start-state)         | partial    | Inventory + save patcher + map-change support + dev-server TUI shipped. Party / items / event flags pending. |
 | `flag-finder`                         | planned    | Cross-reference `EVENT_*` set/check sites across the codebase.   |
@@ -85,7 +87,7 @@ Memory regions: `ROM0`, `ROMX`, `VRAM`, `SRAM`, `WRAM0`, `WRAMX`, `OAM`,
 **Find a function:**
 
 ```text
-$ ./tools/sym-lookup/sym-lookup.py TryLoadSaveFile
+$ sym-lookup TryLoadSaveFile
 05:4f9b TryLoadSaveFile
 ```
 
@@ -95,7 +97,7 @@ debugger hookup, that's the canonical format.
 **Reverse lookup (debugger PC → source):**
 
 ```text
-$ ./tools/sym-lookup/sym-lookup.py --addr 01:a020
+$ sym-lookup --addr 01:a020
 01:a009 sPlayerData  (+0x17)  [SRAM]
 01:a009 sGameData    (+0x17)  [SRAM]
 ```
@@ -108,11 +110,11 @@ poking inside a struct.
 **Find all related labels:**
 
 ```text
-$ ./tools/sym-lookup/sym-lookup.py --prefix sValidCheck
+$ sym-lookup --prefix sValidCheck
 01:a008 sValidCheck1  [SRAM]
 01:ad0f sValidCheck2  [SRAM]
 
-$ ./tools/sym-lookup/sym-lookup.py --prefix wPartyMon1 -n 5
+$ sym-lookup --prefix wPartyMon1 -n 5
 00:c61f wPartyMon1Species  [WRAM0]
 00:c620 wPartyMon1Item     [WRAM0]
 00:c621 wPartyMon1Moves    [WRAM0]
@@ -124,7 +126,7 @@ $ ./tools/sym-lookup/sym-lookup.py --prefix wPartyMon1 -n 5
 **Filter by region:**
 
 ```text
-$ ./tools/sym-lookup/sym-lookup.py --search map --region SRAM -n 5
+$ sym-lookup --search map --region SRAM -n 5
 00:ba33 sBackupMapData  [SRAM]
 01:a833 sMapData        [SRAM]
 ```
@@ -132,7 +134,7 @@ $ ./tools/sym-lookup/sym-lookup.py --search map --region SRAM -n 5
 **No exact match → falls back to substring search:**
 
 ```text
-$ ./tools/sym-lookup/sym-lookup.py partymon1
+$ sym-lookup partymon1
 00:c617 wPartyMon1MiscSpecies  [WRAM0]
 00:c617 wPartyMon1Misc         [WRAM0]
 ...
@@ -147,7 +149,7 @@ $ ./tools/sym-lookup/sym-lookup.py partymon1
 Useful in shell scripts:
 
 ```bash
-if addr=$(./tools/sym-lookup/sym-lookup.py SomeLabel 2>/dev/null); then
+if addr=$(sym-lookup SomeLabel 2>/dev/null); then
     echo "found at $addr"
 fi
 ```
@@ -167,11 +169,13 @@ fi
 
 ## Smoke test
 
-`tools/test_lib.py` exercises the `_lib/` parsers against the real
-`.sym`, `constants.asm`, and `.sav` files. It's a stdlib script, no pytest.
+`tests/test_lib.py` (inside this repo) exercises the library against the
+real `.sym`, `constants.asm`, and `.sav` files from a pokeprism build.
+Stdlib only, no pytest.
 
 ```bash
-python3 tools/test_lib.py
+cd /path/to/pokeprism                                    # any subdir works
+python /path/to/pokeprism-devtools/tests/test_lib.py
 ```
 
 Run it after every rebuild of the ROM to catch parser regressions early —
@@ -184,24 +188,24 @@ Exits non-zero on the first failed check, so it's safe in CI / git hooks.
 
 ## Map sweep
 
-`tools/start-state/test_maps.py` iterates every map in `inventory.json`
-and runs the `start-state` apply pipeline (block-data load, `wScreenSave`
-recompute, people-reset, checksum) against a fresh in-memory copy of the
-template `.sav`. Nothing is written to disk — it just reports which maps
-trigger exceptions.
+`test_maps` iterates every map in `inventory.json` and runs the
+`start-state` apply pipeline (block-data load, `wScreenSave` recompute,
+people-reset, checksum) against a fresh in-memory copy of the template
+`.sav`. Nothing is written to disk — it just reports which maps trigger
+exceptions.
 
 ```bash
-python3 tools/start-state/test_maps.py            # all maps, quiet
-python3 tools/start-state/test_maps.py -v         # also print [OK] lines
-python3 tools/start-state/test_maps.py --map MAP  # one specific map
-python3 tools/start-state/test_maps.py --limit 50 # only first 50 (smoke)
-python3 tools/start-state/test_maps.py --show-traceback
+cd /path/to/pokeprism
+python -m pokeprism_devtools.start_state.test_maps                # all maps, quiet
+python -m pokeprism_devtools.start_state.test_maps -v             # also print [OK] lines
+python -m pokeprism_devtools.start_state.test_maps --map MAP      # one specific map
+python -m pokeprism_devtools.start_state.test_maps --limit 50     # only first 50 (smoke)
+python -m pokeprism_devtools.start_state.test_maps --show-traceback
 ```
 
-Useful any time you touch `_lib/blockdata.py`, `_lib/lz.py`,
-`_lib/people.py`, or `tools/start-state/apply.py` — those are the
-modules the sweep exercises. Runs in ~0.1s for all 448 maps. Exits
-non-zero if any map fails.
+Useful any time you touch `blockdata.py`, `lz.py`, `people.py`, or
+`start_state/apply.py` — those are the modules the sweep exercises. Runs
+in ~0.1s for all 448 maps. Exits non-zero if any map fails.
 
 ---
 
@@ -214,12 +218,12 @@ spec in [`devtools-plan.md`](devtools-plan.md#deep-spec-toolsstart-state).
 ### Phase A — inventory (shipped)
 
 Phase A scans the codebase + built `.sym` and emits
-`tools/start-state/inventory.json`. The JSON catalogs every map, pokemon,
-item, move, and event flag, plus the .sav file offsets for every WRAM
-field the launcher will eventually write.
+`<pokeprism>/.devtools/inventory.json`. The JSON catalogs every map,
+pokemon, item, move, and event flag, plus the .sav file offsets for every
+WRAM field the launcher will eventually write.
 
 ```bash
-./tools/start-state/start-state.py
+start-state
 ```
 
 The inventory is cached and only rebuilt when the `.sym` is newer.
@@ -249,7 +253,7 @@ the intro to reach the overworld, then **save the game in-game** (Start →
 Save). That writes `pokeprism*.sav` next to the ROM. After that,
 `start-state` will use it as the template.
 
-Schema for `tools/start-state/state.json` (or a `presets/*.json`):
+Schema for `.devtools/state.json` (or a `presets/*.json`):
 
 ```json
 {
@@ -279,20 +283,20 @@ use that as the template.
 Usage:
 
 ```bash
-./tools/start-state/start-state.py                # patch the .sav next to
+start-state                # patch the .sav next to
                                                   # the ROM and launch SameBoy
-./tools/start-state/start-state.py --no-launch    # patch only, don't run
-./tools/start-state/start-state.py --out PATH     # write somewhere else
+start-state --no-launch    # patch only, don't run
+start-state --out PATH     # write somewhere else
                                                   # (implies --no-launch)
-./tools/start-state/start-state.py --template PATH # use a different .sav
+start-state --template PATH # use a different .sav
                                                   # as input (preserves the
                                                   # ROM's .sav)
-./tools/start-state/start-state.py --state PATH   # alternate state.json
-./tools/start-state/start-state.py --keep-people  # don't clear NPC slots
+start-state --state PATH   # alternate state.json
+start-state --keep-people  # don't clear NPC slots
                                                   # on map change (see below)
 ```
 
-Existing `.sav` files are backed up to `tools/start-state/sav-backups/`
+Existing `.sav` files are backed up to `.devtools/sav-backups/`
 before being overwritten — you can always recover.
 
 ### Map change — what happens under the hood
@@ -304,10 +308,10 @@ current map, so several engine-state fields must also be updated. The
 tool handles this automatically — but if you're debugging or extending
 the patcher, here's the chain:
 
-1. **Block-data lookup** (`_lib/blockdata.py`): walks
+1. **Block-data lookup** (`blockdata.py`): walks
    `MapGroupPointers` → primary header → secondary header to find the new
-   map's LZ-compressed blockdata in ROM. Uses `_lib/lz.py` (a Python port
-   of `home/decompress.asm`) to decompress into a `height × width` block
+   map's LZ-compressed blockdata in ROM. Uses `lz.py` (a Python port of
+   `home/decompress.asm`) to decompress into a `height × width` block
    grid.
 2. **`wScreenSave` recomputation**: the game's `LoadNeighboringBlockData`
    step in `MAPSETUP_CONTINUE` overlays `wScreenSave` onto `wOverworldMap`
@@ -315,7 +319,7 @@ the patcher, here's the chain:
    `wScreenSave` corrupts the area around the player. We compute the
    correct 30-byte window for the new (x, y) using the same anchor formula
    the game uses (`engine/warp_connection.asm:343`) and write it.
-3. **Player engine state reset** (`_lib/people.py`): updates
+3. **Player engine state reset** (`people.py`): updates
    `wObjectStructs[0]` positional fields to `(wXCoord + 4, wYCoord + 4)`
    so the player sprite renders at the right location. The `+4` is the
    game's screen-edge offset, verified against real saves.
@@ -347,8 +351,8 @@ managed as a subprocess, and the inventory is refreshed in-process when
 the ROM is rebuilt.
 
 ```bash
-./tools/start-state/start-state.py            # opens the TUI
-./tools/start-state/start-state.py --no-tui   # bypass; use the one-shot flow
+start-state            # opens the TUI
+start-state --no-tui   # bypass; use the one-shot flow
 ```
 
 The TUI also bypasses itself when stdin isn't a TTY (piped input) or any
@@ -362,7 +366,7 @@ of `--out`, `--no-launch`, `--inventory-only` is set.
 =========================================================
 
   Build:   pokeprism_nodebug.gbc    sym mtime: 2026-05-29 16:46:58
-  State:   tools/start-state/state.json
+  State:   .devtools/state.json
            player: name='RED'  money=9999  badges=[0, 0, 0]
            map:    EMBER_BROOK  at (10, 8)
   SameBoy: not running
@@ -418,7 +422,7 @@ Party / items / event flags are surfaced as disabled menu entries
 
 #### Reset from preset
 
-Select a JSON file from `tools/start-state/presets/`; the TUI copies it
+Select a JSON file from `.devtools/presets/`; the TUI copies it
 into `state.json` (after a confirm prompt). Presets are never written
 back from the TUI — they're stable starting points you can `git diff`
 against your working state.
@@ -436,20 +440,26 @@ the same `apply` module.
 
 ## Extending the toolset
 
-All tools share `tools/_lib/`. To add a new one:
+All tools share the `pokeprism_devtools` package. To add a new one:
 
-1. Make a sibling directory, e.g. `tools/foo/`, with an executable
-   `foo.py` (`#!/usr/bin/env python3`, `chmod +x`).
-2. At the top:
+1. Add a module under `src/pokeprism_devtools/`, e.g. `foo.py` (for a
+   single-file tool) or `src/pokeprism_devtools/foo/` (subpackage with
+   its own `cli.py`).
+2. At the top, import from the package:
 
    ```python
-   import sys
-   from pathlib import Path
-   sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-   from _lib import paths, symfile, constants, savefile
+   from pokeprism_devtools import paths, symfile, constants, savefile
    ```
 
 3. Use `paths.repo_root()`, `paths.rom_path()`, `paths.sym_path()` to
-   locate artifacts — never hardcode paths.
-4. Add a row to the **Status** table above and a section here.
+   locate the user's pokeprism artifacts — never hardcode paths.
+4. Expose the entry point in `pyproject.toml`:
+
+   ```toml
+   [project.scripts]
+   foo = "pokeprism_devtools.foo:main"
+   ```
+
+   Run `pipx install --force <repo>` once so the new shim lands on
+   `$PATH`; subsequent edits to source pick up automatically.
+5. Add a row to the **Status** table above and a section here.

@@ -22,16 +22,10 @@ import argparse
 import sys
 import time
 import traceback
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from pokeprism_devtools import paths, savefile, symfile
 
-from _lib import paths, savefile, symfile  # noqa: E402
-
-import apply  # noqa: E402
-import inventory  # noqa: E402
-
-INVENTORY_PATH = Path(__file__).parent / "inventory.json"
+from . import apply, inventory
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -66,8 +60,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    inventory_path = root / ".devtools" / "inventory.json"
+    inventory_path.parent.mkdir(parents=True, exist_ok=True)
     inv = inventory.load_or_build(
-        root, sym_path, INVENTORY_PATH,
+        root, sym_path, inventory_path,
         force=args.rebuild_inventory,
     )
     if not apply.looks_like_real_save(savefile.SaveFile.load(template_sav), inv):

@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""Smoke test for tools/_lib/. Run from anywhere inside the repo:
+"""Smoke test for the pokeprism_devtools library against a real pokeprism
+build. Run from anywhere inside the pokeprism repo (or with the package
+installed via pipx):
 
-    python3 tools/test_lib.py
+    python -m pokeprism_devtools.tests.test_lib   # if exposed as a module
+    python /path/to/pokeprism-devtools/tests/test_lib.py
 
-Exits non-zero on the first failed check. Doesn't require pytest — just a
+Exits non-zero on the first failed check. No pytest dependency — just a
 sanity check that the parsers handle the real files.
 """
 
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-# Make `_lib` importable when invoked as a script.
-sys.path.insert(0, str(Path(__file__).parent))
-
-from _lib import blockdata, constants, lz, maps, paths, savefile, symfile  # noqa: E402
+from pokeprism_devtools import blockdata, constants, lz, maps, paths, savefile, symfile
 
 
 def check(label: str, cond: bool, detail: str = "") -> None:
@@ -119,7 +118,7 @@ def main() -> None:
     print("\nblockdata.py — strong cross-check against real save")
     # If a backup of the user's pre-patch save exists, use it to verify our
     # computed wScreenSave matches what the game wrote.
-    backups = sorted((root / "tools" / "start-state" / "sav-backups").glob(
+    backups = sorted((root / ".devtools" / "sav-backups").glob(
         "pokeprism_nodebug-*.sav"
     ))
     candidate = None

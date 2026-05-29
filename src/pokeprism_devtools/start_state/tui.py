@@ -19,13 +19,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from pokeprism_devtools import paths, savefile, symfile
 
-from _lib import paths, savefile, symfile  # noqa: E402
-
-import apply  # noqa: E402
-import inventory  # noqa: E402
-import launcher  # noqa: E402
+from . import apply, inventory, launcher
 
 
 def run(
@@ -45,8 +41,8 @@ def run(
         import questionary  # noqa: F401
     except ImportError:
         print(
-            "TUI requires `questionary`. Install with:\n"
-            "    pip install -r tools/requirements.txt\n"
+            "TUI requires `questionary`. Reinstall pokeprism-devtools:\n"
+            "    pipx install --force <path-to-pokeprism-devtools>\n"
             "Then re-run start-state, or use --no-tui for the one-shot flow.",
             file=sys.stderr,
         )
