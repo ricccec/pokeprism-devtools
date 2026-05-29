@@ -44,6 +44,7 @@ tools will pick up whichever ROM is present.
 |---------------------------------------|------------|------------------------------------------------------------------|
 | [`sym-lookup`](#sym-lookup)           | shipped    | Query the `.sym` file by label or address.                       |
 | [`test_lib.py`](#smoke-test)          | shipped    | Smoke test for `_lib/` parsers (run after each rebuild).         |
+| [`test_maps.py`](#map-sweep)          | shipped    | Sweep every map through the `start-state` apply pipeline.        |
 | [`start-state`](#start-state)         | partial    | Inventory + save patcher + map-change support + dev-server TUI shipped. Party / items / event flags pending. |
 | `flag-finder`                         | planned    | Cross-reference `EVENT_*` set/check sites across the codebase.   |
 | `map-inspect`                         | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
@@ -178,6 +179,29 @@ for example if a constants file adopts a new macro that the parser doesn't
 recognize, or if the `.sym` format changes between RGBDS versions.
 
 Exits non-zero on the first failed check, so it's safe in CI / git hooks.
+
+---
+
+## Map sweep
+
+`tools/start-state/test_maps.py` iterates every map in `inventory.json`
+and runs the `start-state` apply pipeline (block-data load, `wScreenSave`
+recompute, people-reset, checksum) against a fresh in-memory copy of the
+template `.sav`. Nothing is written to disk — it just reports which maps
+trigger exceptions.
+
+```bash
+python3 tools/start-state/test_maps.py            # all maps, quiet
+python3 tools/start-state/test_maps.py -v         # also print [OK] lines
+python3 tools/start-state/test_maps.py --map MAP  # one specific map
+python3 tools/start-state/test_maps.py --limit 50 # only first 50 (smoke)
+python3 tools/start-state/test_maps.py --show-traceback
+```
+
+Useful any time you touch `_lib/blockdata.py`, `_lib/lz.py`,
+`_lib/people.py`, or `tools/start-state/apply.py` — those are the
+modules the sweep exercises. Runs in ~0.1s for all 448 maps. Exits
+non-zero if any map fails.
 
 ---
 
@@ -385,7 +409,11 @@ Party / items / event flags are surfaced as disabled menu entries
   the previous SameBoy is `terminate()`d (then `kill()`ed if it doesn't
   exit within 2s) and a fresh one is spawned with the new `.sav`. If you
   close SameBoy yourself in between, the TUI notices and just spawns a
-  fresh one.
+  fresh one. The SameBoy binary is resolved in this order: `$SAMEBOY_BIN`
+  env var → `sameboy` / `SameBoy` on `$PATH` → macOS Spotlight
+  (`mdfind` for `SameBoy.app`) → `open -a SameBoy` (last-ditch; can't
+  track the spawned PID, so Re-launch will refocus instead of restart —
+  set `$SAMEBOY_BIN` to fix).
 - **Quit**: leaves a running SameBoy alone (with a closing note).
 
 #### Reset from preset

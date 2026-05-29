@@ -146,7 +146,14 @@ def main(argv: list[str] | None = None) -> int:
 
     rom_path = paths.rom_path(root, debug=args.debug)
     target_sav = args.out if args.out is not None else rom_path.with_suffix(".sav")
-    template_sav = args.template if args.template is not None else target_sav
+    # Default the template to the ROM's adjacent .sav (the "live" save).
+    # That way `--out PATH` alone works as advertised: read the ROM's
+    # save, patch, write the copy to PATH. Without this, passing `--out`
+    # without `--template` made the template default to the (non-existent)
+    # target, producing a confusing "no template" error.
+    template_sav = (
+        args.template if args.template is not None else rom_path.with_suffix(".sav")
+    )
 
     if not template_sav.exists():
         print(
