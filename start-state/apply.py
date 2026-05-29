@@ -1,0 +1,168 @@
+"""Apply a state.json to a SaveFile in memory and recompute checksums.
+
+The state schema is documented in `docs/devtools.md` (the `start-state`
+section). All fields are optional — anything not set falls through to the
+template's existing value, including the map cluster (group/number/x/y).
+
+Map-change side effects (block-data lookup, wScreenSave recompute, player
+struct reset, NPC clear) live here too — they're invoked automatically
+when any of `map.{name,x,y}` is touched. See
+`docs/blockdata-plan.md` for the why.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from _lib import blockdata, people, savefile, symfile  # noqa: E402
+
+
+def load_state(path: Path, presets_dir: Path) -> dict:
+    """Load `state.json` or fall back to `presets/default.json`."""
+    if path.exists():
+        return json.loads(path.read_text())
+    default = presets_dir / "default.json"
+    if not default.exists():
+        raise FileNotFoundError(
+            f"no state at {path} and no default preset at {default}"
+        )
+    return json.loads(default.read_text())
+
+
+def looks_like_real_save(sav: savefile.SaveFile, inv: dict) -> bool:
+    """Cheap sanity check that the template has the game's validity bytes."""
+    v1 = sav.data[inv["framing"]["sValidCheck1"]["sav_offset"]]
+    v2 = sav.data[inv["framing"]["sValidCheck2"]["sav_offset"]]
+    return v1 == 0x63 and v2 == 0x7F
+
+
+def apply_state(
+    sav: savefile.SaveFile,
+    state: dict,
+    inv: dict,
+    *,
+    rom_path: Path,
+    syms: symfile.SymFile,
+    keep_people: bool = False,
+) -> list[str]:
+    """Mutate the save in place and return a list of human-readable changes."""
+    changes: list[str] = []
+    offsets = inv["sram_offsets"]
+
+    def off(label: str) -> int:
+        e = offsets[label]
+        if "error" in e:
+            raise RuntimeError(f"{label}: {e['error']}")
+        return e["sav_offset"]
+
+    player = state.get("player") or {}
+    map_ = state.get("map") or {}
+
+    if "name" in player:
+        encoded = savefile.encode_name(player["name"], 8)
+        sav.write_bytes(off("wPlayerName"), encoded)
+        changes.append(f"wPlayerName = {player['name']!r}")
+
+    if "money" in player:
+        amount = int(player["money"])
+        if not (0 <= amount <= 999_999):
+            raise ValueError(f"money out of range: {amount} (0–999999)")
+        sav.write_bytes(off("wMoney"), amount.to_bytes(3, "big"))
+        changes.append(f"wMoney = {amount}")
+
+    if "badges" in player:
+        b = player["badges"]
+        if not (isinstance(b, list) and len(b) == 3):
+            raise ValueError("badges must be a list of 3 bytes")
+        sav.write_bytes(off("wBadges"), bytes(int(x) & 0xFF for x in b))
+        changes.append(f"wBadges = {b}")
+
+    # Resolve final (group, map_id, x, y), defaulting to the template's
+    # values for fields the user didn't touch.
+    final_group = sav.data[off("wMapGroup")]
+    final_map = sav.data[off("wMapNumber")]
+    final_x = sav.data[off("wXCoord")]
+    final_y = sav.data[off("wYCoord")]
+    map_state_changed = False
+    map_label = None
+
+    if "name" in map_:
+        mdef = next((m for m in inv["maps"] if m["name"] == map_["name"]), None)
+        if mdef is None:
+            raise ValueError(f"unknown map: {map_['name']}")
+        final_group = mdef["group"]
+        final_map = mdef["map_id"]
+        map_label = map_["name"]
+        map_state_changed = True
+    if "x" in map_:
+        final_x = int(map_["x"]) & 0xFF
+        map_state_changed = True
+    if "y" in map_:
+        final_y = int(map_["y"]) & 0xFF
+        map_state_changed = True
+
+    if map_state_changed:
+        sav.write_byte(off("wMapGroup"), final_group)
+        sav.write_byte(off("wMapNumber"), final_map)
+        sav.write_byte(off("wXCoord"), final_x)
+        sav.write_byte(off("wYCoord"), final_y)
+        # Recompute wScreenSave from ROM so MAPSETUP_CONTINUE's
+        # LoadNeighboringBlockData overlays consistent data (otherwise the
+        # area around the player renders as stale tiles or zeros).
+        bd = blockdata.load(
+            rom_path, syms, final_group, final_map, name=map_label or ""
+        )
+        ss_bytes = blockdata.compute_screen_save(bd, final_x, final_y)
+        sav.write_bytes(off("wScreenSave"), ss_bytes)
+
+        label = map_label or f"(group {final_group}, id {final_map})"
+        changes.append(
+            f"map = {label} at ({final_x}, {final_y}); "
+            f"recomputed wScreenSave from {bd.width}x{bd.height} block grid"
+        )
+
+        # Reset the player struct + (unless --keep-people) clear NPC slots.
+        # Without this, MAPSETUP_CONTINUE leaves wObjectStructs holding the
+        # previous map's player position and NPC state, so the player
+        # renders off-screen and ghost NPCs from the old map show up.
+        people_changes = people.reset_player_and_clear_npcs(
+            sav,
+            object_structs_offset=offsets["wObjectStructs"]["sav_offset"],
+            map_objects_offset=offsets["wMapObjects"]["sav_offset"],
+            map_objects_size=offsets["wMapObjects"]["size"],
+            x=final_x,
+            y=final_y,
+            keep_npcs=keep_people,
+        )
+        changes.append(
+            "people: " + ", ".join(f"{k}={v}" for k, v in people_changes.items())
+        )
+
+    return changes
+
+
+def recompute_checksums(sav: savefile.SaveFile, inv: dict) -> None:
+    """Recompute `sChecksum` (over sGameData) and `sExtraChecksum` (over
+    sExtraData) and write them back. After this the .sav is consistent and
+    `TryLoadSaveFile` will accept it without falling back to the backup.
+    """
+    pb = inv["blocks"]["PlayerData"]
+    pkb = inv["blocks"]["PokemonData"]
+    game_data_start = pb["sav_offset"]
+    game_data_end = pkb["sav_offset"] + pkb["size"]
+    game_data = sav.read(game_data_start, game_data_end - game_data_start)
+    sav.write_u16_le(
+        inv["framing"]["sChecksum"]["sav_offset"],
+        savefile.checksum16(game_data),
+    )
+
+    ed = inv["framing"]["sExtraData"]
+    extra = sav.read(ed["sav_offset"], ed["size"])
+    sav.write_u16_le(
+        inv["framing"]["sExtraChecksum"]["sav_offset"],
+        savefile.checksum16(extra),
+    )

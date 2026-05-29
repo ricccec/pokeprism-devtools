@@ -1,85 +1,47 @@
 #!/usr/bin/env python3
 """start-state — launch pokeprism in a custom initial state.
 
-Phase A (this commit): builds an `inventory.json` next to this script
-containing every map, pokemon, item, move, and event flag, plus the SRAM
-file offsets needed to write a custom .sav. Subsequent runs reuse the
-cached inventory unless the .sym is newer.
+Reads a `state.json` describing the desired initial state, patches a
+template `.sav` accordingly (recomputing both SRAM checksums), and spawns
+SameBoy. Press A on "Continue" in the game's main menu to land in the
+overworld with the configured state.
 
-Phase B (next): patch a .sav from a state.json and launch SameBoy.
+The first run (or any run after a rebuild) refreshes `inventory.json`
+next to this script — a catalog of every map, pokemon, item, move, and
+event flag plus the .sav file offsets needed to patch. Subsequent runs
+reuse the cached inventory.
 
 Usage:
-    start-state.py                       # build inventory if stale, print summary
-    start-state.py --rebuild-inventory   # force rebuild
+    start-state.py                       # patch + launch (uses default state)
+    start-state.py --no-launch           # patch only, don't spawn SameBoy
+    start-state.py --inventory-only      # rebuild inventory, print summary
+    start-state.py --state PATH          # alternate state.json
+    start-state.py --template PATH       # alternate template .sav
+    start-state.py --out PATH            # write patched .sav elsewhere
+    start-state.py --rebuild-inventory   # force inventory rebuild
     start-state.py --debug               # use the debug ROM's .sym
+    start-state.py --keep-people         # don't reset NPC slots on map change
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime as dt
-import json
 import sys
-from dataclasses import asdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from _lib import blockdata, constants, maps, paths, people, savefile, symfile  # noqa: E402
+from _lib import paths, savefile, symfile  # noqa: E402
+
+import apply  # noqa: E402
+import inventory  # noqa: E402
 
 INVENTORY_PATH = Path(__file__).parent / "inventory.json"
 STATE_PATH = Path(__file__).parent / "state.json"
 PRESETS_DIR = Path(__file__).parent / "presets"
 SAV_BACKUPS_DIR = Path(__file__).parent / "sav-backups"
 SAMEBOY_PATH = "/Applications/SameBoy.app/Contents/MacOS/sameboy"
-
-
-# WRAM symbols whose values the start-state tool will write. Resolved to .sav
-# file offsets in the inventory. Group them by save block so we can validate
-# each ends up in the expected region.
-WRITABLE_FIELDS: dict[str, dict[str, object]] = {
-    # Player block
-    "wPlayerName":    {"size": 8,  "block": "PlayerData"},
-    "wMoney":         {"size": 3,  "block": "PlayerData"},
-    "wNumItems":      {"size": 1,  "block": "PlayerData"},
-    "wItems":         {"size": 40, "block": "PlayerData"},
-    "wEventFlags":    {"size": 250, "block": "PlayerData"},
-    # Map block
-    "wMapGroup":      {"size": 1,  "block": "MapData"},
-    "wMapNumber":     {"size": 1,  "block": "MapData"},
-    "wYCoord":        {"size": 1,  "block": "MapData"},
-    "wXCoord":        {"size": 1,  "block": "MapData"},
-    "wScreenSave":    {"size": 30, "block": "MapData"},  # not user-writable;
-                                                          # cleared on map change
-    # Engine state used by the people-reset (not user-writable).
-    "wObjectStructs": {"size": 40 * 13, "block": "PlayerData"},
-    "wMapObjects":    {"size": 16 * 16, "block": "PlayerData"},
-    # Pokemon block
-    "wPartyCount":    {"size": 1,  "block": "PokemonData"},
-    "wPartySpecies":  {"size": 7,  "block": "PokemonData"},  # 6 species + 0xFF terminator
-    "wPartyMons":     {"size": 288, "block": "PokemonData"}, # 6 * 48
-    "wBadges":        {"size": 3,  "block": "PokemonData"},
-}
-
-# Save-file framing fields (not in a block — fixed positions in SRAM bank 1).
-# `size` is the size of the field itself; for sExtraData it's the size of the
-# region the extra checksum covers (computed at inventory-build time from the
-# delta between sExtraData and sExtraChecksum).
-FRAMING_FIELDS = [
-    ("sValidCheck1", 1),
-    ("sValidCheck2", 1),
-    ("sChecksum", 2),
-    ("sExtraData", None),     # size resolved from sExtraChecksum - sExtraData
-    ("sExtraChecksum", 2),
-]
-
-# Blocks: WRAM source and SRAM mirror. Pulled from sram.asm conventions; the
-# WRAM and SRAM block sizes match exactly so we can map symbols 1:1.
-SAVE_BLOCKS = [
-    ("PlayerData",  "wPlayerData",  "wPlayerDataEnd",  "sPlayerData"),
-    ("MapData",     "wMapData",     "wMapDataEnd",     "sMapData"),
-    ("PokemonData", "wPokemonData", "wPokemonDataEnd", "sPokemonData"),
-]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -137,25 +99,20 @@ def main(argv: list[str] | None = None) -> int:
     root = paths.repo_root()
     sym_path_resolved = paths.sym_path(root, debug=args.debug)
 
-    if args.rebuild_inventory or _needs_rebuild(INVENTORY_PATH, sym_path_resolved):
-        print(f"Building inventory from {sym_path_resolved.name}...")
-        inv_data = _build_inventory(root, sym_path_resolved)
-        INVENTORY_PATH.write_text(json.dumps(inv_data, indent=2))
-        print(f"Wrote {INVENTORY_PATH}")
-    else:
-        print(f"Using cached {INVENTORY_PATH.name} (run --rebuild-inventory to refresh)")
-
-    inv = json.loads(INVENTORY_PATH.read_text())
+    inv = inventory.load_or_build(
+        root,
+        sym_path_resolved,
+        INVENTORY_PATH,
+        force=args.rebuild_inventory,
+    )
 
     if args.inventory_only:
-        _print_summary(inv)
+        inventory.print_summary(inv)
         return 0
 
-    # Load state.json (or the default preset).
-    state = _load_state(args.state)
+    state = apply.load_state(args.state, PRESETS_DIR)
     print(f"State loaded from {args.state if args.state.exists() else 'presets/default.json'}")
 
-    # Resolve template and target paths.
     rom_path = paths.rom_path(root, debug=args.debug)
     target_sav = args.out if args.out is not None else rom_path.with_suffix(".sav")
     template_sav = args.template if args.template is not None else target_sav
@@ -171,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     sav = savefile.SaveFile.load(template_sav)
-    if not _looks_like_real_save(sav, inv):
+    if not apply.looks_like_real_save(sav, inv):
         print(
             f"\nerror: template at {template_sav} doesn't look like a valid "
             "save (validity bytes missing). Play the game once to create "
@@ -188,8 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         backup.write_bytes(target_sav.read_bytes())
         print(f"Backed up {target_sav.name} → {_pretty_path(backup, root)}")
 
-    # Apply state and recompute checksums.
-    changes = _apply_state(
+    changes = apply.apply_state(
         sav,
         state,
         inv,
@@ -197,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
         syms=symfile.SymFile.load(sym_path_resolved),
         keep_people=args.keep_people,
     )
-    _recompute_checksums(sav, inv)
+    apply.recompute_checksums(sav, inv)
 
     sav.write(target_sav)
     print(f"Wrote {_pretty_path(target_sav, root)} ({len(changes)} fields changed)")
@@ -211,297 +167,12 @@ def main(argv: list[str] | None = None) -> int:
     return _launch(rom_path)
 
 
-def _needs_rebuild(inventory: Path, sym: Path) -> bool:
-    if not inventory.exists():
-        return True
-    return inventory.stat().st_mtime < sym.stat().st_mtime
-
-
-def _build_inventory(root: Path, sym_path_resolved: Path) -> dict:
-    syms = symfile.SymFile.load(sym_path_resolved)
-    map_defs = maps.parse_maps(root / "constants" / "map_dimension_constants.asm")
-
-    # Parse each focused enum file individually. They all inherit a counter
-    # of 1 from their parent (constants.asm does `const_def; const NO_X;
-    # INCLUDE child`). We stop at the first reset to avoid picking up
-    # unrelated constants that share the file (TM IDs, BATTLEANIM_*, etc.).
-    def _enum(rel: str) -> list[dict]:
-        cs = constants.parse_constants(
-            root / rel, start_counter=1, stop_at_reset=True
-        )
-        return [{"name": c.name, "id": c.value} for c in cs if c.name != "skip"]
-
-    pokemon = _enum("constants/pokemon_constants.asm")
-    items = _enum("constants/item_constants.asm")
-    # move_constants.asm reuses the same counter for `ANIM_*` (battle
-    # animations after the last real move). They aren't moves you can put
-    # on a Pokémon — drop them.
-    moves = [
-        m for m in _enum("constants/move_constants.asm")
-        if not m["name"].startswith("ANIM_")
-    ]
-    flags = _enum("constants/event_flags.asm")
-
-    # Resolve save block layout from symbols.
-    blocks = _resolve_blocks(syms)
-
-    # Resolve writable WRAM symbols to .sav file offsets.
-    sram_offsets: dict[str, dict] = {}
-    for label, meta in WRITABLE_FIELDS.items():
-        sym = syms.get(label)
-        if sym is None:
-            sram_offsets[label] = {
-                "error": f"symbol not in .sym; skipping",
-                "size": meta["size"],
-                "block": meta["block"],
-            }
-            continue
-        block = blocks[meta["block"]]
-        offset_in_block = sym.addr - block["wram_start_addr"]
-        if not (0 <= offset_in_block < block["size"]):
-            sram_offsets[label] = {
-                "error": (
-                    f"{label}@${sym.addr:04x} not inside "
-                    f"{meta['block']} block "
-                    f"(${block['wram_start_addr']:04x}–${block['wram_end_addr']:04x})"
-                ),
-                "size": meta["size"],
-                "block": meta["block"],
-            }
-            continue
-        sram_addr = block["sram_start_addr"] + offset_in_block
-        file_offset = savefile.sram_to_file_offset(1, sram_addr)
-        sram_offsets[label] = {
-            "sav_offset": file_offset,
-            "size": meta["size"],
-            "block": meta["block"],
-            "wram_addr": sym.addr,
-            "sram_addr": sram_addr,
-        }
-
-    # Framing fields live in SRAM directly (not in a WRAM-mirrored block).
-    framing: dict[str, dict] = {}
-    for label, size in FRAMING_FIELDS:
-        sym = syms[label]  # raise if missing — these are essential
-        framing[label] = {
-            "sav_offset": savefile.sram_to_file_offset(sym.bank, sym.addr),
-            "size": size,
-            "sram_addr": sym.addr,
-        }
-    # sExtraData covers up to (but not including) sExtraChecksum.
-    framing["sExtraData"]["size"] = (
-        syms["sExtraChecksum"].addr - syms["sExtraData"].addr
-    )
-
-    return {
-        "built_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "sym_path": str(sym_path_resolved.relative_to(root)),
-        "sym_mtime": int(sym_path_resolved.stat().st_mtime),
-        "counts": {
-            "pokemon": len(pokemon),
-            "items": len(items),
-            "moves": len(moves),
-            "event_flags": len(flags),
-            "maps": len(map_defs),
-        },
-        "blocks": blocks,
-        "framing": framing,
-        "sram_offsets": sram_offsets,
-        "pokemon": pokemon,
-        "items": items,
-        "moves": moves,
-        "event_flags": flags,
-        "maps": [asdict(m) for m in map_defs],
-    }
-
-
-def _resolve_blocks(syms: symfile.SymFile) -> dict[str, dict]:
-    out: dict[str, dict] = {}
-    for name, wstart, wend, sstart in SAVE_BLOCKS:
-        ws = syms[wstart]
-        we = syms[wend]
-        ss = syms[sstart]
-        size = we.addr - ws.addr
-        out[name] = {
-            "wram_start": wstart,
-            "wram_start_addr": ws.addr,
-            "wram_end_addr": we.addr,
-            "sram_start": sstart,
-            "sram_start_addr": ss.addr,
-            "sram_bank": ss.bank,
-            "sav_offset": savefile.sram_to_file_offset(ss.bank, ss.addr),
-            "size": size,
-        }
-    return out
-
-
 def _pretty_path(path: Path, root: Path) -> str:
     """Show path as relative to repo root if possible; otherwise absolute."""
     try:
         return str(path.relative_to(root))
     except ValueError:
         return str(path)
-
-
-def _load_state(path: Path) -> dict:
-    if path.exists():
-        return json.loads(path.read_text())
-    default = PRESETS_DIR / "default.json"
-    if not default.exists():
-        raise FileNotFoundError(
-            f"no state at {path} and no default preset at {default}"
-        )
-    return json.loads(default.read_text())
-
-
-def _looks_like_real_save(sav: savefile.SaveFile, inv: dict) -> bool:
-    v1 = sav.data[inv["framing"]["sValidCheck1"]["sav_offset"]]
-    v2 = sav.data[inv["framing"]["sValidCheck2"]["sav_offset"]]
-    return v1 == 0x63 and v2 == 0x7F
-
-
-def _apply_state(
-    sav: savefile.SaveFile,
-    state: dict,
-    inv: dict,
-    *,
-    rom_path: Path,
-    syms: symfile.SymFile,
-    keep_people: bool = False,
-) -> list[str]:
-    """Mutate the save in place and return a list of human-readable changes.
-
-    State schema (all keys optional):
-        {
-            "player": {"name": "RED", "money": 10000,
-                       "badges": [naljo, rijon, other]},
-            "map": {"name": "CAPER_HOUSE", "x": 2, "y": 2}
-        }
-
-    If any of map.{name,x,y} is set, wScreenSave is recomputed from the
-    target map's ROM blockdata so the overworld renders correctly. See
-    docs/blockdata-plan.md for why.
-
-    Out of scope for v1: party, items, event_flags.
-    """
-    changes: list[str] = []
-    offsets = inv["sram_offsets"]
-
-    def off(label: str) -> int:
-        e = offsets[label]
-        if "error" in e:
-            raise RuntimeError(f"{label}: {e['error']}")
-        return e["sav_offset"]
-
-    player = state.get("player") or {}
-    map_ = state.get("map") or {}
-
-    if "name" in player:
-        encoded = savefile.encode_name(player["name"], 8)
-        sav.write_bytes(off("wPlayerName"), encoded)
-        changes.append(f"wPlayerName = {player['name']!r}")
-
-    if "money" in player:
-        amount = int(player["money"])
-        if not (0 <= amount <= 999_999):
-            raise ValueError(f"money out of range: {amount} (0–999999)")
-        sav.write_bytes(off("wMoney"), amount.to_bytes(3, "big"))
-        changes.append(f"wMoney = {amount}")
-
-    if "badges" in player:
-        b = player["badges"]
-        if not (isinstance(b, list) and len(b) == 3):
-            raise ValueError("badges must be a list of 3 bytes")
-        sav.write_bytes(off("wBadges"), bytes(int(x) & 0xFF for x in b))
-        changes.append(f"wBadges = {b}")
-
-    # Resolve final (group, map_id, x, y), defaulting to the template's
-    # values for fields the user didn't touch.
-    final_group = sav.data[off("wMapGroup")]
-    final_map = sav.data[off("wMapNumber")]
-    final_x = sav.data[off("wXCoord")]
-    final_y = sav.data[off("wYCoord")]
-    map_state_changed = False
-    map_label = None
-
-    if "name" in map_:
-        mdef = next((m for m in inv["maps"] if m["name"] == map_["name"]), None)
-        if mdef is None:
-            raise ValueError(f"unknown map: {map_['name']}")
-        final_group = mdef["group"]
-        final_map = mdef["map_id"]
-        map_label = map_["name"]
-        map_state_changed = True
-    if "x" in map_:
-        final_x = int(map_["x"]) & 0xFF
-        map_state_changed = True
-    if "y" in map_:
-        final_y = int(map_["y"]) & 0xFF
-        map_state_changed = True
-
-    if map_state_changed:
-        sav.write_byte(off("wMapGroup"), final_group)
-        sav.write_byte(off("wMapNumber"), final_map)
-        sav.write_byte(off("wXCoord"), final_x)
-        sav.write_byte(off("wYCoord"), final_y)
-        # Recompute wScreenSave from ROM so MAPSETUP_CONTINUE's
-        # LoadNeighboringBlockData overlays consistent data (otherwise the
-        # area around the player renders as stale tiles or zeros).
-        bd = blockdata.load(
-            rom_path, syms, final_group, final_map, name=map_label or ""
-        )
-        ss_bytes = blockdata.compute_screen_save(bd, final_x, final_y)
-        sav.write_bytes(off("wScreenSave"), ss_bytes)
-
-        label = map_label or f"(group {final_group}, id {final_map})"
-        changes.append(
-            f"map = {label} at ({final_x}, {final_y}); "
-            f"recomputed wScreenSave from {bd.width}x{bd.height} block grid"
-        )
-
-        # Reset the player struct + (unless --keep-people) clear NPC slots.
-        # Without this, MAPSETUP_CONTINUE leaves wObjectStructs holding the
-        # previous map's player position and NPC state, so the player
-        # renders off-screen and ghost NPCs from the old map show up.
-        people_changes = people.reset_player_and_clear_npcs(
-            sav,
-            object_structs_offset=offsets["wObjectStructs"]["sav_offset"],
-            map_objects_offset=offsets["wMapObjects"]["sav_offset"],
-            map_objects_size=offsets["wMapObjects"]["size"],
-            x=final_x,
-            y=final_y,
-            keep_npcs=keep_people,
-        )
-        changes.append(
-            "people: "
-            + ", ".join(f"{k}={v}" for k, v in people_changes.items())
-        )
-
-    return changes
-
-
-def _recompute_checksums(sav: savefile.SaveFile, inv: dict) -> None:
-    """Recompute sChecksum (over sGameData) and sExtraChecksum (over
-    sExtraData) and write them back to the .sav. After this, the .sav is
-    consistent and the game's `TryLoadSaveFile` should accept it on the
-    primary path (no fallback to backup needed).
-    """
-    pb = inv["blocks"]["PlayerData"]
-    pkb = inv["blocks"]["PokemonData"]
-    game_data_start = pb["sav_offset"]
-    game_data_end = pkb["sav_offset"] + pkb["size"]
-    game_data = sav.read(game_data_start, game_data_end - game_data_start)
-    sav.write_u16_le(
-        inv["framing"]["sChecksum"]["sav_offset"],
-        savefile.checksum16(game_data),
-    )
-
-    ed = inv["framing"]["sExtraData"]
-    extra = sav.read(ed["sav_offset"], ed["size"])
-    sav.write_u16_le(
-        inv["framing"]["sExtraChecksum"]["sav_offset"],
-        savefile.checksum16(extra),
-    )
 
 
 def _launch(rom_path: Path) -> int:
@@ -533,33 +204,6 @@ def _launch(rom_path: Path) -> int:
         print(f"failed to launch: {e}", file=sys.stderr)
         return 1
     return 0
-
-
-def _print_summary(inv: dict) -> None:
-    print()
-    print(f"Inventory built at {inv['built_at']}")
-    print(f"Source: {inv['sym_path']}")
-    print()
-    print("Counts:")
-    for k, v in inv["counts"].items():
-        print(f"  {k:14s} {v}")
-    print()
-    print("Save blocks:")
-    for name, b in inv["blocks"].items():
-        print(
-            f"  {name:11s} {b['size']:5d} bytes — "
-            f"wram ${b['wram_start_addr']:04x}, "
-            f"sram ${b['sram_start_addr']:04x}, "
-            f".sav offset ${b['sav_offset']:04x}"
-        )
-    print()
-    print(f"Resolved {sum(1 for v in inv['sram_offsets'].values() if 'sav_offset' in v)} "
-          f"of {len(inv['sram_offsets'])} writable WRAM symbols.")
-    errors = {k: v for k, v in inv["sram_offsets"].items() if "error" in v}
-    if errors:
-        print("Unresolved:")
-        for k, v in errors.items():
-            print(f"  {k}: {v['error']}")
 
 
 if __name__ == "__main__":
