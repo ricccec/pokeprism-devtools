@@ -414,3 +414,49 @@ Per phase:
 6. Add the TUI menu layer (`questionary`).
 7. Write `docs/devtools.md`.
 8. Build P1/P2/P3 tools as time/need allows.
+
+---
+
+## Future work / known v1 limitations
+
+### `--load-map-npcs` (planned)
+
+Today the people-reset clears `wMapObjects[1..]` so the destination map shows
+no NPCs. A future flag should *load* the new map's NPCs from ROM instead of
+clearing.
+
+Data flow:
+1. The secondary map header (12 bytes per `macros/map.asm:101-110`) bytes 9-10
+   point to `MapEventHeader`. We already locate the secondary header in
+   `_lib/blockdata.py` — same path, different field.
+2. `MapEventHeader` layout (from `home/map.asm:ReadMapEventHeader` /
+   `ReadWarps`, `ReadCoordEvents`, `ReadSignposts`, `ReadObjectEvents`):
+   - `db filler` × 2
+   - `db num_warps; warps...`
+   - `db num_coord_events; coord_events...`
+   - `db num_signposts; signposts...`
+   - `db num_object_events; object_events...` ← we want these
+3. Each object event is the 13-byte `person_event` macro expansion
+   (`macros/map.asm:19-46`): sprite, y+4, x+4, movement, radius nibble pair,
+   clock hour, clock daytime, color/function nibble pair, parameter,
+   pointer (2 bytes), event flag (2 bytes).
+4. To write `wMapObjects[i]` (16 bytes, `MAPOBJECT_*` constants), we synthesize:
+   `[OBJECT_STRUCT_ID=-1 or unused, sprite, y, x, movement, radius, hour,
+    timeofday, color, param, ptr_lo, ptr_hi, flag_lo, flag_hi, pad, pad]`.
+   The `OBJECT_STRUCT_ID` field tracks which active engine slot the NPC is
+   bound to; -1 (not visible) is the safe initial value — the engine assigns
+   slots as NPCs come into view.
+
+Estimated size: ~80 lines in `_lib/people.py` (new function `load_map_npcs`)
+plus a thin parser for the event-header preamble. No new external concepts
+beyond what `_lib/blockdata.py` already does.
+
+Default behaviour after this lands: clear-then-load, so teleported maps feel
+"alive". `--keep-people` still skips both, for users who want the current
+zero-NPC behaviour.
+
+### Other planned items
+- TUI on top of `start-state` (`questionary`-driven menu).
+- Party/items/event-flag editing in `state.json` (v1 leaves party untouched).
+- Connection-aware `wScreenSave` for player positions at map edges (today
+  uses zero-padding outside the map — wrong for maps with N/S/E/W connections).

@@ -13,6 +13,10 @@ NPC slots so stale objects from the previous map don't show up.
 Coordinate convention (verified from real saves and `engine/spawn_player.asm`):
     OBJECT_MAP_X / wPlayerStandingMapX = wXCoord + 4
     OBJECT_MAP_Y / wPlayerStandingMapY = wYCoord + 4
+
+TODO: a future `load_map_npcs` function should populate wMapObjects[1..]
+from the new map's MapEventHeader (in ROM) — see "Future work" in
+docs/devtools-plan.md. Today we clear, but never reload.
 """
 
 from __future__ import annotations
