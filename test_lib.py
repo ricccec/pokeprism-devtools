@@ -15,7 +15,7 @@ from pathlib import Path
 # Make `_lib` importable when invoked as a script.
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _lib import constants, lz, maps, paths, savefile, symfile  # noqa: E402
+from _lib import blockdata, constants, lz, maps, paths, savefile, symfile  # noqa: E402
 
 
 def check(label: str, cond: bool, detail: str = "") -> None:
@@ -99,6 +99,60 @@ def main() -> None:
             f"round-trip {len(pairs)} (.lz, raw) pairs",
             not fails,
             f"{len(fails)} fail" if fails else "all match byte-for-byte",
+        )
+
+    print("\nblockdata.py — load")
+    rom = paths.rom_path(root)
+    caper = blockdata.load(rom, syms, group=2, map_id=5, name="CAPER_HOUSE")
+    check(
+        "CAPER_HOUSE is 4x4 blocks with 16 bytes of grid",
+        caper.width == 4 and caper.height == 4 and len(caper.blocks) == 16,
+        f"{caper.width}x{caper.height}, len={len(caper.blocks)}",
+    )
+    aqua = blockdata.load(rom, syms, group=31, map_id=2, name="ACQUA_TUTORIAL")
+    check(
+        "ACQUA_TUTORIAL is 25x30 blocks with 750 bytes of grid",
+        aqua.width == 25 and aqua.height == 30 and len(aqua.blocks) == 750,
+        f"{aqua.width}x{aqua.height}, len={len(aqua.blocks)}",
+    )
+
+    print("\nblockdata.py — strong cross-check against real save")
+    # If a backup of the user's pre-patch save exists, use it to verify our
+    # computed wScreenSave matches what the game wrote.
+    backups = sorted((root / "tools" / "start-state" / "sav-backups").glob(
+        "pokeprism_nodebug-*.sav"
+    ))
+    candidate = None
+    for p in backups:
+        # Find a backup with intact warp state (= a real save, not a
+        # post-over-zero artifact).
+        sf = savefile.SaveFile.load(p)
+        if any(b != 0 for b in sf.data[0x2833:0x2843]):
+            candidate = p
+            break
+    if candidate is None:
+        print("  (no intact backup .sav found — skipping)")
+    else:
+        sf = savefile.SaveFile.load(candidate)
+        off = {k: v["sav_offset"] for k, v in (
+            ("wMapGroup", {"sav_offset": 0x2843}),
+            ("wMapNumber", {"sav_offset": 0x2844}),
+            ("wYCoord", {"sav_offset": 0x2845}),
+            ("wXCoord", {"sav_offset": 0x2846}),
+            ("wScreenSave", {"sav_offset": 0x2847}),
+        )}  # values pulled from the inventory; pinning them keeps the
+            # check honest if the inventory changes.
+        g = sf.data[off["wMapGroup"]]
+        m = sf.data[off["wMapNumber"]]
+        y = sf.data[off["wYCoord"]]
+        x = sf.data[off["wXCoord"]]
+        bd = blockdata.load(rom, syms, group=g, map_id=m)
+        computed = blockdata.compute_screen_save(bd, x, y)
+        actual = bytes(sf.data[off["wScreenSave"]:off["wScreenSave"] + 30])
+        check(
+            f"wScreenSave for (g={g},m={m},x={x},y={y}) matches the save's actual bytes",
+            computed == actual,
+            f"computed={computed.hex()} vs actual={actual.hex()}",
         )
 
     print("\nmaps.py")
