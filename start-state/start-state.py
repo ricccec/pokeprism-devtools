@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from _lib import blockdata, constants, maps, paths, savefile, symfile  # noqa: E402
+from _lib import blockdata, constants, maps, paths, people, savefile, symfile  # noqa: E402
 
 INVENTORY_PATH = Path(__file__).parent / "inventory.json"
 STATE_PATH = Path(__file__).parent / "state.json"
@@ -51,6 +51,9 @@ WRITABLE_FIELDS: dict[str, dict[str, object]] = {
     "wXCoord":        {"size": 1,  "block": "MapData"},
     "wScreenSave":    {"size": 30, "block": "MapData"},  # not user-writable;
                                                           # cleared on map change
+    # Engine state used by the people-reset (not user-writable).
+    "wObjectStructs": {"size": 40 * 13, "block": "PlayerData"},
+    "wMapObjects":    {"size": 16 * 16, "block": "PlayerData"},
     # Pokemon block
     "wPartyCount":    {"size": 1,  "block": "PokemonData"},
     "wPartySpecies":  {"size": 7,  "block": "PokemonData"},  # 6 species + 0xFF terminator
@@ -123,6 +126,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="rebuild the inventory if needed, print a summary, and exit",
     )
+    p.add_argument(
+        "--keep-people",
+        action="store_true",
+        help="don't reset NPC objects on map change (default: zero NPC slots "
+        "and update the player struct to the new coords)",
+    )
     args = p.parse_args(argv)
 
     root = paths.repo_root()
@@ -186,6 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         inv,
         rom_path=rom_path,
         syms=symfile.SymFile.load(sym_path_resolved),
+        keep_people=args.keep_people,
     )
     _recompute_checksums(sav, inv)
 
@@ -357,6 +367,7 @@ def _apply_state(
     *,
     rom_path: Path,
     syms: symfile.SymFile,
+    keep_people: bool = False,
 ) -> list[str]:
     """Mutate the save in place and return a list of human-readable changes.
 
@@ -446,6 +457,24 @@ def _apply_state(
         changes.append(
             f"map = {label} at ({final_x}, {final_y}); "
             f"recomputed wScreenSave from {bd.width}x{bd.height} block grid"
+        )
+
+        # Reset the player struct + (unless --keep-people) clear NPC slots.
+        # Without this, MAPSETUP_CONTINUE leaves wObjectStructs holding the
+        # previous map's player position and NPC state, so the player
+        # renders off-screen and ghost NPCs from the old map show up.
+        people_changes = people.reset_player_and_clear_npcs(
+            sav,
+            object_structs_offset=offsets["wObjectStructs"]["sav_offset"],
+            map_objects_offset=offsets["wMapObjects"]["sav_offset"],
+            map_objects_size=offsets["wMapObjects"]["size"],
+            x=final_x,
+            y=final_y,
+            keep_npcs=keep_people,
+        )
+        changes.append(
+            "people: "
+            + ", ".join(f"{k}={v}" for k, v in people_changes.items())
         )
 
     return changes
