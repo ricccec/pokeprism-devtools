@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -26,8 +25,7 @@ from _lib import paths, savefile, symfile  # noqa: E402
 
 import apply  # noqa: E402
 import inventory  # noqa: E402
-
-SAMEBOY_PATH = "/Applications/SameBoy.app/Contents/MacOS/sameboy"
+import launcher  # noqa: E402
 
 
 def run(
@@ -366,6 +364,15 @@ class DevServer:
         for c in changes:
             print(f"  {c}")
 
+        cmd, trackable = launcher.build_cmd(rom_path)
+        if cmd is None:
+            print(
+                f"\nWARNING: SameBoy not found. Launch {rom_path} manually, "
+                "or set $SAMEBOY_BIN to the binary path.",
+                file=sys.stderr,
+            )
+            return
+
         if self._sameboy_running():
             print("Terminating old SameBoy...")
             assert self.sameboy is not None
@@ -377,32 +384,26 @@ class DevServer:
                 self.sameboy.wait()
             self.sameboy = None
 
-        cmd = self._sameboy_cmd(rom_path)
-        if cmd is None:
+        if not trackable:
+            # We only have `open -a SameBoy` to work with — Popen will
+            # hold the launcher's PID, not SameBoy's, so Re-launch
+            # can't kill the prior instance. Warn once per launch.
             print(
-                f"\nWARNING: SameBoy not found. Launch {rom_path} manually.",
+                "warning: SameBoy.app not found via $SAMEBOY_BIN, $PATH, or "
+                "Spotlight; using `open -a`. Re-launch will not be able to "
+                "terminate the previous instance. Set $SAMEBOY_BIN to the "
+                "SameBoy binary path to fix.",
                 file=sys.stderr,
             )
-            return
+
         print(f"Launching {cmd[0]}...")
         try:
             self.sameboy = subprocess.Popen(cmd)
         except OSError as e:
             print(f"failed to launch: {e}", file=sys.stderr)
             self.sameboy = None
-
-    def _sameboy_cmd(self, rom_path: Path) -> list[str] | None:
-        if Path(SAMEBOY_PATH).exists():
-            return [SAMEBOY_PATH, str(rom_path)]
-        if shutil.which("sameboy"):
-            return ["sameboy", str(rom_path)]
-        if sys.platform == "darwin":
-            # Last-ditch. `open -a` is fire-and-forget — the Popen handle
-            # won't track the real SameBoy process, so Re-launch will spawn
-            # a second window instead of replacing the first. Acceptable
-            # fallback for users without SameBoy at the canonical path.
-            return ["open", "-a", "SameBoy", str(rom_path)]
-        return None
+            return
+        launcher.focus_after_launch()
 
     def _sameboy_running(self) -> bool:
         return self.sameboy is not None and self.sameboy.poll() is None
