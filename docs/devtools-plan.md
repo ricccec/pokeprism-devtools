@@ -1,5 +1,26 @@
 # Pokeprism DevTools — Implementation Plan
 
+## Status snapshot (read me first)
+
+This doc is the original plan, kept as a record of intent. For the current
+user-facing reference of what's shipped, see
+[`devtools.md`](devtools.md). At a glance:
+
+| Phase | Status | Notes |
+|---|---|---|
+| `docs/debug-mode.md` | ✓ shipped | documents the existing in-game debug menu, `DEBUG_MODE` flag, `/patch/` framework |
+| `_lib/{paths,symfile,constants,maps,savefile}.py` | ✓ shipped | with `tools/test_lib.py` smoke test |
+| `sym-lookup` (P1) | ✓ shipped | exact / reverse / prefix / substring / region-filtered |
+| `start-state` Phase A (inventory) | ✓ shipped | `tools/start-state/inventory.json`, regenerated from `.sym` |
+| `start-state` Phase B (patch + launch) | ✓ shipped | player name, money, badges, map+coords; party/items/event flags deferred |
+| Map-change support (LZ + blockdata + wScreenSave + people-reset) | ✓ shipped | required additional modules `_lib/{lz,blockdata,people}.py`; see [`blockdata-plan.md`](blockdata-plan.md) |
+| TUI (`questionary` menu) | pending | next on the roadmap |
+| Final pass of `docs/devtools.md` | pending | user-facing reference is current as of map-change work; add TUI section when shipped |
+| Other tools (`flag-finder`, `map-inspect`, `sram-diff`, etc.) | pending | sketched only; no implementation yet |
+
+Future work / deferred items live at the bottom of this doc under
+[Future work / known v1 limitations](#future-work--known-v1-limitations).
+
 ## Context
 
 Pokeprism is a 2MB GBC ROM hack (Pokémon Crystal disassembly fork) built with RGBDS

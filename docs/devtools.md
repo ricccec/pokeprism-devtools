@@ -29,7 +29,7 @@ tools will pick up whichever ROM is present.
 |---------------------------------------|------------|------------------------------------------------------------------|
 | [`sym-lookup`](#sym-lookup)           | shipped    | Query the `.sym` file by label or address.                       |
 | [`test_lib.py`](#smoke-test)          | shipped    | Smoke test for `_lib/` parsers (run after each rebuild).         |
-| [`start-state`](#start-state)         | partial    | Phases A + B (inventory + save patcher) shipped. TUI next. |
+| [`start-state`](#start-state)         | partial    | Inventory + save patcher + map-change support shipped. TUI next. |
 | `flag-finder`                         | planned    | Cross-reference `EVENT_*` set/check sites across the codebase.   |
 | `map-inspect`                         | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
 | `sram-diff`                           | planned    | Diff two `.sav` files field-by-field using the SRAM layout.      |
@@ -249,14 +249,60 @@ Usage:
                                                   # as input (preserves the
                                                   # ROM's .sav)
 ./tools/start-state/start-state.py --state PATH   # alternate state.json
+./tools/start-state/start-state.py --keep-people  # don't clear NPC slots
+                                                  # on map change (see below)
 ```
 
 Existing `.sav` files are backed up to `tools/start-state/sav-backups/`
 before being overwritten — you can always recover.
 
+### Map change — what happens under the hood
+
+Changing `map.name` (or `map.x`/`map.y`) in `state.json` is more involved
+than just writing the four group/number/x/y bytes. The game's
+`MAPSETUP_CONTINUE` script assumes the saved state is consistent with the
+current map, so several engine-state fields must also be updated. The
+tool handles this automatically — but if you're debugging or extending
+the patcher, here's the chain:
+
+1. **Block-data lookup** (`_lib/blockdata.py`): walks
+   `MapGroupPointers` → primary header → secondary header to find the new
+   map's LZ-compressed blockdata in ROM. Uses `_lib/lz.py` (a Python port
+   of `home/decompress.asm`) to decompress into a `height × width` block
+   grid.
+2. **`wScreenSave` recomputation**: the game's `LoadNeighboringBlockData`
+   step in `MAPSETUP_CONTINUE` overlays `wScreenSave` onto `wOverworldMap`
+   *after* loading the new map's blocks from ROM — so a stale
+   `wScreenSave` corrupts the area around the player. We compute the
+   correct 30-byte window for the new (x, y) using the same anchor formula
+   the game uses (`engine/warp_connection.asm:343`) and write it.
+3. **Player engine state reset** (`_lib/people.py`): updates
+   `wObjectStructs[0]` positional fields to `(wXCoord + 4, wYCoord + 4)`
+   so the player sprite renders at the right location. The `+4` is the
+   game's screen-edge offset, verified against real saves.
+4. **NPC clear**: by default, zeroes `wObjectStructs[1..]` and
+   `wMapObjects[1..]` so ghost NPCs from the previous map don't render.
+   Pass `--keep-people` to skip this (you'll see stale NPCs — useful only
+   for debugging the difference).
+
+After this, both SRAM checksums (primary `sChecksum` over `sGameData`,
+plus `sExtraChecksum` over `sExtraData`) are recomputed and written.
+
+### Known limitations on map change
+
+- **Destination map has no NPCs** (default behaviour clears them; we don't
+  yet reload from `MapEventHeader`). Tracked in
+  [`devtools-plan.md`](devtools-plan.md#future-work--known-v1-limitations)
+  under the planned `--load-map-npcs` flag.
+- **Edge positions on connected maps**: `wScreenSave` zero-pads outside
+  the map's block grid, which is wrong for maps with N/S/E/W connections
+  (those padding regions should contain neighbor-map blocks). The screen
+  may show one row/column of incorrect tiles at the very edge. Walking
+  refreshes it.
+
 ### TUI (planned)
 
-A `questionary`-driven menu on top of Phase B for editing the state
+A `questionary`-driven menu on top of the launcher for editing the state
 interactively.
 
 ---

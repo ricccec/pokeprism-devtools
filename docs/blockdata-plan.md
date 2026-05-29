@@ -1,5 +1,13 @@
 # Plan: `_lib/blockdata.py` and the wScreenSave fix
 
+**Status: ✓ shipped.** All three modules described in this plan
+(`_lib/lz.py`, `_lib/blockdata.py`, `_lib/people.py`) are implemented and
+verified end-to-end. The "open questions" at the bottom of this doc are
+all resolved (the strong cross-check passed byte-for-byte). Kept as a
+record of the design and the asm cross-references — useful for anyone
+extending the map-handling code or implementing the planned
+`--load-map-npcs` (see [`devtools-plan.md`](devtools-plan.md#future-work--known-v1-limitations)).
+
 Sub-plan under [`devtools-plan.md`](devtools-plan.md). Scope: the second of
 two new modules we need so that `start-state` can change maps without the
 overworld rendering garbage.
