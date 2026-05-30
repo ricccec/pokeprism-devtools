@@ -18,6 +18,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+import time
 
 from pokeprism_devtools import paths, savefile, symfile
 
@@ -334,6 +335,7 @@ class DevServer:
             )
             return
 
+        # Validate save file
         sav = savefile.SaveFile.load(target_sav)
         if not apply.looks_like_real_save(sav, self.inv):
             print(
@@ -343,12 +345,14 @@ class DevServer:
             )
             return
 
+        # Backup the save file
         self.sav_backups_dir.mkdir(parents=True, exist_ok=True)
         ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         backup = self.sav_backups_dir / f"{target_sav.stem}-{ts}.sav"
         backup.write_bytes(target_sav.read_bytes())
         print(f"Backed up {target_sav.name} → {self._pretty(backup)}")
 
+        # Patch the save file
         syms = symfile.SymFile.load(self.sym_path)
         changes = apply.apply_state(
             sav, self.state, self.inv,
@@ -360,6 +364,7 @@ class DevServer:
         for c in changes:
             print(f"  {c}")
 
+        # Run (or re-run) SameBoy
         cmd, trackable = launcher.build_cmd(rom_path)
         if cmd is None:
             print(
@@ -399,6 +404,8 @@ class DevServer:
             print(f"failed to launch: {e}", file=sys.stderr)
             self.sameboy = None
             return
+        # Give it some time to settle, then bring window to the front
+        time.sleep(1)
         launcher.focus_after_launch()
 
     def _sameboy_running(self) -> bool:
