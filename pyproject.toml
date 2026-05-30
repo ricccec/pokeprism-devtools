@@ -10,8 +10,8 @@ requires-python = ">=3.10"
 dependencies = ["questionary"]
 
 [project.scripts]
-start-state = "pokeprism_devtools.start_state.cli:main"
-sym-lookup  = "pokeprism_devtools.sym_lookup:main"
+prism-dev = "pokeprism_devtools.dev_server.cli:main"
+prism_sym  = "pokeprism_devtools.sym_lookup:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
