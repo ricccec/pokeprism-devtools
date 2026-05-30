@@ -19,9 +19,9 @@ src/pokeprism_devtools/
 ├── lz.py               — LZ decompressor (port of home/decompress.asm)
 ├── blockdata.py        — read map blockdata from ROM, compute wScreenSave
 ├── people.py           — reset player struct + clear NPC slots
-├── sym_lookup.py       — `sym-lookup` CLI: query the .sym by label or address
-└── start_state/
-    ├── cli.py          — `start-state` CLI entrypoint
+├── sym_lookup.py       — `prism-sym` CLI: query the .sym by label or address
+└── dev_server/
+    ├── cli.py          — `prism-dev` CLI entrypoint
     ├── tui.py          — questionary-driven dev-server menu
     ├── inventory.py    — build/refresh the .sym → .sav offset catalog
     ├── apply.py        — mutate a .sav from a state.json
@@ -44,8 +44,8 @@ This exposes two commands:
 
 | Command       | Purpose                                                    |
 |---------------|------------------------------------------------------------|
-| `start-state` | Launch the game in an arbitrary state (the headline tool). |
-| `sym-lookup`  | Query the `.sym` by label or address.                      |
+| `prism-dev`   | Launch the game in an arbitrary state (the headline tool). |
+| `prism-sym`   | Query the `.sym` by label or address.                      |
 
 Both anchor themselves to your pokeprism repo by walking the current
 working directory up until they find `Makefile` + `main.asm`, so run them
@@ -53,8 +53,8 @@ from anywhere inside your pokeprism checkout:
 
 ```bash
 cd /path/to/pokeprism
-start-state --inventory-only
-sym-lookup TryLoadSaveFile
+prism-dev --inventory-only
+prism-sym TryLoadSaveFile
 ```
 
 Runtime artifacts (`inventory.json`, `state.json`, `sav-backups/`, plus
@@ -63,7 +63,7 @@ per-game, so one tool install can serve multiple pokeprism clones without
 collisions.
 
 If SameBoy isn't at `/Applications/SameBoy.app`, set `$SAMEBOY_BIN` to the
-inner binary path, or let `start-state` find it via Spotlight on macOS.
+inner binary path, or let `prism-dev` find it via Spotlight on macOS.
 
 ## Quick start
 
@@ -71,19 +71,19 @@ inner binary path, or let `start-state` find it via Spotlight on macOS.
 cd /path/to/pokeprism            # any subdirectory works too
 
 # Interactive dev-server TUI (default on a TTY)
-start-state
-start-state --no-tui             # bypass the TUI, one-shot patch + launch
+prism-dev
+prism-dev --no-tui             # bypass the TUI, one-shot patch + launch
 
 # Query the .sym
-sym-lookup TryLoadSaveFile
-sym-lookup --addr 01:a020
-sym-lookup --prefix wParty -n 5
+prism-sym TryLoadSaveFile
+prism-sym --addr 01:a020
+prism-sym --prefix wParty -n 5
 
 # Smoke test (after rebuilding the ROM)
 python /path/to/pokeprism-devtools/tests/test_lib.py
 
 # Regression sweep: every map through the apply pipeline (~0.1s, 448 maps)
-python -m pokeprism_devtools.start_state.test_maps
+python -m pokeprism_devtools.dev_server.test_maps
 ```
 
 See [`docs/devtools.md`](docs/devtools.md) for full per-tool usage.

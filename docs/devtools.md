@@ -10,9 +10,9 @@ in the pokeprism repo.
 ## Setup
 
 Python 3.10+ is required. The only external runtime dependency is
-`questionary` (the `start-state` TUI), pulled in automatically by
+`questionary` (the `prism-dev` TUI), pulled in automatically by
 `pyproject.toml`. The recommended install is `pipx`, which gives you the
-`start-state` and `sym-lookup` commands on `$PATH`:
+`prism-dev` and `prism-sym` commands on `$PATH`:
 
 ```bash
 pipx install -e /path/to/pokeprism-devtools
@@ -28,8 +28,8 @@ run from anywhere inside it:
 
 ```bash
 cd /path/to/pokeprism
-sym-lookup TryLoadSaveFile                # from repo root
-cd engine && sym-lookup TryLoadSaveFile   # works the same
+prism-sym TryLoadSaveFile                # from repo root
+cd engine && prism-sym TryLoadSaveFile   # works the same
 ```
 
 Each tool requires a built ROM — specifically the `.sym` file emitted
@@ -44,10 +44,10 @@ the directory on first run.
 
 | Tool                                  | Status     | Purpose                                                          |
 |---------------------------------------|------------|------------------------------------------------------------------|
-| [`sym-lookup`](#sym-lookup)           | shipped    | Query the `.sym` file by label or address.                       |
+| [`prism-sym`](#prism-sym)           | shipped    | Query the `.sym` file by label or address.                       |
 | [`test_lib.py`](#smoke-test)          | shipped    | Smoke test for the library (run after each rebuild).             |
-| [`test_maps.py`](#map-sweep)          | shipped    | Sweep every map through the `start-state` apply pipeline.        |
-| [`start-state`](#start-state)         | partial    | Inventory + save patcher + map-change support + dev-server TUI shipped. Party / items / event flags pending. |
+| [`test_maps.py`](#map-sweep)          | shipped    | Sweep every map through the `prism-dev` apply pipeline.        |
+| [`prism-dev`](#prism-dev)         | partial    | Inventory + save patcher + map-change support + dev-server TUI shipped. Party / items / event flags pending. |
 | `flag-finder`                         | planned    | Cross-reference `EVENT_*` set/check sites across the codebase.   |
 | `map-inspect`                         | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
 | `sram-diff`                           | planned    | Diff two `.sav` files field-by-field using the SRAM layout.      |
@@ -57,7 +57,7 @@ the directory on first run.
 
 ---
 
-## sym-lookup
+## prism-sym
 
 Query the RGBDS symbol table that the build emits next to the ROM
 (`pokeprism_nodebug.sym` or `pokeprism.sym`). Useful any time you're looking
@@ -67,13 +67,13 @@ address from a debugger and want to know what it points at.
 ### Synopsis
 
 ```bash
-sym-lookup LABEL                  # exact match; falls back to substring search
-sym-lookup --addr BB:AAAA         # reverse: address → label(s) at or before
-sym-lookup --prefix STR           # list labels starting with STR
-sym-lookup --search STR           # case-insensitive substring search
-sym-lookup --region SRAM ...      # filter results by memory region
-sym-lookup --debug ...            # use the debug ROM's .sym (pokeprism.sym)
-sym-lookup -n N                   # cap results at N (default 50; 0 = unlimited)
+prism-sym LABEL                  # exact match; falls back to substring search
+prism-sym --addr BB:AAAA         # reverse: address → label(s) at or before
+prism-sym --prefix STR           # list labels starting with STR
+prism-sym --search STR           # case-insensitive substring search
+prism-sym --region SRAM ...      # filter results by memory region
+prism-sym --debug ...            # use the debug ROM's .sym (pokeprism.sym)
+prism-sym -n N                   # cap results at N (default 50; 0 = unlimited)
 ```
 
 Address format is RGBDS-standard: `BB:AAAA` where `BB` is the bank in hex
@@ -87,7 +87,7 @@ Memory regions: `ROM0`, `ROMX`, `VRAM`, `SRAM`, `WRAM0`, `WRAMX`, `OAM`,
 **Find a function:**
 
 ```text
-$ sym-lookup TryLoadSaveFile
+$ prism-sym TryLoadSaveFile
 05:4f9b TryLoadSaveFile
 ```
 
@@ -97,7 +97,7 @@ debugger hookup, that's the canonical format.
 **Reverse lookup (debugger PC → source):**
 
 ```text
-$ sym-lookup --addr 01:a020
+$ prism-sym --addr 01:a020
 01:a009 sPlayerData  (+0x17)  [SRAM]
 01:a009 sGameData    (+0x17)  [SRAM]
 ```
@@ -110,7 +110,7 @@ poking inside a struct.
 **Find all related labels:**
 
 ```text
-$ sym-lookup --prefix sValidCheck
+$ prism-sym --prefix sValidCheck
 01:a008 sValidCheck1  [SRAM]
 01:ad0f sValidCheck2  [SRAM]
 

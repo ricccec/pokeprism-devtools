@@ -1,4 +1,4 @@
-"""SameBoy launch helpers for start-state.
+"""SameBoy launch helpers for prism-dev.
 
 Resolves the path to the SameBoy binary so `subprocess.Popen` tracks the
 actual app process — not the `open` launcher utility on macOS. The handle

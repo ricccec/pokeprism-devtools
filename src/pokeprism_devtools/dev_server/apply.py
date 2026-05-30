@@ -1,6 +1,6 @@
 """Apply a state.json to a SaveFile in memory and recompute checksums.
 
-The state schema is documented in `docs/devtools.md` (the `start-state`
+The state schema is documented in `docs/devtools.md` (the `prism-dev`
 section). All fields are optional — anything not set falls through to the
 template's existing value, including the map cluster (group/number/x/y).
 

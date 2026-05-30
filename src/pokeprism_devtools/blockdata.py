@@ -2,7 +2,7 @@
 `wScreenSave` window the game would have written for a given player
 position.
 
-Used by start-state to keep wScreenSave consistent with (wMapGroup,
+Used by prism-dev to keep wScreenSave consistent with (wMapGroup,
 wMapNumber, wXCoord, wYCoord) when patching a save. See
 docs/blockdata-plan.md for the data-flow and asm cross-references.
 
