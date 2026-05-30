@@ -26,7 +26,7 @@ from pokeprism_devtools import paths, symfile
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
-        prog="sym-lookup",
+        prog="prism-sym",
         description="Query the pokeprism .sym file by label or address.",
     )
     p.add_argument("query", nargs="?", help="label to look up (exact, then substring)")

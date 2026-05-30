@@ -11,7 +11,7 @@ dependencies = ["questionary"]
 
 [project.scripts]
 prism-dev = "pokeprism_devtools.dev_server.cli:main"
-prism_sym  = "pokeprism_devtools.sym_lookup:main"
+prism-sym  = "pokeprism_devtools.sym_lookup:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
