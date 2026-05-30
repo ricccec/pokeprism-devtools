@@ -495,3 +495,9 @@ zero-NPC behaviour.
   the roadmap).
 - Connection-aware `wScreenSave` for player positions at map edges (today
   uses zero-padding outside the map — wrong for maps with N/S/E/W connections).
+- **Backup cleanup subcommand**: `prism-dev clean-backups [--keep N]` to prune
+  old `.sav` files from `.devtools/sav-backups/`. Every launch writes a backup,
+  so the folder grows quickly during active dev sessions. The subcommand should
+  list what it would delete and ask for confirmation; `--keep N` retains the N
+  most recent files (default: keep the last 10 or so). A TUI menu entry ("Clean
+  up backups...") is also a natural home for this.
