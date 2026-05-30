@@ -1,9 +1,9 @@
-"""Inventory builder for start-state.
+"""Inventory builder for prism-dev.
 
 Scans the .sym and `constants/*.asm` to produce a JSON catalog of every
 map, pokemon, item, move, and event flag — plus the .sav file offsets for
 the WRAM fields the patcher writes. Cached as `inventory.json` next to
-the start-state script; regenerated automatically when the .sym is newer.
+the prism-dev script; regenerated automatically when the .sym is newer.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from pathlib import Path
 from pokeprism_devtools import constants, maps, savefile, symfile
 
 
-# WRAM symbols whose values the start-state tool will write. Resolved to
+# WRAM symbols whose values the prism-dev tool will write. Resolved to
 # .sav file offsets in the inventory. Group them by save block so we can
 # validate each ends up in the expected region.
 WRITABLE_FIELDS: dict[str, dict[str, object]] = {

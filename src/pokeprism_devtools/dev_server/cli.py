@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""start-state — launch pokeprism in a custom initial state.
+"""prism-dev — launch pokeprism in a custom initial state.
 
 Default behaviour (TTY, no flags): drop into the interactive TUI in
-`tui.py`. The TUI edits state.json on the fly, watches the .sym for
+tui.py. The TUI edits state.json on the fly, watches the .sym for
 rebuilds, and manages the SameBoy subprocess.
 
 One-shot behaviour (any of `--no-tui`, `--out`, `--no-launch`,
@@ -15,16 +15,16 @@ live under `<pokeprism>/.devtools/`. The first run (or any run after a
 rebuild) refreshes `.devtools/inventory.json` from the .sym.
 
 Usage:
-    start-state                          # interactive TUI (default on TTY)
-    start-state --no-tui                 # one-shot patch + launch
-    start-state --no-launch              # patch only, don't spawn SameBoy
-    start-state --inventory-only         # rebuild inventory, print summary
-    start-state --state PATH             # alternate state.json
-    start-state --template PATH          # alternate template .sav
-    start-state --out PATH               # write patched .sav elsewhere
-    start-state --rebuild-inventory      # force inventory rebuild
-    start-state --debug                  # use the debug ROM's .sym
-    start-state --keep-people            # don't reset NPC slots on map change
+    prism-dev                          # interactive TUI (default on TTY)
+    prism-dev --no-tui                 # one-shot patch + launch
+    prism-dev --no-launch              # patch only, don't spawn SameBoy
+    prism-dev --inventory-only         # rebuild inventory, print summary
+    prism-dev --state PATH             # alternate state.json
+    prism-dev --template PATH          # alternate template .sav
+    prism-dev --out PATH               # write patched .sav elsewhere
+    prism-dev --rebuild-inventory      # force inventory rebuild
+    prism-dev --debug                  # use the debug ROM's .sym
+    prism-dev --keep-people            # don't reset NPC slots on map change
 """
 
 from __future__ import annotations

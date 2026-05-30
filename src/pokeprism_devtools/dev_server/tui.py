@@ -1,4 +1,4 @@
-"""Long-lived dev-server TUI for start-state.
+"""Long-lived dev-server TUI for prism-dev.
 
 Edits `state.json` interactively via a questionary menu. Between menu
 cycles it polls the .sym mtime and rebuilds `inventory.json` in-process
@@ -6,7 +6,7 @@ if the ROM was rebuilt. Tracks the SameBoy subprocess so Re-launch can
 terminate the old instance before spawning a fresh one with the new
 state.
 
-The TUI is invoked by `start-state.py` when stdin is a TTY and none of
+The TUI is invoked by `prism-dev.py` when stdin is a TTY and none of
 the non-interactive flags (`--no-tui`, `--out`, `--no-launch`,
 `--inventory-only`) are set.
 """
@@ -44,7 +44,7 @@ def run(
         print(
             "TUI requires `questionary`. Reinstall pokeprism-devtools:\n"
             "    pipx install --force <path-to-pokeprism-devtools>\n"
-            "Then re-run start-state, or use --no-tui for the one-shot flow.",
+            "Then re-run prism-dev, or use --no-tui for the one-shot flow.",
             file=sys.stderr,
         )
         return 2
@@ -103,7 +103,7 @@ class DevServer:
 
         print()
         print("=" * 56)
-        print("  pokeprism start-state  —  dev server")
+        print("  pokeprism prism-dev  —  dev server")
         print("=" * 56)
 
         try:
