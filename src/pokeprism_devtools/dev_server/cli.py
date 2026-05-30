@@ -40,7 +40,7 @@ from . import apply, inventory, launcher
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="start-state")
+    p = argparse.ArgumentParser(prog="prism-dev")
     p.add_argument(
         "--rebuild-inventory",
         action="store_true",
@@ -164,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
             f"\nerror: no template save at {template_sav}.\n"
             "Run the ROM in an emulator once, complete the intro, and save "
             "the game in-game to create a starting .sav. Then re-run "
-            "start-state.",
+            "prism-dev.",
             file=sys.stderr,
         )
         return 2

@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     if not template_sav.exists():
         print(
             f"error: no template .sav at {template_sav}.\n"
-            "Run start-state.py interactively once, or save the game in-game.",
+            "Run `prism-dev` interactively once, or save the game in-game.",
             file=sys.stderr,
         )
         return 2
