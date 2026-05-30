@@ -196,11 +196,11 @@ exceptions.
 
 ```bash
 cd /path/to/pokeprism
-python -m pokeprism_devtools.start_state.test_maps                # all maps, quiet
-python -m pokeprism_devtools.start_state.test_maps -v             # also print [OK] lines
-python -m pokeprism_devtools.start_state.test_maps --map MAP      # one specific map
-python -m pokeprism_devtools.start_state.test_maps --limit 50     # only first 50 (smoke)
-python -m pokeprism_devtools.start_state.test_maps --show-traceback
+python -m pokeprism_devtools.dev_server.test_maps                # all maps, quiet
+python -m pokeprism_devtools.dev_server.test_maps -v             # also print [OK] lines
+python -m pokeprism_devtools.dev_server.test_maps --map MAP      # one specific map
+python -m pokeprism_devtools.dev_server.test_maps --limit 50     # only first 50 (smoke)
+python -m pokeprism_devtools.dev_server.test_maps --show-traceback
 ```
 
 Useful any time you touch `blockdata.py`, `lz.py`, `people.py`, or
@@ -274,6 +274,16 @@ All fields are optional — fields you don't set are left untouched in the
 template. `map.name` is any `MAP_*` constant; consult `inventory.json` for
 the full list. Badges is a 3-byte array `[naljo, rijon, other]` where each
 byte is a bitmask of earned badges.
+
+**State resolution order**: `prism-dev` looks for state in this sequence:
+1. `--state PATH` if given on the command line
+2. `.devtools/state.json` if it exists (written by the TUI on every edit)
+3. `.devtools/presets/default.json` if it exists
+4. Empty state — the template `.sav` is written back unchanged
+
+To give a fresh checkout a useful starting warp, create
+`.devtools/presets/default.json` with the schema above. That file is not
+tracked by pokeprism's git, so each developer keeps their own.
 
 **Out of scope in v1** (will arrive in follow-up commits): party, items,
 event flags. Those fields are left untouched in the template — so if you
