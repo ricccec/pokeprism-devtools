@@ -50,10 +50,11 @@ the directory on first run.
 | [`prism-dev`](#prism-dev)         | partial    | Inventory + save patcher + map-change support + dev-server TUI shipped. Party / items / event flags pending. |
 | `flag-finder`                         | planned    | Cross-reference `EVENT_*` set/check sites across the codebase.   |
 | `map-inspect`                         | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
+| `prism-maps`                          | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
 | `sram-diff`                           | planned    | Diff two `.sav` files field-by-field using the SRAM layout.      |
 | `trainer-inspect`                     | planned    | Dump trainer parties from `trainers/*.asm`.                      |
-| `bank-usage`                          | planned    | Pretty-print bank free space (ANSI bars, near-full warnings).    |
-| `build-watch`                         | planned    | `fswatch` → `make nodebug` → optional emulator relaunch.         |
+| `prism-usage`                          | planned    | Pretty-print bank usage info     |
+| `prism-watch`                         | planned    | `fswatch` → `make nodebug` → optional emulator relaunch.         |
 
 ---
 
