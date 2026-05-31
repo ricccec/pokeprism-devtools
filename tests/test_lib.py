@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import sys
 
-from pokeprism_devtools import blockdata, constants, lz, maps, paths, savefile, symfile
+from pokeprism_devtools import (
+    blockdata, constants, lz, maps, paths, party, savefile, species, symfile,
+)
 
 
 def check(label: str, cond: bool, detail: str = "") -> None:
@@ -244,6 +246,68 @@ def main() -> None:
                 computed == stored,
                 f"computed=${computed:04x} stored=${stored:04x}",
             )
+
+    print("\nspecies.py — parsers")
+    base_stats = species.parse_base_stats(root)
+    check("base_stats has BULBASAUR", "BULBASAUR" in base_stats)
+    bs = base_stats["BULBASAUR"]
+    check(
+        "BULBASAUR base stats canonical",
+        (bs.hp, bs.atk, bs.def_, bs.spd, bs.sat, bs.sdf) == (45, 49, 49, 45, 65, 65)
+        and bs.growth_rate == "MEDIUM_SLOW",
+        f"{bs}",
+    )
+    move_pp = species.parse_move_pp(root)
+    check("TACKLE has PP=35", move_pp.get("TACKLE") == 35)
+    pokemon_order = [
+        c.name for c in constants.parse_constants(
+            root / "constants" / "pokemon_constants.asm",
+            start_counter=1, stop_at_reset=True,
+        ) if c.name != "skip"
+    ]
+    learnsets = species.parse_movesets(root, pokemon_order)
+    check("BULBASAUR has a learnset", "BULBASAUR" in learnsets and learnsets["BULBASAUR"].level_moves)
+
+    print("\nspecies.py — formulas")
+    check("MEDIUM_SLOW @ L5 = 135",  species.exp_at_level("MEDIUM_SLOW", 5) == 135)
+    check("MEDIUM_FAST @ L5 = 125",  species.exp_at_level("MEDIUM_FAST", 5) == 125)
+    check("FAST @ L100 = 800000",    species.exp_at_level("FAST", 100) == 800_000)
+    check("calc_stat hp Bulba L5 = 20",  species.calc_stat(45, 15, 0, 5, is_hp=True) == 20)
+    check("calc_stat atk Bulba L5 = 10", species.calc_stat(49, 15, 0, 5, is_hp=False) == 10)
+
+    print("\nparty.py — build_party")
+    built = party.build_party(
+        [
+            party.PartyMonInput(species="CHARMANDER", level=5),
+            party.PartyMonInput(species="PIKACHU", level=10, nickname="SPARKY"),
+        ],
+        species_ids={"CHARMANDER": 4, "PIKACHU": 25},
+        move_ids={"SCRATCH": 10, "GROWL": 45, "THUNDERSHOCK": 84, "TAIL_WHIP": 39},
+        item_ids={"NO_ITEM": 0},
+        base_stats_db={
+            "CHARMANDER": species.BaseStats("CHARMANDER", 39, 52, 43, 65, 60, 50, "MEDIUM_SLOW"),
+            "PIKACHU": species.BaseStats("PIKACHU", 35, 55, 40, 90, 50, 50, "MEDIUM_FAST"),
+        },
+        learnset_db={
+            "CHARMANDER": species.Learnset("CHARMANDER", [(1, "SCRATCH"), (4, "GROWL")]),
+            "PIKACHU": species.Learnset("PIKACHU", [(1, "THUNDERSHOCK"), (6, "TAIL_WHIP")]),
+        },
+        move_pp_db={"SCRATCH": 35, "GROWL": 40, "THUNDERSHOCK": 30, "TAIL_WHIP": 30},
+        ot_name="DEV",
+        ot_id=12345,
+    )
+    check("party count = 2", built.count == 2)
+    check("species terminator at index 2",
+          built.species_bytes[0] == 4 and built.species_bytes[1] == 25
+          and built.species_bytes[2] == 0xFF)
+    check("CHARMANDER struct is 48B", len(built.mons_bytes) == 288)
+    char = built.mons_bytes[:48]
+    check("CHARMANDER species byte = 4", char[0] == 4)
+    check("CHARMANDER level = 5", char[31] == 5)
+    check("CHARMANDER exp BE = 135",
+          int.from_bytes(char[8:11], "big") == 135)
+    check("CHARMANDER HP big-endian = 19",
+          int.from_bytes(char[34:36], "big") == 19)
 
     print("\nall checks passed")
 
