@@ -2,7 +2,7 @@
 
 **Status: planned.** Spec only; no code yet. Sub-plan under
 [`devtools-plan.md`](devtools-plan.md). Supersedes the one-liner
-`bank-usage` row in that doc's priority table.
+`prism-usage` row in that doc's priority table.
 
 ## Context — why this is needed
 
