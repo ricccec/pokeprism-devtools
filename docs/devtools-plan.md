@@ -28,7 +28,8 @@ For the current user-facing reference of what's shipped, see
 | SameBoy lookup (`launcher.py`) | ✓ shipped | `$SAMEBOY_BIN` → `$PATH` → Spotlight (`mdfind`) → `open -a` fallback; trackable Popen so TUI Re-launch can `terminate()` the prior instance |
 | Map sweep regression test (`test_maps.py`) | ✓ shipped | runs apply against all 448 maps in ~0.1s; catches blockdata / wScreenSave / people regressions |
 | Final pass of `docs/devtools.md` | ✓ shipped | TUI section + setup notes (PEP 668 install caveats) added |
-| v2 fields in `state.json` (party, items, event flags) | pending | menu placeholders exist; .sav writers not yet implemented |
+| v2 fields in `state.json` — party | ✓ shipped | full PartyMon synthesis (species/level/nickname/moves), in-game stat + EXP formulas, learnset-derived default moves |
+| v2 fields in `state.json` — items, event flags | pending | menu placeholders remain; .sav writers not yet implemented |
 | Other tools (`flag-finder`, `map-inspect`, `sram-diff`, etc.) | pending | sketched only; no implementation yet |
 
 Future work / deferred items live at the bottom of this doc under
