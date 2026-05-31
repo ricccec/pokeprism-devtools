@@ -50,7 +50,7 @@ the directory on first run.
 | [`prism-dev`](#prism-dev)         | partial    | Inventory + save patcher + map-change support + dev-server TUI + party editor shipped. Items / event flags pending. |
 | `flag-finder`                         | planned    | Cross-reference `EVENT_*` set/check sites across the codebase.   |
 | `map-inspect`                         | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
-| `prism-maps`                          | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
+| [`prism-maps`](#prism-maps)           | shipped    | Filterable terminal table of per-map metadata (dimensions, block sizes, NPC counts, compression ratio). No ROM needed. |
 | `sram-diff`                           | planned    | Diff two `.sav` files field-by-field using the SRAM layout.      |
 | `trainer-inspect`                     | planned    | Dump trainer parties from `trainers/*.asm`.                      |
 | `prism-usage`                          | planned    | Pretty-print bank usage info     |
@@ -470,6 +470,80 @@ When invoked with `--no-tui` (or `--out`, `--no-launch`,
 as before the TUI shipped. The map-change pipeline (block-data load,
 `wScreenSave`, people reset) is identical in both modes — the TUI calls
 the same `apply` module.
+
+---
+
+## prism-maps
+
+Inspects all maps defined in `constants/map_dimension_constants.asm` and
+prints a filterable, sortable table of per-map metadata. No ROM or build
+required — reads source files only.
+
+### Synopsis
+
+```bash
+prism-maps [OPTIONS]
+```
+
+Run from anywhere inside the pokeprism checkout.
+
+### Columns
+
+| Column   | Source                          | Notes                              |
+|----------|---------------------------------|------------------------------------|
+| `NAME`   | `map_dimension_constants.asm`   | Bare name, e.g. `CAPER_HOUSE`      |
+| `W` / `H`| same                            | Dimensions in blocks               |
+| `BLKS`   | W × H                           | Total block count                  |
+| `RAW`    | `maps/blk/<Name>.ablk` size     | `—` if file missing                |
+| `LZ`     | `maps/blk/<Name>.ablk.lz` size  | `—` if file missing                |
+| `RATIO`  | LZ / RAW                        | Red if > 100% (LZ expands the file)|
+| `SCRIPT` | `maps/<Name>.asm` source bytes  | `—` if no script file              |
+| `NPCS`   | `person_event` + `trainer` lines| `—` if no script file              |
+| `USED`   | Referenced in `blockdata.asm`   | Green ✓ / red ✗                    |
+
+### Options
+
+```
+--sort {name,width,height,blocks,raw,lz,ratio,script,npcs}
+                    Sort column (default: name)
+--reverse           Reverse the sort order
+--used              Show only maps referenced in blockdata.asm
+--unused            Show only maps NOT referenced in blockdata.asm
+--search PATTERN    Case-insensitive substring match on map name
+--min-blocks N      Only maps with BLKS >= N
+--max-blocks N      Only maps with BLKS <= N
+--json              Emit a JSON array instead of a table
+```
+
+`--used` and `--unused` are mutually exclusive. All filters compose (AND logic).
+
+### Examples
+
+```bash
+# Full table (~300+ maps)
+prism-maps
+
+# The 3 maps that exist as .ablk.lz files but aren't INCBINed in blockdata.asm
+prism-maps --unused
+
+# Maps where LZ compression makes the file bigger, smallest first
+prism-maps --max-blocks 20 --sort ratio --reverse
+
+# Largest maps by block footprint
+prism-maps --sort blocks --reverse
+
+# Routes by size
+prism-maps --search route --sort blocks --reverse
+
+# Machine-readable
+prism-maps --json | python3 -m json.tool
+```
+
+### Exit codes
+
+- `0` — at least one row printed (or JSON array emitted)
+- `1` — no maps matched the given filters
+- `2` — usage error or pokeprism repo not found
 
 ---
 
