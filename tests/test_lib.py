@@ -309,6 +309,24 @@ def main() -> None:
     check("CHARMANDER HP big-endian = 19",
           int.from_bytes(char[34:36], "big") == 19)
 
+    print("\nmapfile.py")
+    from pokeprism_devtools import mapfile as mapfile_mod
+    mp = mapfile_mod.MapFile.parse(paths.map_path(root))
+    rom = mp.rom_banks()
+    check("at least 118 ROM banks", len(rom) >= 118, f"{len(rom)}")
+    failing = [
+        b for b in rom
+        if b.capacity != b.used + b.free or b.used != sum(s.size for s in b.sections)
+    ]
+    check("all ROM bank capacity invariants hold", not failing,
+          f"{len(failing)} fail" if failing else "")
+    b0 = mp.banks[("ROM0", 0)]
+    check("ROM0 bank #0 free == $0339", b0.free == 0x0339, f"got ${b0.free:04x}")
+    b1 = mp.banks[("ROMX", 1)]
+    check("ROMX bank #1 free == $0101", b1.free == 0x0101, f"got ${b1.free:04x}")
+    sram_banks = mp.banks_by_region("SRAM")
+    check("SRAM has at least 1 bank", len(sram_banks) >= 1, f"{len(sram_banks)}")
+
     print("\nall checks passed")
 
 
