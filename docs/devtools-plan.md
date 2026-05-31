@@ -133,8 +133,8 @@ deliver a lot of what the user wants — they're just not currently visible.
 
 | P  | Tool             | Purpose                                                                      |
 |----|------------------|------------------------------------------------------------------------------|
-| P0 | `start-state`    | Launch game in arbitrary state. Deep spec below.                             |
-| P1 | `sym-lookup`     | Query the `.sym` file: label→addr, addr→label, prefix search. Debugging gold.|
+| P0 | `prism-dev`      | Launch game in arbitrary state. Deep spec below.                             |
+| P1 | `prism-sym`      | Query the `.sym` file: label→addr, addr→label, prefix search. Debugging gold.|
 | P1 | `flag-finder`    | Grep `event_flags.asm` + cross-ref where each `EVENT_*` is set/checked in `.asm`. |
 | P2 | `map-inspect`    | Parse a `maps/<MapName>.asm` → JSON: warps, NPCs, signs, connections, size.  |
 | P2 | `sram-diff`      | Diff two `.sav` files field-by-field using the SRAM symbol layout.           |
@@ -147,7 +147,7 @@ full treatment.
 
 ---
 
-## Deep spec: `tools/start-state/`
+## Deep spec: `pokeprism_devtools/dev_server/`
 
 ### Goal
 Configure-and-launch a custom game state in **two steps or fewer**:
@@ -241,24 +241,24 @@ search didn't find one, so we write fresh.
 4. Every successful edit is saved back to `state.json` immediately — Ctrl-C is safe.
 5. "Launch now": generates `.sav`, writes it next to the ROM, spawns SameBoy.
 
-### Editable fields (v1 scope)
+### Editable fields
 
-| Group  | Field             | Source WRAM symbol     | Notes                              |
-|--------|-------------------|------------------------|-------------------------------------|
-| Player | Name (8 chars)    | `wPlayerName`          | Apply GB charset encoding           |
-| Player | Gender            | inside player data     | TBD exact offset from sym           |
-| Player | Trainer ID        | (inside `wPlayerData`) | Random by default                   |
-| Map    | Current map       | `wMapGroup`+`wMapNumber`| Pair derived from `MAP_*` constant |
-| Map    | X/Y coords        | `wXCoord`, `wYCoord`   | Validate ≤ map dimensions if known  |
-| Money  | Amount            | `wMoney` (3 bytes BCD) | 0–999999                            |
-| Badges | Naljo/Rijon/Other | `wBadges` (3 bytes)    | Bitmask UI                          |
-| Party  | 6 slots           | `wPartyCount`, `wPartySpecies`, `wPartyMons` | Each mon: species, level, 4 moves, optional nickname |
-| Items  | Bag contents      | `wNumItems`, `wItems`  | id+count pairs                      |
-| Flags  | Event flags       | `wEventFlags` (250 bytes ≈ 1999 bits) | Toggle by `EVENT_*` name |
+| Group  | Field             | Scope | Source WRAM symbol     | Notes                              |
+|--------|-------------------|-------|------------------------|------------------------------------|
+| Player | Name (8 chars)    | v1.   | `wPlayerName`          | Apply GB charset encoding           |
+| Player | Gender            | v3.   | inside player data     | TBD exact offset from sym           |
+| Player | Trainer ID        | v3.   | (inside `wPlayerData`) | Random by default                   |
+| Map    | Current map       | v1.   | `wMapGroup`+`wMapNumber`| Pair derived from `MAP_*` constant |
+| Map    | X/Y coords        | v1.   | `wXCoord`, `wYCoord`   | Validate ≤ map dimensions if known  |
+| Money  | Amount            | v1.   | `wMoney` (3 bytes BCD) | 0–999999                            |
+| Badges | Naljo/Rijon/Other | v1.   | `wBadges` (3 bytes)    | Bitmask UI                          |
+| Party  | 6 slots           | v2.   | `wPartyCount`, `wPartySpecies`, `wPartyMons` | Each mon: species, level, 4 moves, optional nickname |
+| Items  | Bag contents      | v3.   | `wNumItems`, `wItems`  | id+count pairs                      |
+| Flags  | Event flags       | v4.   | `wEventFlags` (250 bytes ≈ 1999 bits) | Toggle by `EVENT_*` name |
 
-Things explicitly **out of scope** for v1: boxes/PC, day-care, Pokédex seen/caught,
+Things explicitly **out of scope** for v1-4: boxes/PC, day-care, Pokédex seen/caught,
 Hall of Fame, link battle stats, Battle Tower state, RTC time. All zero-filled. Can be
-added in v2 once we trust the basics.
+added in v5 once we trust the basics.
 
 ### Party-mon struct
 Per `data-formats.md` and `constants/pokemon_data_constants.asm`, `PARTYMON_STRUCT_LENGTH`
@@ -292,15 +292,15 @@ fields to bump to the requested level by re-running the level-up formula in Pyth
 4. The user presses A on "Continue" — overworld loads with custom state.
 
 ### Files written by the tool
-- `tools/start-state/inventory.json` (gitignored) — large, regenerated
-- `tools/start-state/state.json` (gitignored) — user's working state
-- `tools/start-state/sav-backups/*.sav` (gitignored) — safety net
+- `.devtools/inventory.json` (gitignored) — large, regenerated
+- `.devtools/state.json` (gitignored) — user's working state
+- `.devtools/sav-backups/*.sav` (gitignored) — safety net
 - `pokeprism*.sav` next to ROM (overwritten on every launch)
-- `tools/start-state/presets/*.json` (checked in) — useful starting points
+- `.devtools/presets/*.json` (checked in) — useful starting points
   (e.g., `default.json`, `endgame.json`, `route1-fresh.json`)
 
-`.gitignore` additions: `tools/start-state/inventory.json`,
-`tools/start-state/state.json`, `tools/start-state/sav-backups/`.
+`.gitignore` additions: `.devtools/inventory.json`,
+`.devtools/state.json`, `.devtools/sav-backups/`.
 
 ### Critical files to read during implementation
 - `sram.asm` — confirmed SRAM layout (done)
