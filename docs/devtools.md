@@ -53,7 +53,7 @@ the directory on first run.
 | [`prism-maps`](#prism-maps)           | shipped    | Filterable terminal table of per-map metadata (dimensions, block sizes, NPC counts, compression ratio). No ROM needed. |
 | `sram-diff`                           | planned    | Diff two `.sav` files field-by-field using the SRAM layout.      |
 | `trainer-inspect`                     | planned    | Dump trainer parties from `trainers/*.asm`.                      |
-| `prism-usage`                          | planned    | Pretty-print bank usage info     |
+| [`prism-usage`](#prism-usage)          | shipped    | RGBDS link-map analyzer: bank usage, section sizes, diffs, pre-commit check. |
 | `prism-watch`                         | planned    | `fswatch` → `make nodebug` → optional emulator relaunch.         |
 
 ---
@@ -544,6 +544,59 @@ prism-maps --json | python3 -m json.tool
 - `0` — at least one row printed (or JSON array emitted)
 - `1` — no maps matched the given filters
 - `2` — usage error or pokeprism repo not found
+
+---
+
+## prism-usage
+
+Parses the RGBDS link-map (`pokeprism_nodebug.map`) and exposes bank usage
+through focused subcommands. Auto-locates the `.map` next to the built ROM;
+use `--map PATH` to override or `--debug` to use the debug build's map.
+
+**Synopsis**
+
+```
+prism-usage [--debug] [--map PATH] [SUBCOMMAND [ARGS]]
+```
+
+**Subcommands**
+
+| Subcommand | Purpose |
+|---|---|
+| `summary` (default) | Headline ROM/RAM stats, top-5 most-full and most-free ROM banks. |
+| `banks [--region R]` | ANSI bar chart of every ROM bank's occupancy (or a RAM region with `--region SRAM\|WRAMX\|…`). |
+| `bank N` | Section-by-section breakdown of one bank. N accepts decimal (`60`), `$3c`, `0x3c`. |
+| `largest [-n N]` | Top-N sections globally by size (default 20; `-n 0` for all). |
+| `free [--region R]` | Banks sorted by free space — answers "where do I put new data?". |
+| `section NAME` | All banks containing a section. Exact match first, then substring. |
+| `check [--max-bank-usage P]` | Exit 1 if any ROM bank exceeds P% (default 95). Pre-commit–friendly. |
+| `diff OLD.map NEW.map [--max-bank-usage P]` | Per-bank and per-section deltas between two map files. |
+
+**Exit codes** — matches `prism-sym`:
+- `0` — success / all checks pass
+- `1` — no results / threshold exceeded
+- `2` — usage error or file not found
+
+**Examples**
+
+```bash
+prism-usage                                   # quick overview
+prism-usage banks                             # visual utilization chart
+prism-usage bank 5                            # what's in ROM bank 5?
+prism-usage bank '$3c'                        # tightest bank by hex
+prism-usage largest -n 10                     # 10 biggest sections
+prism-usage free                              # where to put new data
+prism-usage section "Map Scripts"            # find all map-script sections
+prism-usage check --max-bank-usage 98        # exit 1 if any bank > 98%
+prism-usage diff prev.map pokeprism_nodebug.map   # what did my edit cost?
+```
+
+**Pre-commit hook**
+
+```bash
+# .git/hooks/pre-commit
+prism-usage check --max-bank-usage 98 || exit 1
+```
 
 ---
 
