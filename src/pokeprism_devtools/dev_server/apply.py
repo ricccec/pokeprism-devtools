@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pokeprism_devtools import blockdata, people, savefile, symfile
+from pokeprism_devtools import blockdata, party as party_mod, people, savefile, species, symfile
 
 
 def load_state(path: Path, presets_dir: Path) -> dict:
@@ -142,7 +142,112 @@ def apply_state(
             "people: " + ", ".join(f"{k}={v}" for k, v in people_changes.items())
         )
 
+    party_state = state.get("party")
+    if party_state:
+        changes.extend(_apply_party(sav, party_state, inv, state.get("player") or {}, off))
+
     return changes
+
+
+def _apply_party(
+    sav: savefile.SaveFile,
+    party_state: list[dict],
+    inv: dict,
+    player_state: dict,
+    off,
+) -> list[str]:
+    """Write count + species + mons + OT names + nicknames into the .sav.
+
+    `party_state` is a list of dicts: `{species, level, nickname?, moves?, item?}`.
+    """
+    species_ids = {p["name"]: p["id"] for p in inv["pokemon"]}
+    move_ids = {m["name"]: m["id"] for m in inv["moves"]}
+    item_ids = {i["name"]: i["id"] for i in inv["items"]}
+
+    base_stats_db = {
+        name: species.BaseStats(
+            species=name,
+            hp=d["hp"], atk=d["atk"], def_=d["def_"],
+            spd=d["spd"], sat=d["sat"], sdf=d["sdf"],
+            growth_rate=d["growth_rate"],
+        )
+        for name, d in inv["species_data"].items()
+    }
+    learnset_db = {
+        name: species.Learnset(
+            species=name,
+            level_moves=[(int(lvl), mv) for lvl, mv in d["learnset"]],
+        )
+        for name, d in inv["species_data"].items()
+    }
+    move_pp_db: dict[str, int] = dict(inv["move_pp"])
+
+    mons_in: list[party_mod.PartyMonInput] = []
+    for raw in party_state:
+        if not isinstance(raw, dict) or "species" not in raw:
+            raise ValueError(f"invalid party entry: {raw!r}")
+        level = int(raw.get("level", 5))
+        if not (1 <= level <= 100):
+            raise ValueError(f"level out of range: {level} (1-100)")
+        mons_in.append(party_mod.PartyMonInput(
+            species=raw["species"],
+            level=level,
+            nickname=raw.get("nickname"),
+            moves=raw.get("moves"),
+            item=raw.get("item", "NO_ITEM"),
+            happiness=int(raw.get("happiness", 70)),
+        ))
+
+    # Read OT name and trainer id from the template (the player's current
+    # values), preferring an explicit override in state.player.
+    ot_name_bytes = sav.read(off("wPlayerName"), 8)
+    ot_name = player_state.get("name") or _decode_name(ot_name_bytes)
+    if not ot_name:
+        ot_name = "DEV"
+    ot_id = int.from_bytes(sav.read(off("wPlayerID"), 2), "big")
+
+    built = party_mod.build_party(
+        mons_in,
+        species_ids=species_ids,
+        move_ids=move_ids,
+        item_ids=item_ids,
+        base_stats_db=base_stats_db,
+        learnset_db=learnset_db,
+        move_pp_db=move_pp_db,
+        ot_name=ot_name,
+        ot_id=ot_id,
+    )
+
+    sav.write_byte(off("wPartyCount"), built.count)
+    sav.write_bytes(off("wPartySpecies"),      built.species_bytes)
+    sav.write_bytes(off("wPartyMons"),         built.mons_bytes)
+    sav.write_bytes(off("wPartyMonOT"),        built.ot_names_bytes)
+    sav.write_bytes(off("wPartyMonNicknames"), built.nicknames_bytes)
+
+    descs = [
+        f"{m.species}@L{m.level}" for m in mons_in
+    ]
+    return [f"party = [{', '.join(descs)}]"]
+
+
+def _decode_name(b: bytes) -> str:
+    """Reverse of savefile.encode_name for the printable subset.
+
+    Stops at the 0x50 terminator. Unknown bytes are dropped silently.
+    """
+    out = []
+    for ch in b:
+        if ch == 0x50:
+            break
+        if 0x80 <= ch <= 0x99:
+            out.append(chr(ord("A") + (ch - 0x80)))
+        elif 0xA0 <= ch <= 0xB9:
+            out.append(chr(ord("a") + (ch - 0xA0)))
+        elif 0xF6 <= ch <= 0xFF:
+            out.append(chr(ord("0") + (ch - 0xF6)))
+        elif ch == 0x7F:
+            out.append(" ")
+    return "".join(out)
 
 
 def recompute_checksums(sav: savefile.SaveFile, inv: dict) -> None:

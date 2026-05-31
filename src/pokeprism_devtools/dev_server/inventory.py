@@ -13,7 +13,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from pokeprism_devtools import constants, maps, savefile, symfile
+from pokeprism_devtools import constants, maps, savefile, species, symfile
 
 
 # WRAM symbols whose values the prism-dev tool will write. Resolved to
@@ -37,10 +37,14 @@ WRITABLE_FIELDS: dict[str, dict[str, object]] = {
     "wObjectStructs": {"size": 40 * 13, "block": "PlayerData"},
     "wMapObjects":    {"size": 16 * 16, "block": "PlayerData"},
     # Pokemon block
-    "wPartyCount":    {"size": 1,  "block": "PokemonData"},
-    "wPartySpecies":  {"size": 7,  "block": "PokemonData"},  # 6 species + 0xFF terminator
-    "wPartyMons":     {"size": 288, "block": "PokemonData"}, # 6 * 48
-    "wBadges":        {"size": 3,  "block": "PokemonData"},
+    "wPartyCount":         {"size": 1,  "block": "PokemonData"},
+    "wPartySpecies":       {"size": 7,  "block": "PokemonData"},  # 6 species + 0xFF terminator
+    "wPartyMons":          {"size": 288, "block": "PokemonData"}, # 6 * 48
+    "wPartyMonOT":         {"size": 11 * 6, "block": "PokemonData"},
+    "wPartyMonNicknames":  {"size": 11 * 6, "block": "PokemonData"},
+    "wBadges":             {"size": 3,  "block": "PokemonData"},
+    # Player trainer id — used as OT id when synthesizing party mons.
+    "wPlayerID":           {"size": 2,  "block": "PlayerData"},
 }
 
 # Save-file framing fields (not in a block — fixed positions in SRAM bank 1).
@@ -144,6 +148,24 @@ def build(root: Path, sym_path: Path) -> dict:
         syms["sExtraChecksum"].addr - syms["sExtraData"].addr
     )
 
+    species_in_order = [p["name"] for p in pokemon]
+    base_stats = species.parse_base_stats(root)
+    learnsets = species.parse_movesets(root, species_in_order)
+    move_pp = species.parse_move_pp(root)
+
+    species_data: dict[str, dict] = {}
+    for name in species_in_order:
+        bs = base_stats.get(name)
+        ls = learnsets.get(name)
+        if bs is None:
+            continue
+        species_data[name] = {
+            "hp": bs.hp, "atk": bs.atk, "def_": bs.def_,
+            "spd": bs.spd, "sat": bs.sat, "sdf": bs.sdf,
+            "growth_rate": bs.growth_rate,
+            "learnset": list(ls.level_moves) if ls is not None else [],
+        }
+
     return {
         "built_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "sym_path": str(sym_path.relative_to(root)),
@@ -154,6 +176,8 @@ def build(root: Path, sym_path: Path) -> dict:
             "moves": len(moves),
             "event_flags": len(flags),
             "maps": len(map_defs),
+            "species_data": len(species_data),
+            "move_pp": len(move_pp),
         },
         "blocks": blocks,
         "framing": framing,
@@ -163,6 +187,8 @@ def build(root: Path, sym_path: Path) -> dict:
         "moves": moves,
         "event_flags": flags,
         "maps": [asdict(m) for m in map_defs],
+        "species_data": species_data,
+        "move_pp": move_pp,
     }
 
 
