@@ -47,7 +47,7 @@ the directory on first run.
 | [`prism-sym`](#prism-sym)           | shipped    | Query the `.sym` file by label or address.                       |
 | [`test_lib.py`](#smoke-test)          | shipped    | Smoke test for the library (run after each rebuild).             |
 | [`test_maps.py`](#map-sweep)          | shipped    | Sweep every map through the `prism-dev` apply pipeline.        |
-| [`prism-dev`](#prism-dev)         | partial    | Inventory + save patcher + map-change support + dev-server TUI shipped. Party / items / event flags pending. |
+| [`prism-dev`](#prism-dev)         | partial    | Inventory + save patcher + map-change support + dev-server TUI + party editor shipped. Items / event flags pending. |
 | `flag-finder`                         | planned    | Cross-reference `EVENT_*` set/check sites across the codebase.   |
 | `map-inspect`                         | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
 | `prism-maps`                          | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
@@ -232,9 +232,13 @@ Force a rebuild with `--rebuild-inventory`. Pass `--debug` to source from
 the debug ROM's `.sym` instead of release.
 
 Current scope: 254 pokemon, 256 items, 254 moves, ~1163 event flags, 448
-maps. SRAM offsets resolved for: `wPlayerName`, `wMoney`, `wNumItems`,
-`wItems`, `wEventFlags`, `wMapGroup`, `wMapNumber`, `wXCoord`, `wYCoord`,
-`wPartyCount`, `wPartySpecies`, `wPartyMons`, `wBadges`.
+maps. The inventory also embeds each species' base stats + growth rate +
+learnset and each move's PP — needed by the party editor to synthesize
+PartyMon structs without re-parsing asm at apply time. SRAM offsets
+resolved for: `wPlayerName`, `wMoney`, `wNumItems`, `wItems`,
+`wEventFlags`, `wMapGroup`, `wMapNumber`, `wXCoord`, `wYCoord`,
+`wPartyCount`, `wPartySpecies`, `wPartyMons`, `wPartyMonOT`,
+`wPartyMonNicknames`, `wPlayerID`, `wBadges`.
 
 The inventory file is gitignored — it's regenerated from the build
 artifacts so it doesn't need to live in source control. A sibling tool
@@ -276,6 +280,25 @@ template. `map.name` is any `MAP_*` constant; consult `inventory.json` for
 the full list. Badges is a 3-byte array `[naljo, rijon, other]` where each
 byte is a bitmask of earned badges.
 
+The optional `party` key replaces the template's party with synthesized mons:
+
+```json
+{
+  "party": [
+    {"species": "CHARMANDER", "level": 5},
+    {"species": "PIKACHU",    "level": 10, "nickname": "SPARKY"},
+    {"species": "BULBASAUR",  "level": 7, "moves": ["TACKLE", "GROWL"], "item": "ORAN_BERRY"}
+  ]
+}
+```
+
+Per-mon defaults: `nickname` = species name, `moves` = the last 4 moves
+learnable at or below `level` (from `data/movesets/*.asm`), `item` =
+`NO_ITEM`, DVs all 15, StatExp 0, happiness 70, OT name/ID inherited
+from the player. HP/Atk/Def/Spd/SpA/SpD are computed from base stats
+via the in-game formula; experience is set to the minimum for the
+requested level using the species' growth rate.
+
 **State resolution order**: `prism-dev` looks for state in this sequence:
 1. `--state PATH` if given on the command line
 2. `.devtools/state.json` if it exists (written by the TUI on every edit)
@@ -286,10 +309,10 @@ To give a fresh checkout a useful starting warp, create
 `.devtools/presets/default.json` with the schema above. That file is not
 tracked by pokeprism's git, so each developer keeps their own.
 
-**Out of scope in v1** (will arrive in follow-up commits): party, items,
-event flags. Those fields are left untouched in the template — so if you
-need a Larvitar in your party, save the game with the larvitar caught and
-use that as the template.
+**Out of scope** (will arrive in follow-up commits): items, event flags.
+Those fields are left untouched in the template. The party editor (above)
+covers the most common need; bag inventory and event-flag toggling
+remain template-driven.
 
 Usage:
 
@@ -388,7 +411,7 @@ of `--out`, `--no-launch`, `--inventory-only` is set.
   Edit map / position...
   Reset state from preset...
   ───────────────────────────────
-  Edit party        — v2 — coming soon
+  Edit party...
   Edit items        — v2 — coming soon
   Edit event flags  — v2 — coming soon
   ───────────────────────────────
@@ -404,8 +427,9 @@ of `--out`, `--no-launch`, `--inventory-only` is set.
 | Badges          | 3 bytes — Naljo / Rijon / Other — each a 0–255 bitmask.         |
 | Map name        | Tab-autocomplete from the inventory (~448 maps; fuzzy match).   |
 | X / Y coord    | Range derived from the destination map's block grid (× 2 tiles per block); falls back to 0–255 if the map is unset. |
+| Party (6 slots) | Per-slot editor for species (tab-autocomplete from `inventory.json`), level (1–100), nickname, and the 4 moves (autocomplete; `-` reverts to learnset default). New slots are dropped if you back out without picking a species. |
 
-Party / items / event flags are surfaced as disabled menu entries
+Items / event flags are surfaced as disabled menu entries
 ("v2 — coming soon"); editing them is on the roadmap (see
 [`devtools-plan.md`](devtools-plan.md#future-work--known-v1-limitations)).
 
