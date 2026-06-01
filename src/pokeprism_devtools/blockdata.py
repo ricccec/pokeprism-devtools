@@ -40,6 +40,8 @@ class BlockData:
     height: int          # in blocks
     border_block: int
     blocks: bytes        # height * width bytes, row-major
+    tileset_id: int = 0  # primary header byte 1
+    permission: int = 0  # primary header byte 2
 
 
 def rom_offset(bank: int, addr: int) -> int:
@@ -85,6 +87,8 @@ def load(
         raise ValueError(f"(group={group}, map_id={map_id}) past ROM end")
     second_bank = rom[primary_off]
     # primary header: bank, tileset, permission, dw second_header_addr, ...
+    tileset_id = rom[primary_off + 1]
+    permission = rom[primary_off + 2]
     second_addr = _u16_le(rom, primary_off + 3)
 
     secondary_off = rom_offset(second_bank, second_addr)
@@ -126,6 +130,8 @@ def load(
         height=height,
         border_block=border_block,
         blocks=blocks,
+        tileset_id=tileset_id,
+        permission=permission,
     )
 
 

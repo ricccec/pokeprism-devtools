@@ -7,13 +7,14 @@ name = "pokeprism-devtools"
 version = "0.1.0"
 description = "Python devtools for the pokeprism Pokémon Crystal disassembly fork"
 requires-python = ">=3.10"
-dependencies = ["questionary"]
+dependencies = ["questionary", "Pillow"]
 
 [project.scripts]
-prism-dev  = "pokeprism_devtools.dev_server.cli:main"
-prism-sym  = "pokeprism_devtools.sym_lookup:main"
-prism-maps  = "pokeprism_devtools.map_inspect:main"
-prism-usage = "pokeprism_devtools.usage:main"
+prism-dev     = "pokeprism_devtools.dev_server.cli:main"
+prism-sym     = "pokeprism_devtools.sym_lookup:main"
+prism-maps    = "pokeprism_devtools.map_inspect:main"
+prism-usage   = "pokeprism_devtools.usage:main"
+prism-mapview = "pokeprism_devtools.mapview:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
