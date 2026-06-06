@@ -15,6 +15,7 @@ prism-sym     = "pokeprism_devtools.sym_lookup:main"
 prism-maps    = "pokeprism_devtools.map_inspect:main"
 prism-usage   = "pokeprism_devtools.usage:main"
 prism-mapview = "pokeprism_devtools.mapview:main"
+prism-gfx     = "pokeprism_devtools.gfx_view:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

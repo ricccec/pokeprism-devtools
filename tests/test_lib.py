@@ -15,7 +15,8 @@ from __future__ import annotations
 import sys
 
 from pokeprism_devtools import (
-    blockdata, constants, lz, maps, paths, party, savefile, species, symfile,
+    blockdata, constants, lz, maps, paths, party, render, savefile, species,
+    symfile,
 )
 
 
@@ -326,6 +327,41 @@ def main() -> None:
     check("ROMX bank #1 free == $0101", b1.free == 0x0101, f"got ${b1.free:04x}")
     sram_banks = mp.banks_by_region("SRAM")
     check("SRAM has at least 1 bank", len(sram_banks) >= 1, f"{len(sram_banks)}")
+
+    print("\nrender.py")
+    for table in render.PALETTE_TABLES:
+        for tod in range(4):
+            pals = render.palettes_for_table(root, table, tod)
+            ok = (
+                len(pals) == 8
+                and all(len(p) == 4 and all(len(c) == 3 for c in p) for p in pals)
+            )
+            check(f"palettes_for_table({table}, {tod}) → 8×4 RGB", ok,
+                  f"{len(pals)} palettes")
+
+    # `rom` was reassigned to a list of banks in the mapfile section above.
+    rom_file = paths.rom_path(root)
+    rmap = next((m for m in map_defs if m.name == "AZALEA_TOWN"), map_defs[0])
+    bd = blockdata.load(rom_file, syms, rmap.group, rmap.map_id, name=rmap.name)
+    base_img = render.render_map(root, rom_file, syms, rmap.group, rmap.map_id, name=rmap.name)
+    check(f"render_map({rmap.name}) → {bd.width}×{bd.height} blocks",
+          base_img.size == (bd.width * 32, bd.height * 32), f"{base_img.size}")
+
+    # outdoor and indoor tables differ in all 8 slots, so any non-empty map
+    # renders differently — a robust check of the override mechanism.
+    img_out = render.render_map(root, rom_file, syms, rmap.group, rmap.map_id,
+                                name=rmap.name, palette_table="outdoor")
+    img_in = render.render_map(root, rom_file, syms, rmap.group, rmap.map_id,
+                               name=rmap.name, palette_table="indoor")
+    check("palette override keeps dimensions", img_out.size == base_img.size,
+          f"{img_out.size}")
+    check("different palette tables change pixels",
+          img_out.tobytes() != img_in.tobytes())
+
+    sheet = render.render_tileset_sheet(
+        root, bd.tileset_id, render.palettes_for_table(root, "outdoor", 1))
+    check(f"render_tileset_sheet(tileset {bd.tileset_id}) → 512×512",
+          sheet.size == (512, 512), f"{sheet.size}")
 
     print("\nall checks passed")
 

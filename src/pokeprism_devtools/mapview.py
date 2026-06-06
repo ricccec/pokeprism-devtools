@@ -13,28 +13,12 @@ re-rendered when the ROM is newer than the cache.
 from __future__ import annotations
 
 import argparse
-import os
-import subprocess
 import sys
 from pathlib import Path
 
 from . import maps, paths, symfile
-from .render import render_map
-
-_TOD_MAP = {"morn": 0, "day": 1, "nite": 2, "dark": 3}
-
-
-def _open_images(paths_list: list[Path]) -> None:
-    if not paths_list:
-        return
-    if sys.platform == "darwin":
-        subprocess.run(["open"] + [str(p) for p in paths_list], check=False)
-    elif sys.platform.startswith("linux"):
-        for p in paths_list:
-            subprocess.run(["xdg-open", str(p)], check=False)
-    else:
-        for p in paths_list:
-            os.startfile(str(p))  # type: ignore[attr-defined]
+from .render import PALETTE_TABLES, render_map
+from .viewer import TOD_MAP, TOD_NAMES, open_images, parse_tileset_id
 
 
 def _normalize(name: str) -> str:
@@ -58,11 +42,23 @@ def _find_map(all_maps: list, query: str):
     sys.exit(1)
 
 
-_TOD_NAMES = {0: "morn", 1: "day", 2: "nite", 3: "dark"}
-
-
-def _cache_path(cache_dir: Path, map_name: str, tod: int) -> Path:
-    return cache_dir / f"{map_name.lower()}_{_TOD_NAMES[tod]}.bmp"
+def _cache_path(
+    cache_dir: Path,
+    map_name: str,
+    tod: int,
+    tileset_id: int | None = None,
+    palette_table: str | None = None,
+) -> Path:
+    # No-override renders keep the original `<name>_<tod>.bmp` form (and cache).
+    # Overrides are encoded in the name and use .png so combos never collide.
+    if tileset_id is None and palette_table is None:
+        return cache_dir / f"{map_name.lower()}_{TOD_NAMES[tod]}.bmp"
+    suffix = ""
+    if tileset_id is not None:
+        suffix += f"_ts{tileset_id:02d}"
+    if palette_table is not None:
+        suffix += f"_pal{palette_table}"
+    return cache_dir / f"{map_name.lower()}_{TOD_NAMES[tod]}{suffix}.png"
 
 
 def _needs_render(cache_file: Path, rom: Path, force: bool) -> bool:
@@ -73,10 +69,17 @@ def _needs_render(cache_file: Path, rom: Path, force: bool) -> bool:
     return cache_file.stat().st_mtime < rom.stat().st_mtime
 
 
-def _render_one(root, rom, syms, m, cache_dir, tod, force) -> Path:
-    cache_file = _cache_path(cache_dir, m.name, tod)
+def _render_one(
+    root, rom, syms, m, cache_dir, tod, force,
+    tileset_id: int | None = None,
+    palette_table: str | None = None,
+) -> Path:
+    cache_file = _cache_path(cache_dir, m.name, tod, tileset_id, palette_table)
     if _needs_render(cache_file, rom, force):
-        img = render_map(root, rom, syms, m.group, m.map_id, name=m.name, time_of_day=tod)
+        img = render_map(
+            root, rom, syms, m.group, m.map_id, name=m.name, time_of_day=tod,
+            tileset_id=tileset_id, palette_table=palette_table,
+        )
         img.save(str(cache_file))
     return cache_file
 
@@ -88,8 +91,14 @@ def main() -> None:
     )
     parser.add_argument("map_names", nargs="*", metavar="MAP_NAME",
                         help="Map name(s) (case-insensitive). Omit to render all.")
-    parser.add_argument("--time", choices=list(_TOD_MAP), default="day",
+    parser.add_argument("--time", choices=list(TOD_MAP), default="day",
                         help="Time of day for palette selection (default: day).")
+    parser.add_argument("--tileset", type=parse_tileset_id, metavar="N",
+                        help="Override the graphics tileset (decimal or 0x-hex), "
+                             "instead of the map's own. See `prism-gfx tileset`.")
+    parser.add_argument("--palette", choices=PALETTE_TABLES,
+                        help="Override the BG palette table, instead of deriving it "
+                             "from the map's permission.")
     parser.add_argument("--force", action="store_true", help="Re-render even if cache is fresh.")
     args = parser.parse_args()
 
@@ -102,7 +111,7 @@ def main() -> None:
         sys.exit(2)
 
     syms = symfile.SymFile.load(sym)
-    tod = _TOD_MAP[args.time]
+    tod = TOD_MAP[args.time]
     cache_dir = root / ".devtools" / "map-renders"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -113,22 +122,24 @@ def main() -> None:
         outputs = []
         for m in targets:
             try:
-                outputs.append(_render_one(root, rom, syms, m, cache_dir, tod, args.force))
+                outputs.append(_render_one(root, rom, syms, m, cache_dir, tod, args.force,
+                                           args.tileset, args.palette))
             except Exception as e:
                 print(f"Error rendering {m.name}: {e}", file=sys.stderr)
                 sys.exit(1)
-        _open_images(outputs)
+        open_images(outputs)
     else:
         outputs = []
         errors = 0
         for i, m in enumerate(all_maps):
             try:
-                outputs.append(_render_one(root, rom, syms, m, cache_dir, tod, args.force))
+                outputs.append(_render_one(root, rom, syms, m, cache_dir, tod, args.force,
+                                           args.tileset, args.palette))
                 if (i + 1) % 50 == 0 or (i + 1) == len(all_maps):
                     print(f"  {i + 1}/{len(all_maps)} maps rendered")
             except Exception as e:
                 print(f"  Warning: {m.name}: {e}", file=sys.stderr)
                 errors += 1
-        _open_images(outputs)
+        open_images(outputs)
         if errors:
             print(f"{errors} map(s) failed to render.", file=sys.stderr)

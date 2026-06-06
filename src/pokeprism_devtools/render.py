@@ -64,6 +64,11 @@ _COLOR_TABLES: dict[str, list[list[int]]] = {
 
 _GRAY_PALETTE: list[tuple[int, int, int]] = [(0, 0, 0), (85, 85, 85), (170, 170, 170), (255, 255, 255)]
 
+# The freely-combinable BG palette tables (engine/color.asm .TilesetColorsPointers).
+# Each resolves against bg.pal via _COLOR_TABLES; special per-tileset .pal files
+# are deliberately not exposed as override choices.
+PALETTE_TABLES = ("outdoor", "indoor", "dungeon")
+
 
 def _read_or_lz(path: Path) -> bytes:
     if path.exists():
@@ -142,17 +147,31 @@ def get_map_palettes(
             if len(section) == 8:
                 return section
 
-    bg_path = tilesets_dir / "bg.pal"
+    table_name = _PERM_TO_TABLE.get(permission & 7, "outdoor")
+    return palettes_for_table(root, table_name, tod)
+
+
+def palettes_for_table(
+    root: Path,
+    table_name: str,
+    time_of_day: int,
+) -> list[list[tuple[int, int, int]]]:
+    """Return 8 BG palettes from bg.pal for an explicit color table.
+
+    table_name: one of PALETTE_TABLES ('outdoor', 'indoor', 'dungeon').
+    time_of_day: 0=morn 1=day 2=nite 3=dark
+
+    This is the non-special branch of get_map_palettes, exposed so callers can
+    pick a palette table directly (ignoring per-tileset special .pal files).
+    """
+    tod = max(0, min(3, time_of_day))
+    bg_path = root / "tilesets" / "bg.pal"
     if not bg_path.exists():
         return [_GRAY_PALETTE] * 8
 
     bg_pals = parse_pal_file(bg_path)
-    table_name = _PERM_TO_TABLE.get(permission & 7, "outdoor")
     indices = _COLOR_TABLES[table_name][tod]
-    result = []
-    for idx in indices:
-        result.append(bg_pals[idx] if idx < len(bg_pals) else _GRAY_PALETTE)
-    return result
+    return [bg_pals[idx] if idx < len(bg_pals) else _GRAY_PALETTE for idx in indices]
 
 
 def load_tileset_files(root: Path, tileset_id: int) -> tuple[bytes, bytes, bytes]:
@@ -188,6 +207,56 @@ def decode_2bpp_tile(gfx: bytes, tile_id: int) -> list[list[int]]:
     return rows
 
 
+def _composite_block(
+    buf: bytearray,
+    buf_w_px: int,
+    block_col: int,
+    block_row: int,
+    tile_ids: bytes,
+    attrs: bytes,
+    gfx: bytes,
+    palettes: list[list[tuple[int, int, int]]],
+    tile_cache: dict[tuple[int, bool, bool], list[list[int]]],
+) -> None:
+    """Composite one 4×4-tile block into `buf` at (block_col, block_row).
+
+    tile_ids / attrs are the 16 metatile entries for the block. `tile_cache`
+    is shared across calls to avoid re-decoding identical (tile, flip) tiles.
+    """
+    for i in range(_TILES_PER_BLOCK):
+        attr = attrs[i]
+        pidx = attr & 7
+        vram_bank = (attr >> 3) & 1   # bit 3: VRAM bank (bank 1 → tile_id + 128)
+        h_flip = bool(attr & 0x20)    # bit 5: horizontal mirror
+        v_flip = bool(attr & 0x40)    # bit 6: vertical mirror
+        palette = palettes[pidx]
+
+        effective_tid = tile_ids[i] + vram_bank * 128
+        cache_key = (effective_tid, h_flip, v_flip)
+        if cache_key not in tile_cache:
+            pixels = decode_2bpp_tile(gfx, effective_tid)
+            if h_flip:
+                pixels = [row_px[::-1] for row_px in pixels]
+            if v_flip:
+                pixels = pixels[::-1]
+            tile_cache[cache_key] = pixels
+        tile_pixels = tile_cache[cache_key]
+
+        tx = block_col * _BLOCK_COLS + (i % _BLOCK_COLS)
+        ty = block_row * _BLOCK_COLS + (i // _BLOCK_COLS)
+
+        for py in range(8):
+            dst_y = ty * 8 + py
+            dst_x_base = tx * 8
+            row_off = (dst_y * buf_w_px + dst_x_base) * 3
+            for px in range(8):
+                r, g, b = palette[tile_pixels[py][px]]
+                off = row_off + px * 3
+                buf[off] = r
+                buf[off + 1] = g
+                buf[off + 2] = b
+
+
 def render_map(
     root: Path,
     rom_path: Path,
@@ -197,21 +266,30 @@ def render_map(
     *,
     name: str = "",
     time_of_day: int = 1,
+    tileset_id: int | None = None,
+    palette_table: str | None = None,
 ) -> Image.Image:
     """Render a map to a PIL RGB Image.
 
     time_of_day: 0=morn 1=day 2=nite 3=dark
+    tileset_id: override the graphics tileset (default: the map's own).
+    palette_table: override the BG palette table (one of PALETTE_TABLES);
+        default derives it from the map's permission via get_map_palettes.
     """
     bd = blockdata.load(rom_path, syms, group, map_id, name=name)
-    metatiles, attributes, gfx = load_tileset_files(root, bd.tileset_id)
-    palettes = get_map_palettes(root, bd.tileset_id, bd.permission, time_of_day)
+    gfx_tileset = tileset_id if tileset_id is not None else bd.tileset_id
+    metatiles, attributes, gfx = load_tileset_files(root, gfx_tileset)
+    if palette_table is not None:
+        palettes = palettes_for_table(root, palette_table, time_of_day)
+    else:
+        palettes = get_map_palettes(root, bd.tileset_id, bd.permission, time_of_day)
 
     w_px = bd.width * BLOCK_PX    # BLOCK_PX = 32 (4×4 tiles × 8px)
     h_px = bd.height * BLOCK_PX
     buf = bytearray(w_px * h_px * 3)
 
     # Cache decoded tiles to avoid redundant work
-    tile_cache: dict[int, list[list[int]]] = {}
+    tile_cache: dict[tuple[int, bool, bool], list[list[int]]] = {}
 
     for row in range(bd.height):
         for col in range(bd.width):
@@ -219,39 +297,34 @@ def render_map(
             base = block_id * _TILES_PER_BLOCK
             end = base + _TILES_PER_BLOCK
             tile_ids = metatiles[base:end] if end <= len(metatiles) else bytes(_TILES_PER_BLOCK)
-            pal_idxs = attributes[base:end] if end <= len(attributes) else bytes(_TILES_PER_BLOCK)
+            attrs = attributes[base:end] if end <= len(attributes) else bytes(_TILES_PER_BLOCK)
+            _composite_block(buf, w_px, col, row, tile_ids, attrs, gfx, palettes, tile_cache)
 
-            for i in range(_TILES_PER_BLOCK):
-                attr = pal_idxs[i]
-                pidx = attr & 7
-                vram_bank = (attr >> 3) & 1   # bit 3: VRAM bank (bank 1 → tile_id + 128)
-                h_flip = bool(attr & 0x20)    # bit 5: horizontal mirror
-                v_flip = bool(attr & 0x40)    # bit 6: vertical mirror
-                palette = palettes[pidx]
+    return Image.frombytes("RGB", (w_px, h_px), bytes(buf))
 
-                effective_tid = tile_ids[i] + vram_bank * 128
-                cache_key = (effective_tid, h_flip, v_flip)
-                if cache_key not in tile_cache:
-                    pixels = decode_2bpp_tile(gfx, effective_tid)
-                    if h_flip:
-                        pixels = [row_px[::-1] for row_px in pixels]
-                    if v_flip:
-                        pixels = pixels[::-1]
-                    tile_cache[cache_key] = pixels
-                tile_pixels = tile_cache[cache_key]
 
-                tx = col * _BLOCK_COLS + (i % _BLOCK_COLS)
-                ty = row * _BLOCK_COLS + (i // _BLOCK_COLS)
+def render_tileset_sheet(
+    root: Path,
+    tileset_id: int,
+    palettes: list[list[tuple[int, int, int]]],
+) -> Image.Image:
+    """Render a tileset's 256 metatile blocks as a 16×16 grid (512×512 px).
 
-                for py in range(8):
-                    dst_y = ty * 8 + py
-                    dst_x_base = tx * 8
-                    row_off = (dst_y * w_px + dst_x_base) * 3
-                    for px in range(8):
-                        r, g, b = palette[tile_pixels[py][px]]
-                        off = row_off + px * 3
-                        buf[off] = r
-                        buf[off + 1] = g
-                        buf[off + 2] = b
+    Each block is composited with its own attribute bytes (palette slot + flips)
+    against the supplied 8 `palettes`, so it reads like an in-game screen.
+    """
+    metatiles, attributes, gfx = load_tileset_files(root, tileset_id)
+    cols = rows = 16
+    w_px = cols * BLOCK_PX
+    h_px = rows * BLOCK_PX
+    buf = bytearray(w_px * h_px * 3)
+    tile_cache: dict[tuple[int, bool, bool], list[list[int]]] = {}
+
+    for m in range(cols * rows):
+        base = m * _TILES_PER_BLOCK
+        end = base + _TILES_PER_BLOCK
+        tile_ids = metatiles[base:end] if end <= len(metatiles) else bytes(_TILES_PER_BLOCK)
+        attrs = attributes[base:end] if end <= len(attributes) else bytes(_TILES_PER_BLOCK)
+        _composite_block(buf, w_px, m % cols, m // cols, tile_ids, attrs, gfx, palettes, tile_cache)
 
     return Image.frombytes("RGB", (w_px, h_px), bytes(buf))

@@ -54,6 +54,8 @@ the directory on first run.
 | `sram-diff`                           | planned    | Diff two `.sav` files field-by-field using the SRAM layout.      |
 | `trainer-inspect`                     | planned    | Dump trainer parties from `trainers/*.asm`.                      |
 | [`prism-usage`](#prism-usage)          | shipped    | RGBDS link-map analyzer: bank usage, section sizes, diffs, pre-commit check. |
+| [`prism-mapview`](#prism-mapview)      | shipped    | Render a map to an image and open it. Supports `--tileset`/`--palette` overrides. |
+| [`prism-gfx`](#prism-gfx)              | shipped    | Visualize tilesets and BG palettes (to pick `prism-mapview` overrides). |
 | `prism-watch`                         | planned    | `fswatch` → `make nodebug` → optional emulator relaunch.         |
 
 ---
@@ -544,6 +546,104 @@ prism-maps --json | python3 -m json.tool
 - `0` — at least one row printed (or JSON array emitted)
 - `1` — no maps matched the given filters
 - `2` — usage error or pokeprism repo not found
+
+---
+
+## prism-mapview
+
+Renders a Pokémon Prism map to an image and opens it (macOS Preview / `xdg-open`
+/ default viewer). Composites the map's block grid with its tileset graphics and
+BG palettes, exactly as `engine/color.asm` does at runtime. Images are cached
+under `.devtools/map-renders/` and only re-rendered when the ROM is newer than
+the cache (or `--force`).
+
+By default a map renders with the tileset and palette its own header specifies.
+The `--tileset` and `--palette` overrides let you render *any combination* — e.g.
+how a route would look with a cave's tileset and dungeon colors. The map header
+stores no palette index; the BG palette is derived from `(permission, time-of-day)`
+against `bg.pal`, so `--palette` picks the permission table and `--time` picks the
+time-of-day row. (Per-tileset special `.pal` files are intentionally not exposed.)
+
+### Synopsis
+
+```bash
+prism-mapview [MAP_NAME ...] [--time {morn,day,nite,dark}]
+              [--tileset N] [--palette {outdoor,indoor,dungeon}] [--force]
+```
+
+With no `MAP_NAME`, renders and opens every map. Map names are case-insensitive
+and match with underscores/spaces ignored (substring match if unambiguous).
+
+### Options
+
+```
+--time {morn,day,nite,dark}     Time of day for palette selection (default: day)
+--tileset N                     Override the graphics tileset (decimal or 0x-hex)
+--palette {outdoor,indoor,dungeon}
+                                Override the BG palette table
+--force                         Re-render even if the cache is fresh
+```
+
+Override renders are cached as `<map>_<tod>[_ts<NN>][_pal<table>].png`, distinct
+from the default `<map>_<tod>.bmp`, so combinations never clobber each other.
+
+### Examples
+
+```bash
+prism-mapview AZALEA_TOWN                      # default render
+prism-mapview ROUTE_1 --time nite              # nighttime palette
+prism-mapview ROUTE_1 --tileset 0x2D --palette dungeon
+prism-mapview SOME_CAVE --palette indoor --force
+```
+
+Use [`prism-gfx`](#prism-gfx) to see what each `--tileset N` / `--palette` looks
+like before choosing.
+
+### Exit codes
+
+- `0` — all requested maps rendered
+- `1` — a named map failed to render (or an ambiguous/unknown name)
+- `2` — pokeprism repo / ROM / `.sym` not found
+
+---
+
+## prism-gfx
+
+Visualizes tilesets and BG palettes so you can decide which `--tileset N` /
+`--palette` to pass to [`prism-mapview`](#prism-mapview). Images are cached under
+`.devtools/gfx-renders/` and only re-rendered when their source files (tileset
+bins / graphics / `bg.pal`) are newer than the cache (or `--force`).
+
+### Synopsis
+
+```bash
+prism-gfx tileset [N] [--palette {outdoor,indoor,dungeon}]
+                      [--time {morn,day,nite,dark}] [--force]
+prism-gfx palettes [--force]
+```
+
+- **`tileset [N]`** — renders the tileset's 256 metatile blocks as a 16×16 grid
+  (512×512 px), each block colored with its own attributes against the chosen
+  palette table (default `outdoor` / `day`). `N` is decimal or `0x`-hex. **Omit
+  `N` to render every tileset and open them all at once** (macOS Preview shows
+  them in a sidebar).
+- **`palettes`** — renders a swatch sheet of every BG palette table
+  (outdoor / indoor / dungeon) × time-of-day, 8 palettes × 4 colors each.
+
+### Examples
+
+```bash
+prism-gfx tileset 0x2D                          # tileset 45, outdoor/day
+prism-gfx tileset 0x2D --palette dungeon --time nite
+prism-gfx tileset                               # every tileset, opened together
+prism-gfx palettes                              # the full swatch sheet
+```
+
+### Exit codes
+
+- `0` — image rendered and opened
+- `1` — render failed (e.g. missing tileset files)
+- `2` — pokeprism repo not found
 
 ---
 
