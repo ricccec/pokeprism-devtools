@@ -324,9 +324,27 @@ def main() -> None:
     b0 = mp.banks[("ROM0", 0)]
     check("ROM0 bank #0 free == $0339", b0.free == 0x0339, f"got ${b0.free:04x}")
     b1 = mp.banks[("ROMX", 1)]
-    check("ROMX bank #1 free == $0101", b1.free == 0x0101, f"got ${b1.free:04x}")
+    check("ROMX bank #1 free == $00fd", b1.free == 0x00fd, f"got ${b1.free:04x}")
     sram_banks = mp.banks_by_region("SRAM")
     check("SRAM has at least 1 bank", len(sram_banks) >= 1, f"{len(sram_banks)}")
+
+    # The .map only lists banks the linker touched; the physical cartridge has
+    # trailing $ff padding banks rgbfix adds to reach a valid ROM size.
+    total = paths.rom_bank_count(paths.rom_path(root))
+    check("rom_bank_count reads a power-of-two bank count",
+          total in (2, 4, 8, 16, 32, 64, 128, 256, 512), f"{total} banks")
+    used_before = len(mp.rom_banks())
+    mp.fill_rom_banks(total)
+    rom = mp.rom_banks()
+    check("fill_rom_banks pads ROM to the cartridge size", len(rom) == total,
+          f"{used_before} → {len(rom)} of {total}")
+    check("highest bank is the last cartridge bank",
+          rom[-1].number == total - 1, f"${rom[-1].number:02x}")
+    padded = [b for b in rom if b.used == 0 and b.free == b.capacity]
+    check("padding banks are 100% free", padded and all(not b.sections for b in padded),
+          f"{len(padded)} empty banks")
+    check("fill_rom_banks is idempotent",
+          (mp.fill_rom_banks(total), len(mp.rom_banks()))[1] == total)
 
     print("\nrender.py")
     for table in render.PALETTE_TABLES:
