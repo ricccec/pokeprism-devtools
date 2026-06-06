@@ -16,8 +16,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import maps, paths, symfile
-from .render import PALETTE_TABLES, render_map
+from . import blockdata, maps, paths, symfile
+from .render import PALETTE_TABLES, render_map, table_for_permission
 from .viewer import TOD_MAP, TOD_NAMES, open_images, parse_tileset_id
 
 
@@ -84,6 +84,23 @@ def _render_one(
     return cache_file
 
 
+def _describe(rom, syms, m, tod, tileset_id, palette_table, out_path) -> None:
+    """Print the tileset / palette / time-of-day a named map was rendered with."""
+    bd = blockdata.load(rom, syms, m.group, m.map_id, name=m.name)
+    eff_tileset = tileset_id if tileset_id is not None else bd.tileset_id
+    ts_note = "  (override)" if tileset_id is not None else ""
+    if palette_table is not None:
+        table, table_src = palette_table, "override"
+    else:
+        table, table_src = table_for_permission(bd.permission), f"from permission {bd.permission}"
+    print(f"{m.name}  (group {m.group}, map {m.map_id})")
+    print(f"  size:    {bd.width}×{bd.height} blocks  ({bd.width * 32}×{bd.height * 32}px)")
+    print(f"  tileset: {eff_tileset} (0x{eff_tileset:02X}){ts_note}")
+    print(f"  palette: {table}  ({table_src})")
+    print(f"  time:    {TOD_NAMES[tod]}")
+    print(f"  output:  {out_path}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="prism-mapview",
@@ -122,11 +139,13 @@ def main() -> None:
         outputs = []
         for m in targets:
             try:
-                outputs.append(_render_one(root, rom, syms, m, cache_dir, tod, args.force,
-                                           args.tileset, args.palette))
+                out = _render_one(root, rom, syms, m, cache_dir, tod, args.force,
+                                  args.tileset, args.palette)
             except Exception as e:
                 print(f"Error rendering {m.name}: {e}", file=sys.stderr)
                 sys.exit(1)
+            outputs.append(out)
+            _describe(rom, syms, m, tod, args.tileset, args.palette, out)
         open_images(outputs)
     else:
         outputs = []

@@ -151,6 +151,12 @@ def get_map_palettes(
     return palettes_for_table(root, table_name, tod)
 
 
+def table_for_permission(permission: int) -> str:
+    """Return the BG palette table ('outdoor'/'indoor'/'dungeon') a map's
+    permission byte resolves to (engine/color.asm .TilesetColorsPointers)."""
+    return _PERM_TO_TABLE.get(permission & 7, "outdoor")
+
+
 def palettes_for_table(
     root: Path,
     table_name: str,
