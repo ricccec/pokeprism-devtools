@@ -112,6 +112,22 @@ class MapFile:
 
         return cls(banks)
 
+    def fill_rom_banks(self, total_banks: int) -> None:
+        """Add empty ROMX bank entries for banks the cartridge contains but the
+        linker never assigned, so they're absent from the .map (trailing $ff
+        padding that rgbfix appends to reach a valid ROM size).
+
+        `total_banks` is the cartridge's full bank count *including* bank 0, so
+        ROMX banks run 1..total_banks-1. No-op for banks already present.
+        """
+        cap = REGION_CAPACITY["ROMX"]
+        for n in range(1, total_banks):
+            if ("ROMX", n) in self.banks or ("ROM0", n) in self.banks:
+                continue
+            self.banks[("ROMX", n)] = Bank(
+                region="ROMX", number=n, capacity=cap, used=0, free=cap,
+            )
+
     def rom_banks(self) -> list[Bank]:
         result = [b for b in self.banks.values() if b.region in ("ROM0", "ROMX")]
         return sorted(result, key=lambda b: (0 if b.region == "ROM0" else 1, b.number))

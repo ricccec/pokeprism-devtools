@@ -46,6 +46,25 @@ def map_path(root: Path | None = None, *, debug: bool = False) -> Path:
     return _sibling_artifact(rom_path(root, debug=debug), ".map")
 
 
+def rom_bank_count(rom: Path) -> int:
+    """Total number of 16 KiB ROM banks the cartridge declares — i.e. what the
+    hardware sees, including the trailing padding banks rgbfix appends.
+
+    Reads the ROM-size byte at $0148 (banks = 2 << code for codes $00–$08).
+    Falls back to the file size if the byte is unreadable or non-standard;
+    rgbfix always pads to a whole number of banks, so that's exact too.
+    """
+    try:
+        with rom.open("rb") as f:
+            f.seek(0x0148)
+            code = f.read(1)
+        if len(code) == 1 and code[0] <= 0x08:
+            return 2 << code[0]
+        return max(1, rom.stat().st_size // 16_384)
+    except OSError:
+        return 0
+
+
 def sav_path(root: Path | None = None, *, debug: bool = False) -> Path:
     """Path to the .sav next to the ROM. May or may not exist yet."""
     return rom_path(root, debug=debug).with_suffix(".sav")
