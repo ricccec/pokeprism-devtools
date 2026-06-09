@@ -20,6 +20,12 @@ src/pokeprism_devtools/
 ├── blockdata.py        — read map blockdata from ROM, compute wScreenSave
 ├── people.py           — reset player struct + clear NPC slots
 ├── sym_lookup.py       — `prism-sym` CLI: query the .sym by label or address
+├── mapfile.py          — parse RGBDS .map files (per-bank free space, section sizes)
+├── usage.py            — `prism-usage` CLI: link-map bank/section analysis
+├── packing.py          — two-tier best-fit / worst-fit bank packer
+├── mapspec.py          — new-map spec (TOML) + derived per-map section names
+├── mapwire.py          — idempotent wiring of the map source files + romx.link pins
+├── mapfit.py           — `prism-mapfit` CLI: allocate / park / consolidate map blobs
 └── dev_server/
     ├── cli.py          — `prism-dev` CLI entrypoint
     ├── tui.py          — questionary-driven dev-server menu
@@ -40,12 +46,17 @@ read its `.sym`). Install via `pipx` so the CLIs land on your `$PATH`:
 pipx install -e /path/to/pokeprism-devtools
 ```
 
-This exposes two commands:
+This exposes several commands (see [`docs/devtools.md`](docs/devtools.md) for full usage):
 
-| Command       | Purpose                                                    |
-|---------------|------------------------------------------------------------|
-| `prism-dev`   | Launch the game in an arbitrary state (the headline tool). |
-| `prism-sym`   | Query the `.sym` by label or address.                      |
+| Command        | Purpose                                                          |
+|----------------|------------------------------------------------------------------|
+| `prism-dev`    | Launch the game in an arbitrary state (the headline tool).       |
+| `prism-sym`    | Query the `.sym` by label or address.                            |
+| `prism-maps`   | Filterable table of per-map metadata (dimensions, sizes, NPCs).  |
+| `prism-usage`  | RGBDS link-map analysis: bank usage, section sizes, diffs.       |
+| `prism-mapfit` | Find ROM banks for a new map, wire it in, and re-pack a near-full ROM. |
+| `prism-mapview`| Render a map to an image and open it.                            |
+| `prism-gfx`    | Visualize tilesets and BG palettes.                              |
 
 Both anchor themselves to your pokeprism repo by walking the current
 working directory up until they find `Makefile` + `main.asm`, so run them
@@ -78,6 +89,10 @@ prism-dev --no-tui             # bypass the TUI, one-shot patch + launch
 prism-sym TryLoadSaveFile
 prism-sym --addr 01:a020
 prism-sym --prefix wParty -n 5
+
+# Allocate banks for a new map and wire it in
+prism-mapfit add --park --spec mymap.toml          # park a still-growing map
+prism-mapfit consolidate --spec a.toml --spec b.toml   # re-pack once sizes settle
 
 # Smoke test (after rebuilding the ROM)
 python /path/to/pokeprism-devtools/tests/test_lib.py
