@@ -51,6 +51,7 @@ the directory on first run.
 | `flag-finder`                         | planned    | Cross-reference `EVENT_*` set/check sites across the codebase.   |
 | `map-inspect`                         | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
 | [`prism-maps`](#prism-maps)           | shipped    | Filterable terminal table of per-map metadata (dimensions, block sizes, NPC counts, compression ratio). No ROM needed. |
+| [`prism-map`](#prism-map)             | shipped    | Inspect one map: full report (header fields, section banks, blob sizes) and export its `prism-mapfit` spec TOML. |
 | `sram-diff`                           | planned    | Diff two `.sav` files field-by-field using the SRAM layout.      |
 | `trainer-inspect`                     | planned    | Dump trainer parties from `trainers/*.asm`.                      |
 | [`prism-usage`](#prism-usage)          | shipped    | RGBDS link-map analyzer: bank usage, section sizes, diffs, pre-commit check. |
@@ -547,6 +548,66 @@ prism-maps --json | python3 -m json.tool
 - `0` — at least one row printed (or JSON array emitted)
 - `1` — no maps matched the given filters
 - `2` — usage error or pokeprism repo not found
+
+---
+
+## prism-map
+
+Inspects a **single** map (the singular of `prism-maps`) and is the inverse of
+`prism-mapfit`: it reads a map's `map_header` / `map_header_2` fields, block-data
+and script paths straight from the asm, reports where each section is pinned and
+how big each blob is, and can emit the TOML `MapSpec` that `prism-mapfit`
+consumes. No ROM required.
+
+The const-name fields (`TILESET_*`, `INDOOR`, music, …) come from the **asm**
+(`map_headers.asm` / `second_map_headers.asm`), so the emitted spec round-trips
+cleanly back into `prism-mapfit`.
+
+**Synopsis**
+
+```
+prism-map <Label> [--toml] [-o FILE] [--map PATH]
+```
+
+`<Label>` is the map's CamelCase asm label (e.g. `MtEmberSmallRoom`).
+
+**Options**
+
+| Option | Meaning |
+|---|---|
+| `--toml` | Emit the spec TOML to stdout instead of the report. |
+| `-o FILE` | Write the spec TOML to `FILE` (implies `--toml`). |
+| `--map PATH` | Use this `.map` for section banks (default: next to the built ROM). |
+
+**Report** — the spec fields (group, dimensions, all `map_header` /
+`map_header_2` values, connections, file paths) plus a **Sections** block listing
+each blob's section, its **bank**, and its **size**:
+
+- block data — exact, via `utils/lzcomp` (omitted if lzcomp isn't built);
+- secondary header — `12 + 12·connections`;
+- primary header — 8 bytes (in the shared `Map Headers` bank);
+- script/event — exact from the `.map` if the map has its own `Map Scripts
+  <Label>` section, else the source `.asm` byte count, marked `(src)`.
+
+Blobs living in a **shared** section (e.g. an `INCLUDE` inside `Map Scripts 7`)
+are flagged `*shared*` — `prism-mapfit` can't relocate those independently until
+they're moved into their own section. Without a `.map` the bank column is
+omitted.
+
+**Exit codes** — matches `prism-sym`:
+- `0` — success
+- `2` — usage error, repo not found, or the label isn't a wired map
+
+**Examples**
+
+```bash
+prism-map OlcanDock                          # full report
+prism-map OlcanDock --map pokeprism_nodebug.map   # with section banks
+prism-map MtEmberSmallRoom --toml            # spec TOML to stdout
+prism-map MtEmberSmallRoom -o mymap.toml     # ...and write it
+# round-trip: inspect an existing map, then re-pack it
+prism-map MtEmberSmallRoom -o m.toml && prism-mapfit consolidate --spec m.toml
+```
 
 ---
 
