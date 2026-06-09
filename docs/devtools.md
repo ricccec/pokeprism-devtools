@@ -54,6 +54,7 @@ the directory on first run.
 | `sram-diff`                           | planned    | Diff two `.sav` files field-by-field using the SRAM layout.      |
 | `trainer-inspect`                     | planned    | Dump trainer parties from `trainers/*.asm`.                      |
 | [`prism-usage`](#prism-usage)          | shipped    | RGBDS link-map analyzer: bank usage, section sizes, diffs, pre-commit check. |
+| [`prism-mapfit`](#prism-mapfit)        | shipped    | Find ROM banks for a new map, wire it in, and re-pack maps to fit a near-full ROM. |
 | [`prism-mapview`](#prism-mapview)      | shipped    | Render a map to an image and open it. Supports `--tileset`/`--palette` overrides. |
 | [`prism-gfx`](#prism-gfx)              | shipped    | Visualize tilesets and BG palettes (to pick `prism-mapview` overrides). |
 | `prism-watch`                         | planned    | `fswatch` → `make nodebug` → optional emulator relaunch.         |
@@ -696,6 +697,143 @@ prism-usage diff prev.map pokeprism_nodebug.map   # what did my edit cost?
 ```bash
 # .git/hooks/pre-commit
 prism-usage check --max-bank-usage 98 || exit 1
+```
+
+---
+
+## prism-mapfit
+
+Allocates ROM banks for a new map and does all the mechanical wiring. The ROM
+is ~91% full, so finding banks with room for a map's blobs by hand is tedious
+and error-prone; this tool turns it into a one-shot bin-pack + wire + verify.
+
+A map has three independently-placeable data blobs, each given its **own
+uniquely-named section** so the linker can pin it on its own:
+
+| Blob | Section | Sized by |
+|---|---|---|
+| script + events | `Map Scripts <Label>` (the `.asm` file) | a build (only known after assembly) |
+| block data | `Map block data <Label>` | compressing the `.blk` with `utils/lzcomp` (exact) |
+| secondary header | `Second Map Header <Label>` | `12 + 12·connections` |
+
+The positional 8-byte primary header (`map_header`) is *not* freely placeable —
+it's appended to its `MapGroupN` array in the shared `Map Headers` section.
+
+> **Section model.** The tool only manages maps whose blobs live in their own
+> per-map sections (the layout it creates). If a blob was hand-added into a
+> *shared* section (e.g. an `INCLUDE` inside `Map Scripts 7`), the tool refuses
+> with guidance — it can't relocate one map out of a section shared with
+> others without splitting it. See the note in
+> [maps-and-events.md](https://github.com/ricccec/pokeprism/blob/main/docs/maps-and-events.md).
+
+It assumes the map *content* already exists (an authored `maps/<Label>.asm` and
+`maps/blk/<Label>.blk`); it does not author maps. The wiring fields
+(`map_header` / `map_header_2` arguments, dimensions, group) come from a small
+TOML spec.
+
+### Two free-space tiers and two strategies
+
+`romx.link` only declares banks `$01`–`$75`; the cartridge's `$76`–`$7F` are
+ten wholly-empty 16 KiB banks. That gives two placement strategies:
+
+- **tight** (default, best-fit) — pack into the tightest scrap in `$01`–`$75`,
+  spilling to an empty high bank only if nothing fits. Leaves the contiguous
+  empty banks free; minimises wasted scrap.
+- **park** (`--park`, worst-fit) — place into the *biggest* free chunk (an
+  empty high bank), giving a still-growing map maximum headroom before it
+  overflows. Switches off the greedy default.
+
+This matches a typical workflow:
+
+```bash
+# Phase 1 — develop a new, still-growing map: park it in a roomy bank.
+prism-mapfit add --park --spec mymap.toml
+
+# Phase 2 — sizes stable: re-pack several maps tightly into existing scraps,
+#           freeing the parking banks, in one pass.
+prism-mapfit consolidate --spec a.toml --spec b.toml --spec c.toml
+```
+
+### Synopsis
+
+```
+prism-mapfit plan        --spec FILE [--park] [--script-size N] [--margin N] [--map PATH]
+prism-mapfit add         --spec FILE [--park] [--script-size N] [--margin N] [--map PATH] [--dry-run] [--no-build]
+prism-mapfit consolidate --spec FILE [--spec FILE …] [--blobs KINDS] [--margin N] [--map PATH] [--dry-run] [--no-build]
+```
+
+### Subcommands
+
+| Subcommand | Purpose |
+|---|---|
+| `plan` | Compute sizes and print the chosen bank placement. Writes nothing. |
+| `add` | Wire the map into the six source files, pin its sections in `romx.link`, and build to verify. Idempotent — re-running a wired map only re-pins. |
+| `consolidate` | Re-pack several already-built maps tightly into existing scraps in one pass (no asm changes, only re-pins). Sizes are read straight from the current `.map`. |
+
+### Options
+
+| Option | Applies to | Meaning |
+|---|---|---|
+| `--spec FILE` | all | Map spec TOML (see below). Repeatable on `consolidate`. |
+| `--park` | `plan`, `add` | Worst-fit into the biggest free chunk (empty high bank) instead of tight best-fit. |
+| `--blobs KINDS` | `consolidate` | Comma list of blob kinds to move: `script`, `blk`, `secondary` (aliases `blockdata`, `header`). Default all. e.g. `--blobs blk` relocates only block data, leaving a still-growing script parked. |
+| `--script-size N` | `plan`, `add` | Supply the script section size to skip the measurement build. |
+| `--margin N` | all | Bytes of slack reserved per bank (default 16). |
+| `--map PATH` | all | Override the baseline `.map` (default: next to the built ROM). |
+| `--dry-run` | `add`, `consolidate` | Print the edits/plan without writing. |
+| `--no-build` | `add`, `consolidate` | Wire/re-pin but skip the build(s). |
+
+### Spec file
+
+```toml
+label       = "MtEmberSmallRoom"        # CamelCase: asm labels, sections, file
+const       = "MT_EMBER_SMALL_ROOM"     # SCREAMING: MAP_/GROUP_ enum + mapgroup
+group       = 12                        # existing group number to append into
+height      = 10
+width       = 9
+tileset     = "TILESET_CAVE4"           # map_header fields
+permission  = "INDOOR"
+landmark    = "MT_EMBER"
+music       = "MUSIC_NONE"
+palette     = "PALETTE_NITE"
+fishgroup   = "FISHGROUP_NONE"
+phone       = 0
+border_block = "0"                      # map_header_2 fields
+conn_flags   = "0"
+connections  = []                       # raw `connection` arg strings, optional
+script_asm  = "maps/MtEmberSmallRoom.asm"   # authored content, repo-relative
+blk         = "maps/blk/MtEmberSmallRoom.blk"
+```
+
+### How sizes are determined
+
+Block data is sized exactly by compressing the `.blk` with `utils/lzcomp`;
+the secondary header by formula. The **script** size is only known after
+assembly, so `add` runs a build with the section *floating* and reads the
+exact size from the resulting `.map` (unpinning first, so a grown re-alloc
+doesn't overflow its stale pin during measurement). Pass `--script-size N` to
+skip that build. `consolidate` needs no measurement build at all — the maps are
+already built, so their sizes are read from the current `.map`.
+
+Free-space accounting credits a map's *current* footprint back to its banks
+before re-placing it (so a re-alloc doesn't hunt for new room while ignoring
+the hole it already occupies), and debits the `Map Headers` bank the +8 bytes a
+brand-new primary header adds.
+
+### Exit codes — matches `prism-sym`
+
+- `0` — success
+- `1` — no bank fits a blob (`NoFitError`) / build failed
+- `2` — usage error, bad spec, file not found, or a shared-section conflict
+
+### Examples
+
+```bash
+prism-mapfit plan --spec mymap.toml --script-size 640      # preview, no build
+prism-mapfit add  --park --spec mymap.toml                 # park a growing map
+prism-mapfit add  --spec mymap.toml --dry-run              # show edits only
+prism-mapfit consolidate --spec a.toml --spec b.toml       # tighten several maps
+prism-mapfit consolidate --spec mymap.toml --blobs blk     # move only the block data
 ```
 
 ---
