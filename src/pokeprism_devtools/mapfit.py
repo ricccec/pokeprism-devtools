@@ -24,18 +24,16 @@ import argparse
 import os
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import mapwire, paths
+from . import mapsource, mapwire, paths
+from .blobsizes import (
+    PRIMARY_HEADER_GROWTH, compressed_blk_size, secondary_size,
+)
 from .mapfile import MapFile
 from .mapspec import MapSpec
 from .packing import FreeSpace, Item, NoFitError, Placement, pack
-
-PRIMARY_HEADER_GROWTH = 8        # bytes a map_header adds to the "Map Headers" section
-SECONDARY_BASE = 12              # map_header_2 base bytes (before connections)
-SECONDARY_PER_CONNECTION = 12    # bytes each `connection` line emits
 
 
 @dataclass
@@ -50,30 +48,10 @@ class Sizes:
 # sizing                                                                       #
 # --------------------------------------------------------------------------- #
 
-def compressed_blk_size(root: Path, spec: MapSpec) -> int:
-    """Exact size of the LZ-compressed block data, via utils/lzcomp."""
-    lzcomp = root / "utils" / "lzcomp"
-    src = root / spec.blk
-    if not lzcomp.exists():
-        raise FileNotFoundError(f"{lzcomp} not built — run `make utils` first")
-    if not src.exists():
-        raise FileNotFoundError(f"block data not found: {spec.blk}")
-    with tempfile.NamedTemporaryFile(suffix=".lz", delete=False) as tmp:
-        out = Path(tmp.name)
-    try:
-        subprocess.run(
-            [str(lzcomp), "--", str(src), str(out)],
-            check=True, capture_output=True,
-        )
-        return out.stat().st_size
-    finally:
-        out.unlink(missing_ok=True)
-
-
 def estimate_sizes(root: Path, spec: MapSpec, script_size: int | None) -> Sizes:
     return Sizes(
-        blockdata=compressed_blk_size(root, spec),
-        secondary=SECONDARY_BASE + SECONDARY_PER_CONNECTION * len(spec.connections),
+        blockdata=compressed_blk_size(root, spec.blk),
+        secondary=secondary_size(len(spec.connections)),
         script=script_size if script_size is not None else -1,
         script_measured=False,
     )
@@ -235,7 +213,7 @@ def _check_dedicated_sections(root: Path, spec: MapSpec) -> bool:
     INCLUDE hand-added into 'Map Scripts 7'). The tool identifies and pins blobs
     by their own per-map section name, so a shared section can't be relocated
     without splitting it. Returns True if OK to proceed."""
-    conflicts = mapwire.shared_section_conflicts(root, spec)
+    conflicts = mapsource.shared_section_conflicts(root, spec)
     if not conflicts:
         return True
     print(f"error: {spec.label}'s blobs are in shared sections this tool can't "

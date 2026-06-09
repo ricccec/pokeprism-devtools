@@ -274,54 +274,6 @@ def _last_match_in(lines, start, end, pattern):
     return found
 
 
-_SECTION_RE = re.compile(r'^\s*SECTION\s+"([^"]+)"')
-
-
-def enclosing_section(path: Path, matches) -> str | None:
-    """Name of the SECTION that contains the first line for which ``matches``
-    returns true, or None if no such line exists. ``matches`` is a predicate on
-    the raw line text."""
-    cur = None
-    for ln in path.read_text().splitlines():
-        m = _SECTION_RE.match(ln)
-        if m:
-            cur = m.group(1)
-            continue
-        if matches(ln):
-            return cur
-    return None
-
-
-def shared_section_conflicts(root: Path, spec: MapSpec) -> list[tuple[str, str, str]]:
-    """Find blobs of `spec` that are already wired but live in a section that
-    isn't dedicated to this map (e.g. hand-added into a shared 'Map Scripts 7').
-
-    Returns ``(blob, actual_section, expected_section)`` for each mismatch.
-    Empty list means every present blob is in its own per-map section (or the
-    map isn't wired yet) — i.e. the tool can manage it.
-    """
-    label = spec.label
-    checks = [
-        ("script", root / "maps/map_scripts.asm",
-         lambda ln, inc=f'INCLUDE "{spec.script_asm}"': ln.strip() == inc,
-         spec.section_script),
-        ("block data", root / "maps/blockdata.asm",
-         lambda ln, lbl=f"{label}_BlockData:": ln.strip() == lbl,
-         spec.section_blockdata),
-        ("secondary header", root / "maps/second_map_headers.asm",
-         lambda ln: re.match(rf"^\s*map_header_2\s+{re.escape(label)}\s*,", ln) is not None,
-         spec.section_secondary),
-    ]
-    conflicts = []
-    for blob, path, pred, expected in checks:
-        if not path.exists():
-            continue
-        actual = enclosing_section(path, pred)
-        if actual is not None and actual != expected:
-            conflicts.append((blob, actual, expected))
-    return conflicts
-
-
 ALL_ASM_EDITORS = (
     wire_dimensions,
     wire_primary_header,

@@ -19,7 +19,7 @@ from pathlib import Path
 # Allow running straight from a clone without installing.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools import mapfit, mapwire, paths  # noqa: E402
+from pokeprism_devtools import mapfit, mapsource, mapwire, paths  # noqa: E402
 from pokeprism_devtools.mapfile import Bank, MapFile, Section  # noqa: E402
 from pokeprism_devtools.mapspec import MapSpec  # noqa: E402
 from pokeprism_devtools.packing import (  # noqa: E402
@@ -353,12 +353,12 @@ def test_wiring(tmp: Path) -> None:
 
 
 def test_shared_section_detection(tmp: Path) -> None:
-    print("\nmapwire.shared_section_conflicts")
+    print("\nmapsource.shared_section_conflicts")
     root = _fixture_repo(tmp, "shared")
     spec = _spec_for_fixture()  # MtEmberSmallRoom, script_asm maps/MtEmberSmallRoom.asm
 
     # Clean fixture: map not wired at all -> no conflicts.
-    check("unwired map: no conflict", mapwire.shared_section_conflicts(root, spec) == [])
+    check("unwired map: no conflict", mapsource.shared_section_conflicts(root, spec) == [])
 
     # Hand-add the script INCLUDE into the SHARED "Map Scripts 1" section.
     sp = root / "maps" / "map_scripts.asm"
@@ -366,7 +366,7 @@ def test_shared_section_detection(tmp: Path) -> None:
         'INCLUDE "maps/SaffronCity.asm"',
         'INCLUDE "maps/SaffronCity.asm"\nINCLUDE "maps/MtEmberSmallRoom.asm"')
     sp.write_text(txt)
-    conflicts = mapwire.shared_section_conflicts(root, spec)
+    conflicts = mapsource.shared_section_conflicts(root, spec)
     names = {(b, actual) for b, actual, _ in conflicts}
     check("script in shared section detected",
           ("script", "Map Scripts 1") in names, str(conflicts))
@@ -375,7 +375,7 @@ def test_shared_section_detection(tmp: Path) -> None:
     sp.write_text(sp.read_text().replace(
         'INCLUDE "maps/MtEmberSmallRoom.asm"',
         'SECTION "Map Scripts MtEmberSmallRoom", ROMX\nINCLUDE "maps/MtEmberSmallRoom.asm"'))
-    after = [c for c in mapwire.shared_section_conflicts(root, spec) if c[0] == "script"]
+    after = [c for c in mapsource.shared_section_conflicts(root, spec) if c[0] == "script"]
     check("dedicated per-map section: not flagged", after == [], str(after))
 
 

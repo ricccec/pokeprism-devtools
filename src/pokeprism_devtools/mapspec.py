@@ -91,3 +91,47 @@ class MapSpec:
         if unknown:
             raise ValueError(f"{path.name}: unknown keys {sorted(unknown)}")
         return cls(**data)
+
+    def to_toml(self) -> str:
+        """Serialize to a TOML string that round-trips through `from_toml`.
+
+        Emits only the dataclass fields (not the derived `section_*`/`blk_lz`
+        properties), grouped to mirror the documented spec layout.
+        """
+        return "\n".join([
+            f"label       = {_q(self.label)}",
+            f"const       = {_q(self.const)}",
+            f"group       = {self.group}",
+            f"height      = {self.height}",
+            f"width       = {self.width}",
+            "",
+            "# primary header (map_header)",
+            f"tileset     = {_q(self.tileset)}",
+            f"permission  = {_q(self.permission)}",
+            f"landmark    = {_q(self.landmark)}",
+            f"music       = {_q(self.music)}",
+            f"palette     = {_q(self.palette)}",
+            f"fishgroup   = {_q(self.fishgroup)}",
+            f"phone       = {self.phone}",
+            "",
+            "# secondary header (map_header_2)",
+            f"border_block = {_q(self.border_block)}",
+            f"conn_flags   = {_q(self.conn_flags)}",
+            _toml_list("connections", self.connections),
+            "",
+            "# authored content (repo-relative)",
+            f"script_asm  = {_q(self.script_asm)}",
+            f"blk         = {_q(self.blk)}",
+        ]) + "\n"
+
+
+def _q(value: str) -> str:
+    """A TOML basic string (escapes backslash and double-quote)."""
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _toml_list(key: str, items: list[str]) -> str:
+    if not items:
+        return f"{key} = []"
+    body = "".join(f"    {_q(it)},\n" for it in items)
+    return f"{key} = [\n{body}]"
