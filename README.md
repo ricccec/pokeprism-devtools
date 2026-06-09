@@ -23,9 +23,12 @@ src/pokeprism_devtools/
 ├── mapfile.py          — parse RGBDS .map files (per-bank free space, section sizes)
 ├── usage.py            — `prism-usage` CLI: link-map bank/section analysis
 ├── packing.py          — two-tier best-fit / worst-fit bank packer
-├── mapspec.py          — new-map spec (TOML) + derived per-map section names
+├── mapspec.py          — map spec (TOML) read/write + derived per-map section names
+├── mapsource.py        — parse map asm sources by label (headers, paths, sections)
+├── blobsizes.py        — map blob sizes (lzcomp blk, header formulas)
 ├── mapwire.py          — idempotent wiring of the map source files + romx.link pins
 ├── mapfit.py           — `prism-mapfit` CLI: allocate / park / consolidate map blobs
+├── map_show.py         — `prism-map` CLI: inspect one map + export its spec
 └── dev_server/
     ├── cli.py          — `prism-dev` CLI entrypoint
     ├── tui.py          — questionary-driven dev-server menu
@@ -53,6 +56,7 @@ This exposes several commands (see [`docs/devtools.md`](docs/devtools.md) for fu
 | `prism-dev`    | Launch the game in an arbitrary state (the headline tool).       |
 | `prism-sym`    | Query the `.sym` by label or address.                            |
 | `prism-maps`   | Filterable table of per-map metadata (dimensions, sizes, NPCs).  |
+| `prism-map`    | Inspect one map (header fields, section banks, blob sizes) + export its spec. |
 | `prism-usage`  | RGBDS link-map analysis: bank usage, section sizes, diffs.       |
 | `prism-mapfit` | Find ROM banks for a new map, wire it in, and re-pack a near-full ROM. |
 | `prism-mapview`| Render a map to an image and open it.                            |
@@ -93,6 +97,10 @@ prism-sym --prefix wParty -n 5
 # Allocate banks for a new map and wire it in
 prism-mapfit add --park --spec mymap.toml          # park a still-growing map
 prism-mapfit consolidate --spec a.toml --spec b.toml   # re-pack once sizes settle
+
+# Inspect an existing map and export its spec
+prism-map OlcanDock                                # full report
+prism-map OlcanDock -o olcan.toml                  # export the prism-mapfit spec
 
 # Smoke test (after rebuilding the ROM)
 python /path/to/pokeprism-devtools/tests/test_lib.py

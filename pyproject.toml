@@ -13,6 +13,7 @@ dependencies = ["questionary", "Pillow"]
 prism-dev     = "pokeprism_devtools.dev_server.cli:main"
 prism-sym     = "pokeprism_devtools.sym_lookup:main"
 prism-maps    = "pokeprism_devtools.map_inspect:main"
+prism-map     = "pokeprism_devtools.map_show:main"
 prism-usage   = "pokeprism_devtools.usage:main"
 prism-mapview = "pokeprism_devtools.mapview:main"
 prism-gfx     = "pokeprism_devtools.gfx_view:main"
