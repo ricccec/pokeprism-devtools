@@ -21,7 +21,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from pokeprism_devtools import paths, symfile
+from ..shared import paths, symfile
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -20,8 +20,8 @@ import os
 import sys
 from pathlib import Path
 
-from pokeprism_devtools import paths
-from pokeprism_devtools.mapfile import MapFile
+from ..shared import paths
+from ..shared.mapfile import MapFile
 
 
 def _color() -> bool:

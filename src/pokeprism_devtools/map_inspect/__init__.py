@@ -14,8 +14,8 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from . import maps as maps_mod
-from .paths import RepoNotFound, repo_root
+from ..shared import maps as maps_mod
+from ..shared.paths import RepoNotFound, repo_root
 
 # ---------------------------------------------------------------------------
 # ANSI helpers

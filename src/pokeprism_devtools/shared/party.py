@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pokeprism_devtools import savefile, species as sp
+from . import savefile, species as sp
 
 
 PARTY_LENGTH = 6

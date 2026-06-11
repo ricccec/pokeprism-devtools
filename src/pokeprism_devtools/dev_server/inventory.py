@@ -13,7 +13,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from pokeprism_devtools import constants, maps, savefile, species, symfile
+from pokeprism_devtools.shared import constants, maps, savefile, species, symfile
 
 
 # WRAM symbols whose values the prism-dev tool will write. Resolved to

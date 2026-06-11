@@ -22,9 +22,9 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-from . import paths
-from .render import PALETTE_TABLES, palettes_for_table, render_tileset_sheet
-from .viewer import TOD_MAP, TOD_NAMES, is_stale, open_images, parse_tileset_id
+from ..shared import paths
+from ..shared.render import PALETTE_TABLES, palettes_for_table, render_tileset_sheet
+from ..shared.viewer import TOD_MAP, TOD_NAMES, is_stale, open_images, parse_tileset_id
 
 
 def _all_tileset_ids(root: Path) -> list[int]:
