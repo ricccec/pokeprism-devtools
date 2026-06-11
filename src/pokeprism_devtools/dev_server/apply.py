@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pokeprism_devtools import blockdata, party as party_mod, people, savefile, species, symfile
+from pokeprism_devtools.shared import blockdata, party as party_mod, people, savefile, species, symfile
 
 
 def load_state(path: Path, presets_dir: Path) -> dict:

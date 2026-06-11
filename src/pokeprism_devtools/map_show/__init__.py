@@ -22,10 +22,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import mapsource, maps as maps_mod, paths
-from .blobsizes import PRIMARY_HEADER_GROWTH, compressed_blk_size, secondary_size
-from .mapfile import MapFile
-from .mapspec import MapSpec
+from ..shared import mapsource, maps as maps_mod, paths
+from ..shared.blobsizes import PRIMARY_HEADER_GROWTH, compressed_blk_size, secondary_size
+from ..shared.mapfile import MapFile
+from ..shared.mapspec import MapSpec
 
 
 class MapNotFound(RuntimeError):

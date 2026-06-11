@@ -16,9 +16,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import blockdata, maps, paths, symfile
-from .render import PALETTE_TABLES, render_map, table_for_permission
-from .viewer import TOD_MAP, TOD_NAMES, open_images, parse_tileset_id
+from ..shared import blockdata, maps, paths, symfile
+from ..shared.render import PALETTE_TABLES, render_map, table_for_permission
+from ..shared.viewer import TOD_MAP, TOD_NAMES, open_images, parse_tileset_id
 
 
 def _normalize(name: str) -> str:

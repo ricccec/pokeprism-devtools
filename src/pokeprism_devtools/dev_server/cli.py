@@ -34,7 +34,7 @@ import datetime as dt
 import sys
 from pathlib import Path
 
-from pokeprism_devtools import paths, savefile, symfile
+from pokeprism_devtools.shared import paths, savefile, symfile
 
 from . import apply, inventory, launcher
 
@@ -45,6 +45,11 @@ def main(argv: list[str] | None = None) -> int:
         "--rebuild-inventory",
         action="store_true",
         help="force rebuild of inventory.json",
+    )
+    p.add_argument(
+        "--watch",
+        action="store_true",
+        help="re-launch SameBoy when a new build is detected"
     )
     p.add_argument(
         "--debug",
@@ -133,6 +138,7 @@ def main(argv: list[str] | None = None) -> int:
             sav_backups_dir=sav_backups_dir,
             keep_people=args.keep_people,
             rebuild_inventory=args.rebuild_inventory,
+            auto_relaunch=args.watch,
         )
 
     inv = inventory.load_or_build(

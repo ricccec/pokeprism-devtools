@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .mapspec import MapSpec
+from ..shared.mapspec import MapSpec
 
 
 SCRIPTS_GUARD = "DO NOT ADD ANYTHING BELOW THIS LINE"

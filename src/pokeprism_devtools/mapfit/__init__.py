@@ -27,12 +27,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import mapsource, mapwire, paths
-from .blobsizes import (
+from ..shared import mapsource, paths
+from . import mapwire
+from ..shared.blobsizes import (
     PRIMARY_HEADER_GROWTH, compressed_blk_size, secondary_size,
 )
-from .mapfile import MapFile
-from .mapspec import MapSpec
+from ..shared.mapfile import MapFile
+from ..shared.mapspec import MapSpec
 from .packing import FreeSpace, Item, NoFitError, Placement, pack
 
 

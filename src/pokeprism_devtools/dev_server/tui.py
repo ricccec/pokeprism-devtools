@@ -17,10 +17,11 @@ import datetime as dt
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 import time
 
-from pokeprism_devtools import paths, savefile, symfile
+from pokeprism_devtools.shared import paths, savefile, symfile
 
 from . import apply, inventory, launcher
 
@@ -36,6 +37,7 @@ def run(
     sav_backups_dir: Path,
     keep_people: bool,
     rebuild_inventory: bool = False,
+    auto_relaunch: bool = False,
 ) -> int:
     """Entrypoint. Returns a process exit code."""
     try:
@@ -59,6 +61,7 @@ def run(
         sav_backups_dir=sav_backups_dir,
         keep_people=keep_people,
         rebuild_inventory=rebuild_inventory,
+        auto_relaunch=auto_relaunch,
     )
     return server.run()
 
@@ -76,6 +79,7 @@ class DevServer:
         sav_backups_dir: Path,
         keep_people: bool,
         rebuild_inventory: bool,
+        auto_relaunch: bool,
     ) -> None:
         self.root = root
         self.sym_path = sym_path
@@ -85,6 +89,7 @@ class DevServer:
         self.presets_dir = presets_dir
         self.sav_backups_dir = sav_backups_dir
         self.keep_people = keep_people
+        self.auto_relaunch = auto_relaunch
 
         self.inv = inventory.load_or_build(
             root, sym_path, inventory_path,
@@ -96,6 +101,9 @@ class DevServer:
             state_path if state_path.exists() else presets_dir / "default.json"
         )
         self.sameboy: subprocess.Popen | None = None
+        self._lock = threading.RLock()
+        self._watcher_stop = threading.Event()
+        self._watcher_thread: threading.Thread | None = None
 
     def run(self) -> int:
         import questionary
@@ -106,6 +114,7 @@ class DevServer:
         print("  pokeprism prism-dev  —  dev server")
         print("=" * 56)
 
+        self._start_rebuild_watcher()
         try:
             while True:
                 self._refresh_inventory_if_stale()
@@ -136,7 +145,7 @@ class DevServer:
                     break
 
                 handler = {
-                    "launch":       self._launch_or_relaunch,
+                    "launch":       self._patch_and_launch,
                     "edit_player":  self._edit_player,
                     "edit_map":     self._edit_map,
                     "edit_party":   self._edit_party,
@@ -148,6 +157,10 @@ class DevServer:
                     print(f"\nerror: {e}", file=sys.stderr)
         except KeyboardInterrupt:
             print()
+        finally:
+            self._watcher_stop.set()
+            if self._watcher_thread is not None:
+                self._watcher_thread.join(timeout=3.0)
 
         if self._sameboy_running():
             print("\nSameBoy is still running — leaving it alone. Close it manually when done.")
@@ -183,16 +196,19 @@ class DevServer:
         print(f"  SameBoy: {sb}")
         print()
 
-    def _refresh_inventory_if_stale(self) -> None:
+    def _refresh_inventory_if_stale(self) -> bool | None:
         try:
             mtime = self.sym_path.stat().st_mtime
         except FileNotFoundError:
             return
-        if mtime > self.sym_mtime:
+        with self._lock:
+            if mtime <= self.sym_mtime:
+                return
             print("(detected new build — refreshing inventory from .sym)")
             self.inv = inventory.build(self.root, self.sym_path)
             self.inventory_path.write_text(json.dumps(self.inv, indent=2))
             self.sym_mtime = mtime
+        return True
 
     def _save_state(self) -> None:
         # Always autosave to the user's state.json, NEVER over presets/.
@@ -479,8 +495,13 @@ class DevServer:
         self._save_state()
         print(f"Reset state from {choice.name}")
 
-    def _launch_or_relaunch(self) -> None:
+    def _patch_and_launch(self) -> None:
         rom_path = paths.rom_path(self.root, debug=self.debug)
+        self._patch_save(rom_path)
+        # Run (or re-run) SameBoy
+        self._launch_or_relaunch(rom_path)
+
+    def _patch_save(self, rom_path: Path) -> None:
         target_sav = rom_path.with_suffix(".sav")
 
         if not target_sav.exists():
@@ -521,7 +542,7 @@ class DevServer:
         for c in changes:
             print(f"  {c}")
 
-        # Run (or re-run) SameBoy
+    def _launch_or_relaunch(self, rom_path: Path, *, silent: bool = False) -> None:
         cmd, trackable = launcher.build_cmd(rom_path)
         if cmd is None:
             print(
@@ -531,16 +552,18 @@ class DevServer:
             )
             return
 
-        if self._sameboy_running():
-            print("Terminating old SameBoy...")
-            assert self.sameboy is not None
-            self.sameboy.terminate()
-            try:
-                self.sameboy.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self.sameboy.kill()
-                self.sameboy.wait()
-            self.sameboy = None
+        with self._lock:
+            if self._sameboy_running():
+                if not silent:
+                    print("Terminating old SameBoy...")
+                assert self.sameboy is not None
+                self.sameboy.terminate()
+                try:
+                    self.sameboy.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.sameboy.kill()
+                    self.sameboy.wait()
+                self.sameboy = None
 
         if not trackable:
             # We only have `open -a SameBoy` to work with — Popen will
@@ -554,19 +577,43 @@ class DevServer:
                 file=sys.stderr,
             )
 
-        print(f"Launching {cmd[0]}...")
+        if not silent:
+            print(f"Launching {cmd[0]}...")
         try:
-            self.sameboy = subprocess.Popen(cmd)
+            proc = subprocess.Popen(cmd)
         except OSError as e:
             print(f"failed to launch: {e}", file=sys.stderr)
-            self.sameboy = None
             return
+        with self._lock:
+            self.sameboy = proc
         # Give it some time to settle, then bring window to the front
         time.sleep(1)
         launcher.focus_after_launch()
 
+    def _start_rebuild_watcher(self) -> None:
+        def _watch() -> None:
+            while not self._watcher_stop.wait(2.0):
+                try:
+                    mtime = self.sym_path.stat().st_mtime
+                except FileNotFoundError:
+                    continue
+                with self._lock:
+                    if mtime <= self.sym_mtime:
+                        continue
+                    self.inv = inventory.build(self.root, self.sym_path)
+                    self.inventory_path.write_text(json.dumps(self.inv, indent=2))
+                    self.sym_mtime = mtime
+                if self.auto_relaunch:
+                    self._launch_or_relaunch(paths.rom_path(self.root, debug=self.debug), silent=True)
+
+        self._watcher_thread = threading.Thread(
+            target=_watch, daemon=True, name="rebuild-watcher"
+        )
+        self._watcher_thread.start()
+
     def _sameboy_running(self) -> bool:
-        return self.sameboy is not None and self.sameboy.poll() is None
+        with self._lock:
+            return self.sameboy is not None and self.sameboy.poll() is None
 
     def _pretty(self, path: Path) -> str:
         try:
