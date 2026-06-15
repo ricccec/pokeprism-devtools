@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from dataclasses import asdict
 from pathlib import Path
 
@@ -101,6 +102,8 @@ def build(root: Path, sym_path: Path) -> dict:
     flags = _enum("constants/event_flags.asm")
 
     blocks = _resolve_blocks(syms)
+    engine_flags = _parse_engine_flags(root / "constants" / "engine_flags.asm")
+    _resolve_engine_flag_offsets(engine_flags, syms, blocks)
 
     sram_offsets: dict[str, dict] = {}
     for label, meta in WRITABLE_FIELDS.items():
@@ -175,6 +178,7 @@ def build(root: Path, sym_path: Path) -> dict:
             "items": len(items),
             "moves": len(moves),
             "event_flags": len(flags),
+            "engine_flags": len(engine_flags),
             "maps": len(map_defs),
             "species_data": len(species_data),
             "move_pp": len(move_pp),
@@ -186,6 +190,7 @@ def build(root: Path, sym_path: Path) -> dict:
         "items": items,
         "moves": moves,
         "event_flags": flags,
+        "engine_flags": engine_flags,
         "maps": [asdict(m) for m in map_defs],
         "species_data": species_data,
         "move_pp": move_pp,
@@ -209,6 +214,56 @@ def load_or_build(
         return inv
     log(f"Using cached {inventory_path.name} (force-rebuild with --rebuild-inventory)")
     return json.loads(inventory_path.read_text())
+
+
+_ENGINE_FLAG_RE = re.compile(
+    r"def_engine_flag\s+(\w+)\s*,\s*([\w]+(?:\s*\+\s*\d+)?)\s*,\s*(\d+)"
+)
+_WRAM_EXPR_RE = re.compile(r"(\w+)(?:\s*\+\s*(\d+))?$")
+
+
+def _parse_engine_flags(path: Path) -> list[dict]:
+    """Extract (name, id, wram_expr, bit) from every def_engine_flag line."""
+    counter = 0
+    results = []
+    with path.open() as f:
+        for line in f:
+            line = line[:line.find(";")] if ";" in line else line
+            m = _ENGINE_FLAG_RE.search(line)
+            if not m:
+                continue
+            results.append({
+                "name": m.group(1),
+                "id": counter,
+                "wram_expr": m.group(2).strip(),
+                "bit": int(m.group(3)),
+            })
+            counter += 1
+    return results
+
+
+def _resolve_engine_flag_offsets(
+    flags: list[dict],
+    syms: symfile.SymFile,
+    blocks: dict[str, dict],
+) -> None:
+    """Mutate each engine-flag dict in-place, adding sav_offset when resolvable."""
+    for ef in flags:
+        m = _WRAM_EXPR_RE.match(ef["wram_expr"])
+        if not m:
+            continue
+        base_sym = m.group(1)
+        extra = int(m.group(2)) if m.group(2) else 0
+        sym = syms.get(base_sym)
+        if sym is None:
+            continue
+        target_addr = sym.addr + extra
+        for block in blocks.values():
+            if block["wram_start_addr"] <= target_addr < block["wram_end_addr"]:
+                offset_in_block = target_addr - block["wram_start_addr"]
+                sram_addr = block["sram_start_addr"] + offset_in_block
+                ef["sav_offset"] = savefile.sram_to_file_offset(1, sram_addr)
+                break
 
 
 def _resolve_blocks(syms: symfile.SymFile) -> dict[str, dict]:

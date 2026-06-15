@@ -146,6 +146,56 @@ def apply_state(
     if party_state:
         changes.extend(_apply_party(sav, party_state, inv, state.get("player") or {}, off))
 
+    flags_state = state.get("flags") or {}
+    if flags_state.get("event") or flags_state.get("engine"):
+        changes.extend(_apply_flags(sav, flags_state, inv, off))
+
+    return changes
+
+
+def _apply_flags(
+    sav: savefile.SaveFile,
+    flags_state: dict,
+    inv: dict,
+    off,
+) -> list[str]:
+    """Write event flags and engine flags into the .sav."""
+    import sys
+
+    changes: list[str] = []
+
+    event_names: list[str] = flags_state.get("event") or []
+    if event_names:
+        flag_ids = {f["name"]: f["id"] for f in inv["event_flags"]}
+        buf = bytearray(250)
+        for name in event_names:
+            fid = flag_ids.get(name)
+            if fid is None:
+                raise ValueError(f"unknown event flag: {name!r}")
+            buf[fid >> 3] |= 1 << (fid & 7)
+        sav.write_bytes(off("wEventFlags"), bytes(buf))
+        changes.append(f"event_flags = {sorted(event_names)}")
+
+    engine_names: list[str] = flags_state.get("engine") or []
+    if engine_names:
+        ef_meta = {f["name"]: f for f in inv["engine_flags"]}
+        mutations: dict[int, int] = {}
+        for name in engine_names:
+            meta = ef_meta.get(name)
+            if meta is None:
+                raise ValueError(f"unknown engine flag: {name!r}")
+            sav_offset = meta.get("sav_offset")
+            if sav_offset is None:
+                print(
+                    f"warning: engine flag {name!r} has no SRAM offset; skipping",
+                    file=sys.stderr,
+                )
+                continue
+            mutations[sav_offset] = mutations.get(sav_offset, 0) | (1 << meta["bit"])
+        for sav_offset, bits in mutations.items():
+            sav.data[sav_offset] |= bits
+        changes.append(f"engine_flags = {sorted(engine_names)}")
+
     return changes
 
 
