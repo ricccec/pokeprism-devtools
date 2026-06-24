@@ -18,6 +18,9 @@ from pokeprism_devtools.metatiles import (  # noqa: E402
     MapUse,
     TilesetAnalysis,
     _blob_sizes,
+    _COLLISION_PER_METATILE,
+    _TILES_PER_METATILE,
+    blank_unused_metatiles,
     metatile_usage,
     metatile_users,
     script_block_ids,
@@ -160,6 +163,39 @@ def test_tileset_id_map() -> None:
         check("non-TILESET EQU excluded", "LANDTILE" not in m)
 
 
+def test_blank_unused_metatiles() -> None:
+    print("\nblank_unused_metatiles")
+    n = 4
+    metatiles  = bytes(range(256)) * (n * _TILES_PER_METATILE // 256 + 1)
+    metatiles  = metatiles[: n * _TILES_PER_METATILE]
+    attributes = bytes([0xFF] * n * _TILES_PER_METATILE)
+    collision  = bytes([0x0A] * n * _COLLISION_PER_METATILE)
+
+    new_mt, new_at, new_co = blank_unused_metatiles(metatiles, attributes, collision, unused=[1, 3])
+
+    # Metatile 1 and 3 should be all-zero; 0 and 2 should be unchanged.
+    check("used metatile 0 untouched",
+          new_mt[:_TILES_PER_METATILE] == metatiles[:_TILES_PER_METATILE])
+    check("unused metatile 1 zeroed (mt)",
+          new_mt[_TILES_PER_METATILE : 2 * _TILES_PER_METATILE] == bytes(_TILES_PER_METATILE))
+    check("used metatile 2 untouched",
+          new_mt[2 * _TILES_PER_METATILE : 3 * _TILES_PER_METATILE] == metatiles[2 * _TILES_PER_METATILE : 3 * _TILES_PER_METATILE])
+    check("unused metatile 3 zeroed (mt)",
+          new_mt[3 * _TILES_PER_METATILE :] == bytes(_TILES_PER_METATILE))
+    check("unused metatile 1 zeroed (attr)",
+          new_at[_TILES_PER_METATILE : 2 * _TILES_PER_METATILE] == bytes(_TILES_PER_METATILE))
+    check("unused metatile 1 zeroed (coll)",
+          new_co[_COLLISION_PER_METATILE : 2 * _COLLISION_PER_METATILE] == bytes(_COLLISION_PER_METATILE))
+    check("used metatile 0 collision untouched",
+          new_co[:_COLLISION_PER_METATILE] == bytes([0x0A] * _COLLISION_PER_METATILE))
+
+    # Empty unused list → identical copies.
+    mt2, at2, co2 = blank_unused_metatiles(metatiles, attributes, collision, unused=[])
+    check("empty unused → no change (mt)", mt2 == metatiles)
+    check("empty unused → no change (at)", at2 == attributes)
+    check("empty unused → no change (co)", co2 == collision)
+
+
 def main() -> None:
     test_metatile_usage()
     test_metatile_users()
@@ -168,6 +204,7 @@ def main() -> None:
     test_ranked_and_unused()
     test_tile_coverage()
     test_tileset_id_map()
+    test_blank_unused_metatiles()
     print()
     if _failures:
         print(f"{_failures} check(s) failed.")

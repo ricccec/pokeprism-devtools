@@ -33,6 +33,7 @@ from ..shared.viewer import is_stale, open_images, parse_tileset_id
 # (and their tests) stay usable without it. Only analyze()/--render need it.
 
 _TILES_PER_METATILE = 16
+_COLLISION_PER_METATILE = 4
 _METATILE_CAP = 256
 
 _MAP_HEADER_RE = re.compile(r"^\s*map_header\s+(\w+)\s*,\s*([A-Za-z_]\w*)")
@@ -312,6 +313,31 @@ def tile_coverage(
     return len(in_range), unused
 
 
+def blank_unused_metatiles(
+    metatiles: bytes,
+    attributes: bytes,
+    collision: bytes,
+    unused: list[int],
+) -> tuple[bytes, bytes, bytes]:
+    """Return new (metatiles, attributes, collision) with unused entries zeroed.
+
+    Each unused metatile's 16 sub-tile references and their attributes are set to
+    zero (pointing to 8×8 tile 0, bank 0). The 4 collision bytes per metatile are
+    also zeroed. Safe to call with an empty `unused` list — returns copies unchanged.
+    """
+    mt = bytearray(metatiles)
+    at = bytearray(attributes)
+    co = bytearray(collision)
+    for m in unused:
+        base = m * _TILES_PER_METATILE
+        mt[base : base + _TILES_PER_METATILE] = bytes(_TILES_PER_METATILE)
+        at[base : base + _TILES_PER_METATILE] = bytes(_TILES_PER_METATILE)
+        co_base = m * _COLLISION_PER_METATILE
+        if co_base + _COLLISION_PER_METATILE <= len(co):
+            co[co_base : co_base + _COLLISION_PER_METATILE] = bytes(_COLLISION_PER_METATILE)
+    return bytes(mt), bytes(at), bytes(co)
+
+
 def _blob_sizes(root: Path, tileset_id: int, syms: SymFile | None) -> list[BlobSize]:
     tid = f"{tileset_id:02d}"
     tdir = root / "tilesets"
@@ -535,6 +561,40 @@ def _render_sheet(root: Path, tileset_id: int, force: bool) -> Path:
 # ---------------------------------------------------------------------------
 
 
+def _do_blank(root: Path, a: TilesetAnalysis, *, write: bool) -> int:
+    unused = a.unused
+    print(f"\nUnused metatiles to blank: {len(unused)}", end="")
+    if not unused:
+        print(" — nothing to do.")
+        return 0
+    print(f"\n  {_compact_ranges(unused)}")
+
+    tid = f"{a.tileset_id:02d}"
+    tdir = root / "tilesets"
+    mt_path = tdir / f"{tid}_metatiles.bin"
+    at_path = tdir / f"{tid}_attributes.bin"
+    co_path = tdir / f"{tid}_collision.bin"
+
+    metatiles  = mt_path.read_bytes()
+    attributes = at_path.read_bytes()
+    collision  = co_path.read_bytes() if co_path.exists() else bytes(a.n_defined * _COLLISION_PER_METATILE)
+
+    new_mt, new_at, new_co = blank_unused_metatiles(metatiles, attributes, collision, unused)
+
+    if not write:
+        print("(dry-run — pass --write to apply changes)")
+        return 0
+
+    mt_path.write_bytes(new_mt)
+    at_path.write_bytes(new_at)
+    written = [mt_path.name, at_path.name]
+    if co_path.exists():
+        co_path.write_bytes(new_co)
+        written.append(co_path.name)
+    print("Written: " + ", ".join(written))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="prism-metatiles",
@@ -549,6 +609,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--force", action="store_true", help="Re-render even if the cache is fresh.")
     p.add_argument("--json", action="store_true",
                    help="Emit JSON instead of a formatted report.")
+    p.add_argument("--blank-unused", action="store_true",
+                   help="Zero out unused metatile definitions in the tileset .bin files "
+                        "(requires a tileset id; dry-run unless --write is also passed).")
+    p.add_argument("--write", action="store_true",
+                   help="With --blank-unused: write changes to disk (default is dry-run).")
     args = p.parse_args(argv)
 
     try:
@@ -562,6 +627,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  warning: {w}", file=sys.stderr)
 
     syms = load_syms(root)
+
+    if args.blank_unused and args.tileset_id is None:
+        print("prism-metatiles: --blank-unused requires a tileset id", file=sys.stderr)
+        return 2
 
     # Summary mode (no id given)
     if args.tileset_id is None:
@@ -590,6 +659,10 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:
             print(f"prism-metatiles: render failed: {e}", file=sys.stderr)
             return 1
+
+    if args.blank_unused:
+        return _do_blank(root, a, write=args.write)
+
     return 0
 
 
