@@ -54,7 +54,7 @@ class MapInfo:
 # Collection
 # ---------------------------------------------------------------------------
 
-_INCBIN_RE = re.compile(r'INCBIN\s+"maps/blk/([^"]+)\.ablk\.lz"')
+_INCBIN_RE = re.compile(r'INCBIN\s+"maps/blk/([^"]+)\.a?blk\.lz"')
 _NPC_RE = re.compile(r"\s+(person_event|trainer)\b")
 _AGGREGATE_SCRIPTS = frozenset({
     "blockdata.asm",
@@ -83,8 +83,12 @@ def collect(root: Path) -> list[MapInfo]:
             n = p.name
             if n.endswith(".ablk.lz"):
                 blk_lz[_norm(n[: -len(".ablk.lz")])] = p.stat().st_size
+            elif n.endswith(".blk.lz"):
+                blk_lz[_norm(n[: -len(".blk.lz")])] = p.stat().st_size
             elif n.endswith(".ablk"):
                 blk_raw[_norm(n[: -len(".ablk")])] = p.stat().st_size
+            elif n.endswith(".blk"):
+                blk_raw[_norm(n[: -len(".blk")])] = p.stat().st_size
 
     # Used set from blockdata.asm
     used_set: set[str] = set()
