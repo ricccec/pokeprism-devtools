@@ -190,3 +190,77 @@ def script_path(root: Path, label: str) -> str | None:
         if m and Path(m.group(1)).stem == label:
             return m.group(1)
     return None
+
+
+# --------------------------------------------------------------------------- #
+# bulk (whole-repo) parsers — for callers checking many maps at once          #
+# --------------------------------------------------------------------------- #
+
+_HEADER_2_RE = re.compile(r"^\s*map_header_2\s+(\w+)\s*,\s*(\w+)\s*,")
+_BLOCKDATA_LABEL_RE = re.compile(r"^(\w+)_BlockData:\s*$")
+_INCBIN_RE = re.compile(r'^\s*INCBIN\s+"([^"]+)"')
+_INCLUDE_RE = re.compile(r'^\s*INCLUDE\s+"([^"]+\.asm)"')
+_MAPSCRIPTHEADER_RE = re.compile(r"^(\w+)_MapScriptHeader:")
+
+
+def header_pairs(root: Path) -> list[tuple[str, str]]:
+    """Every `(label, const)` pair from uncommented `map_header_2` lines in
+    maps/second_map_headers.asm — the only place a map's Pascal-case label and
+    SCREAMING_SNAKE const are tied together."""
+    path = root / "maps/second_map_headers.asm"
+    if not path.exists():
+        return []
+    pairs = []
+    for ln in path.read_text().splitlines():
+        if ln.lstrip().startswith(";"):
+            continue
+        m = _HEADER_2_RE.match(ln)
+        if m:
+            pairs.append((m.group(1), m.group(2)))
+    return pairs
+
+
+def blockdata_labels(root: Path) -> dict[str, str]:
+    """`label -> INCBIN target` for every uncommented `<label>_BlockData:` in
+    maps/blockdata.asm. Consecutive labels share the single INCBIN that
+    follows them (aliased maps — pokecenters, marts, …)."""
+    path = root / "maps/blockdata.asm"
+    index: dict[str, str] = {}
+    if not path.exists():
+        return index
+    pending: list[str] = []
+    for ln in path.read_text().splitlines():
+        m = _BLOCKDATA_LABEL_RE.match(ln.strip())
+        if m:
+            pending.append(m.group(1))
+            continue
+        m = _INCBIN_RE.match(ln)
+        if m:
+            for label in pending:
+                index[label] = m.group(1)
+            pending = []
+            continue
+        if ln.strip():             # SECTION / anything else ends the run
+            pending = []
+    return index
+
+
+def script_header_labels(root: Path) -> set[str]:
+    """Every `label` with a `<label>_MapScriptHeader:` definition in a file
+    that maps/map_scripts.asm actually INCLUDEs."""
+    map_scripts = root / "maps/map_scripts.asm"
+    labels: set[str] = set()
+    if not map_scripts.exists():
+        return labels
+    for ln in map_scripts.read_text().splitlines():
+        m = _INCLUDE_RE.match(ln)
+        if not m:
+            continue
+        included = root / m.group(1)
+        if not included.exists():
+            continue
+        for ln2 in included.read_text().splitlines():
+            hm = _MAPSCRIPTHEADER_RE.match(ln2.strip())
+            if hm:
+                labels.add(hm.group(1))
+    return labels

@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from ..shared import maps as maps_mod
+from ..shared import mapsource
 from ..shared.paths import RepoNotFound, repo_root
 
 # ---------------------------------------------------------------------------
@@ -54,7 +55,6 @@ class MapInfo:
 # Collection
 # ---------------------------------------------------------------------------
 
-_INCBIN_RE = re.compile(r'INCBIN\s+"maps/blk/([^"]+)\.a?blk\.lz"')
 _NPC_RE = re.compile(r"\s+(person_event|trainer)\b")
 _AGGREGATE_SCRIPTS = frozenset({
     "blockdata.asm",
@@ -68,36 +68,31 @@ def _norm(name: str) -> str:
     return name.replace("_", "").lower()
 
 
+def _blk_sizes(root: Path, target: str) -> tuple[int | None, int | None]:
+    """(raw, lz) byte sizes for a `blockdata_labels()` INCBIN target (which
+    always points at the compressed `.lz` file)."""
+    lz_path = root / target
+    raw_path = lz_path.with_name(lz_path.name[: -len(".lz")]) if target.endswith(".lz") else lz_path
+    raw = raw_path.stat().st_size if raw_path.exists() else None
+    lz = lz_path.stat().st_size if lz_path.exists() else None
+    return raw, lz
+
+
 def collect(root: Path) -> list[MapInfo]:
     """Build MapInfo list from source files under *root*."""
     map_defs = maps_mod.parse_maps(
         root / "constants" / "map_dimension_constants.asm"
     )
 
-    # Block data file sizes
-    blk_raw: dict[str, int] = {}
-    blk_lz: dict[str, int] = {}
-    blk_dir = root / "maps" / "blk"
-    if blk_dir.is_dir():
-        for p in blk_dir.iterdir():
-            n = p.name
-            if n.endswith(".ablk.lz"):
-                blk_lz[_norm(n[: -len(".ablk.lz")])] = p.stat().st_size
-            elif n.endswith(".blk.lz"):
-                blk_lz[_norm(n[: -len(".blk.lz")])] = p.stat().st_size
-            elif n.endswith(".ablk"):
-                blk_raw[_norm(n[: -len(".ablk")])] = p.stat().st_size
-            elif n.endswith(".blk"):
-                blk_raw[_norm(n[: -len(".blk")])] = p.stat().st_size
+    # Ground truth for "used": a map_header_2 entry ties a Pascal-case label
+    # to its ALL_CAPS const; the map is only really wired if that label also
+    # has a block-data label and a map-script-header label (see mapsource.py).
+    const_to_labels: dict[str, list[str]] = {}
+    for label, const in mapsource.header_pairs(root):
+        const_to_labels.setdefault(const, []).append(label)
 
-    # Used set from blockdata.asm
-    used_set: set[str] = set()
-    blockdata_asm = root / "maps" / "blockdata.asm"
-    if blockdata_asm.exists():
-        for line in blockdata_asm.read_text(encoding="utf-8").splitlines():
-            m = _INCBIN_RE.search(line)
-            if m:
-                used_set.add(_norm(m.group(1)))
+    bd_labels = mapsource.blockdata_labels(root)
+    script_labels = mapsource.script_header_labels(root)
 
     # Script file index: stem normalised → Path
     script_index: dict[str, Path] = {}
@@ -109,11 +104,17 @@ def collect(root: Path) -> list[MapInfo]:
 
     result: list[MapInfo] = []
     for md in map_defs:
-        key = _norm(md.name)
-        raw = blk_raw.get(key)
-        lz = blk_lz.get(key)
+        labels = const_to_labels.get(md.name, [])
+        wired = [l for l in labels if l in bd_labels and l in script_labels]
+        used = bool(wired)
+
+        blk_label = wired[0] if wired else next((l for l in labels if l in bd_labels), None)
+        raw = lz = None
+        if blk_label is not None:
+            raw, lz = _blk_sizes(root, bd_labels[blk_label])
         ratio = (lz / raw) if raw and lz else None
 
+        key = _norm(md.name)
         script_path = script_index.get(key)
         script_src: int | None = None
         npc_count: int | None = None
@@ -134,7 +135,7 @@ def collect(root: Path) -> list[MapInfo]:
             lz_ratio=ratio,
             script_src=script_src,
             npc_count=npc_count,
-            used=key in used_set,
+            used=used,
         ))
 
     return result
