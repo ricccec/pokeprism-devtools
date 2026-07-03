@@ -726,11 +726,11 @@ prism-usage [--debug] [--map PATH] [SUBCOMMAND [ARGS]]
 | Subcommand | Purpose |
 |---|---|
 | `summary` (default) | Headline ROM/RAM stats, top-5 most-full and most-free ROM banks. |
-| `banks [--region R]` | ANSI bar chart of every ROM bank's occupancy (or a RAM region with `--region SRAM\|WRAMX\|…`). |
-| `bank N` | Section-by-section breakdown of one bank. N accepts decimal (`60`), `$3c`, `0x3c`. |
+| `banks [N ...] [--region R]` | ANSI bar chart of every ROM bank's occupancy (or a RAM region with `--region SRAM\|WRAMX\|…`). Pass one or more bank numbers/ranges to show only those banks. |
+| `bank N [N ...]` | Section-by-section breakdown of one or more banks. N accepts decimal (`60`), `$3c`, `0x3c`, or a range (`10-20`). |
 | `largest [-n N]` | Top-N sections globally by size (default 20; `-n 0` for all). |
 | `free [--region R]` | Banks sorted by free space — answers "where do I put new data?". |
-| `section NAME` | All banks containing a section. Exact match first, then substring. |
+| `section NAME [NAME ...]` | All banks containing a section. Exact match first, then substring. Repeat to search several names at once. |
 | `check [--max-bank-usage P]` | Exit 1 if any ROM bank exceeds P% (default 95). Pre-commit–friendly. |
 | `diff OLD.map NEW.map [--max-bank-usage P]` | Per-bank and per-section deltas between two map files. |
 
@@ -744,11 +744,14 @@ prism-usage [--debug] [--map PATH] [SUBCOMMAND [ARGS]]
 ```bash
 prism-usage                                   # quick overview
 prism-usage banks                             # visual utilization chart
+prism-usage banks 5 12 $1a                    # just these banks
 prism-usage bank 5                            # what's in ROM bank 5?
 prism-usage bank '$3c'                        # tightest bank by hex
+prism-usage bank 5 12 10-14                   # detail for several banks
 prism-usage largest -n 10                     # 10 biggest sections
 prism-usage free                              # where to put new data
 prism-usage section "Map Scripts"            # find all map-script sections
+prism-usage section "Map Scripts" "battle"   # search multiple names
 prism-usage check --max-bank-usage 98        # exit 1 if any bank > 98%
 prism-usage diff prev.map pokeprism_nodebug.map   # what did my edit cost?
 ```

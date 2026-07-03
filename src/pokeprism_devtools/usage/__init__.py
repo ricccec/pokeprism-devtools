@@ -3,13 +3,15 @@
 
 Usage:
     prism-usage                              # summary (default)
-    prism-usage banks [--region R]           # ANSI bar chart
-    prism-usage bank N                       # section breakdown of one bank
+    prism-usage banks [N ...] [--region R]   # ANSI bar chart
+    prism-usage bank N [N ...]               # section breakdown of one or more banks
     prism-usage largest [-n N]               # top-N sections by size
     prism-usage free [--region R]            # banks sorted by free space
-    prism-usage section NAME                 # find a section by name
+    prism-usage section NAME [NAME ...]      # find section(s) by name
     prism-usage check [--max-bank-usage P]   # exit 1 if any bank exceeds P%
     prism-usage diff OLD.map NEW.map         # per-bank/section deltas
+
+    N accepts decimal (23), hex ($17 / 0x17 / 17), or a range (10-20).
 """
 
 from __future__ import annotations
@@ -88,6 +90,28 @@ def _parse_bank_number(raw: str) -> int:
     return int(raw, 10)
 
 
+def _parse_bank_selector(raw: str) -> list[int]:
+    """A single CLI token: one bank number, or an inclusive range 'A-B'."""
+    lo_s, sep, hi_s = raw.partition("-")
+    if sep and lo_s and hi_s:
+        lo, hi = _parse_bank_number(lo_s), _parse_bank_number(hi_s)
+        if lo > hi:
+            lo, hi = hi, lo
+        return list(range(lo, hi + 1))
+    return [_parse_bank_number(raw)]
+
+
+def parse_bank_selectors(tokens: list[str]) -> list[int]:
+    """Expand CLI tokens (numbers and/or 'A-B' ranges) into a sorted, deduped list."""
+    numbers: set[int] = set()
+    for tok in tokens:
+        try:
+            numbers.update(_parse_bank_selector(tok))
+        except ValueError:
+            raise ValueError(f"invalid bank number/range {tok!r}") from None
+    return sorted(numbers)
+
+
 # ---------------------------------------------------------------------------
 
 def cmd_summary(mp: MapFile, map_path: Path, args: argparse.Namespace) -> int:
@@ -139,6 +163,14 @@ def cmd_banks(mp: MapFile, args: argparse.Namespace) -> int:
     c = _color()
     region = getattr(args, "region", None)
     banks = mp.banks_by_region(region) if region else mp.rom_banks()
+    numbers = getattr(args, "numbers", None)
+    if numbers:
+        try:
+            wanted = set(parse_bank_selectors(numbers))
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        banks = [b for b in banks if b.number in wanted]
     if not banks:
         print(f"no banks in region {(region or 'ROM').upper()}", file=sys.stderr)
         return 1
@@ -159,33 +191,40 @@ def cmd_banks(mp: MapFile, args: argparse.Namespace) -> int:
 
 def cmd_bank(mp: MapFile, args: argparse.Namespace) -> int:
     try:
-        n = _parse_bank_number(args.n)
-    except ValueError:
-        print(f"error: invalid bank number '{args.n}'", file=sys.stderr)
+        numbers = parse_bank_selectors(args.n)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
         return 2
 
-    bank = mp.banks.get(("ROMX", n)) or mp.banks.get(("ROM0", n))
-    if bank is None:
-        for b in mp.banks.values():
-            if b.number == n:
-                bank = b
-                break
-    if bank is None:
-        print(f"no bank #{n} ({n:#x}) found", file=sys.stderr)
-        return 1
+    exit_code = 0
+    printed = 0
+    for n in numbers:
+        bank = mp.banks.get(("ROMX", n)) or mp.banks.get(("ROM0", n))
+        if bank is None:
+            for b in mp.banks.values():
+                if b.number == n:
+                    bank = b
+                    break
+        if bank is None:
+            print(f"no bank #{n} ({n:#x}) found", file=sys.stderr)
+            exit_code = 1
+            continue
 
-    p2 = bank.utilization * 100
-    print(f"Bank ${bank.number:02x} ({bank.region})")
-    print(f"  Used: {_fmt(bank.used)} / {_fmt(bank.capacity)} bytes   ({p2:.1f}%)")
-    free_s = f"{_fmt(bank.free)} byte{'s' if bank.free != 1 else ''}"
-    print(f"  Free: {free_s}\n")
-    if bank.sections:
-        print("Sections")
-        for s in bank.sections:
-            print(f"  ${s.start:04x}–${s.end:04x}  ${s.size:04x} bytes  {s.name}")
-    else:
-        print("  (no sections)")
-    return 0
+        if printed:
+            print()
+        printed += 1
+        p2 = bank.utilization * 100
+        print(f"Bank ${bank.number:02x} ({bank.region})")
+        print(f"  Used: {_fmt(bank.used)} / {_fmt(bank.capacity)} bytes   ({p2:.1f}%)")
+        free_s = f"{_fmt(bank.free)} byte{'s' if bank.free != 1 else ''}"
+        print(f"  Free: {free_s}\n")
+        if bank.sections:
+            print("Sections")
+            for s in bank.sections:
+                print(f"  ${s.start:04x}–${s.end:04x}  ${s.size:04x} bytes  {s.name}")
+        else:
+            print("  (no sections)")
+    return exit_code
 
 
 def cmd_largest(mp: MapFile, args: argparse.Namespace) -> int:
@@ -216,9 +255,16 @@ def cmd_free(mp: MapFile, args: argparse.Namespace) -> int:
 
 
 def cmd_section(mp: MapFile, args: argparse.Namespace) -> int:
-    results = mp.find_section(args.name)
-    if not results:
-        print(f"no section matching '{args.name}'", file=sys.stderr)
+    results = []
+    any_found = False
+    for name in args.names:
+        matches = mp.find_section(name)
+        if not matches:
+            print(f"no section matching '{name}'", file=sys.stderr)
+            continue
+        any_found = True
+        results.extend(matches)
+    if not any_found:
         return 1
     w = max(len(s.name) for s in results)
     for s in results:
@@ -340,10 +386,13 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("summary", help="headline stats (default)")
 
     pb = sub.add_parser("banks", help="ANSI bar chart of bank occupancy")
+    pb.add_argument("numbers", nargs="*", metavar="N",
+                    help="bank numbers/ranges to show, e.g. 5 12 $1a 10-20 (default: all banks in region)")
     pb.add_argument("--region", help="show a RAM region instead of ROM (e.g. SRAM, WRAMX)")
 
-    pbn = sub.add_parser("bank", help="section breakdown of one bank")
-    pbn.add_argument("n", help="bank number: decimal 23, hex $17 / 0x17 / 17")
+    pbn = sub.add_parser("bank", help="section breakdown of one or more banks")
+    pbn.add_argument("n", nargs="+", metavar="N",
+                    help="bank number(s)/range(s): decimal 23, hex $17 / 0x17 / 17, or range 10-20")
 
     pl = sub.add_parser("largest", help="top-N sections by size")
     pl.add_argument("-n", type=int, default=20, metavar="N",
@@ -352,8 +401,9 @@ def main(argv: list[str] | None = None) -> int:
     pf = sub.add_parser("free", help="banks sorted by free space (descending)")
     pf.add_argument("--region", help="show a RAM region instead of ROM")
 
-    ps = sub.add_parser("section", help="find a section by name")
-    ps.add_argument("name", help="section name (exact match first, then substring)")
+    ps = sub.add_parser("section", help="find section(s) by name")
+    ps.add_argument("names", nargs="+", metavar="NAME",
+                    help="section name(s) (exact match first, then substring); repeat to search several")
 
     pc = sub.add_parser("check", help="exit 1 if any ROM bank exceeds threshold")
     pc.add_argument("--max-bank-usage", type=float, default=95.0, metavar="P",
