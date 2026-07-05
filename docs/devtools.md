@@ -56,6 +56,7 @@ the directory on first run.
 | `trainer-inspect`                     | planned    | Dump trainer parties from `trainers/*.asm`.                      |
 | [`prism-usage`](#prism-usage)          | shipped    | RGBDS link-map analyzer: bank usage, section sizes, diffs, pre-commit check. |
 | [`prism-mapfit`](#prism-mapfit)        | shipped    | Find ROM banks for a new map, wire it in, and re-pack maps to fit a near-full ROM. |
+| [`prism-newmap`](#prism-newmap)        | shipped    | Interactive TUI to author a brand-new map's content and wire it into the source files; hands off to `prism-mapfit` for bank placement. |
 | [`prism-mapview`](#prism-mapview)      | shipped    | Render a map to an image and open it. Supports `--tileset`/`--palette` overrides. |
 | [`prism-gfx`](#prism-gfx)              | shipped    | Visualize tilesets and BG palettes (to pick `prism-mapview` overrides). |
 | `prism-watch`                         | planned    | `fswatch` → `make nodebug` → optional emulator relaunch.         |
@@ -899,6 +900,70 @@ prism-mapfit add  --spec mymap.toml --dry-run              # show edits only
 prism-mapfit consolidate --spec a.toml --spec b.toml       # tighten several maps
 prism-mapfit consolidate --spec mymap.toml --blobs blk     # move only the block data
 ```
+
+---
+
+## prism-newmap
+
+`prism-mapfit` "assumes the map content already exists... it does not author
+maps." `prism-newmap` fills that gap: an interactive (`questionary`) wizard
+that authors a brand-new map's content and wires it into the five source
+files, then hands off to `prism-mapfit` for bank placement and a verify
+build. Reuses the same `MapSpec` / `mapwire.py` machinery `prism-mapfit`
+does, so a map wired by `prism-newmap` behaves identically to one wired by
+hand.
+
+**Synopsis**
+
+```
+prism-newmap
+```
+
+No flags — run it from inside the pokeprism checkout and answer the prompts.
+
+**What it asks for, in order**
+
+1. Label (CamelCase, e.g. `OneIsland`) and const (SCREAMING_SNAKE_CASE, e.g.
+   `ONE_ISLAND`) — checked against every already-wired map to catch
+   collisions.
+2. Height, width, and the path to the source `.blk`/`.ablk` file (soft-warns
+   if a plain `.blk`'s byte size doesn't match `height*width`).
+3. Group — a `select` of **existing** groups only, each annotated with a few
+   of its current maps for orientation. Creating a brand-new group isn't
+   supported (see Limitations).
+4. Section names for the block data / script / secondary header blobs —
+   pre-filled with the usual `prism-mapfit` convention (`"Map block data
+   <Label>"`, etc.); accept the default or type a custom name.
+5. The remaining `map_header` fields (tileset, permission, landmark, music,
+   palette, fish group, phone service) as `select`/`autocomplete` prompts
+   sourced from the real constant files, and the `map_header_2` fields
+   (border block, connection flags).
+
+**What it does**
+
+- Writes an empty `maps/<Label>.asm` stub (trigger/callback counts 0, empty
+  `.Warps`/`.CoordEvents`/`.BGEvents`/`.ObjectEvents`).
+- Copies the `.blk`/`.ablk` to `maps/blk/<Label>.<ext>`.
+- Previews the five wiring edits (via `mapwire.ALL_ASM_EDITORS`) and asks for
+  confirmation before writing them.
+- Saves the resulting spec to `.devtools/specs/<Label>.toml` and prints the
+  exact follow-up command, e.g. `prism-mapfit add --spec
+  .devtools/specs/OneIsland.toml`.
+
+**Limitations** (deliberately left to a human or to `prism-mapfit`):
+
+- **New map groups** aren't created — only existing groups can be targeted.
+- **Connections** (`connection north, ...`) aren't generated — add them by
+  hand to `maps/second_map_headers.asm` on *both* the new map and its
+  neighbor, same as `KindleRoad`'s connection to `OneIsland`.
+- **Bank placement, linker pinning, and the verify build** are `prism-mapfit
+  add`'s job, not this tool's.
+
+**Exit codes**
+
+- `0` — n/a (the wizard's terminal state is either "wired" or an abort)
+- `1` — aborted (Ctrl+C, or declined the final confirmation)
+- `2` — usage error, repo not found, or a validation problem
 
 ---
 

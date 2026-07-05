@@ -242,6 +242,8 @@ def test_mapspec(tmp: Path) -> None:
     check("section names derived", spec.section_blockdata == "Map block data MtEmberSmallRoom")
     check("blk_lz derived", spec.blk_lz == "maps/blk/MtEmberSmallRoom.blk.lz")
     check("one connection parsed", len(spec.connections) == 1)
+    check("no section override -> old TOML (missing the keys) still works",
+          spec.blockdata_section == "" and spec.script_section == "" and spec.secondary_section == "")
 
     bad = tmp / "bad.toml"
     bad.write_text('label = "x"\nnonsense = 1\n')
@@ -250,6 +252,18 @@ def test_mapspec(tmp: Path) -> None:
         check("unknown keys rejected", False)
     except ValueError:
         check("unknown keys rejected", True)
+
+    overridden = MapSpec(**{**spec.__dict__, "blockdata_section": "Map block data 12"})
+    check("section override wins over the derived default",
+          overridden.section_blockdata == "Map block data 12")
+    check("un-overridden sections still derive from label",
+          overridden.section_script == "Map Scripts MtEmberSmallRoom")
+
+    m2 = tmp / "m2.toml"
+    m2.write_text(overridden.to_toml())
+    reloaded = MapSpec.from_toml(m2)
+    check("section override round-trips through to_toml/from_toml",
+          reloaded.section_blockdata == "Map block data 12")
 
 
 def _fixture_repo(tmp: Path, name: str = "repo") -> Path:
