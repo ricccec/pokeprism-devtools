@@ -45,21 +45,27 @@ class MapSpec:
     script_asm: str = ""
     blk: str = ""
 
+    # optional overrides for the auto-derived section names below (blank ==
+    # use the default "<Kind> <Label>" convention)
+    blockdata_section: str = ""
+    script_section: str = ""
+    secondary_section: str = ""
+
     @property
     def blk_lz(self) -> str:
         return f"{self.blk}.lz"
 
     @property
     def section_blockdata(self) -> str:
-        return f"Map block data {self.label}"
+        return self.blockdata_section or f"Map block data {self.label}"
 
     @property
     def section_script(self) -> str:
-        return f"Map Scripts {self.label}"
+        return self.script_section or f"Map Scripts {self.label}"
 
     @property
     def section_secondary(self) -> str:
-        return f"Second Map Header {self.label}"
+        return self.secondary_section or f"Second Map Header {self.label}"
 
     def validate(self, root: Path) -> list[str]:
         """Return a list of human-readable problems (empty == OK)."""
@@ -122,6 +128,11 @@ class MapSpec:
             "# authored content (repo-relative)",
             f"script_asm  = {_q(self.script_asm)}",
             f"blk         = {_q(self.blk)}",
+            "",
+            "# section name overrides (blank = \"<Kind> <Label>\" convention)",
+            f"blockdata_section = {_q(self.blockdata_section)}",
+            f"script_section    = {_q(self.script_section)}",
+            f"secondary_section = {_q(self.secondary_section)}",
         ]) + "\n"
 
 
