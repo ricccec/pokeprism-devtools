@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import sys
 
-from pokeprism_devtools import (
+from pokeprism_devtools.shared import (
     blockdata, constants, lz, maps, paths, party, render, savefile, species,
     symfile,
 )
@@ -310,8 +310,115 @@ def main() -> None:
     check("CHARMANDER HP big-endian = 19",
           int.from_bytes(char[34:36], "big") == 19)
 
+    print("\ndev_server — inventory bag fields")
+    from pokeprism_devtools.dev_server import apply as dev_apply
+    from pokeprism_devtools.dev_server import inventory as dev_inventory
+
+    inv = dev_inventory.build(root, sym)
+    check(
+        "bag_caps parsed from misc_constants.asm",
+        inv.get("bag_caps") == {"items": 40, "balls": 25, "key_items": 50},
+        str(inv.get("bag_caps")),
+    )
+    so = inv["sram_offsets"]
+    check("wItems region is 81 bytes", so["wItems"]["size"] == 81)
+    check("wBalls region is 51 bytes", so["wBalls"]["size"] == 51)
+    check("wKeyItems region is 51 bytes", so["wKeyItems"]["size"] == 51)
+    for num_sym, list_sym in (
+        ("wNumItems", "wItems"),
+        ("wNumBalls", "wBalls"),
+        ("wNumKeyItems", "wKeyItems"),
+    ):
+        check(
+            f"{list_sym} directly follows {num_sym}",
+            so[list_sym]["sav_offset"] == so[num_sym]["sav_offset"] + 1,
+        )
+
+    pocket_of = {i["name"]: i.get("pocket") for i in inv["items"]}
+    check("POTION → ITEM pocket", pocket_of.get("POTION") == "ITEM")
+    check("POKE_BALL → BALL pocket", pocket_of.get("POKE_BALL") == "BALL")
+    check("BICYCLE → KEY_ITEM pocket", pocket_of.get("BICYCLE") == "KEY_ITEM")
+    check("SPECIAL_ITEM has no pocket", pocket_of.get("SPECIAL_ITEM") is None)
+    bad_pockets = {
+        p for p in pocket_of.values() if p not in (None, "ITEM", "KEY_ITEM", "BALL", "TM_HM")
+    }
+    check("all pockets are known values", not bad_pockets, str(bad_pockets))
+
+    print("\ndev_server — apply items to .sav")
+    rom_file = paths.rom_path(root)
+    template_sav = rom_file.with_suffix(".sav")
+    if not template_sav.exists():
+        print(f"  (no template .sav at {template_sav.name} — skipping items apply check)")
+    else:
+        item_id = {i["name"]: i["id"] for i in inv["items"]}
+
+        def apply_items(items_state: dict) -> savefile.SaveFile:
+            sf = savefile.SaveFile.load(template_sav)
+            dev_apply.apply_state(
+                sf, {"items": items_state}, inv, rom_path=rom_file, syms=syms
+            )
+            return sf
+
+        sf = apply_items({
+            "items": [{"name": "POTION", "qty": 5}, "ESCAPE_ROPE"],
+            "balls": [{"name": "POKE_BALL", "qty": 10}],
+            "key_items": ["BICYCLE"],
+        })
+        check("wNumItems == 2", sf.data[so["wNumItems"]["sav_offset"]] == 2)
+        expect = bytes([item_id["POTION"], 5, item_id["ESCAPE_ROPE"], 1, 0xFF])
+        got = sf.read(so["wItems"]["sav_offset"], 81)
+        check(
+            "wItems = pairs + 0xFF + zero fill",
+            got == expect + bytes(81 - len(expect)),
+            got[:8].hex(),
+        )
+        check("wNumBalls == 1", sf.data[so["wNumBalls"]["sav_offset"]] == 1)
+        check(
+            "wBalls = [POKE_BALL x10] + 0xFF",
+            sf.read(so["wBalls"]["sav_offset"], 4)
+            == bytes([item_id["POKE_BALL"], 10, 0xFF, 0]),
+        )
+        check("wNumKeyItems == 1", sf.data[so["wNumKeyItems"]["sav_offset"]] == 1)
+        check(
+            "wKeyItems = [BICYCLE] + 0xFF",
+            sf.read(so["wKeyItems"]["sav_offset"], 3)
+            == bytes([item_id["BICYCLE"], 0xFF, 0]),
+        )
+
+        sf = apply_items({"items": []})
+        check("empty pocket → count 0", sf.data[so["wNumItems"]["sav_offset"]] == 0)
+        check(
+            "empty pocket → 0xFF + zero fill",
+            sf.read(so["wItems"]["sav_offset"], 81) == b"\xff" + bytes(80),
+        )
+        # An untouched pocket keeps the template's bytes.
+        template = savefile.SaveFile.load(template_sav)
+        check(
+            "absent sub-key leaves the balls pocket untouched",
+            sf.read(so["wNumBalls"]["sav_offset"], 52)
+            == template.read(so["wNumBalls"]["sav_offset"], 52),
+        )
+
+        def rejects(label: str, items_state: dict) -> None:
+            try:
+                apply_items(items_state)
+            except ValueError:
+                check(f"rejects {label}", True)
+            else:
+                check(f"rejects {label}", False)
+
+        rejects("unknown item", {"items": ["NOT_AN_ITEM"]})
+        rejects("wrong pocket", {"balls": ["POTION"]})
+        rejects("qty 0", {"items": [{"name": "POTION", "qty": 0}]})
+        rejects("qty 100", {"items": [{"name": "POTION", "qty": 100}]})
+        rejects("duplicate item", {"items": ["POTION", {"name": "POTION", "qty": 2}]})
+        rejects("qty on a key item", {"key_items": [{"name": "BICYCLE", "qty": 2}]})
+        rejects("unknown sub-key", {"tms": ["TM_ROCK_SMASH"]})
+        all_items = [i["name"] for i in inv["items"] if i.get("pocket") == "ITEM"]
+        rejects("pocket overflow (41 items)", {"items": all_items[:41]})
+
     print("\nmapfile.py")
-    from pokeprism_devtools import mapfile as mapfile_mod
+    from pokeprism_devtools.shared import mapfile as mapfile_mod
     mp = mapfile_mod.MapFile.parse(paths.map_path(root))
     rom = mp.rom_banks()
     check("at least 118 ROM banks", len(rom) >= 118, f"{len(rom)}")

@@ -150,6 +150,111 @@ def apply_state(
     if flags_state.get("event") or flags_state.get("engine"):
         changes.extend(_apply_flags(sav, flags_state, inv, off))
 
+    items_state = state.get("items")
+    if items_state:
+        changes.extend(_apply_items(sav, items_state, inv, off))
+
+    return changes
+
+
+# Bag pockets writable via state.json's "items" key. Each pocket region is
+# written as: count byte, entries ([id, qty] pairs, or bare ids for key
+# items), 0xFF terminator, zero fill to the end of the region. The game only
+# reads count/entries/terminator (InitList inits just those); the zero fill
+# keeps writes deterministic for future sram-diffs.
+# (state_key, count_symbol, list_symbol, caps_key, has_qty, pocket_attr)
+_POCKETS: list[tuple[str, str, str, str, bool, str]] = [
+    ("items",     "wNumItems",    "wItems",    "items",     True,  "ITEM"),
+    ("balls",     "wNumBalls",    "wBalls",    "balls",     True,  "BALL"),
+    ("key_items", "wNumKeyItems", "wKeyItems", "key_items", False, "KEY_ITEM"),
+]
+
+
+def _apply_items(
+    sav: savefile.SaveFile,
+    items_state: dict,
+    inv: dict,
+    off,
+) -> list[str]:
+    """Write the bag pockets present in `items_state` into the .sav.
+
+    Sub-keys absent from `items_state` leave the template's pocket bytes
+    untouched; a sub-key set to `[]` writes an empty pocket.
+    """
+    if "bag_caps" not in inv:
+        raise RuntimeError(
+            "inventory has no bag_caps — cached inventory.json is too old; "
+            "rerun with --rebuild-inventory"
+        )
+    item_meta = {i["name"]: i for i in inv["items"]}
+    caps = inv["bag_caps"]
+    changes: list[str] = []
+
+    unknown = set(items_state) - {p[0] for p in _POCKETS}
+    if unknown:
+        raise ValueError(
+            f"unknown items sub-key(s): {sorted(unknown)} "
+            f"(expected: items, balls, key_items)"
+        )
+
+    for key, num_sym, list_sym, cap_key, has_qty, want_pocket in _POCKETS:
+        if key not in items_state:
+            continue
+        entries: list[tuple[str, int]] = []
+        seen: set[str] = set()
+        for raw in items_state[key]:
+            if isinstance(raw, str):
+                name, qty = raw, 1
+            elif isinstance(raw, dict) and "name" in raw:
+                if not has_qty and "qty" in raw:
+                    raise ValueError(
+                        f"items.{key}: {raw['name']!r} — key items have no quantity"
+                    )
+                name, qty = raw["name"], int(raw.get("qty", 1))
+            else:
+                raise ValueError(f"items.{key}: invalid entry: {raw!r}")
+            meta = item_meta.get(name)
+            if meta is None:
+                raise ValueError(f"items.{key}: unknown item: {name!r}")
+            if meta.get("pocket") != want_pocket:
+                raise ValueError(
+                    f"items.{key}: {name} belongs to the "
+                    f"{(meta.get('pocket') or 'no').lower()} pocket, not {key}"
+                )
+            if name in seen:
+                raise ValueError(f"items.{key}: duplicate item: {name}")
+            seen.add(name)
+            if not (1 <= qty <= 99):
+                raise ValueError(f"items.{key}: {name} qty out of range: {qty} (1-99)")
+            entries.append((name, qty))
+
+        if len(entries) > caps[cap_key]:
+            raise ValueError(
+                f"items.{key}: {len(entries)} entries exceeds pocket "
+                f"capacity {caps[cap_key]}"
+            )
+
+        region = bytearray(inv["sram_offsets"][list_sym]["size"])
+        pos = 0
+        for name, qty in entries:
+            region[pos] = item_meta[name]["id"]
+            pos += 1
+            if has_qty:
+                region[pos] = qty
+                pos += 1
+        region[pos] = 0xFF
+
+        sav.write_byte(off(num_sym), len(entries))
+        sav.write_bytes(off(list_sym), bytes(region))
+
+        if not entries:
+            desc = "(empty)"
+        elif has_qty:
+            desc = "[" + ", ".join(f"{n} x{q}" for n, q in entries) + "]"
+        else:
+            desc = "[" + ", ".join(n for n, _ in entries) + "]"
+        changes.append(f"items.{key} = {desc}")
+
     return changes
 
 

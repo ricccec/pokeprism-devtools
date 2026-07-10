@@ -29,7 +29,8 @@ For the current user-facing reference of what's shipped, see
 | Map sweep regression test (`test_maps.py`) | ✓ shipped | runs apply against all 448 maps in ~0.1s; catches blockdata / wScreenSave / people regressions |
 | Final pass of `docs/devtools.md` | ✓ shipped | TUI section + setup notes (PEP 668 install caveats) added |
 | v2 fields in `state.json` — party | ✓ shipped | full PartyMon synthesis (species/level/nickname/moves), in-game stat + EXP formulas, learnset-derived default moves |
-| v2 fields in `state.json` — items, event flags | pending | menu placeholders remain; .sav writers not yet implemented |
+| v2 fields in `state.json` — event flags | ✓ shipped | event + engine flags, set by name from the TUI or `state.json` |
+| v2 fields in `state.json` — items | ✓ shipped | Items/Balls/Key-items pockets, pocket-validated via `item_attributes.asm`; TM/HM + PC items still pending |
 | Other tools (`flag-finder`, `map-inspect`, `sram-diff`, etc.) | pending | sketched only; no implementation yet |
 
 Future work / deferred items live at the bottom of this doc under

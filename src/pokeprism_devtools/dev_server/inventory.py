@@ -17,6 +17,10 @@ from pathlib import Path
 from pokeprism_devtools.shared import constants, maps, savefile, species, symfile
 
 
+# Bump when the inventory layout changes (new fields, new offsets); cached
+# inventory.json files with a different schema are rebuilt regardless of mtime.
+INVENTORY_SCHEMA = 2
+
 # WRAM symbols whose values the prism-dev tool will write. Resolved to
 # .sav file offsets in the inventory. Group them by save block so we can
 # validate each ends up in the expected region.
@@ -25,7 +29,11 @@ WRITABLE_FIELDS: dict[str, dict[str, object]] = {
     "wPlayerName":    {"size": 8,  "block": "PlayerData"},
     "wMoney":         {"size": 3,  "block": "PlayerData"},
     "wNumItems":      {"size": 1,  "block": "PlayerData"},
-    "wItems":         {"size": 40, "block": "PlayerData"},
+    "wItems":         {"size": 81, "block": "PlayerData"},  # MAX_ITEMS*2 + 1
+    "wNumKeyItems":   {"size": 1,  "block": "PlayerData"},
+    "wKeyItems":      {"size": 51, "block": "PlayerData"},  # MAX_KEY_ITEMS + 1
+    "wNumBalls":      {"size": 1,  "block": "PlayerData"},
+    "wBalls":         {"size": 51, "block": "PlayerData"},  # MAX_BALLS*2 + 1
     "wEventFlags":    {"size": 250, "block": "PlayerData"},
     # Map block
     "wMapGroup":      {"size": 1,  "block": "MapData"},
@@ -92,6 +100,12 @@ def build(root: Path, sym_path: Path) -> dict:
 
     pokemon = _enum("constants/pokemon_constants.asm")
     items = _enum("constants/item_constants.asm")
+    # Pocket attribute per item id, from the attributes table. Items without
+    # a row (only SPECIAL_ITEM) get None and are rejected by the bag writer.
+    pockets = _parse_item_pockets(root / "items" / "item_attributes.asm")
+    pocket_by_id = {i + 1: p for i, p in enumerate(pockets)}
+    for it in items:
+        it["pocket"] = pocket_by_id.get(it["id"])
     # `move_constants.asm` reuses the same counter for ANIM_* (battle
     # animations after the last real move). They aren't selectable moves;
     # drop them.
@@ -169,7 +183,12 @@ def build(root: Path, sym_path: Path) -> dict:
             "learnset": list(ls.level_moves) if ls is not None else [],
         }
 
+    misc = constants.to_dict(
+        constants.parse_constants(root / "constants" / "misc_constants.asm")
+    )
+
     return {
+        "schema": INVENTORY_SCHEMA,
         "built_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "sym_path": str(sym_path.relative_to(root)),
         "sym_mtime": int(sym_path.stat().st_mtime),
@@ -182,6 +201,11 @@ def build(root: Path, sym_path: Path) -> dict:
             "maps": len(map_defs),
             "species_data": len(species_data),
             "move_pp": len(move_pp),
+        },
+        "bag_caps": {
+            "items": misc["MAX_ITEMS"],
+            "balls": misc["MAX_BALLS"],
+            "key_items": misc["MAX_KEY_ITEMS"],
         },
         "blocks": blocks,
         "framing": framing,
@@ -212,8 +236,47 @@ def load_or_build(
         inventory_path.write_text(json.dumps(inv, indent=2))
         log(f"Wrote {inventory_path}")
         return inv
+    inv = json.loads(inventory_path.read_text())
+    if inv.get("schema") != INVENTORY_SCHEMA:
+        log(
+            f"Cached {inventory_path.name} has schema "
+            f"{inv.get('schema')!r} (want {INVENTORY_SCHEMA}); rebuilding..."
+        )
+        inv = build(root, sym_path)
+        inventory_path.write_text(json.dumps(inv, indent=2))
+        log(f"Wrote {inventory_path}")
+        return inv
     log(f"Using cached {inventory_path.name} (force-rebuild with --rebuild-inventory)")
-    return json.loads(inventory_path.read_text())
+    return inv
+
+
+_ITEM_ATTR_RE = re.compile(r"^\s*item_attribute\s+(.+)$")
+_KNOWN_POCKETS = {"ITEM", "KEY_ITEM", "BALL", "TM_HM"}
+
+
+def _parse_item_pockets(path: Path) -> list[str]:
+    """Pocket name per item id (index 0 == item id 1).
+
+    Parses `items/item_attributes.asm`: one `item_attribute` macro row per
+    item, in item-id order; the pocket constant is the 6th macro argument.
+    """
+    pockets: list[str] = []
+    with path.open() as f:
+        for line in f:
+            line = line[:line.find(";")] if ";" in line else line
+            m = _ITEM_ATTR_RE.match(line)
+            if not m:
+                continue
+            args = [a.strip() for a in m.group(1).split(",")]
+            if len(args) < 6:
+                raise ValueError(f"{path.name}: malformed row: {line.strip()!r}")
+            pocket = args[5]
+            if pocket not in _KNOWN_POCKETS:
+                raise ValueError(
+                    f"{path.name}: unknown pocket {pocket!r} in {line.strip()!r}"
+                )
+            pockets.append(pocket)
+    return pockets
 
 
 _ENGINE_FLAG_RE = re.compile(
