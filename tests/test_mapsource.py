@@ -13,9 +13,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools import map_show, mapsource  # noqa: E402
-from pokeprism_devtools.mapfile import Bank, MapFile, Section  # noqa: E402
-from pokeprism_devtools.mapspec import MapSpec  # noqa: E402
+from pokeprism_devtools import map_show  # noqa: E402
+from pokeprism_devtools.shared import mapsource  # noqa: E402
+from pokeprism_devtools.shared.mapfile import Bank, MapFile, Section  # noqa: E402
+from pokeprism_devtools.shared.mapspec import MapSpec  # noqa: E402
 
 _failures = 0
 
