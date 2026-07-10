@@ -47,7 +47,7 @@ the directory on first run.
 | [`prism-sym`](#prism-sym)           | shipped    | Query the `.sym` file by label or address.                       |
 | [`test_lib.py`](#smoke-test)          | shipped    | Smoke test for the library (run after each rebuild).             |
 | [`test_maps.py`](#map-sweep)          | shipped    | Sweep every map through the `prism-dev` apply pipeline.        |
-| [`prism-dev`](#prism-dev)         | partial    | Inventory + save patcher + map-change support + dev-server TUI + party editor shipped. Items / event flags pending. |
+| [`prism-dev`](#prism-dev)         | partial    | Inventory + save patcher + map-change support + dev-server TUI + party/items/flags editors shipped. TM/HM + PC items pending. |
 | `flag-finder`                         | planned    | Cross-reference `EVENT_*` set/check sites across the codebase.   |
 | `map-inspect`                         | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
 | [`prism-maps`](#prism-maps)           | shipped    | Filterable terminal table of per-map metadata (dimensions, block sizes, NPC counts, compression ratio). No ROM needed. |
@@ -239,8 +239,12 @@ the debug ROM's `.sym` instead of release.
 Current scope: 254 pokemon, 256 items, 254 moves, ~1163 event flags, 448
 maps. The inventory also embeds each species' base stats + growth rate +
 learnset and each move's PP — needed by the party editor to synthesize
-PartyMon structs without re-parsing asm at apply time. SRAM offsets
+PartyMon structs without re-parsing asm at apply time. Each item also
+carries its bag pocket (`ITEM`/`KEY_ITEM`/`BALL`, parsed from
+`items/item_attributes.asm`), and `bag_caps` holds the pocket capacities
+from `constants/misc_constants.asm`. SRAM offsets
 resolved for: `wPlayerName`, `wMoney`, `wNumItems`, `wItems`,
+`wNumBalls`, `wBalls`, `wNumKeyItems`, `wKeyItems`,
 `wEventFlags`, `wMapGroup`, `wMapNumber`, `wXCoord`, `wYCoord`,
 `wPartyCount`, `wPartySpecies`, `wPartyMons`, `wPartyMonOT`,
 `wPartyMonNicknames`, `wPlayerID`, `wBadges`.
@@ -304,6 +308,27 @@ from the player. HP/Atk/Def/Spd/SpA/SpD are computed from base stats
 via the in-game formula; experience is set to the minimum for the
 requested level using the species' growth rate.
 
+The optional `items` key overwrites bag pockets:
+
+```json
+{
+  "items": {
+    "items":     [{"name": "POTION", "qty": 5}, "ESCAPE_ROPE"],
+    "balls":     [{"name": "POKE_BALL", "qty": 10}],
+    "key_items": ["BICYCLE", "OLD_ROD"]
+  }
+}
+```
+
+Three pockets: `items` (cap 40), `balls` (cap 25), `key_items` (cap 50,
+no quantities). A bare string is shorthand for quantity 1; quantities run
+1–99. A pocket absent from `items` keeps the template's contents; a
+pocket set to `[]` is emptied. Every entry is validated against the
+inventory — unknown names, items in the wrong pocket (each item's pocket
+comes from `items/item_attributes.asm`), duplicates, and overflowing the
+cap are hard errors. Note that a party mon's held `item` is independent
+of the bag.
+
 **State resolution order**: `prism-dev` looks for state in this sequence:
 1. `--state PATH` if given on the command line
 2. `.devtools/state.json` if it exists (written by the TUI on every edit)
@@ -314,10 +339,9 @@ To give a fresh checkout a useful starting warp, create
 `.devtools/presets/default.json` with the schema above. That file is not
 tracked by pokeprism's git, so each developer keeps their own.
 
-**Out of scope** (will arrive in follow-up commits): items, event flags.
-Those fields are left untouched in the template. The party editor (above)
-covers the most common need; bag inventory and event-flag toggling
-remain template-driven.
+**Out of scope** (will arrive in follow-up commits): the TM/HM pocket
+(stored as a bit array, not id/qty pairs) and PC item storage. Those
+regions are left untouched in the template.
 
 Usage:
 
@@ -417,8 +441,8 @@ of `--out`, `--no-launch`, `--inventory-only` is set.
   Reset state from preset...
   ───────────────────────────────
   Edit party...
-  Edit items        — v2 — coming soon
-  Edit event flags  — v2 — coming soon
+  Edit items...
+  Edit flags...
   ───────────────────────────────
   Quit
 ```
@@ -433,9 +457,11 @@ of `--out`, `--no-launch`, `--inventory-only` is set.
 | Map name        | Tab-autocomplete from the inventory (~448 maps; fuzzy match).   |
 | X / Y coord    | Range derived from the destination map's block grid (× 2 tiles per block); falls back to 0–255 if the map is unset. |
 | Party (6 slots) | Per-slot editor for species (tab-autocomplete from `inventory.json`), level (1–100), nickname, and the 4 moves (autocomplete; `-` reverts to learnset default). New slots are dropped if you back out without picking a species. |
+| Items (3 pockets) | Per-pocket editor for Items (40), Balls (25), Key items (50). Add via autocomplete filtered to the pocket's items; select an entry to change its quantity (1–99, 0 removes); "Clear pocket" writes an empty pocket, "Use template's pocket" removes the override. |
+| Event / engine flags | Set/unset by name, tab-autocomplete from the inventory. |
 
-Items / event flags are surfaced as disabled menu entries
-("v2 — coming soon"); editing them is on the roadmap (see
+The TM/HM pocket and PC items are not editable yet; those regions stay
+template-driven (see
 [`devtools-plan.md`](devtools-plan.md#future-work--known-v1-limitations)).
 
 #### Dev-server semantics

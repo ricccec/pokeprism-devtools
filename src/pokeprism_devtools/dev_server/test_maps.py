@@ -98,7 +98,15 @@ def main(argv: list[str] | None = None) -> int:
     for i, m in enumerate(maps_to_test, 1):
         name = m["name"]
         sav = savefile.SaveFile(bytearray(template_bytes))
-        state = {"map": {"name": name, "x": args.x, "y": args.y}}
+        state = {
+            "map": {"name": name, "x": args.x, "y": args.y},
+            # Exercise the bag writer on every map run too.
+            "items": {
+                "items": [{"name": "POTION", "qty": 5}],
+                "balls": [{"name": "POKE_BALL", "qty": 10}],
+                "key_items": ["BICYCLE"],
+            },
+        }
         try:
             apply.apply_state(
                 sav, state, inv,
