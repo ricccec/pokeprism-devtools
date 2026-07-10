@@ -19,12 +19,14 @@ from pathlib import Path
 # Allow running straight from a clone without installing.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools import mapfit, mapsource, mapwire, paths  # noqa: E402
-from pokeprism_devtools.mapfile import Bank, MapFile, Section  # noqa: E402
-from pokeprism_devtools.mapspec import MapSpec  # noqa: E402
-from pokeprism_devtools.packing import (  # noqa: E402
+from pokeprism_devtools import mapfit  # noqa: E402
+from pokeprism_devtools.mapfit import mapwire  # noqa: E402
+from pokeprism_devtools.mapfit.packing import (  # noqa: E402
     FreeSpace, Item, NoFitError, pack,
 )
+from pokeprism_devtools.shared import mapsource, paths  # noqa: E402
+from pokeprism_devtools.shared.mapfile import Bank, MapFile, Section  # noqa: E402
+from pokeprism_devtools.shared.mapspec import MapSpec  # noqa: E402
 
 _failures = 0
 
@@ -171,8 +173,12 @@ def test_freespace_real_map() -> None:
         skip("free-space from real .map", str(e))
         return
     fs = FreeSpace.from_mapfile(mp)
-    check("high banks $76-$7f synthesised as empty",
-          all(fs.free.get(b) == 0x4000 for b in range(0x76, 0x80)))
+    declared = {n for (region, n) in mp.banks if region == "ROMX"}
+    undeclared = [b for b in range(1, 0x80) if b not in declared]
+    check("banks absent from the .map synthesised as empty",
+          bool(undeclared)
+          and all(fs.free.get(b) == 0x4000 for b in undeclared),
+          f"{len(undeclared)} undeclared bank(s)")
     check("declared banks present", 0x25 in fs.free and fs.free[0x25] > 0)
     check("no bank exceeds 16 KiB free", all(v <= 0x4000 for v in fs.free.values()))
 
