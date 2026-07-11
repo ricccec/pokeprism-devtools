@@ -125,10 +125,13 @@ def apply_state(
             f"recomputed wScreenSave from {bd.width}x{bd.height} block grid"
         )
 
-        # Reset the player struct + (unless --keep-people) clear NPC slots.
-        # Without this, MAPSETUP_CONTINUE leaves wObjectStructs holding the
-        # previous map's player position and NPC state, so the player
-        # renders off-screen and ghost NPCs from the old map show up.
+        # Reset the player struct, then (unless --keep-people) clear the NPC
+        # slots and load the destination map's own NPCs in their place. Without
+        # this, MAPSETUP_CONTINUE leaves wObjectStructs holding the previous
+        # map's player position and NPC state, so the player renders off-screen
+        # and ghost NPCs from the old map show up. Clearing alone fixes the
+        # ghosts but leaves the map deserted; loading is what makes teleporting
+        # in to look at an NPC you just placed actually show you the NPC.
         people_changes = people.reset_player_and_clear_npcs(
             sav,
             object_structs_offset=offsets["wObjectStructs"]["sav_offset"],
@@ -138,6 +141,15 @@ def apply_state(
             y=final_y,
             keep_npcs=keep_people,
         )
+        if not keep_people:
+            people_changes |= people.load_map_npcs(
+                sav,
+                map_objects_offset=offsets["wMapObjects"]["sav_offset"],
+                map_objects_size=offsets["wMapObjects"]["size"],
+                events=blockdata.object_events(
+                    rom_path, syms, final_group, final_map, name=map_label or ""
+                ),
+            )
         changes.append(
             "people: " + ", ".join(f"{k}={v}" for k, v in people_changes.items())
         )
