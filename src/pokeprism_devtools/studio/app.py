@@ -1,15 +1,15 @@
 """prism-studio — the shell.
 
-Read-only, for now: a map browser. You pick a map, you see its shape, you see
-what has been placed on it and what the linter thinks of it. Nothing here writes
-to the repo — :mod:`.session` is wired in and does the reading, but no action is
-bound to a key yet. That is P3.
+You pick a map, you see its shape, you see what has been placed on it and what
+the linter thinks of it, and you put something new on it: `a` opens the palette,
+the form comes up prefilled with the tile the cursor is standing on, and what you
+approve is a diff of the exact bytes that land.
 
 **This file opens no files.** Everything it draws arrives from `Session.load` as
 plain data — colours, marker positions, tables already reduced to columns and
-rows — and everything it will *change*, in P3, goes out through an `Action` whose
-fields it renders without knowing what they mean. The only path from here to the
-repo is `main()`, finding the root to hand to the `Session`. That rule is what
+rows — and everything it changes goes out through an `Action` whose fields
+:mod:`.forms` renders without knowing what they mean. The only path from here to
+the repo is `main()`, finding the root to hand to the `Session`. That rule is what
 keeps `person_event`'s argument order, and the `+4` its macro adds behind your
 back, on one side of one line. See `docs/adapter-plan.md`.
 
@@ -41,8 +41,10 @@ from textual.widgets import (DataTable, Footer, Header, Input, OptionList, Stati
 
 from ..maplint.diagnostics import Diagnostic, Severity
 from ..shared import coords, paths
+from .actions import CATALOG, Action, ActionError
+from .forms import Confirm, Form, Palette
 from .grid import MapGrid
-from .session import MapData, Session
+from .session import MapData, Preview, Session, SessionError
 
 _SEVERITY_STYLE = {
     Severity.ERROR: "bold red",
@@ -77,6 +79,8 @@ class Studio(App):
 
     BINDINGS = [
         ("q", "quit", "Quit"),
+        ("a", "act", "Add…"),
+        ("u", "undo", "Undo"),
         ("slash", "focus_filter", "Filter"),
         ("plus", "zoom(1)", "Zoom in"),
         ("minus", "zoom(-1)", "Zoom out"),
@@ -91,6 +95,11 @@ class Studio(App):
         #: moved on is dropped — otherwise arrowing down the list leaves you
         #: looking at whichever map happened to finish last.
         self._wanted: str | None = None
+        self._const: str | None = None
+        #: Where to put the cursor back after a reload. Re-reading the map is how
+        #: a new NPC appears on the grid, but it would also send the cursor home
+        #: — off the tile you were working on, the moment you worked on it.
+        self._keep_cursor: tuple[int, int] | None = None
         self._linted = False
 
     # -- layout ---------------------------------------------------------------- #
@@ -160,6 +169,7 @@ class Studio(App):
     def _loaded(self, data: MapData) -> None:
         if data.label != self._wanted:
             return
+        self._const = data.const
 
         grid = self.query_one("#grid", MapGrid)
         status = self.query_one("#status", Static)
@@ -169,6 +179,9 @@ class Studio(App):
         else:
             grid.display = True
             grid.show(data.geometry)
+            if self._keep_cursor is not None:
+                grid.cursor = self._keep_cursor
+                self._keep_cursor = None
 
         for name in _TABS:
             table = self.query_one(f"#table-{name.lower()}", DataTable)
@@ -220,6 +233,73 @@ class Studio(App):
             out.append(f"         {d.message}\n", style="none")
             out.append(f"         {d.location}\n\n", style="dim")
         return out
+
+    # -- changing the map ---------------------------------------------------------- #
+    def action_act(self) -> None:
+        """Pick an action, fill it in, look at the diff, apply it. One at a time.
+
+        Deliberately one at a time, and `session.py` says why at length: two
+        actions built against the same starting file and applied one after the
+        other do not merge — the second silently overwrites the first, and both
+        NPCs get handed the same event-flag slot. So there is no queue here and
+        no Save key. Applying *is* saving.
+        """
+        if self._const is None:
+            self.bell()
+            return
+        self.push_screen(Palette(CATALOG), self._picked)
+
+    def _picked(self, chosen: type[Action] | None) -> None:
+        if chosen is None or self._const is None:
+            return
+        grid = self.query_one("#grid", MapGrid)
+        cursor = grid.cursor if grid.view is not None else None
+        self.push_screen(Form(chosen, self.session, self._const, cursor), self._filled)
+
+    def _filled(self, preview: Preview | None) -> None:
+        if preview is None:
+            return
+        if not preview.edits:
+            self.notify(f"{preview.summary}: nothing to change")
+            return
+        self.push_screen(Confirm(preview), lambda ok: self._confirmed(preview, ok))
+
+    def _confirmed(self, preview: Preview, ok: bool | None) -> None:
+        if not ok:
+            return
+        try:
+            applied = self.session.apply(preview)
+        except SessionError as exc:
+            self.notify(str(exc), severity="error", timeout=10)
+            return
+        self.notify("\n".join([applied.summary, *applied.notes]))
+        self._after_write()
+
+    def action_undo(self) -> None:
+        try:
+            last = self.session.undo()
+        except SessionError as exc:
+            self.notify(str(exc), severity="error", timeout=10)
+            return
+        self.notify(f"undone: {last.summary}")
+        self._after_write()
+
+    def _after_write(self) -> None:
+        """Bring the screen back in step with the repo.
+
+        The session has already dropped the caches for the files that moved, so
+        the re-lint is the cheap incremental one rather than the 1.7-second cold
+        start — but it is still a hundred milliseconds and it is still not going
+        on the UI thread. The grid, on the other hand, is re-read immediately:
+        the NPC you just placed should be on the map before you have let go of
+        the key.
+        """
+        self._linted = False
+        grid = self.query_one("#grid", MapGrid)
+        self._keep_cursor = grid.cursor if grid.view is not None else None
+        if self._wanted:
+            self._load(self._wanted)
+        self._lint()
 
     # -- keys --------------------------------------------------------------------- #
     def action_focus_filter(self) -> None:

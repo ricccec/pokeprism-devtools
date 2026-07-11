@@ -59,6 +59,10 @@ class Field:
     default: str = ""
     choices: str = ""
     help: str = ""
+    #: For `lines`: which box this text is drawn in, so the preview measures it
+    #: against the right width. A sign is a different shape from a speech bubble
+    #: and the same sentence fits one and not the other.
+    box: str = "speech"
 
 
 @dataclass
@@ -347,6 +351,12 @@ class AddSignpost(_Placed):
         Field("x", "X", kind="int"),
         Field("facing", "Read when facing", choices=FACINGS, default="",
               help="leave blank and it reads from any side, like a gym sign"),
+        # A sign's text is measured in the *speech* box, not the signpost one,
+        # obvious as the opposite sounds. SIGNPOST_TEXT and the facing signs both
+        # end in a `jumptext`, which draws in the ordinary bubble. Only
+        # SIGNPOST_LOAD opens the full-screen signpost window — see
+        # `dialogue.sign_owners`. Measure this against 17 columns and every sign
+        # you write is one tile too wide, in-game, and nowhere else.
         Field("text", "What it says", kind="lines",
               help="one line per textbox line; a blank line starts a new box"),
     )

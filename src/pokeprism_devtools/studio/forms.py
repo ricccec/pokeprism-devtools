@@ -1,0 +1,304 @@
+"""The three screens that stand between you and a write: pick, fill in, confirm.
+
+Nothing in here knows what an NPC is. A form is built by walking an action's
+`FIELDS` and putting a box on screen for each one; a box that names a `choices`
+kind gets its autocomplete by asking the session, which is the only thing allowed
+to know that sprites live in `constants/sprite_constants.asm`. Add an action with
+a new field tomorrow and this file renders it without being touched — that is the
+whole point of the declaration, and the moment a `if field.name == "sprite"`
+appears here, the seam has leaked and `session.py`'s promise is broken.
+
+The dialogue box is the exception worth explaining. It is still schema-driven —
+it appears because a field said `kind="lines"` — but it carries a second panel
+that measures what you type in *tiles*, against the box the text will really be
+drawn in. `#` is four tiles, not one; `<PLAYER>` is seven at its longest; and the
+speech bubble is eighteen columns wide. Finding that out from the linter after
+you've saved is finding it out too late, so the count updates on the keystroke.
+"""
+
+from __future__ import annotations
+
+from rich.text import Text
+from textual import on
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.screen import ModalScreen
+from textual.suggester import SuggestFromList
+from textual.widgets import Button, Input, Label, OptionList, Static, TextArea
+
+from .actions import Action, ActionError, Field
+from .session import Preview, Session, TextPreview
+
+#: Fields the grid can answer for you. The cursor is *on* the tile; making you
+#: read its coordinates off the status bar and type them back in would be a way
+#: of introducing a typo into the one number that is already known.
+CURSOR_FIELDS = {"y": 0, "x": 1}
+
+
+class Palette(ModalScreen[type[Action] | None]):
+    """Everything the studio can do, in one list."""
+
+    BINDINGS = [Binding("escape", "dismiss_none", "Cancel")]
+
+    CSS = """
+    Palette { align: center middle; }
+    #palette { width: 46; height: auto; max-height: 80%;
+               border: round $accent; background: $surface; }
+    #palette-title { padding: 0 1; background: $accent; color: $text; }
+    """
+
+    def __init__(self, catalog: tuple[type[Action], ...]) -> None:
+        super().__init__()
+        self._catalog = catalog
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="palette"):
+            yield Static("What would you like to do?", id="palette-title")
+            yield OptionList(*[a.title for a in self._catalog], id="palette-list")
+
+    def on_mount(self) -> None:
+        self.query_one("#palette-list", OptionList).focus()
+
+    @on(OptionList.OptionSelected, "#palette-list")
+    def _chose(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(self._catalog[event.option_index])
+
+    def action_dismiss_none(self) -> None:
+        self.dismiss(None)
+
+
+class Form(ModalScreen["Preview | None"]):
+    """One action's fields, and nothing else.
+
+    Submitting writes nothing. It builds the action and *previews* it, which is
+    where an action that cannot be built at all — a sprite that doesn't exist, a
+    party index past the end of the group — refuses. It refuses here, having
+    touched not one byte of the repo, and the message the wiring layer wrote for
+    a human is shown under the form with everything you typed still in it.
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+        Binding("ctrl+s", "submit", "Preview"),
+    ]
+
+    CSS = """
+    Form { align: center middle; }
+    #form { width: 78; height: auto; max-height: 90%;
+            border: round $accent; background: $surface; }
+    #form-title { padding: 0 1; background: $accent; color: $text; }
+    #form-body { height: auto; max-height: 24; padding: 1 1 0 1; }
+    #form-error { padding: 0 1; color: $error; height: auto; }
+    #form-buttons { height: 3; align: right middle; padding: 0 1; }
+    .field-label { color: $text-muted; }
+    .field-help { color: $text-disabled; }
+    TextArea { height: 8; border: solid $panel; }
+    #tiles { height: auto; max-height: 10; padding: 0 1 1 1; }
+    """
+
+    def __init__(self, action: type[Action], session: Session, map_const: str,
+                 cursor: tuple[int, int] | None) -> None:
+        super().__init__()
+        self._action = action
+        self._session = session
+        self._map = map_const
+        self._cursor = cursor
+        #: Why the last submit was refused, if it was.
+        self.error = ""
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="form"):
+            yield Static(self._action.title, id="form-title")
+            with VerticalScroll(id="form-body"):
+                for f in self._action.FIELDS:
+                    yield from self._widgets(f)
+            yield Static(id="tiles")
+            yield Static(id="form-error")
+            with Horizontal(id="form-buttons"):
+                yield Button("Cancel", id="cancel")
+                yield Button("Preview", variant="primary", id="ok")
+
+    def _widgets(self, f: Field) -> ComposeResult:
+        yield Label(f.label, classes="field-label")
+        if f.help:
+            yield Label(f.help, classes="field-help")
+        if f.kind == "lines":
+            area = TextArea(id=f"field-{f.name}", soft_wrap=False)
+            area.tab_behavior = "focus"     # or you can never leave the box
+            yield area
+        else:
+            yield Input(
+                value=self._prefill(f), id=f"field-{f.name}",
+                suggester=self._suggester(f), placeholder=f.choices,
+            )
+
+    def _prefill(self, f: Field) -> str:
+        """The cursor's coordinates, if the field is asking for them."""
+        if self._cursor and f.name in CURSOR_FIELDS and f.kind == "int":
+            return str(self._cursor[CURSOR_FIELDS[f.name]])
+        return f.default
+
+    def _suggester(self, f: Field) -> SuggestFromList | None:
+        if not f.choices:
+            return None
+        options = self._session.choices(f.choices)
+        return SuggestFromList(options, case_sensitive=False) if options else None
+
+    def on_mount(self) -> None:
+        first = self.query(Input).first() if self.query(Input) else None
+        (first or self.query_one(TextArea)).focus()
+        self._retile()
+
+    # -- the tile counter ------------------------------------------------------ #
+    @on(TextArea.Changed)
+    def _typed(self) -> None:
+        self._retile()
+
+    def _retile(self) -> None:
+        """Measure every dialogue box in the form, on every keystroke.
+
+        Cheap enough to do it this way: the metrics are cached on the session and
+        measuring a line is a walk over its tokens. What it buys is the whole
+        reason the text rules exist — you see `#mon Center` cost 14 tiles while
+        you are still able to shorten it.
+        """
+        panel = self.query_one("#tiles", Static)
+        out = Text()
+        for f in self._action.FIELDS:
+            if f.kind != "lines":
+                continue
+            body = self.query_one(f"#field-{f.name}", TextArea).text
+            if not body.strip():
+                continue
+            if len(self._text_fields()) > 1:
+                out.append(f"{f.label}\n", style="bold")
+            out.append(_tiles(self._session.measure(body, f.box)))
+        panel.update(out)
+
+    def _text_fields(self) -> list[Field]:
+        return [f for f in self._action.FIELDS if f.kind == "lines"]
+
+    # -- leaving ----------------------------------------------------------------- #
+    @on(Button.Pressed, "#ok")
+    def action_submit(self) -> None:
+        """Build the action and preview it. Every action's first argument is the
+        map it acts on; everything after that is the form, by name."""
+        action = self._action(self._map, **self._values())
+        try:
+            preview = self._session.preview(action)
+        except ActionError as err:
+            self.error = str(err)
+            self.query_one("#form-error", Static).update(
+                Text(self.error, style="bold red"))
+            return
+        self.dismiss(preview)
+
+    @on(Button.Pressed, "#cancel")
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    @on(Input.Submitted)
+    def _next_field(self) -> None:
+        self.focus_next()
+
+    def _values(self) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for f in self._action.FIELDS:
+            if f.kind == "lines":
+                out[f.name] = self.query_one(f"#field-{f.name}", TextArea).text
+            else:
+                out[f.name] = self.query_one(f"#field-{f.name}", Input).value
+        return out
+
+
+def _tiles(measured: TextPreview) -> Text:
+    """The speech, line by line, with what it costs in tiles.
+
+    A line is red when it certainly overflows and yellow when it only overflows
+    once a name buffer is at its longest — because that one is a bug in somebody
+    else's game, not in yours, which is the hardest kind to be told about.
+    """
+    out = Text()
+    for m in measured.lines:
+        if m.over:
+            style, note = "bold red", f"{m.over} over"
+        elif m.over_at_worst:
+            style, note = "yellow", f"{m.over_at_worst} over at worst"
+        elif m.unbounded:
+            style, note = "yellow", f"unbounded: {' '.join(m.unbounded)}"
+        else:
+            style, note = "dim", ""
+
+        out.append(f"{m.tiles:>3}/{measured.cols}  ", style=style)
+        out.append(m.text or "·", style="none" if m.text else "dim")
+        if note:
+            out.append(f"   {note}", style=style)
+        if m.unknown:
+            out.append(f"   not in the charmap: {' '.join(m.unknown)}",
+                       style="bold red")
+        out.append("\n")
+    return out
+
+
+class Confirm(ModalScreen[bool]):
+    """The diff, and a yes.
+
+    What is shown here is not a rendering of what *would* happen — it is the
+    diff of the very `Edit` objects that will be written, against the very text
+    they were computed from. There is no second code path to disagree with.
+    """
+
+    BINDINGS = [
+        Binding("escape", "no", "Cancel"),
+        Binding("enter", "yes", "Apply"),
+    ]
+
+    CSS = """
+    Confirm { align: center middle; }
+    #confirm { width: 92; height: auto; max-height: 90%;
+               border: round $success; background: $surface; }
+    #confirm-title { padding: 0 1; background: $success; color: $text; }
+    #confirm-notes { padding: 0 1; color: $warning; height: auto; }
+    #confirm-diff { height: auto; max-height: 28; padding: 1; }
+    #confirm-buttons { height: 3; align: right middle; padding: 0 1; }
+    """
+
+    def __init__(self, preview: Preview) -> None:
+        super().__init__()
+        self._preview = preview
+
+    def compose(self) -> ComposeResult:
+        p = self._preview
+        with Vertical(id="confirm"):
+            yield Static(f"{p.summary}  —  {', '.join(p.touches)}", id="confirm-title")
+            yield Static(self._notes(), id="confirm-notes")
+            yield VerticalScroll(Static(_diff(p.diff())), id="confirm-diff")
+            with Horizontal(id="confirm-buttons"):
+                yield Button("Cancel", id="no")
+                yield Button("Apply", variant="success", id="yes")
+
+    def _notes(self) -> Text:
+        return Text("\n".join(self._preview.notes))
+
+    def on_mount(self) -> None:
+        self.query_one("#yes", Button).focus()
+
+    @on(Button.Pressed, "#yes")
+    def action_yes(self) -> None:
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#no")
+    def action_no(self) -> None:
+        self.dismiss(False)
+
+
+_DIFF_STYLE = {"+": "green", "-": "red", "@": "cyan"}
+
+
+def _diff(text: str) -> Text:
+    out = Text()
+    for line in text.split("\n"):
+        style = "bold" if line[:3] in ("+++", "---") else _DIFF_STYLE.get(line[:1], "dim")
+        out.append(line + "\n", style=style)
+    return out

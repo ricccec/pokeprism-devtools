@@ -12,15 +12,20 @@ app down with them.
 from __future__ import annotations
 
 import asyncio
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from textual.widgets import Input, OptionList, TextArea
+
 from pokeprism_devtools.shared import blocksrc, coords, eventheader, paths, swatches
 from pokeprism_devtools.studio import Session, panels
 from pokeprism_devtools.studio.app import Studio
+from pokeprism_devtools.studio.forms import Confirm, Form, Palette
 from pokeprism_devtools.studio.grid import MapGrid
 
 ROOT = paths.repo_root(Path.home() / "code/ricccec/pokeprism")
@@ -172,6 +177,212 @@ class TestShell(unittest.TestCase):
         self.assertIn("Connections", data.tables)
 
 
+class TestTextPreview(unittest.TestCase):
+    """The tile counter under the dialogue box — the reason the text rules exist.
+
+    A speech box is 18 columns of *tiles*, and a tile is not a character: `#`
+    expands to four of them. So the count has to come from the same width engine
+    the linter uses, and it has to arrive while you can still shorten the line.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.session = Session(ROOT)
+
+    def test_a_line_that_does_not_fit_says_so(self) -> None:
+        p = self.session.measure("#mon Center near\nHi.")
+        self.assertEqual(p.cols, 18)
+        self.assertFalse(p.fits)
+        # `#` is four tiles: "#mon Center near" is 16 characters and 19 tiles.
+        self.assertEqual(p.lines[0].tiles, 19)
+        self.assertEqual(p.lines[0].over, 1)
+        self.assertEqual(p.lines[1].over, 0)
+
+    def test_a_line_that_fits_until_the_player_has_a_long_name(self) -> None:
+        """The worst kind of overflow: correct in your game, broken in theirs."""
+        p = self.session.measure("<PLAYER> is here right")
+        self.assertTrue(p.fits, "it fits as written")
+        self.assertTrue(p.risky, "and not once <PLAYER> is at its longest")
+        self.assertEqual(p.lines[0].over_at_worst, 3)
+
+    def test_a_sign_is_measured_in_the_speech_box(self) -> None:
+        """Obvious as the opposite sounds. SIGNPOST_TEXT ends in a `jumptext`,
+        which draws in the ordinary bubble; only SIGNPOST_LOAD opens the
+        full-screen signpost window. Measure a sign against the signpost box and
+        every sign you write is a tile too wide, in-game and nowhere else."""
+        from pokeprism_devtools.studio.actions import AddSignpost
+        text = next(f for f in AddSignpost.FIELDS if f.kind == "lines")
+        self.assertEqual(text.box, "speech")
+        self.assertNotEqual(self.session.measure("x", "speech").cols,
+                            self.session.measure("x", "sign").cols)
+
+
+class TestChoices(unittest.TestCase):
+    """What the form offers, which the form itself is not allowed to know."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.session = Session(ROOT)
+
+    def test_every_declared_kind_can_be_answered(self) -> None:
+        from pokeprism_devtools.studio.actions import CATALOG
+        for action in CATALOG:
+            for f in action.FIELDS:
+                if f.choices:
+                    self.assertTrue(
+                        self.session.choices(f.choices),
+                        f"{action.name}.{f.name} wants {f.choices!r} and the "
+                        f"session has nothing to offer for it")
+
+    def test_a_class_the_engine_would_crash_on_is_not_offered(self) -> None:
+        from pokeprism_devtools.shared import trainerparty
+        offered = set(self.session.choices("classes"))
+        null = {cls for cls, group in trainerparty.class_groups(ROOT).items()
+                if group is None}
+        self.assertTrue(null, "the repo has classes with a NULL group")
+        self.assertEqual(offered & null, set())
+
+    def test_an_unknown_kind_is_free_text_not_a_crash(self) -> None:
+        self.assertEqual(self.session.choices("wombats"), [])
+
+
+class TestEditing(unittest.TestCase):
+    """The whole loop, on a copy: palette -> form -> diff -> apply -> undo.
+
+    On a *copy*. This test writes to a repo, and the repo it must never write to
+    is the one you have work in progress in.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls._tmp.name) / "pokeprism"
+        shutil.copytree(ROOT, cls.root, symlinks=True, ignore=shutil.ignore_patterns(
+            ".git", "*.o", "*.gbc", "*.sym", "*.map"))
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    async def _ready(self, app, pilot) -> MapGrid:
+        """Filter to the map, wait for the load worker."""
+        app.query_one("#filter", Input).value = MAP
+        await pilot.pause()
+        grid = app.query_one("#grid", MapGrid)
+        for _ in range(300):
+            await pilot.pause(0.02)
+            if grid.view is not None and grid.view.label == MAP:
+                return grid
+        self.fail(f"{MAP} never loaded")
+
+    def test_placing_a_sign_from_the_cursor_and_taking_it_back(self) -> None:
+        path = self.root / f"maps/{MAP}.asm"
+        before = path.read_text()
+
+        async def go():
+            app = Studio(self.root)
+            async with app.run_test() as pilot:
+                grid = await self._ready(app, pilot)
+                grid.action_move(9, 11)
+                await pilot.pause()
+
+                # `a` opens the palette. It is a list of what the CATALOG says
+                # can be done, and nothing here knows what any of them are.
+                await pilot.press("a")
+                await pilot.pause()
+                palette = app.screen
+                self.assertIsInstance(palette, Palette)
+
+                options = palette.query_one("#palette-list", OptionList)
+                titles = [str(o.prompt) for o in options._options]
+                options.highlighted = titles.index("Add a signpost")
+                await pilot.press("enter")
+                await pilot.pause()
+
+                form = app.screen
+                self.assertIsInstance(form, Form)
+
+                # The cursor filled in the coordinates. This is the reason the
+                # grid was built before the forms were: it is the one pair of
+                # numbers in the whole app that you should never have to type.
+                self.assertEqual(form.query_one("#field-y", Input).value, "9")
+                self.assertEqual(form.query_one("#field-x", Input).value, "11")
+
+                area = form.query_one("#field-text", TextArea)
+                area.text = "It reads:\nBEWARE OF THE DOG"
+                await pilot.pause()
+
+                form.action_submit()
+                await pilot.pause()
+
+                # The diff is of the very edits that will land, not a rendering
+                # of what might.
+                confirm = app.screen
+                self.assertIsInstance(confirm, Confirm)
+                diff = confirm._preview.diff()
+                self.assertIn("+CastroForestSign:", diff)
+                self.assertIn('+\tctxt "It reads:"', diff)
+                self.assertIn("+\tsignpost 9, 11, SIGNPOST_TEXT, CastroForestSign",
+                              diff)
+
+                confirm.action_yes()
+                await pilot.pause()
+
+                text = path.read_text()
+                self.assertNotEqual(text, before, "nothing was written")
+                self.assertIn("BEWARE OF THE DOG", text)
+
+                # And the map redraws with the sign on it, at the cursor, which
+                # is still where you left it.
+                for _ in range(300):
+                    await pilot.pause(0.02)
+                    if (9, 11) in app.query_one("#grid", MapGrid).view.marks:
+                        break
+                grid = app.query_one("#grid", MapGrid)
+                self.assertEqual(grid.view.marks[(9, 11)], coords.SIGN)
+                self.assertEqual(grid.cursor, (9, 11))
+
+                # Undo puts back exactly what was there.
+                app.action_undo()
+                await pilot.pause()
+                self.assertEqual(path.read_text(), before)
+
+                await app.action_quit()
+
+        drive(go())
+
+    def test_an_action_that_cannot_be_built_writes_nothing(self) -> None:
+        """A sprite that doesn't exist is caught in the form, with the form still
+        full of what you typed — not by rgblink, five minutes later."""
+        path = self.root / f"maps/{MAP}.asm"
+        before = path.read_text()
+
+        async def go():
+            app = Studio(self.root)
+            async with app.run_test() as pilot:
+                await self._ready(app, pilot)
+                form = Form(_action("Add an NPC"), app.session, "CASTRO_FOREST", (2, 3))
+                await app.push_screen(form)
+                await pilot.pause()
+
+                form.query_one("#field-sprite", Input).value = "SPRITE_YOUNGSTR"
+                form.query_one("#field-text", TextArea).text = "Hello."
+                form.action_submit()
+                await pilot.pause()
+
+                self.assertIs(app.screen, form, "the form left, taking the values")
+                self.assertIn("Did you mean SPRITE_YOUNGSTER", form.error)
+                self.assertEqual(path.read_text(), before)
+                await app.action_quit()
+
+        drive(go())
+
+
+def _action(title: str):
+    from pokeprism_devtools.studio.actions import CATALOG
+    return next(a for a in CATALOG if a.title == title)
+
+
 class TestTheSeam(unittest.TestCase):
     """The view reads no files.
 
@@ -186,7 +397,7 @@ class TestTheSeam(unittest.TestCase):
     """
 
     #: The view layer.
-    VIEW = ("app.py", "grid.py")
+    VIEW = ("app.py", "grid.py", "forms.py")
 
     #: Modules that open the source tree. `coords` and `swatches` are not here:
     #: `coords.glyph_cells` and `swatches.tile_color` are the *renderer* — plain

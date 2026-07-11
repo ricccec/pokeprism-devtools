@@ -39,12 +39,16 @@ import difflib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from functools import cached_property
+
 from .. import maplint
 from ..maplint.context import LintContext
 from ..maplint.diagnostics import Diagnostic
-from ..shared import blocksrc, coords, eventheader, swatches, wilddata
+from ..shared import (blocksrc, consts, coords, eventheader, spritesets, swatches,
+                      textbox, trainerparty, wilddata)
 from ..shared.edits import Edit, StaleEdit, apply_edits
-from . import panels
+from ..wiring import connections, scaffold
+from . import actions, panels
 from .actions import Action, Result
 
 
@@ -88,6 +92,43 @@ class MapData:
     #: Why there is no geometry, when there isn't.
     error: str | None
     tables: dict[str, panels.Table]
+
+
+@dataclass(frozen=True)
+class Measured:
+    """One line of dialogue, as the engine will draw it."""
+    text: str
+    #: Tiles it certainly prints. `#` is four of them.
+    tiles: int
+    #: Extra tiles if every bounded buffer (`<PLAYER>`, `<RIVAL>`) is at its
+    #: longest. A line that fits *today* and not when the player is called
+    #: BARTHOLOMEW is a line that overflows in somebody's game and not in yours.
+    bounded: int
+    #: Tokens whose length can't be bounded from the text at all (`<STRBF1>`).
+    unbounded: list[str]
+    #: Tokens with no charmap entry — a typo'd `<PLAYR>` prints as garbage.
+    unknown: list[str]
+    #: How many tiles past the right edge. 0 fits.
+    over: int
+    #: How many it would be over at the buffers' worst.
+    over_at_worst: int
+
+
+@dataclass(frozen=True)
+class TextPreview:
+    """A whole speech, measured against the box it will be drawn in."""
+    box: str                # what to call it: "speech textbox", "signpost"
+    cols: int               # tiles per line
+    lines: list[Measured]
+
+    @property
+    def fits(self) -> bool:
+        return all(m.over == 0 for m in self.lines)
+
+    @property
+    def risky(self) -> bool:
+        """Fits as written, and won't once a name buffer is at its longest."""
+        return self.fits and any(m.over_at_worst for m in self.lines)
 
 
 @dataclass(frozen=True)
@@ -223,6 +264,64 @@ class Session:
                 if block.map_const == const:
                     found[kind] = block
         return found
+
+    # -- what a form may offer ------------------------------------------------ #
+    def choices(self, kind: str) -> list[str]:
+        """The constants a field of this kind will accept.
+
+        The form calls this and turns the answer into autocomplete. It is the
+        other half of "the view reads no files": a field says *what sort* of
+        thing it wants, and the model — which knows where sprite constants live
+        and that a trainer class with a NULL group cannot be battled — says which
+        ones exist. An unknown kind is empty, i.e. free text, not an error: a new
+        action with a new kind should degrade to a plain box, not crash the form.
+        """
+        return list(self._choices.get(kind, ()))
+
+    @cached_property
+    def _choices(self) -> dict[str, tuple[str, ...]]:
+        root = self.root
+        backed = [cls for cls, group in trainerparty.class_groups(root).items() if group]
+        return {
+            actions.MAPS: tuple(m.const for m in self.maps),
+            actions.SPRITES: tuple(sorted(spritesets.sprite_ids(root))),
+            actions.MOVEMENTS: tuple(sorted(spritesets.movedata_ids(root))),
+            actions.PALETTES: tuple(sorted(
+                consts.with_prefix(root, consts.SPRITES, "PAL_OW_"))),
+            actions.ITEMS: tuple(sorted(consts.names(root, consts.ITEMS))),
+            # Only classes with a party group behind them: offering a class the
+            # engine will crash on is worse than offering nothing.
+            actions.CLASSES: tuple(sorted(backed)),
+            actions.DIRECTIONS: tuple(sorted(connections.OPPOSITE)),
+            actions.FACINGS: tuple(f.removeprefix("SIGNPOST_").lower()
+                                   for f in scaffold.FACINGS),
+        }
+
+    # -- text, as it will look ------------------------------------------------ #
+    def measure(self, text: str, box: str = "speech") -> TextPreview:
+        """Dialogue-in-progress against the box it lands in.
+
+        Same prose model the form submits: one line per screen line, a blank line
+        starts a new box. Only *width* is checked, and that is not a shortcut —
+        the third row of a box and every row after it are `cont`, which scrolls,
+        so a speech can be any length. What it cannot be is wide.
+        """
+        b = self._boxes[box]
+        lines = [self._measure_line(line, b.cols)
+                 for line in text.replace("\r\n", "\n").split("\n")]
+        return TextPreview(b.name, b.cols, lines)
+
+    def _measure_line(self, line: str, cols: int) -> Measured:
+        det, bnd, unb, unknown = self.ctx.textbox_metrics.tiles(self.root, line)
+        return Measured(
+            text=line, tiles=det, bounded=bnd, unbounded=unb, unknown=unknown,
+            over=max(0, det - cols),
+            over_at_worst=max(0, det + bnd - cols),
+        )
+
+    @cached_property
+    def _boxes(self) -> dict[str, textbox.Box]:
+        return textbox.boxes(self.root)
 
     # -- diagnostics --------------------------------------------------------- #
     def lint(self) -> list[Diagnostic]:
