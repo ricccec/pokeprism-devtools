@@ -123,10 +123,45 @@ def _fixture(tmp: Path) -> Path:
         "\nNoOutdoorSprites:\n\tdb 0 ; end\n"
     )
     (root / "maps" / "map_headers.asm").write_text(
-        "\tmap_header TownA, TILESET_A, TOWN, LANDMARK_A, MUSIC_A, 0, PALETTE_A, FISH_0\n"
-        "\tmap_header TownB, TILESET_A, TOWN, LANDMARK_B, MUSIC_A, 0, PALETTE_A, FISH_0\n"
-        "\tmap_header CaveC, TILESET_C, CAVE, LANDMARK_C, MUSIC_A, 0, PALETTE_A, FISH_0\n"
-        "\tmap_header TownD, TILESET_A, TOWN, LANDMARK_D, MUSIC_A, 0, PALETTE_A, FISH_0\n"
+        "\tmap_header TownA, TILESET_A, TOWN, LM_TOWN_A, MUSIC_A, 0, PALETTE_A, FISH_0\n"
+        "\tmap_header TownB, TILESET_A, TOWN, LM_TOWN_B, MUSIC_A, 0, PALETTE_A, FISH_0\n"
+        "\tmap_header CaveC, TILESET_C, CAVE, LM_CAVE_C, MUSIC_A, 0, PALETTE_A, FISH_0\n"
+        "\tmap_header TownD, TILESET_A, TOWN, LM_TOWN_D, MUSIC_A, 0, PALETTE_A, FISH_0\n"
+    )
+
+    # Landmarks are one flat enum with region_def markers cutting it into
+    # contiguous regions — TownA/TownB are naljo, CaveC/TownD are rijon.
+    (root / "constants" / "landmark_constants.asm").write_text(
+        "MACRO region_def\n\tenum REGION_\\1\n\\1_LANDMARK EQU const_value\n\tENDM\n\n"
+        "\tconst_def\n\tconst SPECIAL_MAP\n"
+        "\tregion_def NALJO\n\tconst LM_TOWN_A\n\tconst LM_TOWN_B\n"
+        "\tregion_def RIJON\n\tconst LM_CAVE_C\n\tconst LM_TOWN_D\n"
+    )
+    # TownB's grass block is filed under rijon, but its landmark says naljo.
+    (root / "data" / "wild").mkdir()
+    (root / "data" / "wild" / "naljo_grass.asm").write_text(
+        "\twildmap TOWN_A\n\tdb 2 percent\n\tendwildmap\n"
+    )
+    (root / "data" / "wild" / "rijon_grass.asm").write_text(
+        "\twildmap TOWN_D\n\tdb 2 percent\n\tendwildmap\n"
+        "\twildmap TOWN_B\n\tdb 2 percent\n\tendwildmap\n"
+    )
+
+    # Block data: TownA's .blk is a byte short of its 10x10 declaration.
+    (root / "maps" / "blk").mkdir()
+    (root / "maps" / "blockdata.asm").write_text(
+        "TownA_BlockData:\n\tINCBIN \"maps/blk/TownA.blk\"\n"
+        "TownB_BlockData:\n\tINCBIN \"maps/blk/TownB.blk\"\n"
+    )
+    (root / "maps" / "blk" / "TownA.blk").write_bytes(b"\0" * 99)      # 10x10 = 100
+    (root / "maps" / "blk" / "TownB.blk").write_bytes(b"\0" * 100)     # correct
+
+    # Trainer parties are positional: SageGroup has two, so #3 doesn't exist.
+    (root / "trainers" / "groups").mkdir(parents=True)
+    (root / "trainers" / "groups" / "sage.asm").write_text(
+        'SageGroup:\n\t; 1\n\tdb "Genjo@"\n\tdb TRAINERTYPE_NORMAL\n'
+        "\tdb 21, GASTLY\n\tdb -1\n\n"
+        '\t; 2\n\tdb "Nico@"\n\tdb TRAINERTYPE_NORMAL\n\tdb 22, HAUNTER\n\tdb -1\n'
     )
 
     # Seeded connection bugs, one per rule:
@@ -178,8 +213,14 @@ def _fixture(tmp: Path) -> Path:
           _person("SPRITE_NPC", 5, 5, "SPRITEMOVEDATA_STANDING_DOWN", "EVENT_NOPE"),
           _person("SPRITE_NPC", 6, 6, "SPRITEMOVEDATA_STANDING_DOWN", "EVENT_SHARED")])
 
+    # TownB also carries a trainer pointing at SageGroup party #3, which
+    # doesn't exist (trainer-party), and its wild data is filed under the wrong
+    # region (wild-region).
     _map("TownB", ["warp_def 1, 1, 1, CAVE_C"],
          [_person("SPRITE_NPC", 1, 1, "SPRITEMOVEDATA_STANDING_DOWN", "EVENT_SHARED")])
+    b = root / "maps" / "TownB.asm"
+    b.write_text("TownB_Trainer_1:\n"
+                 "\ttrainer EVENT_REAL, SAGE, 3, .seen, .beaten\n\n" + b.read_text())
 
     # CaveC is indoor, so the outdoor-set rule doesn't apply to it. A STILL
     # sprite is told to wander (sprite-static-walker), and the object count
@@ -216,6 +257,9 @@ _EXPECTED = {
     "flag-unknown": 1,
     "flag-shared": 1,
     "sprite-vram": 1,
+    "blk-size": 1,
+    "trainer-party": 1,
+    "wild-region": 1,
 }
 
 
@@ -338,8 +382,10 @@ def test_real_repo() -> None:
         "obj-count": 4,             # count byte vs entries (see test_eventheader)
         "sprite-vram": 4,           # walkers whose walk frames fall outside VRAM
         "sprite-vram-budget": 4,    # over-full outdoor sprite sets
+        "blk-size": 6,              # .blk and the declared dimensions disagree
         "conn-missing": 2,          # one-way connections
         "conn-self": 1,             # ROUTE_69_NORTH's typo'd self-id
+        "wild-region": 1,           # CAPER_RIDGE's grass is filed under mystery
         "flag-shared": 10,          # deliberate: one flag gating objects in two maps
     }
     for code in sorted(set(counts) | set(triaged)):
