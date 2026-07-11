@@ -34,11 +34,29 @@ from .constants import parse_constants, to_dict
 _SPRITE_CONSTANTS = "constants/sprite_constants.asm"
 _MISC_CONSTANTS = "constants/misc_constants.asm"
 _SPRITE_HEADERS = "data/sprite_headers.asm"
+_MAP_OBJECTS = "data/map_objects.asm"
 _OVERWORLD = "engine/overworld.asm"
 
 #: GetSpriteLength (engine/overworld.asm:573) — in tiles.
 TILES_STILL = 4
 TILES_WALKING = 12
+
+#: Movement functions that make an object **take steps** (data/map_objects.asm
+#: SpriteMovementData, field 1). Only these need walk-frame graphics: an object
+#: that steps animates its walk cycle, which the engine fetches at a fixed +$80
+#: tile offset from the sprite's base tile (data/facings.asm).
+#:
+#: Spins and bounces are deliberately *not* here. They change facing or bob in
+#: place without stepping, so a standing sprite serves them fine — even though
+#: every one in the repo today happens to sit on a walking sprite.
+STEPPING_MOVE_FUNCTIONS = frozenset({
+    "SPRITEMOVEFN_RANDOM_WALK_XY",
+    "SPRITEMOVEFN_RANDOM_WALK_X",
+    "SPRITEMOVEFN_RANDOM_WALK_Y",
+    "SPRITEMOVEFN_FOLLOW",
+    "SPRITEMOVEFN_FOLLOW_NOT_EXACT",
+    "SPRITEMOVEFN_OBEY_DPAD",
+})
 
 _SPRITE_HEADER_RE = re.compile(
     r"^\s*sprite_header\s+(\w+)\s*,\s*([^,]+?)\s*,\s*(\w+)\s*,\s*(\w+)\s*(?:;.*)?$"
@@ -84,9 +102,39 @@ class SpriteData:
     list_capacity: int                          # SPRITE_GFX_LIST_CAPACITY
     pokemon_sprite_id: int                      # SPRITE_POKEMON
     vars_sprite_id: int                         # SPRITE_VARS
+    movedata_ids: dict[str, int]                # SPRITEMOVEDATA_* -> index
+    move_functions: list[str]                   # index -> SPRITEMOVEFN_*
+    type_ids: dict[str, int]                    # WALKING_SPRITE -> 1, …
 
     def header(self, sprite: str) -> SpriteHeader | None:
         return self.headers.get(sprite)
+
+    def type_rank(self, type_name: str) -> int:
+        """SortUsedSprites bubble-sorts the list ascending by *type value*, and
+        WALKING(1) < STANDING(2) < STILL(3) — which is what pushes walkers to
+        the front of VRAM, where their walk frames are reachable."""
+        return self.type_ids.get(type_name, 99)
+
+    def move_function(self, movedata: str) -> str | None:
+        """The movement function behind a `person_event`'s movement argument.
+
+        Accepts the constant or a raw literal — a few maps write ``$2`` where
+        they mean ``SPRITEMOVEDATA_WANDER``.
+        """
+        index = self.movedata_ids.get(movedata)
+        if index is None:
+            try:
+                index = _to_int(movedata)
+            except ValueError:
+                return None
+        if 0 <= index < len(self.move_functions):
+            return self.move_functions[index]
+        return None
+
+    def steps(self, movedata: str) -> bool:
+        """Whether this movement makes the object walk — see
+        :data:`STEPPING_MOVE_FUNCTIONS`."""
+        return self.move_function(movedata) in STEPPING_MOVE_FUNCTIONS
 
     # The id space has three regions, and only the first one plays by the
     # sprite_header / OutdoorSprites rules:
@@ -132,7 +180,54 @@ def load(root: Path) -> SpriteData:
         list_capacity=misc.get("SPRITE_GFX_LIST_CAPACITY", 0x20),
         pokemon_sprite_id=ids.get("SPRITE_POKEMON", 1 << 30),
         vars_sprite_id=ids.get("SPRITE_VARS", 1 << 30),
+        movedata_ids=_movedata_ids(root),
+        move_functions=_move_functions(root),
+        type_ids=_type_ids(root),
     )
+
+
+def _type_ids(root: Path) -> dict[str, int]:
+    """The sprite-type enum: `const_value = 1` then WALKING / STANDING / STILL."""
+    path = root / _SPRITE_CONSTANTS
+    out: dict[str, int] = {}
+    counter = 0
+    for line in path.read_text().split("\n"):
+        s = line.split(";")[0].strip()
+        if m := re.match(r"^const_value\s*=\s*(\$?[0-9a-fA-F]+)$", s):
+            counter = _to_int(m.group(1))
+        elif s == "const_def":
+            counter = 0
+        elif m := re.match(r"^const\s+(\w*_SPRITE)$", s):
+            out[m.group(1)] = counter
+            counter += 1
+        elif re.match(r"^const\s+\w+$", s):
+            counter += 1
+    return out
+
+
+def _movedata_ids(root: Path) -> dict[str, int]:
+    """The SPRITEMOVEDATA_* enum — a plain run of consts from a const_def."""
+    path = root / _SPRITE_CONSTANTS
+    out: dict[str, int] = {}
+    counter = 0
+    for line in path.read_text().split("\n"):
+        s = line.split(";")[0].strip()
+        if m := re.match(r"^const\s+(SPRITEMOVEDATA_\w+)$", s):
+            out[m.group(1)] = counter
+            counter += 1
+        elif s.startswith("const_def"):
+            counter = 0
+    return out
+
+
+def _move_functions(root: Path) -> list[str]:
+    """SpriteMovementData, positional: entry N is SPRITEMOVEDATA_* value N. The
+    first field is the movement function that decides whether it walks."""
+    path = root / _MAP_OBJECTS
+    if not path.exists():
+        raise SpriteDataError(f"{path} not found")
+    return [m.group(1) for line in path.read_text().split("\n")
+            if (m := re.match(r"\s*sprite_movement_data\s+(\w+)\s*,", line))]
 
 
 def _sprite_ids(root: Path) -> dict[str, int]:

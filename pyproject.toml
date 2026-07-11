@@ -20,6 +20,7 @@ prism-gfx     = "pokeprism_devtools.gfx_view:main"
 prism-mapfit  = "pokeprism_devtools.mapfit:main"
 prism-metatiles = "pokeprism_devtools.metatiles:main"
 prism-newmap  = "pokeprism_devtools.map_new:main"
+prism-maplint = "pokeprism_devtools.maplint:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
