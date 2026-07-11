@@ -264,26 +264,9 @@ def print_grid(root: Path, label: str, time_of_day: int = 1, zoom: int | None = 
     z = zoom or fit_zoom(rows, cols)
 
     def color(ty: int, tx: int) -> swatches.Rgb:
-        """The colour of one coordinate tile.
+        return swatches.tile_color(bd.blocks, bd.width, sw, marks, ty, tx)
 
-        An object's tile is its object's colour, edge to edge — not the terrain
-        with a letter on it. A tile is a *place to stand*, and a tile that is
-        occupied is occupied; if you want to see what's under an NPC, move the
-        NPC. Filling the whole tile is also what makes the grid legible at a
-        distance: five red squares by the north exit is a fact you can see
-        without reading anything.
-        """
-        if (glyph := marks.get((ty, tx))) is not None:
-            return coords.MARKER_BG[glyph]
-        row, col = coords.block_of(ty, tx)
-        qr, qc = coords.quadrant_of(ty, tx)
-        return sw[bd.blocks[row * bd.width + col]][qr * coords.TILES_PER_BLOCK + qc]
-
-    # The letter goes in the cell nearest the middle of its own tile, and from
-    # zoom 2 up that cell lies strictly inside the tile — so the letter never
-    # spills its colour onto a neighbour. At zoom 1 a tile is only half a cell
-    # tall, and it has to.
-    glyphs = {((ty * z + z // 2) // 2, tx * z + z // 2): g for (ty, tx), g in marks.items()}
+    glyphs = coords.glyph_cells(marks, z)
 
     print(f"{bd.name}  {bd.height}x{bd.width} blocks · {rows}x{cols} tiles · "
           f"tileset {bd.tileset_id} · {render.table_for_permission(bd.permission)} "

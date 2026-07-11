@@ -21,7 +21,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from . import render
+from . import coords, render
 
 Rgb = tuple[int, int, int]
 #: A block's four quadrant colors, in reading order: top-left, top-right,
@@ -88,6 +88,21 @@ def build(root: Path, tileset_id: int, palettes: list[list[Rgb]]) -> tuple[Swatc
         out.append(tuple(tuple(v // 256 for v in acc) for acc in totals))   # type: ignore[arg-type]
 
     return tuple(out)
+
+
+def tile_color(blocks: bytes, width: int, sw: tuple[Swatch, ...],
+               marks: dict[tuple[int, int], str], ty: int, tx: int) -> Rgb:
+    """The colour of one coordinate tile — the single answer both grids draw.
+
+    An object's tile is its object's colour, **edge to edge**, not the terrain
+    with a letter on it: a tile that is occupied is occupied, and if you want to
+    see what's under an NPC you move the NPC. `width` is in blocks.
+    """
+    if (glyph := marks.get((ty, tx))) is not None:
+        return coords.MARKER_BG[glyph]
+    row, col = coords.block_of(ty, tx)
+    qr, qc = coords.quadrant_of(ty, tx)
+    return sw[blocks[row * width + col]][qr * coords.TILES_PER_BLOCK + qc]
 
 
 def _tile_total(gfx: bytes, tile_id: int, palette: list[Rgb]) -> tuple[int, int, int]:

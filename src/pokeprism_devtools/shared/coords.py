@@ -110,6 +110,12 @@ MARKER_INK: dict[str, tuple[int, int, int]] = {
     for glyph, (r, g, b) in MARKER_BG.items()
 }
 
+def hex_color(rgb: tuple[int, int, int]) -> str:
+    """`#rrggbb`. Rich understands `rgb(1,2,3)` but not `rgb(1, 2, 3)`, and the
+    repr of a tuple has the spaces — so never build a colour out of one."""
+    return "#%02x%02x%02x" % rgb
+
+
 _ITEM_TYPES = ("PERSONTYPE_ITEMBALL", "PERSONTYPE_TMHMBALL", "PERSONTYPE_FRUITTREE")
 _TRAINER_TYPES = ("PERSONTYPE_TRAINER", "PERSONTYPE_GENERICTRAINER")
 
@@ -144,3 +150,18 @@ def markers(header) -> dict[tuple[int, int], str]:
         out[(y, x)] = (ITEM if kind in _ITEM_TYPES else
                        TRAINER if kind in _TRAINER_TYPES else PERSON)
     return out
+
+
+def glyph_cells(marks: dict[tuple[int, int], str], zoom: int) -> dict[tuple[int, int], str]:
+    """Where each marker's *letter* goes, keyed by (half-row, column).
+
+    A coordinate tile is drawn `zoom` cells wide and `zoom` **half**-rows tall,
+    and a letter takes a whole cell — so it can sit in only one of them. It goes
+    in the cell nearest the middle of its own tile. From zoom 2 up that cell lies
+    strictly inside the tile, *both* of its halves, so the letter never spills
+    onto a neighbour and a marker is never drawn on a tile that isn't its own. At
+    zoom 1 a tile is half a cell tall and the letter has no choice but to share;
+    the fill is still exact, only the letter is approximate.
+    """
+    return {((ty * zoom + zoom // 2) // 2, tx * zoom + zoom // 2): glyph
+            for (ty, tx), glyph in marks.items()}
