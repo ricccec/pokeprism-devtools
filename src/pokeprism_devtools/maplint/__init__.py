@@ -59,11 +59,11 @@ def run(ctx: LintContext, *, only: str | None = None) -> list[Diagnostic]:
     files = {d.path: ctx.source_lines(d.path) for d in found}
     found = apply_suppressions(found, files)
     if only:
-        found = [d for d in found if _mentions(d, ctx, only)]
+        found = [d for d in found if mentions(d, ctx, only)]
     return sorted(found, key=lambda d: (d.path, d.line, d.code))
 
 
-def _mentions(d: Diagnostic, ctx: LintContext, only: str) -> bool:
+def mentions(d: Diagnostic, ctx: LintContext, only: str) -> bool:
     """Findings 'about' one map: those in its file, plus those in the shared
     second_map_headers.asm that name it (connections live there, not in the map)."""
     const = only if only in ctx.map_defs else ctx.label_to_const.get(only, only)
