@@ -325,7 +325,7 @@ class _MapCtx:
     def to_edit(self, detail: str) -> Edit:
         rel = f"maps/{self.map_label}.asm"
         text = self._text()
-        return Edit(rel, text != self._original, detail, text)
+        return Edit(rel, text != self._original, detail, text, base=self._original)
 
 
 # --------------------------------------------------------------------------- #

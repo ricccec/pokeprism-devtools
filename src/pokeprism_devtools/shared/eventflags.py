@@ -107,10 +107,32 @@ class EventFlags:
         self._reparse()
         return next(f for f in self.flags if f.name == name)
 
+    def free(self, name: str) -> Flag:
+        """Give `name`'s slot back, by turning it into a ``const skip`` again.
+
+        The inverse of :meth:`allocate`, and it has to be done this way round:
+        *deleting* the line would renumber every flag below it, and flag values
+        are save-file bit positions, so that would invalidate every save in
+        existence. Rewriting it to ``skip`` holds every other flag's value
+        exactly where it was and returns the slot to the reserve.
+
+        Returns the freed slot. Idempotent in the sense that freeing a name that
+        isn't allocated raises rather than silently doing nothing — a caller
+        that thinks it owns a flag it doesn't is a caller with a bug.
+        """
+        flag = next((f for f in self.flags if f.name == name), None)
+        if flag is None:
+            raise FlagError(f"{name} is not an allocated flag in {_REL}")
+
+        self.lines[flag.lineno] = f"{_INDENT}const {_SKIP}"
+        self._reparse()
+        return Flag(_SKIP, flag.value, flag.lineno)
+
     def to_edit(self, root: Path, detail: str) -> Edit:
         text = self.to_text()
-        changed = text != self.path.read_text()
-        return Edit(_REL, changed, detail, text if changed else "")
+        base = self.path.read_text()
+        changed = text != base
+        return Edit(_REL, changed, detail, text if changed else "", base=base)
 
     def _reparse(self) -> None:
         fresh = _parse(self.path, self.lines, self.start_value, self._eol)

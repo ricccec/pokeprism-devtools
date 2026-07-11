@@ -264,10 +264,15 @@ class LintContext:
         return eventflags.load(self.root)
 
     @cached_property
+    def trainer_groups_by_label(self) -> dict[str, trainerparty.TrainerGroup]:
+        """Group label -> the group."""
+        return trainerparty.load(self.root)
+
+    @cached_property
     def trainer_groups(self) -> dict[str, trainerparty.TrainerGroup]:
         """Trainer class const -> the group holding its parties. Classes with no
         parties behind them are absent (see `trainer_class`)."""
-        groups = trainerparty.load(self.root)
+        groups = self.trainer_groups_by_label
         return {cls: groups[label]
                 for cls, label in trainerparty.class_groups(self.root).items()
                 if label in groups}
