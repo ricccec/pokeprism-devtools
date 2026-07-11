@@ -43,6 +43,7 @@ PALETTES = "palettes"
 ITEMS = "items"
 CLASSES = "classes"
 DIRECTIONS = "directions"
+FACINGS = "facings"
 
 
 class ActionError(RuntimeError):
@@ -338,6 +339,31 @@ class AddHiddenItem(_Placed):
             raise ActionError(str(e)) from e
 
 
+class AddSignpost(_Placed):
+    name = "sign"
+    title = "Add a signpost"
+    FIELDS = (
+        Field("y", "Y", kind="int"),
+        Field("x", "X", kind="int"),
+        Field("facing", "Read when facing", choices=FACINGS, default="",
+              help="leave blank and it reads from any side, like a gym sign"),
+        Field("text", "What it says", kind="lines",
+              help="one line per textbox line; a blank line starts a new box"),
+    )
+
+    def describe(self) -> str:
+        return f"sign at ({self.text('y')}, {self.text('x')})"
+
+    def run(self, root: Path) -> Result:
+        y, x = self.coords()
+        try:
+            return self._scaffolded(scaffold.add_signpost(
+                root, self.map, y, x, self.pages("text"),
+                facing=self.text("facing") or None))
+        except scaffold.ScaffoldError as e:
+            raise ActionError(str(e)) from e
+
+
 class Remove(_Placed):
     name = "remove"
     title = "Remove an object"
@@ -368,5 +394,6 @@ class Remove(_Placed):
 
 #: Everything the studio can do to a map, in the order the palette offers it.
 CATALOG: tuple[type[Action], ...] = (
-    AddNpc, AddTrainer, AddItemball, AddHiddenItem, Remove, Connect, AddWarp,
+    AddNpc, AddTrainer, AddItemball, AddHiddenItem, AddSignpost,
+    Remove, Connect, AddWarp,
 )

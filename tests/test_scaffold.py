@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tests for the content scaffolds: NPCs, trainers, item balls, hidden items,
-and the trainer-party and wild-data editors underneath them.
+signs, and the trainer-party and wild-data editors underneath them.
 
 The unit tests are hermetic. The ones that matter most aren't: they parse every
 real trainer group and every real wild table, because these files are read
@@ -304,6 +304,50 @@ def test_items(root: Path) -> None:
           f"signpost 9, 10, SIGNPOST_ITEM, {h.label}" in text)
     check("which lands in BGEvents, count 0 -> 1",
           eh.parse_map(root / "maps/TownA.asm").lists[eh.ListKind.BG_EVENTS].declared_count == 1)
+    _reset(root, saved)
+
+
+def test_signpost(root: Path) -> None:
+    print("\na sign: text if it reads from any side, a script if it reads from one")
+    saved = _snapshot(root)
+
+    s = sc.add_signpost(root, "TOWN_A", 4, 11,
+                        pages=[["Town A", "Pop. 12"], ["Mind the", "grass."]])
+    apply_edits(root, s.edits, dry_run=False)
+    text = (root / "maps/TownA.asm").read_text()
+
+    check("the label is named for the map", s.label == "TownASign")
+    check("a plain sign is SIGNPOST_TEXT, which jumps straight into text",
+          f"signpost 4, 11, SIGNPOST_TEXT, {s.label}" in text)
+    check("so the pointer is the text block itself, with no script above it",
+          f"{s.label}:\n\tctxt \"Town A\"" in text)
+    check("a sign is always there, so no flag", s.flag is None)
+    check("it lands in BGEvents, count 0 -> 1",
+          eh.parse_map(root / "maps/TownA.asm").lists[eh.ListKind.BG_EVENTS].declared_count == 1)
+
+    # The whole reason this function has two shapes. SIGNPOST_UP/DOWN/LEFT/RIGHT
+    # all fall through to `.read` in engine/events.asm, which *calls* the pointer
+    # as a script. Point one at a bare text block and the engine executes the
+    # prose as bytecode.
+    f = sc.add_signpost(root, "TOWN_A", 6, 2, pages=[["Vending", "machine."]],
+                        facing="up")
+    apply_edits(root, f.edits, dry_run=False)
+    text = (root / "maps/TownA.asm").read_text()
+
+    check("a facing sign is SIGNPOST_UP", f"signpost 6, 2, SIGNPOST_UP, {f.label}" in text)
+    check("and its pointer is a script, because .read calls it",
+          f"{f.label}:\n\tjumptext .text\n" in text)
+    check("with the text hanging off it as a local label",
+          '\n.text\n\tctxt "Vending"' in text)
+    check("the second sign gets a distinct label", f.label == "TownASign2")
+    check("both are in BGEvents now",
+          eh.parse_map(root / "maps/TownA.asm").lists[eh.ListKind.BG_EVENTS].declared_count == 2)
+
+    raises("a direction the engine has no signpost for",
+           lambda: sc.add_signpost(root, "TOWN_A", 1, 1, [["x"]], facing="sideways"),
+           wanted="up, down, left, right")
+    raises("a sign that says nothing",
+           lambda: sc.add_signpost(root, "TOWN_A", 1, 1, []), wanted="at least one line")
     _reset(root, saved)
 
 
@@ -650,6 +694,7 @@ def main() -> int:
         test_npc(root)
         test_trainer(root)
         test_items(root)
+        test_signpost(root)
         test_rejects_unknown_consts(root)
         test_stale_edit(root)
         test_removal(root)
