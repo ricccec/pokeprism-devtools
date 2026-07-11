@@ -16,8 +16,8 @@ from functools import cached_property
 from pathlib import Path
 
 from ..shared import (
-    eventflags, eventheader as eh, flagrefs, landmarks, maps, mapsource, spritesets,
-    trainerparty,
+    dialogue, eventflags, eventheader as eh, flagrefs, landmarks, maps, mapsource,
+    spritesets, textbox, trainerparty,
 )
 from ..shared.maps import MapDef
 
@@ -84,6 +84,7 @@ class LintContext:
     def __init__(self, root: Path) -> None:
         self.root = root
         self._headers: dict[str, eh.EventHeader | None] = {}
+        self._text: dict[str, list[dialogue.Block]] = {}
 
     # -- files -------------------------------------------------------------- #
     def rel(self, path: Path) -> str:
@@ -254,6 +255,19 @@ class LintContext:
         if header is None:
             return None
         return self.landmark_regions.get(header.landmark)
+
+    # -- dialogue ----------------------------------------------------------- #
+    def text_blocks(self, const: str) -> list[dialogue.Block]:
+        """Every text block in the map, each tied to the box it renders in."""
+        if const not in self._text:
+            info = self.map_infos.get(const)
+            self._text[const] = dialogue.parse(self.root, info.path) if info else []
+        return self._text[const]
+
+    @cached_property
+    def textbox_metrics(self) -> textbox.Metrics:
+        """What each charmap token costs in tiles, read from the text engine."""
+        return textbox.metrics(self.root)
 
     # -- shared data -------------------------------------------------------- #
     @cached_property
