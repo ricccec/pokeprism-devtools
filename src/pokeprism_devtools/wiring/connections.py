@@ -184,21 +184,21 @@ def connect(root: Path, a: str, direction: str, b: str, k: int) -> tuple[Edit, l
     left, right = plan(root, a, direction, b, k)
 
     path = root / _REL
-    lines = path.read_text().split("\n")
+    original = path.read_text()
+    lines = original.split("\n")
     for conn in (left, right):
         lines = _splice(lines, conn)
 
     text = "\n".join(lines)
-    original = path.read_text()
     if text == original:
         return Edit(_REL, False,
-                    f"{a} and {b} are already connected {direction} at offset {k:+d}"), \
-               [left, right]
+                    f"{a} and {b} are already connected {direction} at offset {k:+d}",
+                    base=original), [left, right]
 
     added = sum(growth(root, a, direction, b).values())
     cost = f"; +{added} bytes of secondary header" if added else ""
     detail = f"{b} is {direction} of {a} at offset {k:+d}{cost}"
-    return Edit(_REL, True, detail, text), [left, right]
+    return Edit(_REL, True, detail, text, base=original), [left, right]
 
 
 def _splice(lines: list[str], conn: Connection) -> list[str]:
