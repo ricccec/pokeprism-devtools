@@ -134,6 +134,51 @@ class Entry:
         arities), which is what makes flag analysis shape-independent."""
         return self.args[-1]
 
+    # -- any entry ---------------------------------------------------------- #
+    # The accessors above read a person_event's layout. The four macros put the
+    # same ideas in different places, so anything that walks entries generically
+    # (removal, the studio's map grid) has to go through these instead.
+    @property
+    def coords(self) -> tuple[int | None, int | None]:
+        """(y, x), wherever this macro happens to keep them."""
+        at = _YX.get(self.macro)
+        if at is None or len(self.args) <= max(at):
+            return None, None
+        return self.int_arg(at[0]), self.int_arg(at[1])
+
+    @property
+    def pointer(self) -> str | None:
+        """The script/text/item this entry points at, if it points at anything.
+
+        ``dummy_warp`` has none. A ``signpost`` only has one when its function
+        isn't a JUMPSTD — those spend the slot on a ``db`` instead, exactly as
+        the MART and JUMPSTD person_events do.
+        """
+        i = _POINTER.get(self.macro)
+        if i is None or len(self.args) <= i:
+            return None
+        if self.macro == "person_event" and self.args[9] in _PERSON_NO_POINTER:
+            return None
+        if self.macro == "signpost" and self.args[2] in _SIGNPOST_NO_POINTER:
+            return None
+        return self.args[i]
+
+
+#: Where (y, x) sit in each entry macro's arguments (macros/map.asm).
+_YX = {
+    "person_event": (1, 2),
+    "signpost": (0, 1),
+    "warp_def": (0, 1),
+    "dummy_warp": (0, 1),
+    "xy_trigger": (1, 2),
+}
+
+#: Where the pointer sits, for the macros that have one.
+_POINTER = {"person_event": 11, "signpost": 3, "xy_trigger": 3}
+
+_PERSON_NO_POINTER = ("PERSONTYPE_MART", "PERSONTYPE_JUMPSTD")
+_SIGNPOST_NO_POINTER = ("SIGNPOST_JUMPSTD", "SIGNPOST_JUMPSTDNOSFX")
+
 
 @dataclass
 class EventList:
@@ -257,8 +302,9 @@ class EventHeader:
         get dry-run previews and idempotence the same way map wiring does."""
         rel = str(self.path.relative_to(root))
         text = self.to_text()
-        changed = text != self.path.read_text()
-        return Edit(rel, changed, detail, text if changed else "")
+        base = self.path.read_text()
+        changed = text != base
+        return Edit(rel, changed, detail, text if changed else "", base=base)
 
     # -- internals ---------------------------------------------------------- #
     def _set_count(self, lineno: int, n: int) -> None:
