@@ -25,7 +25,7 @@ whether a party is safe to touch must ask it rather than grep.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import trainerparty as tp
@@ -91,61 +91,102 @@ def party_consts(root: Path) -> dict[str, tuple[str, int]]:
     return out
 
 
-def citations(root: Path) -> dict[tuple[str, int], list[Citation]]:
-    """Every reference to every party, keyed by (class, ordinal).
+@dataclass
+class Citations:
+    """Every party citation in the repo, kept **per file**.
 
-    A reference whose ordinal is a const this repo doesn't declare is dropped —
-    it cannot be resolved to a party, and guessing would be worse than silence.
+    Same reasoning as :class:`..flagrefs.Index`: the whole-repo scan below is the
+    single most expensive thing the linter does, and an edit only ever touches
+    one file. So the per-file lists are the state and :meth:`reindex` rescans
+    exactly one of them.
     """
-    consts = party_consts(root)
-    out: dict[tuple[str, int], list[Citation]] = {}
+    #: Party-ordinal const -> (class, ordinal). Declared in one file; if *that*
+    #: file changes, every citation must be re-resolved, so rebuild from scratch.
+    #: Party-ordinal const -> (class, ordinal). Declared in one file; if *that*
+    #: file changes every citation must be re-resolved, so rebuild from scratch.
+    consts: dict[str, tuple[str, int]]
+    by_file: dict[str, list[Citation]] = field(default_factory=dict)
+    _merged: dict[tuple[str, int], list[Citation]] | None = None
+    _wanted: re.Pattern | None = None
 
-    def add(cite: Citation) -> None:
-        out.setdefault((cite.cls, cite.party), []).append(cite)
+    def all(self) -> dict[tuple[str, int], list[Citation]]:
+        """Keyed by (class, ordinal)."""
+        if self._merged is None:
+            out: dict[tuple[str, int], list[Citation]] = {}
+            for cites in self.by_file.values():
+                for cite in cites:
+                    out.setdefault((cite.cls, cite.party), []).append(cite)
+            self._merged = out
+        return self._merged
 
-    for path in sorted((root / "maps").glob("*.asm")):
-        rel = f"maps/{path.name}"
-        for i, line in enumerate(path.read_text().split("\n"), start=1):
-            if m := _TRAINER_RE.match(line):
-                cls, written, macro = m.group(2), m.group(3), TRAINER
-            elif m := _LOADTRAINER_RE.match(line):
-                cls, written, macro = m.group(1), m.group(2), LOADTRAINER
-            else:
-                continue
+    def reindex(self, root: Path, rel: str) -> None:
+        """Re-read one file. The merged view rebuilds itself on next use."""
+        if rel == _CLASSES:
+            return
+        path = root / rel
+        if path.is_file():
+            self.by_file[rel] = self.scan(path, rel)
+        else:
+            self.by_file.pop(rel, None)
+        self._merged = None
 
-            ordinal = _ordinal(written, cls, consts)
-            if ordinal is not None:
-                add(Citation(cls, ordinal, macro, rel, i, written))
+    def scan(self, path: Path, rel: str) -> list[Citation]:
+        """One file's citations.
 
-    for cite in _symbol_citations(root, consts):
-        add(cite)
-    return out
+        A map reaches a party through the two macros. Everything *else* reaches it
+        by naming the ordinal const directly — ``event/battle_arcade.asm`` says
+        ``ld a, ARCADEPC_TRAINER`` and loads that party, and there is no reason to
+        think it is the only place. So outside maps/, any file that so much as
+        *mentions* a party's const is treated as reaching it: a reference this
+        tool can't follow is still a reference, and the conservative reading is
+        the only safe one when the alternative is calling a live trainer dead.
+
+        A reference whose ordinal is a const this repo doesn't declare is dropped
+        — it cannot be resolved to a party, and guessing would be worse than
+        silence.
+        """
+        lines = path.read_text().split("\n")
+        out: list[Citation] = []
+
+        if rel.startswith("maps/"):
+            # Note this runs even with no party-ordinal consts declared: a macro
+            # citing its ordinal as a plain `3` resolves without them.
+            for i, line in enumerate(lines, start=1):
+                if m := _TRAINER_RE.match(line):
+                    cls, written, macro = m.group(2), m.group(3), TRAINER
+                elif m := _LOADTRAINER_RE.match(line):
+                    cls, written, macro = m.group(1), m.group(2), LOADTRAINER
+                else:
+                    continue
+                ordinal = _ordinal(written, cls, self.consts)
+                if ordinal is not None:
+                    out.append(Citation(cls, ordinal, macro, rel, i, written))
+            return out
+
+        if not self.consts:
+            return []                    # nothing for the symbol scan to look for
+        if self._wanted is None:
+            self._wanted = re.compile(
+                r"\b(" + "|".join(map(re.escape, self.consts)) + r")\b")
+        for i, line in enumerate(lines, start=1):
+            for name in self._wanted.findall(line.split(";")[0]):
+                cls, ordinal = self.consts[name]
+                out.append(Citation(cls, ordinal, SYMBOL, rel, i, name))
+        return out
 
 
-def _symbol_citations(root: Path, consts: dict[str, tuple[str, int]]) -> list[Citation]:
-    """Party-ordinal consts named anywhere in the repo's asm.
-
-    The engine does not go through the macros. ``event/battle_arcade.asm`` says
-    ``ld a, ARCADEPC_TRAINER`` and loads that party directly, and there is no
-    reason to think it is the only place. So any asm file that so much as
-    *mentions* a party's const is treated as reaching it — a reference this tool
-    can't follow is still a reference, and the conservative reading is the only
-    safe one when the alternative is calling a live trainer dead.
-    """
-    if not consts:
-        return []
-
-    wanted = re.compile(r"\b(" + "|".join(map(re.escape, consts)) + r")\b")
-    out: list[Citation] = []
+def index(root: Path) -> Citations:
+    cites = Citations(party_consts(root))
     for path in sorted(root.rglob("*.asm")):
         rel = path.relative_to(root).as_posix()
-        if rel.startswith("maps/") or rel == _CLASSES:
-            continue                    # the macros above; the enum declaring them
-        for i, line in enumerate(path.read_text().split("\n"), start=1):
-            for name in wanted.findall(line.split(";")[0]):
-                cls, ordinal = consts[name]
-                out.append(Citation(cls, ordinal, SYMBOL, rel, i, name))
-    return out
+        if rel != _CLASSES:              # the enum declaring them, not a use
+            cites.by_file[rel] = cites.scan(path, rel)
+    return cites
+
+
+def citations(root: Path) -> dict[tuple[str, int], list[Citation]]:
+    """Every reference to every party, keyed by (class, ordinal)."""
+    return index(root).all()
 
 
 def _ordinal(written: str, cls: str, consts: dict[str, tuple[str, int]]) -> int | None:
@@ -157,14 +198,18 @@ def _ordinal(written: str, cls: str, consts: dict[str, tuple[str, int]]) -> int 
     return entry[1] if entry and entry[0] == cls else None
 
 
-def orphans(root: Path) -> list[tuple[str, tp.Party]]:
+def orphans(root: Path, cites: Citations | None = None) -> list[tuple[str, tp.Party]]:
     """Parties nothing references, as (group label, party).
 
     Dead weight rather than a defect: the bytes ship, the game is fine. But an
     orphan is usually the residue of a trainer someone deleted from a map and
     left behind here, and it is the one party that *would* be safe to remove.
+
+    Pass `cites` to reuse an index that is already warm — building one scans every
+    asm file in the repo, and a long-lived caller (the studio) keeps one alive and
+    reindexes the single file it just wrote.
     """
-    cited = citations(root)
+    cited = (cites or index(root)).all()
     groups = tp.load(root)
     mapping = tp.class_groups(root)
 

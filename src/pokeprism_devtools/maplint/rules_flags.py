@@ -152,8 +152,9 @@ def flag_never_set(ctx: LintContext) -> list[Diagnostic]:
     Reporting a live NPC as unreachable would be much worse than staying quiet.
     """
     out = []
+    known = ctx.flags.by_name          # rebuilt on every access — hoist it
     for flag, refs in sorted(ctx.flag_refs.refs.items()):
-        if flag not in ctx.flags.by_name or flagrefs.maybe_set(refs):
+        if flag not in known or flagrefs.maybe_set(refs):
             continue
 
         for ref in refs:
