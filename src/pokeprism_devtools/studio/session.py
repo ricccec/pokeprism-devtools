@@ -44,8 +44,8 @@ from functools import cached_property
 from .. import maplint
 from ..maplint.context import LintContext
 from ..maplint.diagnostics import Diagnostic
-from ..shared import (blocksrc, consts, coords, eventheader, spritesets, swatches,
-                      textbox, trainerparty, wilddata)
+from ..shared import (blocksrc, consts, coords, dialogue, eventheader, spritesets,
+                      swatches, textbox, trainerparty, wilddata)
 from ..shared.edits import Edit, StaleEdit, apply_edits
 from ..wiring import connections, scaffold
 from . import actions, panels
@@ -92,6 +92,24 @@ class MapData:
     #: Why there is no geometry, when there isn't.
     error: str | None
     tables: dict[str, panels.Table]
+
+
+@dataclass(frozen=True)
+class TextRef:
+    """A block of dialogue already in the game, as prose."""
+    label: str          # what a script jumps to, or `.local` under an owner
+    owner: str          # the top-level label that owns it
+    lineno: int
+    prose: str
+    #: Which box it is drawn in — the key :meth:`Session.measure` takes. Nearly
+    #: everything is "speech"; the full-screen "sign" box is only SIGNPOST_LOAD.
+    box: str
+
+    @property
+    def opening(self) -> str:
+        """Its first words, for a list you are choosing from."""
+        first = next((line for line in self.prose.split("\n") if line.strip()), "")
+        return first[:40]
 
 
 @dataclass(frozen=True)
@@ -296,6 +314,23 @@ class Session:
             actions.FACINGS: tuple(f.removeprefix("SIGNPOST_").lower()
                                    for f in scaffold.FACINGS),
         }
+
+    # -- text already in the game --------------------------------------------- #
+    def texts(self, label: str) -> list[TextRef]:
+        """Every text block in one map, as prose you could hand to a person.
+
+        The macros are deliberately not here. `plain` shows the words; `reword`
+        puts the macros back from the block itself, positionally — so a `cont`
+        that scrolls the box is still a `cont` after you fix a typo in it.
+        """
+        path = self.root / f"maps/{label}.asm"
+        sign = self._boxes["sign"]
+        return [
+            TextRef(label=b.label, owner=b.owner, lineno=b.lineno,
+                    prose=dialogue.plain(b),
+                    box="sign" if b.box.name == sign.name else "speech")
+            for b in dialogue.parse(self.root, path)
+        ]
 
     # -- text, as it will look ------------------------------------------------ #
     def measure(self, text: str, box: str = "speech") -> TextPreview:

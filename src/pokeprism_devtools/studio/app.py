@@ -41,10 +41,10 @@ from textual.widgets import (DataTable, Footer, Header, Input, OptionList, Stati
 
 from ..maplint.diagnostics import Diagnostic, Severity
 from ..shared import coords, paths
-from .actions import CATALOG, Action, ActionError
-from .forms import Confirm, Form, Palette
+from .actions import CATALOG, Action, EditText
+from .forms import Confirm, Form, Palette, Picker
 from .grid import MapGrid
-from .session import MapData, Preview, Session, SessionError
+from .session import MapData, Preview, Session, SessionError, TextRef
 
 _SEVERITY_STYLE = {
     Severity.ERROR: "bold red",
@@ -80,6 +80,7 @@ class Studio(App):
     BINDINGS = [
         ("q", "quit", "Quit"),
         ("a", "act", "Add…"),
+        ("e", "edit_text", "Edit text"),
         ("u", "undo", "Undo"),
         ("slash", "focus_filter", "Filter"),
         ("plus", "zoom(1)", "Zoom in"),
@@ -100,6 +101,7 @@ class Studio(App):
         #: a new NPC appears on the grid, but it would also send the cursor home
         #: — off the tile you were working on, the moment you worked on it.
         self._keep_cursor: tuple[int, int] | None = None
+        self._texts: list[TextRef] = []
         self._linted = False
 
     # -- layout ---------------------------------------------------------------- #
@@ -249,12 +251,43 @@ class Studio(App):
             return
         self.push_screen(Palette(CATALOG), self._picked)
 
-    def _picked(self, chosen: type[Action] | None) -> None:
-        if chosen is None or self._const is None:
+    def _picked(self, index: int | None) -> None:
+        if index is None or self._const is None:
             return
+        chosen: type[Action] = CATALOG[index]
         grid = self.query_one("#grid", MapGrid)
         cursor = grid.cursor if grid.view is not None else None
         self.push_screen(Form(chosen, self.session, self._const, cursor), self._filled)
+
+    def action_edit_text(self) -> None:
+        """Reword something the map already says.
+
+        The map's text blocks, as prose. Pick one and you get the same form as
+        anything else — with the same tile counter under it, measured against the
+        box that block is really drawn in, which is not always the one you'd
+        guess.
+        """
+        if self._const is None or self._wanted is None:
+            self.bell()
+            return
+        self._texts = self.session.texts(self._wanted)
+        if not self._texts:
+            self.notify(f"{self._wanted} says nothing yet")
+            return
+        rows = [Text.assemble((t.label, "bold"), ("  " + t.opening, " dim"))
+                for t in self._texts]
+        self.push_screen(Picker("Which text?", rows), self._picked_text)
+
+    def _picked_text(self, index: int | None) -> None:
+        if index is None or self._const is None:
+            return
+        chosen = self._texts[index]
+        self.push_screen(
+            Form(EditText, self.session, self._const,
+                 values={"label": chosen.label, "text": chosen.prose},
+                 boxes={"text": chosen.box}),
+            self._filled,
+        )
 
     def _filled(self, preview: Preview | None) -> None:
         if preview is None:

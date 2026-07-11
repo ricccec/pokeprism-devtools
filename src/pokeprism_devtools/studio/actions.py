@@ -33,6 +33,9 @@ from pathlib import Path
 from ..shared import trainerparty
 from ..shared.edits import Edit
 from ..wiring import connections, removal, scaffold, warps
+# By name, not by module: `Action.text()` is a method, and `text.reword(...)`
+# sitting next to `self.text("label")` in the same three lines is a trap.
+from ..wiring.text import TextError, reword
 
 #: A field's `choices` names a set of constants the session can enumerate; the
 #: form turns it into autocomplete. Empty means free text.
@@ -55,7 +58,10 @@ class ActionError(RuntimeError):
 class Field:
     name: str
     label: str
-    kind: str = "text"          # text | int | lines
+    #: text | int | lines | fixed. `fixed` is decided by context rather than
+    #: typed — you picked the text block you wanted to reword by picking it, and
+    #: a box you could edit would let you point new words at a different block.
+    kind: str = "text"
     default: str = ""
     choices: str = ""
     help: str = ""
@@ -372,6 +378,34 @@ class AddSignpost(_Placed):
                 facing=self.text("facing") or None))
         except scaffold.ScaffoldError as e:
             raise ActionError(str(e)) from e
+
+
+class EditText(_Placed):
+    """Reword a text block that is already in the game.
+
+    Not reachable from the palette, and that is on purpose: it needs a block to
+    act on, so it is reached by *picking one* (`e` on a map). What arrives here
+    is prose — the macros come back from the block itself.
+    """
+
+    name = "reword"
+    title = "Edit dialogue"
+    FIELDS = (
+        Field("label", "Text block", kind="fixed"),
+        Field("text", "What it says", kind="lines"),
+    )
+
+    def describe(self) -> str:
+        return f"reword {self.text('label')}"
+
+    def run(self, root: Path) -> Result:
+        try:
+            edit = reword(root, self.map, self.text("label"),
+                          self.values.get("text", ""))
+        except TextError as e:
+            raise ActionError(str(e)) from e
+        return Result(edit.detail, [edit] if edit.changed else [],
+                      [] if edit.changed else ["unchanged — nothing to write"])
 
 
 class Remove(_Placed):

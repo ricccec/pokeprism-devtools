@@ -25,7 +25,7 @@ from textual.widgets import Input, OptionList, TextArea
 from pokeprism_devtools.shared import blocksrc, coords, eventheader, paths, swatches
 from pokeprism_devtools.studio import Session, panels
 from pokeprism_devtools.studio.app import Studio
-from pokeprism_devtools.studio.forms import Confirm, Form, Palette
+from pokeprism_devtools.studio.forms import Confirm, Form, Palette, Picker
 from pokeprism_devtools.studio.grid import MapGrid
 
 ROOT = paths.repo_root(Path.home() / "code/ricccec/pokeprism")
@@ -293,7 +293,7 @@ class TestEditing(unittest.TestCase):
                 palette = app.screen
                 self.assertIsInstance(palette, Palette)
 
-                options = palette.query_one("#palette-list", OptionList)
+                options = palette.query_one("#picker-list", OptionList)
                 titles = [str(o.prompt) for o in options._options]
                 options.highlighted = titles.index("Add a signpost")
                 await pilot.press("enter")
@@ -347,6 +347,70 @@ class TestEditing(unittest.TestCase):
                 await pilot.pause()
                 self.assertEqual(path.read_text(), before)
 
+                await app.action_quit()
+
+        drive(go())
+
+    def test_rewording_a_line_changes_that_line_and_nothing_else(self) -> None:
+        """The whole reason the writer copies macros back positionally.
+
+        You change a word. What lands is that word — not a reflowed block, not a
+        `cont` turned into a `para`, not somebody's alignment whitespace tidied
+        up. The diff should be one line long.
+        """
+        path = self.root / f"maps/{MAP}.asm"
+        before = path.read_text().split("\n")
+
+        async def go():
+            app = Studio(self.root)
+            async with app.run_test() as pilot:
+                await self._ready(app, pilot)
+
+                await pilot.press("e")
+                await pilot.pause()
+                picker = app.screen
+                self.assertIsInstance(picker, Picker)
+                self.assertTrue(app._texts, "the map says nothing?")
+
+                # Pick a block with more than one line in it, so that "one line
+                # changed" is a claim with something to prove.
+                i, block = next((i, t) for i, t in enumerate(app._texts)
+                                if len(t.prose.split("\n")) > 2)
+                picker.query_one("#picker-list", OptionList).highlighted = i
+                await pilot.press("enter")
+                await pilot.pause()
+
+                form = app.screen
+                self.assertIsInstance(form, Form)
+                # It opens with the words already in it — that is what makes this
+                # editing rather than retyping.
+                area = form.query_one("#field-text", TextArea)
+                self.assertEqual(area.text, block.prose)
+
+                lines = block.prose.split("\n")
+                nth = next(n for n, line in enumerate(lines) if line.strip())
+                lines[nth] = "REWORDED"
+                area.text = "\n".join(lines)
+                await pilot.pause()
+
+                form.action_submit()
+                await pilot.pause()
+                confirm = app.screen
+                self.assertIsInstance(confirm, Confirm)
+                confirm.action_yes()
+                await pilot.pause()
+
+                after = path.read_text().split("\n")
+                self.assertEqual(len(after), len(before), "the file changed length")
+                differ = [n for n, (a, b) in enumerate(zip(before, after)) if a != b]
+                self.assertEqual(len(differ), 1,
+                                 f"{len(differ)} lines changed, not 1: "
+                                 f"{[after[n] for n in differ][:4]}")
+                self.assertIn("REWORDED", after[differ[0]])
+
+                app.action_undo()
+                await pilot.pause()
+                self.assertEqual(path.read_text().split("\n"), before)
                 await app.action_quit()
 
         drive(go())

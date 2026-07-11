@@ -36,36 +36,44 @@ from .session import Preview, Session, TextPreview
 CURSOR_FIELDS = {"y": 0, "x": 1}
 
 
-class Palette(ModalScreen[type[Action] | None]):
-    """Everything the studio can do, in one list."""
+class Picker(ModalScreen[int | None]):
+    """A list of things, one of which you want. Dismisses with its index."""
 
     BINDINGS = [Binding("escape", "dismiss_none", "Cancel")]
 
     CSS = """
-    Palette { align: center middle; }
-    #palette { width: 46; height: auto; max-height: 80%;
-               border: round $accent; background: $surface; }
-    #palette-title { padding: 0 1; background: $accent; color: $text; }
+    Picker { align: center middle; }
+    #picker { width: 72; height: auto; max-height: 80%;
+              border: round $accent; background: $surface; }
+    #picker-title { padding: 0 1; background: $accent; color: $text; }
     """
 
-    def __init__(self, catalog: tuple[type[Action], ...]) -> None:
+    def __init__(self, title: str, rows: list[str] | list[Text]) -> None:
         super().__init__()
-        self._catalog = catalog
+        self._title = title
+        self._rows = rows
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="palette"):
-            yield Static("What would you like to do?", id="palette-title")
-            yield OptionList(*[a.title for a in self._catalog], id="palette-list")
+        with Vertical(id="picker"):
+            yield Static(self._title, id="picker-title")
+            yield OptionList(*self._rows, id="picker-list")
 
     def on_mount(self) -> None:
-        self.query_one("#palette-list", OptionList).focus()
+        self.query_one("#picker-list", OptionList).focus()
 
-    @on(OptionList.OptionSelected, "#palette-list")
+    @on(OptionList.OptionSelected, "#picker-list")
     def _chose(self, event: OptionList.OptionSelected) -> None:
-        self.dismiss(self._catalog[event.option_index])
+        self.dismiss(event.option_index)
 
     def action_dismiss_none(self) -> None:
         self.dismiss(None)
+
+
+class Palette(Picker):
+    """Everything the studio can do, in one list."""
+
+    def __init__(self, catalog: tuple[type[Action], ...]) -> None:
+        super().__init__("What would you like to do?", [a.title for a in catalog])
 
 
 class Form(ModalScreen["Preview | None"]):
@@ -93,17 +101,27 @@ class Form(ModalScreen["Preview | None"]):
     #form-buttons { height: 3; align: right middle; padding: 0 1; }
     .field-label { color: $text-muted; }
     .field-help { color: $text-disabled; }
+    .field-fixed { color: $accent; text-style: bold; }
     TextArea { height: 8; border: solid $panel; }
     #tiles { height: auto; max-height: 10; padding: 0 1 1 1; }
     """
 
     def __init__(self, action: type[Action], session: Session, map_const: str,
-                 cursor: tuple[int, int] | None) -> None:
+                 cursor: tuple[int, int] | None = None,
+                 values: dict[str, str] | None = None,
+                 boxes: dict[str, str] | None = None) -> None:
         super().__init__()
         self._action = action
         self._session = session
         self._map = map_const
         self._cursor = cursor
+        #: What to open the form with, when the caller already knows — the prose
+        #: of the text block you picked, the label it hangs off. Still by field
+        #: name: the form is filling in boxes, not editing dialogue.
+        self._values = values or {}
+        #: Which box a `lines` field is really drawn in, when it isn't the one the
+        #: field declares. An existing block knows its own.
+        self._box_of = boxes or {}
         #: Why the last submit was refused, if it was.
         self.error = ""
 
@@ -120,11 +138,18 @@ class Form(ModalScreen["Preview | None"]):
                 yield Button("Preview", variant="primary", id="ok")
 
     def _widgets(self, f: Field) -> ComposeResult:
+        if f.kind == "fixed":
+            # Decided by context, not typed. Shown, because you should be able to
+            # see *which* block you are about to reword — but not editable, or a
+            # careless keystroke would aim your new words at a different one.
+            yield Label(f"{f.label}: {self._prefill(f)}", classes="field-fixed")
+            return
+
         yield Label(f.label, classes="field-label")
         if f.help:
             yield Label(f.help, classes="field-help")
         if f.kind == "lines":
-            area = TextArea(id=f"field-{f.name}", soft_wrap=False)
+            area = TextArea(self._prefill(f), id=f"field-{f.name}", soft_wrap=False)
             area.tab_behavior = "focus"     # or you can never leave the box
             yield area
         else:
@@ -134,10 +159,15 @@ class Form(ModalScreen["Preview | None"]):
             )
 
     def _prefill(self, f: Field) -> str:
-        """The cursor's coordinates, if the field is asking for them."""
+        """What the caller knows, then what the cursor knows, then the default."""
+        if f.name in self._values:
+            return self._values[f.name]
         if self._cursor and f.name in CURSOR_FIELDS and f.kind == "int":
             return str(self._cursor[CURSOR_FIELDS[f.name]])
         return f.default
+
+    def _box(self, f: Field) -> str:
+        return self._box_of.get(f.name, f.box)
 
     def _suggester(self, f: Field) -> SuggestFromList | None:
         if not f.choices:
@@ -146,8 +176,11 @@ class Form(ModalScreen["Preview | None"]):
         return SuggestFromList(options, case_sensitive=False) if options else None
 
     def on_mount(self) -> None:
-        first = self.query(Input).first() if self.query(Input) else None
-        (first or self.query_one(TextArea)).focus()
+        # Focus the first thing you can type in — which for "Edit dialogue" is
+        # the text area, since its only other field is fixed.
+        for widget in self.query("#form-body Input, #form-body TextArea"):
+            widget.focus()
+            break
         self._retile()
 
     # -- the tile counter ------------------------------------------------------ #
@@ -173,7 +206,7 @@ class Form(ModalScreen["Preview | None"]):
                 continue
             if len(self._text_fields()) > 1:
                 out.append(f"{f.label}\n", style="bold")
-            out.append(_tiles(self._session.measure(body, f.box)))
+            out.append(_tiles(self._session.measure(body, self._box(f))))
         panel.update(out)
 
     def _text_fields(self) -> list[Field]:
@@ -184,7 +217,7 @@ class Form(ModalScreen["Preview | None"]):
     def action_submit(self) -> None:
         """Build the action and preview it. Every action's first argument is the
         map it acts on; everything after that is the form, by name."""
-        action = self._action(self._map, **self._values())
+        action = self._action(self._map, **self._submitted_values())
         try:
             preview = self._session.preview(action)
         except ActionError as err:
@@ -202,10 +235,12 @@ class Form(ModalScreen["Preview | None"]):
     def _next_field(self) -> None:
         self.focus_next()
 
-    def _values(self) -> dict[str, str]:
+    def _submitted_values(self) -> dict[str, str]:
         out: dict[str, str] = {}
         for f in self._action.FIELDS:
-            if f.kind == "lines":
+            if f.kind == "fixed":
+                out[f.name] = self._prefill(f)
+            elif f.kind == "lines":
                 out[f.name] = self.query_one(f"#field-{f.name}", TextArea).text
             else:
                 out[f.name] = self.query_one(f"#field-{f.name}", Input).value
