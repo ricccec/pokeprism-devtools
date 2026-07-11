@@ -19,7 +19,7 @@ from pokeprism_devtools.shared import constants, maps, savefile, species, symfil
 
 # Bump when the inventory layout changes (new fields, new offsets); cached
 # inventory.json files with a different schema are rebuilt regardless of mtime.
-INVENTORY_SCHEMA = 2
+INVENTORY_SCHEMA = 3
 
 # WRAM symbols whose values the prism-dev tool will write. Resolved to
 # .sav file offsets in the inventory. Group them by save block so we can
@@ -35,6 +35,9 @@ WRITABLE_FIELDS: dict[str, dict[str, object]] = {
     "wNumBalls":      {"size": 1,  "block": "PlayerData"},
     "wBalls":         {"size": 51, "block": "PlayerData"},  # MAX_BALLS*2 + 1
     "wEventFlags":    {"size": 250, "block": "PlayerData"},
+    # flag_array NUM_TMS + NUM_HMS — sized from the end symbol so a TM-list
+    # change in the game repo can't silently desync the region size.
+    "wTMsHMs":        {"size_from_end": "wTMsHMsEnd", "block": "PlayerData"},
     # Map block
     "wMapGroup":      {"size": 1,  "block": "MapData"},
     "wMapNumber":     {"size": 1,  "block": "MapData"},
@@ -118,6 +121,7 @@ def build(root: Path, sym_path: Path) -> dict:
     blocks = _resolve_blocks(syms)
     engine_flags = _parse_engine_flags(root / "constants" / "engine_flags.asm")
     _resolve_engine_flag_offsets(engine_flags, syms, blocks)
+    tmhms = _parse_tmhms(root / "constants" / "item_constants.asm")
 
     sram_offsets: dict[str, dict] = {}
     for label, meta in WRITABLE_FIELDS.items():
@@ -125,10 +129,22 @@ def build(root: Path, sym_path: Path) -> dict:
         if sym is None:
             sram_offsets[label] = {
                 "error": "symbol not in .sym; skipping",
-                "size": meta["size"],
+                "size": meta.get("size"),
                 "block": meta["block"],
             }
             continue
+        if "size_from_end" in meta:
+            end_sym = syms.get(meta["size_from_end"])
+            if end_sym is None:
+                sram_offsets[label] = {
+                    "error": f"end symbol {meta['size_from_end']!r} not in .sym",
+                    "size": None,
+                    "block": meta["block"],
+                }
+                continue
+            size = end_sym.addr - sym.addr
+        else:
+            size = meta["size"]
         block = blocks[meta["block"]]
         offset_in_block = sym.addr - block["wram_start_addr"]
         if not (0 <= offset_in_block < block["size"]):
@@ -138,7 +154,7 @@ def build(root: Path, sym_path: Path) -> dict:
                     f"{meta['block']} block "
                     f"(${block['wram_start_addr']:04x}–${block['wram_end_addr']:04x})"
                 ),
-                "size": meta["size"],
+                "size": size,
                 "block": meta["block"],
             }
             continue
@@ -146,7 +162,7 @@ def build(root: Path, sym_path: Path) -> dict:
         file_offset = savefile.sram_to_file_offset(1, sram_addr)
         sram_offsets[label] = {
             "sav_offset": file_offset,
-            "size": meta["size"],
+            "size": size,
             "block": meta["block"],
             "wram_addr": sym.addr,
             "sram_addr": sram_addr,
@@ -187,6 +203,16 @@ def build(root: Path, sym_path: Path) -> dict:
         constants.parse_constants(root / "constants" / "misc_constants.asm")
     )
 
+    tmhm_region_size = sram_offsets.get("wTMsHMs", {}).get("size")
+    if tmhm_region_size is not None:
+        expected = (len(tmhms) + 7) // 8
+        if tmhm_region_size != expected:
+            raise ValueError(
+                f"wTMsHMs region is {tmhm_region_size} bytes but "
+                f"{len(tmhms)} TM/HM entries need {expected} bytes — "
+                "item_constants.asm and wram.asm have gone out of sync"
+            )
+
     return {
         "schema": INVENTORY_SCHEMA,
         "built_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
@@ -201,6 +227,7 @@ def build(root: Path, sym_path: Path) -> dict:
             "maps": len(map_defs),
             "species_data": len(species_data),
             "move_pp": len(move_pp),
+            "tmhms": len(tmhms),
         },
         "bag_caps": {
             "items": misc["MAX_ITEMS"],
@@ -218,6 +245,7 @@ def build(root: Path, sym_path: Path) -> dict:
         "maps": [asdict(m) for m in map_defs],
         "species_data": species_data,
         "move_pp": move_pp,
+        "tmhms": tmhms,
     }
 
 
@@ -277,6 +305,54 @@ def _parse_item_pockets(path: Path) -> list[str]:
                 )
             pockets.append(pocket)
     return pockets
+
+
+_TMHM_RE = re.compile(r"^\s*(add_tm|add_hm)\s+(\w+)\s*$")
+
+
+def _parse_tmhms(path: Path) -> list[dict]:
+    """Extract the TM/HM list from `add_tm`/`add_hm` lines in order.
+
+    Each `add_tm FOO` / `add_hm FOO` assigns the next 1-based TM/HM number
+    (TMs first, then HMs) and defines a `TM_FOO`/`HM_FOO` item constant and a
+    `FOO_TMNUM` move-index constant. The ownership bit in `wTMsHMs` is
+    (number - 1), matching the engine's `FlagAction` convention.
+    """
+    results: list[dict] = []
+    seen_hm = False
+    tm_count = 0
+    hm_count = 0
+    with path.open() as f:
+        for line in f:
+            line = line[:line.find(";")] if ";" in line else line
+            m = _TMHM_RE.match(line)
+            if not m:
+                continue
+            macro, move = m.group(1), m.group(2)
+            kind = "TM" if macro == "add_tm" else "HM"
+            if kind == "TM":
+                if seen_hm:
+                    raise ValueError(
+                        f"{path.name}: add_tm {move} appears after the first "
+                        "add_hm — TM/HM numbering would be corrupted"
+                    )
+                tm_count += 1
+                num = tm_count
+            else:
+                seen_hm = True
+                hm_count += 1
+                num = hm_count
+            bit = len(results)
+            results.append({
+                "name": f"{kind}_{move}",
+                "move": move,
+                "kind": kind,
+                "num": num,
+                "bit": bit,
+            })
+    if not results:
+        raise ValueError(f"{path.name}: no add_tm/add_hm lines found")
+    return results
 
 
 _ENGINE_FLAG_RE = re.compile(

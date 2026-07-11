@@ -417,6 +417,115 @@ def main() -> None:
         all_items = [i["name"] for i in inv["items"] if i.get("pocket") == "ITEM"]
         rejects("pocket overflow (41 items)", {"items": all_items[:41]})
 
+    print("\ndev_server — inventory tmhms")
+    tmhms = inv["tmhms"]
+    check("tmhms is non-empty", len(tmhms) > 0, str(len(tmhms)))
+    check(
+        "first entry is TM_DYNAMICPUNCH kind=TM num=1 bit=0",
+        tmhms[0]["name"] == "TM_DYNAMICPUNCH"
+        and tmhms[0]["kind"] == "TM"
+        and tmhms[0]["num"] == 1
+        and tmhms[0]["bit"] == 0,
+        str(tmhms[0]),
+    )
+    check(
+        "last entry is HM_ROCK_SMASH with bit == len - 1",
+        tmhms[-1]["name"] == "HM_ROCK_SMASH" and tmhms[-1]["bit"] == len(tmhms) - 1,
+        str(tmhms[-1]),
+    )
+    hm_entries = [e for e in tmhms if e["kind"] == "HM"]
+    check("exactly 5 HM entries", len(hm_entries) == 5, str(len(hm_entries)))
+    check(
+        "HM entries are contiguous at the end",
+        [e["bit"] for e in hm_entries] == list(range(len(tmhms) - 5, len(tmhms))),
+        str([e["bit"] for e in hm_entries]),
+    )
+    check(
+        "wTMsHMs region size matches (len(tmhms)+7)//8",
+        so["wTMsHMs"]["size"] == (len(tmhms) + 7) // 8,
+        str(so["wTMsHMs"]),
+    )
+    check(
+        "wNumItems directly follows wTMsHMs",
+        so["wNumItems"]["sav_offset"]
+        == so["wTMsHMs"]["sav_offset"] + so["wTMsHMs"]["size"],
+    )
+
+    print("\ndev_server — apply tmhms to .sav")
+    if not template_sav.exists():
+        print(f"  (no template .sav at {template_sav.name} — skipping tmhms apply check)")
+    else:
+        tmhm_size = so["wTMsHMs"]["size"]
+        bit_of = {e["name"]: e["bit"] for e in tmhms}
+
+        def apply_tmhms(names: list) -> savefile.SaveFile:
+            sf = savefile.SaveFile.load(template_sav)
+            dev_apply.apply_state(
+                sf, {"tmhms": names}, inv, rom_path=rom_file, syms=syms
+            )
+            return sf
+
+        sf = apply_tmhms(["TM_DYNAMICPUNCH", "HM_CUT"])
+        expect = bytearray(tmhm_size)
+        expect[bit_of["TM_DYNAMICPUNCH"] >> 3] |= 1 << (bit_of["TM_DYNAMICPUNCH"] & 7)
+        expect[bit_of["HM_CUT"] >> 3] |= 1 << (bit_of["HM_CUT"] & 7)
+        got = sf.read(so["wTMsHMs"]["sav_offset"], tmhm_size)
+        check(
+            "TM_DYNAMICPUNCH + HM_CUT set the expected bits",
+            got == bytes(expect),
+            got.hex(),
+        )
+
+        sf = apply_tmhms(["TM_TOXIC"])
+        got = sf.read(so["wTMsHMs"]["sav_offset"], tmhm_size)
+        expect_byte0 = 1 << (bit_of["TM_TOXIC"] & 7)
+        check(
+            "TM_TOXIC sets the expected bit in its byte",
+            got[bit_of["TM_TOXIC"] >> 3] == expect_byte0,
+            got.hex(),
+        )
+
+        sf = apply_tmhms([])
+        check(
+            "empty tmhms list -> all-zero region",
+            sf.read(so["wTMsHMs"]["sav_offset"], tmhm_size) == bytes(tmhm_size),
+        )
+
+        # Absent key leaves the template's bytes untouched.
+        sf2 = savefile.SaveFile.load(template_sav)
+        dev_apply.apply_state(sf2, {}, inv, rom_path=rom_file, syms=syms)
+        template = savefile.SaveFile.load(template_sav)
+        check(
+            "absent tmhms key leaves wTMsHMs untouched",
+            sf2.read(so["wTMsHMs"]["sav_offset"], tmhm_size)
+            == template.read(so["wTMsHMs"]["sav_offset"], tmhm_size),
+        )
+
+        all_names = [e["name"] for e in tmhms]
+        sf = apply_tmhms(all_names)
+        got = sf.read(so["wTMsHMs"]["sav_offset"], tmhm_size)
+        popcount = sum(bin(b).count("1") for b in got)
+        check("owning all TM/HMs sets popcount == len(tmhms)", popcount == len(tmhms), str(popcount))
+        last_byte_bits = len(tmhms) % 8 or 8
+        check(
+            "last byte matches the tail bit count when all owned",
+            got[-1] == (1 << last_byte_bits) - 1,
+            f"{got[-1]:#04x}",
+        )
+
+        def rejects_tmhms(label: str, names: list) -> None:
+            try:
+                apply_tmhms(names)
+            except ValueError:
+                check(f"rejects {label}", True)
+            else:
+                check(f"rejects {label}", False)
+
+        rejects_tmhms("unknown TM/HM name", ["TM_NOT_A_MOVE"])
+        rejects_tmhms("bare move name", ["CUT"])
+        rejects_tmhms("duplicate entry", ["TM_TOXIC", "TM_TOXIC"])
+        rejects_tmhms("non-string entry", [{"name": "HM_CUT"}])
+
     print("\nmapfile.py")
     from pokeprism_devtools.shared import mapfile as mapfile_mod
     mp = mapfile_mod.MapFile.parse(paths.map_path(root))
