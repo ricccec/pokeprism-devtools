@@ -234,12 +234,17 @@ def _fixture(tmp: Path) -> Path:
         f"\t{_person('SPRITE_BALL', 2, 2, 'SPRITEMOVEDATA_WANDER')}\n"
     )
 
-    # TownD (outdoor, group 3): the group set has 10 walkers, and the player
-    # makes 11 — one past what table 1 holds. The map places the one that falls
-    # off the end (sprite-vram) and leaves nothing else unplaced, so
-    # sprite-vram-budget must NOT also fire here.
-    _map("TownD", [], [_person(s, 1, i + 1, "SPRITEMOVEDATA_STANDING_DOWN")
-                       for i, s in enumerate(_CROWD)])
+    # TownD (outdoor, group 3): the group set has 10 walking-capable sprites and
+    # the player makes 11 — one past what table 1 holds, so SPRITE_W10 spills
+    # into table 2. Standing there would be harmless, so the seeded bug is that
+    # W10's object is told to *wander*: it steps, fetches walk frames at
+    # base + $80, and reads past the sprite tables (sprite-vram). Every other
+    # object stands, and must not be flagged.
+    _map("TownD", [],
+         [_person(s, 1, i + 1,
+                  "SPRITEMOVEDATA_WANDER" if s == _CROWD[-1]
+                  else "SPRITEMOVEDATA_STANDING_DOWN")
+          for i, s in enumerate(_CROWD)])
     return root
 
 
@@ -257,6 +262,7 @@ _EXPECTED = {
     "flag-unknown": 1,
     "flag-shared": 1,
     "sprite-vram": 1,
+    "sprite-vram-budget": 1,
     "blk-size": 1,
     "trainer-party": 1,
     "wild-region": 1,
@@ -275,6 +281,28 @@ def test_seeded(root: Path) -> None:
 
     unexpected = {c: n for c, n in counts.items() if c not in _EXPECTED}
     check("no rule cried wolf on the clean maps", not unexpected, str(unexpected))
+
+
+def test_table2_is_not_a_bug(root: Path) -> None:
+    """A sprite typed WALKING_SPRITE only *has* walk frames in ROM — it doesn't
+    follow that its object ever fetches them. Objects that stand, spin or bob
+    never read base + $80, so sitting in VRAM table 2 is where they belong.
+    Flagging them was a real false positive (MtEmberWest, SaxifrageIsland); this
+    pins the distinction.
+    """
+    print("\na non-walking object in VRAM table 2 is fine, not a finding")
+    found = [d for d in maplint.run(LintContext(root)) if d.code == "sprite-vram"]
+    check("only the object that actually walks is flagged", len(found) == 1, str(found))
+    check("and it's the wandering one", "SPRITE_W10" in found[0].message, found[0].message)
+
+    # Make it stand still: same VRAM layout, no finding.
+    path = root / "maps" / "TownD.asm"
+    original = path.read_text()
+    path.write_text(original.replace("SPRITEMOVEDATA_WANDER",
+                                     "SPRITEMOVEDATA_STANDING_DOWN"))
+    still = [d for d in maplint.run(LintContext(root)) if d.code == "sprite-vram"]
+    check("the same sprite standing in table 2 is not flagged", not still, str(still))
+    path.write_text(original)
 
 
 def test_messages(root: Path) -> None:
@@ -377,14 +405,14 @@ def test_real_repo() -> None:
     # Triaged 2026-07-11. Every error here is a real pre-existing bug in
     # pokeprism; the info-level codes are conventions, not defects.
     triaged = {
-        "warp-target": 15,          # warps into a slot the destination doesn't have
+        "warp-target": 13,          # warps into a slot the destination doesn't have
         "warp-oneway": 72,          # mostly the shared POKECENTER_BACKROOM — by design
         "obj-count": 4,             # count byte vs entries (see test_eventheader)
-        "sprite-vram": 4,           # walkers whose walk frames fall outside VRAM
-        "sprite-vram-budget": 4,    # over-full outdoor sprite sets
+        "sprite-vram": 0,           # none: standing NPCs in table 2 are fine
+        "sprite-vram-budget": 5,    # info: maps with no walking slots left
         "blk-size": 6,              # .blk and the declared dimensions disagree
         "conn-missing": 2,          # one-way connections
-        "conn-self": 1,             # ROUTE_69_NORTH's typo'd self-id
+        "conn-self": 0,             # ROUTE_69_NORTH's typo, since fixed upstream
         "wild-region": 1,           # CAPER_RIDGE's grass is filed under mystery
         "flag-shared": 10,          # deliberate: one flag gating objects in two maps
     }
@@ -402,6 +430,7 @@ def main() -> int:
         tmp = Path(d)
         root = _fixture(tmp)
         test_seeded(root)
+        test_table2_is_not_a_bug(root)
         test_messages(root)
         test_suppression(root)
         test_filter_and_exit(root)

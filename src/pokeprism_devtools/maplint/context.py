@@ -152,6 +152,26 @@ class LintContext:
     def is_outdoor(self, const: str) -> bool:
         return self.permission(const) in OUTDOOR_PERMISSIONS
 
+    def object_walks(self, obj: eh.Entry) -> bool:
+        """Whether this object ever *takes a step* — the only thing that makes it
+        fetch walk frames.
+
+        This is a property of the object, not of its sprite. A sprite typed
+        ``WALKING_SPRITE`` merely *has* walk-frame graphics in ROM; an object
+        that only stands, spins or bobs never reads them, so it is perfectly
+        happy in the half of VRAM that has no walk frames behind it.
+
+        Two ways an object steps: a movement function that walks, or a trainer
+        who spots the player from more than one tile away and closes the
+        distance.
+        """
+        if self.sprites.steps(obj.movement):
+            return True
+        if "TRAINER" not in obj.persontype:
+            return False
+        radius = max(obj.int_arg(4) or 0, obj.int_arg(5) or 0)
+        return radius > 1
+
     # -- connections -------------------------------------------------------- #
     @cached_property
     def direction_bits(self) -> dict[str, int]:
