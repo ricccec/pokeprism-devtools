@@ -11,8 +11,19 @@ as garbage graphics or a phantom NPC.
     prism-maplint --json          # machine-readable
     prism-maplint --baseline      # ignore known findings, fail only on new ones
 
-Suppress a finding in source with `; maplint: ignore[code]` on the offending
-line or the one above it.
+Suppress a finding in source, where the reason for it is:
+
+    warp_def 2, 2, 9, CAVE_C   ; maplint: ignore[warp-target]
+    ; maplint: ignore-file[text-width]    <- anywhere in the file
+
+The inline form takes the offending line or the one above it (the one above is
+what you need when the line has no room for a comment). The file form is for a
+file that is the exception outright — PhanceroRoom's "Glitch City" text is
+*meant* to spill out of the textbox, and saying so eleven times would still miss
+the twelfth line somebody adds later.
+
+Both name their codes: a rule you can switch off without saying which one stops
+being a rule. To wave off findings wholesale instead, keep a `--baseline`.
 """
 
 from __future__ import annotations
@@ -45,7 +56,8 @@ def run(ctx: LintContext, *, only: str | None = None) -> list[Diagnostic]:
     for rule in ALL_RULES:
         found.extend(rule(ctx))
 
-    found = apply_suppressions(found, ctx.source_lines)
+    files = {d.path: ctx.source_lines(d.path) for d in found}
+    found = apply_suppressions(found, files)
     if only:
         found = [d for d in found if _mentions(d, ctx, only)]
     return sorted(found, key=lambda d: (d.path, d.line, d.code))

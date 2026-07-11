@@ -533,6 +533,55 @@ def test_suppression(root: Path) -> None:
     path.write_text(original)
 
 
+def test_file_suppression(root: Path) -> None:
+    """For a file that is the exception outright — pokeprism's PhanceroRoom is
+    eleven lines of deliberately-corrupt text that is *supposed* to overflow the
+    box. Eleven inline comments would say the same thing eleven times and still
+    miss the twelfth line somebody adds later.
+    """
+    print("\n; maplint: ignore-file[code] suppresses a whole file")
+    path = root / "maps" / "TownA.asm"
+    original = path.read_text()
+
+    path.write_text("; maplint: ignore-file[text-width,text-rows]\n" + original)
+    codes = Counter(d.code for d in maplint.run(LintContext(root)))
+    check("every text-width finding in the file goes", codes.get("text-width", 0) == 0)
+    check("...and so does the other code named", codes.get("text-rows", 0) == 0)
+    check("codes it didn't name stay", codes.get("text-clobber", 0) == 1)
+    check("and other files are untouched", codes.get("obj-count", 0) == 1)
+
+    # The comment is a comment: it works wherever it sits, not only at the top.
+    path.write_text(original + "\n; maplint: ignore-file[text-width]\n")
+    codes = Counter(d.code for d in maplint.run(LintContext(root)))
+    check("it works from the bottom of the file too", codes.get("text-width", 0) == 0)
+    check("...without dropping the codes it didn't name", codes.get("text-rows", 0) == 1)
+
+    path.write_text(original)
+
+
+def test_suppress_outside_maps(root: Path) -> None:
+    """Findings don't all land in maps/. `flag-unused` points at the event-flag
+    table and `trainer-orphan` at a trainer group, and a suppression comment has
+    to work where the finding actually is — which it didn't, when the lookup only
+    ever loaded maps/.
+    """
+    print("\nsuppression works wherever the finding lands, not just in maps/")
+    path = root / "constants" / "event_flags.asm"
+    original = path.read_text()
+
+    check("the flag is reported before we touch it",
+          Counter(d.code for d in maplint.run(LintContext(root)))["flag-unused"] == 1)
+
+    path.write_text(original.replace(
+        "\tconst EVENT_ORPHANED",
+        "\tconst EVENT_ORPHANED ; maplint: ignore[flag-unused]"))
+    codes = Counter(d.code for d in maplint.run(LintContext(root)))
+    check("an ignore in constants/event_flags.asm is honoured",
+          codes.get("flag-unused", 0) == 0)
+
+    path.write_text(original)
+
+
 def test_filter_and_exit(root: Path) -> None:
     print("\nCLI: filtering by map, and the exit code")
     ctx = LintContext(root)
@@ -626,6 +675,8 @@ def main() -> int:
         test_table2_is_not_a_bug(root)
         test_messages(root)
         test_suppression(root)
+        test_file_suppression(root)
+        test_suppress_outside_maps(root)
         test_filter_and_exit(root)
         test_baseline(root, tmp)
     test_real_repo()
