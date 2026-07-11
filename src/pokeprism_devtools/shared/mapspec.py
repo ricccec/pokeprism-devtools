@@ -17,6 +17,39 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+#: How a blob gets placed in the ROM.
+#:
+#: ``auto``   — mapfit's packer picks a bank and gives the blob its own SECTION,
+#:              pinned in ``contents/romx.link``. The default, and what the tool
+#:              did exclusively before.
+#: ``into``   — append into a SECTION that already exists (say ``Map Scripts 7``).
+#:              The blob inherits that section's bank, so ``romx.link`` is not
+#:              touched at all — there is no new section to pin.
+#: ``bank``   — the blob gets its own SECTION like ``auto``, but pinned to a bank
+#:              you name instead of one the packer chose.
+AUTO, INTO, BANK = "auto", "into", "bank"
+
+#: The three blobs a map places. Each maps to the spec fields that describe it.
+BLOBS = ("blockdata", "script", "secondary")
+
+
+@dataclass(frozen=True)
+class BlobPlacement:
+    """Where one of a map's three blobs will live."""
+    blob: str            # "blockdata" | "script" | "secondary"
+    mode: str            # AUTO | INTO | BANK
+    section: str         # the SECTION it ends up in, either way
+    bank: int | None     # the bank, when it's known up front (INTO resolves later)
+
+    @property
+    def needs_packing(self) -> bool:
+        return self.mode == AUTO
+
+    @property
+    def needs_pin(self) -> bool:
+        """INTO inherits its section's bank, so it never touches romx.link."""
+        return self.mode != INTO
+
 
 @dataclass
 class MapSpec:
@@ -51,9 +84,46 @@ class MapSpec:
     script_section: str = ""
     secondary_section: str = ""
 
+    # placement, per blob. Unset on both == auto (let the packer decide).
+    #   *_into: append into this already-existing SECTION, inheriting its bank
+    #   *_bank: give the blob its own SECTION, pinned to this bank
+    # Setting both for one blob is a contradiction and is rejected.
+    blockdata_into: str = ""
+    script_into: str = ""
+    secondary_into: str = ""
+    blockdata_bank: int = -1
+    script_bank: int = -1
+    secondary_bank: int = -1
+
     @property
     def blk_lz(self) -> str:
         return f"{self.blk}.lz"
+
+    # -- placement ---------------------------------------------------------- #
+    def placement(self, blob: str) -> BlobPlacement:
+        """How `blob` ("blockdata" | "script" | "secondary") gets placed."""
+        if blob not in BLOBS:
+            raise ValueError(f"unknown blob {blob!r} (use {', '.join(BLOBS)})")
+        into = getattr(self, f"{blob}_into")
+        bank = getattr(self, f"{blob}_bank")
+        own = {"blockdata": self.section_blockdata,
+               "script": self.section_script,
+               "secondary": self.section_secondary}[blob]
+
+        if into:
+            # The blob joins an existing section, so that section *is* its
+            # section — the map's own "<Kind> <Label>" name is never created.
+            return BlobPlacement(blob, INTO, into, None)
+        if bank >= 0:
+            return BlobPlacement(blob, BANK, own, bank)
+        return BlobPlacement(blob, AUTO, own, None)
+
+    @property
+    def placements(self) -> list[BlobPlacement]:
+        return [self.placement(b) for b in BLOBS]
+
+    def section_for(self, blob: str) -> str:
+        return self.placement(blob).section
 
     @property
     def section_blockdata(self) -> str:
@@ -86,6 +156,18 @@ class MapSpec:
             problems.append("blk path is required")
         elif not (root / self.blk).exists():
             problems.append(f"blk file not found: {self.blk}")
+
+        for blob in BLOBS:
+            into = getattr(self, f"{blob}_into")
+            bank = getattr(self, f"{blob}_bank")
+            if into and bank >= 0:
+                problems.append(
+                    f"{blob}: set either {blob}_into (join an existing section, "
+                    f"inheriting its bank) or {blob}_bank (own section, pinned "
+                    f"there) — not both"
+                )
+            if bank >= 0 and not 0 <= bank <= 0xFF:
+                problems.append(f"{blob}_bank ${bank:x} is not a ROM bank")
         return problems
 
     @classmethod
@@ -133,6 +215,16 @@ class MapSpec:
             f"blockdata_section = {_q(self.blockdata_section)}",
             f"script_section    = {_q(self.script_section)}",
             f"secondary_section = {_q(self.secondary_section)}",
+            "",
+            "# placement (blank / -1 = auto: let mapfit's packer choose a bank)",
+            "#   *_into: append into this existing SECTION, inheriting its bank",
+            "#   *_bank: own SECTION, pinned to this bank",
+            f"blockdata_into = {_q(self.blockdata_into)}",
+            f"script_into    = {_q(self.script_into)}",
+            f"secondary_into = {_q(self.secondary_into)}",
+            f"blockdata_bank = {self.blockdata_bank}",
+            f"script_bank    = {self.script_bank}",
+            f"secondary_bank = {self.secondary_bank}",
         ]) + "\n"
 
 

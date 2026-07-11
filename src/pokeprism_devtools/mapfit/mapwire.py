@@ -5,11 +5,18 @@ and is a no-op if the map is already wired (matched on a stable token, never a
 line number). Each returns an :class:`Edit` describing what happened so the
 caller can show a dry-run preview and a summary.
 
-The new blobs each get their *own* uniquely-named ``SECTION`` (the chosen
-strategy), so existing shared sections are never disturbed and the linker
-pins (see :func:`pin_sections`) place them independently. Only the positional
-primary header (``map_header``) grows a shared section in place — there is no
-alternative, since ``MapGroupN`` is an ordered array indexed by map id.
+Each blob is placed one of two ways, chosen per blob by the spec:
+
+* **its own SECTION** — uniquely named, appended at the end of the file, and
+  pinned to a bank in ``contents/romx.link`` (by the packer, or by hand). No
+  existing section is disturbed.
+* **into an existing SECTION** — appended inside a section that's already there
+  (a shared ``Map Scripts 7``, say), inheriting its bank. Nothing is pinned,
+  because no new section exists to pin.
+
+Only the positional primary header (``map_header``) has no choice: it always
+grows a shared section in place, since ``MapGroupN`` is an ordered array indexed
+by map id.
 """
 
 from __future__ import annotations
@@ -18,11 +25,13 @@ import re
 from pathlib import Path
 
 from ..shared.edits import Edit, apply_edits
-from ..shared.mapspec import MapSpec
+from ..shared.mapspec import INTO, MapSpec
 
 __all__ = ["Edit", "apply_edits", "WiringError", "SCRIPTS_GUARD"]
 
 SCRIPTS_GUARD = "DO NOT ADD ANYTHING BELOW THIS LINE"
+
+_SECTION_RE = re.compile(r'^\s*SECTION\s+"([^"]+)"')
 
 
 # --------------------------------------------------------------------------- #
@@ -88,17 +97,14 @@ def wire_secondary_header(root: Path, spec: MapSpec) -> Edit:
     path = root / rel
     text = path.read_text()
 
-    if f'"{spec.section_secondary}"' in text:
-        return Edit(rel, False, f"section '{spec.section_secondary}' already present")
+    if re.search(rf"^\s*map_header_2\s+{re.escape(spec.label)}\s*,", text, re.MULTILINE):
+        return Edit(rel, False, f"map_header_2 {spec.label} already present")
 
-    block = [
-        "",
-        f'SECTION "{spec.section_secondary}", ROMX',
+    entry = [
         f"\tmap_header_2 {spec.label}, {spec.const}, {spec.border_block}, {spec.conn_flags}",
+        *(f"\tconnection {c}" for c in spec.connections),
     ]
-    block += [f"\tconnection {c}" for c in spec.connections]
-    new_text = text.rstrip("\n") + "\n" + "\n".join(block) + "\n"
-    return Edit(rel, True, f"added section '{spec.section_secondary}'", new_text)
+    return _place(rel, text, spec.placement("secondary"), entry)
 
 
 # --------------------------------------------------------------------------- #
@@ -113,14 +119,11 @@ def wire_blockdata(root: Path, spec: MapSpec) -> Edit:
     if re.search(rf"^{re.escape(spec.label)}_BlockData:", text, re.MULTILINE):
         return Edit(rel, False, f"{spec.label}_BlockData already present")
 
-    block = [
-        "",
-        f'SECTION "{spec.section_blockdata}", ROMX',
+    entry = [
         f"{spec.label}_BlockData:",
         f'\tINCBIN "{spec.blk_lz}"',
     ]
-    new_text = text.rstrip("\n") + "\n" + "\n".join(block) + "\n"
-    return Edit(rel, True, f"added section '{spec.section_blockdata}'", new_text)
+    return _place(rel, text, spec.placement("blockdata"), entry)
 
 
 # --------------------------------------------------------------------------- #
@@ -130,11 +133,16 @@ def wire_blockdata(root: Path, spec: MapSpec) -> Edit:
 def wire_script(root: Path, spec: MapSpec) -> Edit:
     rel = "maps/map_scripts.asm"
     path = root / rel
-    lines = path.read_text().splitlines()
+    text = path.read_text()
+    lines = text.splitlines()
 
     include = f'INCLUDE "{spec.script_asm}"'
     if any(include == ln.strip() for ln in lines):
         return Edit(rel, False, f"{include} already present")
+
+    placement = spec.placement("script")
+    if placement.mode == INTO:
+        return _place(rel, text, placement, [include], barrier=SCRIPTS_GUARD)
 
     guard = next((i for i, ln in enumerate(lines) if SCRIPTS_GUARD in ln), None)
     block = [
@@ -232,6 +240,62 @@ def _romx_header(bank: int) -> str:
 
 class WiringError(RuntimeError):
     pass
+
+
+# --------------------------------------------------------------------------- #
+# placing a blob: its own new SECTION, or inside one that already exists       #
+# --------------------------------------------------------------------------- #
+
+def _place(rel: str, text: str, placement, entry: list[str],
+           barrier: str | None = None) -> Edit:
+    """Write `entry` where `placement` says it goes.
+
+    Both modes are anchor-based and idempotent in the same way the rest of this
+    module is — the caller has already checked the map isn't wired, and neither
+    mode depends on a line number.
+    """
+    if placement.mode == INTO:
+        lines = _append_into_section(text.split("\n"), placement.section, entry, barrier)
+        return Edit(rel, True,
+                    f"appended into existing section '{placement.section}' "
+                    f"(inherits its bank)",
+                    "\n".join(lines))
+
+    block = ["", f'SECTION "{placement.section}", ROMX', *entry]
+    return Edit(rel, True, f"added section '{placement.section}'",
+                text.rstrip("\n") + "\n" + "\n".join(block) + "\n")
+
+
+def _append_into_section(lines: list[str], section: str, entry: list[str],
+                         barrier: str | None = None) -> list[str]:
+    """Insert `entry` at the end of an existing ``SECTION "<section>"`` block.
+
+    A section runs until the next ``SECTION`` line, a `barrier` line, or the end
+    of the file — and the barrier matters: the last section in map_scripts.asm
+    runs to EOF *through* the "DO NOT ADD ANYTHING BELOW THIS LINE" banner, so
+    without it an append would land underneath the one comment in the repo that
+    exists to say don't.
+
+    The entry goes after the section's last non-blank line, so it lands inside
+    the section rather than in the gap before whatever follows.
+    """
+    start = next((i for i, ln in enumerate(lines)
+                  if (m := _SECTION_RE.match(ln)) and m.group(1) == section), None)
+    if start is None:
+        raise WiringError(
+            f"no SECTION \"{section}\" to append into — check the name, or let "
+            f"mapfit place this blob automatically"
+        )
+
+    def ends_here(line: str) -> bool:
+        return bool(_SECTION_RE.match(line)) or (barrier is not None and barrier in line)
+
+    end = next((i for i in range(start + 1, len(lines)) if ends_here(lines[i])),
+               len(lines))
+    while end > start + 1 and not lines[end - 1].strip():
+        end -= 1                       # step back over the blank gap to what follows
+
+    return lines[:end] + entry + lines[end:]
 
 
 def _group_block(lines, n, delimiter_re):

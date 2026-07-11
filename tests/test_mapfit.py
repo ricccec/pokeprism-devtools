@@ -399,6 +399,125 @@ def test_shared_section_detection(tmp: Path) -> None:
     check("dedicated per-map section: not flagged", after == [], str(after))
 
 
+def test_manual_placement(tmp: Path) -> None:
+    """Phase 2b: auto bank-packing is now optional. A blob can join an existing
+    shared section (inheriting its bank, touching no linker pin), or claim its
+    own section pinned to a bank you name."""
+    print("\nmanual placement: into an existing section")
+    root = _fixture_repo(tmp, "manual")
+    spec = _spec_for_fixture()
+    spec.script_into = "Map Scripts 1"          # the fixture's shared section
+    spec.blockdata_bank = 0x4D                  # own section, bank chosen by hand
+    check("no validation problems", [p for p in spec.validate(root)
+                                     if "not found" not in p] == [])
+
+    check("script placement is 'into', and inherits — so no pin",
+          (spec.placement("script").mode, spec.placement("script").needs_pin)
+          == ("into", False))
+    check("its section is the shared one, not a per-map name",
+          spec.section_for("script") == "Map Scripts 1")
+    check("blockdata placement is 'bank', own section, still pinned",
+          (spec.placement("blockdata").mode, spec.placement("blockdata").bank,
+           spec.placement("blockdata").needs_pin) == ("bank", 0x4D, True))
+    check("secondary is left on auto", spec.placement("secondary").mode == "auto")
+    check("only the auto blob goes to the packer",
+          [i.key for i in mapfit.map_items(spec, mapfit.Sizes(10, 20, 30, True))]
+          == [spec.section_secondary])
+
+    print("\nthe editors write it where it says")
+    e_script = mapwire.wire_script(root, spec)
+    e_blk = mapwire.wire_blockdata(root, spec)
+    mapwire.apply_edits(root, [e_script, e_blk], dry_run=False)
+
+    scripts = (root / "maps" / "map_scripts.asm").read_text()
+    check("the INCLUDE landed inside the existing section, no new SECTION",
+          'SECTION "Map Scripts MtEmberSmallRoom"' not in scripts
+          and 'INCLUDE "maps/MtEmberSmallRoom.asm"' in scripts, scripts)
+    lines = scripts.split("\n")
+    inc = lines.index('INCLUDE "maps/MtEmberSmallRoom.asm"')
+    sec = lines.index('SECTION "Map Scripts 1", ROMX')
+    guard = next(i for i, ln in enumerate(lines) if "DO NOT ADD" in ln)
+    check("it sits under that section and above the guard banner",
+          sec < inc < guard, f"section {sec}, include {inc}, guard {guard}")
+    check("appended after the section's existing entry, not before it",
+          lines.index('INCLUDE "maps/SaffronCity.asm"') < inc)
+
+    blk = (root / "maps" / "blockdata.asm").read_text()
+    check("the bank-pinned blob still gets its own section",
+          'SECTION "Map block data MtEmberSmallRoom", ROMX' in blk)
+
+    print("\nre-running is a no-op, as everywhere else")
+    check("script editor is idempotent", not mapwire.wire_script(root, spec).changed)
+    check("blockdata editor is idempotent", not mapwire.wire_blockdata(root, spec).changed)
+
+    print("\nan into-placed blob is no longer a 'shared section' conflict")
+    conflicts = mapsource.shared_section_conflicts(root, spec)
+    check("the tool now manages it, because the spec asked for it",
+          not [c for c in conflicts if c[0] == "script"], str(conflicts))
+
+    print("\nnaming a section that doesn't exist is refused")
+    bad = _spec_for_fixture()
+    bad.script_into = "Map Scripts 99"
+    try:
+        mapwire.wire_script(_fixture_repo(tmp, "manual2"), bad)
+        check("unknown section raises", False)
+    except mapwire.WiringError as e:
+        check("unknown section raises, and names it", "Map Scripts 99" in str(e))
+
+    print("\nsetting both placements for one blob is a contradiction")
+    both = _spec_for_fixture()
+    both.script_into, both.script_bank = "Map Scripts 1", 0x4D
+    check("validate() rejects it",
+          any("not both" in p for p in both.validate(root)), str(both.validate(root)))
+
+
+def test_manual_placement_fit(tmp: Path) -> None:
+    """A hand-placed blob skips the packer, so nothing else checks it fits —
+    resolve_manual is the only thing standing between a bad bank and a confusing
+    rgblink failure much later."""
+    print("\nmanual placement: the bank is checked, and reserved")
+    root = _fixture_repo(tmp, "fit")
+    spec = _spec_for_fixture()
+    spec.script_into = "Map Scripts 1"
+
+    mp = MapFile({
+        ("ROMX", 0x01): Bank("ROMX", 0x01, 16384, 16000, 384,
+                             [Section("Map Scripts 1", "ROMX", 0x01, 0, 0, 500)]),
+        ("ROMX", 0x4D): Bank("ROMX", 0x4D, 16384, 16000, 384, []),
+    })
+    sizes = mapfit.Sizes(blockdata=100, secondary=24, script=200, script_measured=True)
+
+    fs = FreeSpace.from_mapfile(mp)
+    placements = mapfit.resolve_manual(mp, spec, sizes, fs, margin=16)
+    check("the into-blob resolves to its section's bank",
+          [(p.item.key, p.bank, p.tier) for p in placements]
+          == [("Map Scripts 1", 0x01, "shared")], str(placements))
+    check("and its bytes are reserved, so the packer can't hand them out twice",
+          fs.free[0x01] == 384 - 200, str(fs.free[0x01]))
+
+    print("\na blob that doesn't fit is refused, naming the section and bank")
+    tight = MapFile({
+        ("ROMX", 0x01): Bank("ROMX", 0x01, 16384, 16300, 84,
+                             [Section("Map Scripts 1", "ROMX", 0x01, 0, 0, 500)]),
+    })
+    try:
+        mapfit.resolve_manual(tight, spec, sizes, FreeSpace.from_mapfile(tight),
+                              margin=16)
+        check("over-full bank raises", False)
+    except mapfit.PlacementError as e:
+        check("over-full bank raises, naming section and bank",
+              "Map Scripts 1" in str(e) and "$01" in str(e), str(e))
+
+    print("\nmeasuring a blob that has no section of its own")
+    before = MapFile({("ROMX", 0x01): Bank("ROMX", 0x01, 16384, 16000, 384,
+                                           [Section("Map Scripts 1", "ROMX", 0x01, 0, 0, 500)])})
+    after = MapFile({("ROMX", 0x01): Bank("ROMX", 0x01, 16384, 16000, 384,
+                                          [Section("Map Scripts 1", "ROMX", 0x01, 0, 0, 712)])})
+    measured = mapfit.sizes_from_map(after, spec, sizes, before=before)
+    check("its size is how much the shared section grew, not the section's size",
+          measured.script == 212, str(measured.script))
+
+
 def test_pinning(tmp: Path) -> None:
     print("\nmapwire.pin_sections")
     root = _fixture_repo(tmp, "pin")
@@ -462,6 +581,8 @@ def main() -> int:
         test_baseline_credit_back()
         test_mapspec(tmp)
         test_wiring(tmp)
+        test_manual_placement(tmp)
+        test_manual_placement_fit(tmp)
         test_shared_section_detection(tmp)
         test_pinning(tmp)
         test_lzcomp_sizing()

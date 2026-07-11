@@ -33,7 +33,7 @@ from ..shared.blobsizes import (
     PRIMARY_HEADER_GROWTH, compressed_blk_size, secondary_size,
 )
 from ..shared.mapfile import MapFile
-from ..shared.mapspec import MapSpec
+from ..shared.mapspec import BLOBS, INTO, MapSpec
 from .packing import FreeSpace, Item, NoFitError, Placement, pack
 
 
@@ -58,17 +58,35 @@ def estimate_sizes(root: Path, spec: MapSpec, script_size: int | None) -> Sizes:
     )
 
 
-def sizes_from_map(mp: MapFile, spec: MapSpec, fallback: Sizes) -> Sizes:
-    """Pull exact section sizes out of a freshly-built .map, keeping fallbacks
-    for any section the build didn't place (shouldn't happen on success)."""
-    def one(name: str, default: int) -> int:
-        hits = [s for s in mp.all_sections() if s.name == name]
-        return hits[0].size if hits else default
+def sizes_from_map(mp: MapFile, spec: MapSpec, fallback: Sizes,
+                   before: MapFile | None = None) -> Sizes:
+    """Pull exact blob sizes out of a freshly-built .map.
+
+    A blob with its own section is just that section's size. A blob appended
+    *into* an existing section has no section of its own, so its size is how
+    much that section **grew** — which needs the pre-wiring .map (`before`) to
+    measure against. Without it, the estimate stands.
+    """
+    def size_of(section: str) -> int | None:
+        hits = [s for s in mp.all_sections() if s.name == section]
+        return hits[0].size if hits else None
+
+    def one(blob: str, default: int) -> int:
+        placement = spec.placement(blob)
+        now = size_of(placement.section)
+        if now is None:
+            return default
+        if placement.mode != INTO:
+            return now
+        if before is None:
+            return default
+        was = [s for s in before.all_sections() if s.name == placement.section]
+        return now - was[0].size if was else default
 
     return Sizes(
-        blockdata=one(spec.section_blockdata, fallback.blockdata),
-        secondary=one(spec.section_secondary, fallback.secondary),
-        script=one(spec.section_script, fallback.script),
+        blockdata=one("blockdata", fallback.blockdata),
+        secondary=one("secondary", fallback.secondary),
+        script=one("script", fallback.script),
         script_measured=True,
     )
 
@@ -112,18 +130,75 @@ def baseline_free_space(
     return _lift_free_space(mp, already_placed, header_growth=growth)
 
 
+def blob_size(sizes: Sizes, blob: str) -> int:
+    return {"blockdata": sizes.blockdata, "script": sizes.script,
+            "secondary": sizes.secondary}[blob]
+
+
 def map_items(spec: MapSpec, sizes: Sizes) -> list[Item]:
-    return [
-        Item(spec.section_script, sizes.script),
-        Item(spec.section_blockdata, sizes.blockdata),
-        Item(spec.section_secondary, sizes.secondary),
-    ]
+    """The blobs the packer is allowed to place — the ones left on `auto`."""
+    return [Item(p.section, blob_size(sizes, p.blob))
+            for p in spec.placements if p.needs_packing]
+
+
+class PlacementError(RuntimeError):
+    """A hand-placed blob won't fit, or names a section that doesn't exist."""
+
+
+def resolve_manual(
+    mp: MapFile, spec: MapSpec, sizes: Sizes, fs: FreeSpace, margin: int
+) -> list[Placement]:
+    """Work out where the hand-placed blobs land, and check they'll fit.
+
+    These skip the packer entirely, so nothing else is checking them: if the
+    author names a bank that's nearly full, or a section whose bank is, the
+    build only fails much later inside rgblink. So each one is resolved to a
+    real bank here and measured against that bank's free space, and the space it
+    takes is reserved so the packer doesn't hand the same bytes to an auto blob.
+
+    Raises :class:`PlacementError` naming the section and bank when it won't fit.
+    """
+    placements: list[Placement] = []
+    for p in spec.placements:
+        if p.needs_packing:
+            continue
+        size = blob_size(sizes, p.blob)
+
+        if p.mode == INTO:
+            hits = mp.find_section(p.section)
+            if not hits:
+                raise PlacementError(
+                    f"{p.blob}: no section named '{p.section}' in the .map — check "
+                    f"the name, or leave {p.blob} on auto to let the packer choose"
+                )
+            bank = hits[0].bank
+        else:
+            bank = p.bank
+
+        free = fs.free.get(bank, 0)
+        if size > free - margin:
+            raise PlacementError(
+                f"{p.blob}: '{p.section}' needs {size} bytes in bank ${bank:02x}, "
+                f"which has {free} free"
+                + (f" ({margin} reserved as margin)" if margin else "")
+                + ". Pick another bank, or leave this blob on auto."
+            )
+        fs.reserve(bank, size)          # the packer must not reuse these bytes
+        placements.append(Placement(Item(p.section, size), bank,
+                                    "shared" if p.mode == INTO else "pinned"))
+    return placements
 
 
 def plan_placement(
-    spec: MapSpec, sizes: Sizes, fs: FreeSpace, margin: int, strategy: str = "tight"
+    spec: MapSpec, sizes: Sizes, fs: FreeSpace, margin: int, strategy: str = "tight",
+    mp: MapFile | None = None,
 ) -> list[Placement]:
-    return pack(map_items(spec, sizes), fs, margin=margin, strategy=strategy)
+    """Where every blob goes: the hand-placed ones first (they're fixed, and
+    they consume space the packer would otherwise offer), then the rest packed
+    into what's left."""
+    manual = resolve_manual(mp, spec, sizes, fs, margin) if mp is not None else []
+    auto = pack(map_items(spec, sizes), fs, margin=margin, strategy=strategy)
+    return manual + auto
 
 
 def sizes_from_map_strict(mp: MapFile, spec: MapSpec) -> Sizes:
@@ -193,9 +268,33 @@ def run_make(root: Path, target: str = "nodebug") -> tuple[bool, str]:
 # commands                                                                     #
 # --------------------------------------------------------------------------- #
 
+def _bank(raw: str) -> int:
+    """A bank number, decimal or $/0x hex."""
+    text = raw.strip().lower().replace("$", "0x")
+    try:
+        return int(text, 0)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{raw!r} is not a bank number") from None
+
+
+def _apply_placement_flags(spec: MapSpec, args) -> None:
+    """Command-line placement overrides beat what the spec file says, so a spec
+    can be reused with a different placement without editing it."""
+    for blob in BLOBS:
+        into = getattr(args, f"{blob}_into", None)
+        bank = getattr(args, f"{blob}_bank", None)
+        if into is not None:
+            setattr(spec, f"{blob}_into", into)
+            setattr(spec, f"{blob}_bank", -1)     # the flags are exclusive
+        if bank is not None:
+            setattr(spec, f"{blob}_bank", bank)
+            setattr(spec, f"{blob}_into", "")
+
+
 def _load_spec(args) -> tuple[MapSpec, Path]:
     root = paths.repo_root()
     spec = MapSpec.from_toml(Path(args.spec))
+    _apply_placement_flags(spec, args)
     problems = spec.validate(root)
     if problems:
         for p in problems:
@@ -240,7 +339,9 @@ def _print_plan(spec, sizes, placements, hdr_bank, fs):
           if hdr_bank is not None else "")
     print("Placement")
     for p in placements:
-        print(f"  ${p.bank:02x}  [{p.tier:<5}]  {p.item.key}  ({p.item.size} bytes)")
+        note = {"shared": " (appended into an existing section — not pinned)",
+                "pinned": " (bank chosen by hand)"}.get(p.tier, "")
+        print(f"  ${p.bank:02x}  [{p.tier:<6}]  {p.item.key}  ({p.item.size} bytes){note}")
 
 
 def _strategy(args) -> str:
@@ -259,8 +360,8 @@ def cmd_plan(args) -> int:
     strategy = _strategy(args)
     print(f"Strategy: {'park (worst-fit, biggest chunk)' if strategy == 'loose' else 'tight (best-fit)'}")
     try:
-        placements = plan_placement(spec, sizes, fs, args.margin, strategy)
-    except NoFitError as e:
+        placements = plan_placement(spec, sizes, fs, args.margin, strategy, mp)
+    except (NoFitError, PlacementError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     _print_plan(spec, sizes, placements, hdr_bank, fs)
@@ -300,7 +401,7 @@ def cmd_add(args) -> int:
             print(log[-2000:], file=sys.stderr)
             print("error: measurement build failed — see log above.", file=sys.stderr)
             return 1
-        sizes = sizes_from_map(MapFile.parse(paths.map_path()), spec, sizes)
+        sizes = sizes_from_map(MapFile.parse(paths.map_path()), spec, sizes, before=mp)
     if sizes.script < 0:
         print("error: script size unknown — pass --script-size N (no build was run).",
               file=sys.stderr)
@@ -309,16 +410,23 @@ def cmd_add(args) -> int:
     # 3. Pack and pin.
     strategy = _strategy(args)
     try:
-        placements = plan_placement(spec, sizes, fs, args.margin, strategy)
-    except NoFitError as e:
+        placements = plan_placement(spec, sizes, fs, args.margin, strategy, mp)
+    except (NoFitError, PlacementError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     print(f"\nStrategy: {'park (worst-fit, biggest chunk)' if strategy == 'loose' else 'tight (best-fit)'}")
     _print_plan(spec, sizes, placements, hdr_bank, fs)
 
-    pin = mapwire.pin_sections(root, {p.item.key: p.bank for p in placements})
-    print(f"\n  [{'edit' if pin.changed else 'skip'}] {pin.path}: {pin.detail}")
-    mapwire.apply_edits(root, [pin], dry_run=args.dry_run)
+    # Blobs appended into an existing section inherit its bank — there is no new
+    # section for the linker to place, so they are deliberately left unpinned.
+    shared = {p.section for p in spec.placements if not p.needs_pin}
+    to_pin = {p.item.key: p.bank for p in placements if p.item.key not in shared}
+    if to_pin:
+        pin = mapwire.pin_sections(root, to_pin)
+        print(f"\n  [{'edit' if pin.changed else 'skip'}] {pin.path}: {pin.detail}")
+        mapwire.apply_edits(root, [pin], dry_run=args.dry_run)
+    else:
+        print("\n  [skip] contents/romx.link: every blob joined an existing section")
 
     if args.dry_run:
         print("\n(dry run — no files written)")
@@ -444,6 +552,15 @@ def main(argv: list[str] | None = None) -> int:
     common.add_argument("--margin", type=int, default=16, metavar="N",
                         help="bytes of slack to reserve per bank (default: 16)")
     common.add_argument("--map", metavar="PATH", help="override the baseline .map file")
+    for blob in BLOBS:
+        common.add_argument(
+            f"--{blob}-into", metavar="SECTION",
+            help=f"append the {blob} into this existing SECTION, inheriting its "
+                 f"bank (no romx.link pin)")
+        common.add_argument(
+            f"--{blob}-bank", metavar="BANK", type=_bank,
+            help=f"give the {blob} its own SECTION pinned to this bank "
+                 f"(e.g. 0x4d), instead of letting the packer choose")
 
     pp = sub.add_parser("plan", parents=[common], help="show the bank placement, write nothing")
     pp.add_argument("--park", action="store_true",
