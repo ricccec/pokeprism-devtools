@@ -15,6 +15,12 @@ from .diagnostics import Diagnostic, Severity
 
 _SECOND_HEADERS = "maps/second_map_headers.asm"
 
+#: `dummy_warp` writes `db -1` into the warp_to slot, so -1 is the engine's
+#: "this warp has no destination" sentinel. A hand-written `warp_def` carrying
+#: it means the same thing — the warp is driven by a script, not by the table —
+#: so there is no index to check.
+_NO_DESTINATION = -1
+
 
 # --------------------------------------------------------------------------- #
 # connections                                                                 #
@@ -171,8 +177,8 @@ def warp_target(ctx: LintContext) -> list[Diagnostic]:
                     f"warp {i} targets '{target}', which is not a map",
                 ))
                 continue
-            if index is None:
-                continue                  # a symbolic index; not our business
+            if index is None or index == _NO_DESTINATION:
+                continue                  # symbolic, or a script-driven warp
 
             dest = ctx.header(target)
             if dest is None:
@@ -204,7 +210,7 @@ def warp_oneway(ctx: LintContext) -> list[Diagnostic]:
             if warp.macro == "dummy_warp":
                 continue
             target, index = warp.args[3], warp.int_arg(2)
-            if index is None or target not in ctx.map_defs:
+            if index is None or index == _NO_DESTINATION or target not in ctx.map_defs:
                 continue
             dest = ctx.header(target)
             if dest is None or not 1 <= index <= len(dest.warps):

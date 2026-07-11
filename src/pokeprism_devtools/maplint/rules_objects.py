@@ -111,24 +111,18 @@ def sprite_static_walker(ctx: LintContext) -> list[Diagnostic]:
             hdr = sd.header(obj.sprite)
             if hdr is None or hdr.walking:
                 continue                  # no header (Pokemon/variable), or already fine
-
-            if sd.steps(obj.movement):
-                fn = sd.move_function(obj.movement)
-                out.append(Diagnostic(
-                    "sprite-static-walker", Severity.ERROR, path, obj.lineno + 1,
-                    f"{obj.sprite} is a {hdr.type} but its movement {obj.movement} "
-                    f"({fn}) makes it walk — it has no walk frames",
-                ))
+            if not ctx.object_walks(obj):
                 continue
 
-            radius = (obj.int_arg(4) or 0, obj.int_arg(5) or 0)
-            if "TRAINER" in obj.persontype and any(r > 0 for r in radius):
-                out.append(Diagnostic(
-                    "sprite-static-walker", Severity.ERROR, path, obj.lineno + 1,
-                    f"{obj.sprite} is a {hdr.type} but this trainer has a sight "
-                    f"radius of {radius[0]},{radius[1]} — it walks up to the player "
-                    f"and has no walk frames",
-                ))
+            why = (f"its movement {obj.movement} "
+                   f"({sd.move_function(obj.movement)}) makes it walk"
+                   if sd.steps(obj.movement) else
+                   "this trainer's sight radius makes it walk up to the player")
+            out.append(Diagnostic(
+                "sprite-static-walker", Severity.ERROR, path, obj.lineno + 1,
+                f"{obj.sprite} is a {hdr.type}, which has no walk frames at all, but "
+                f"{why}",
+            ))
     return out
 
 

@@ -43,13 +43,18 @@ def _player_sprite(ctx: LintContext) -> str:
 
 
 def sprite_vram(ctx: LintContext) -> list[Diagnostic]:
-    """An object placed on this map whose sprite has no usable graphics.
+    """An object on this map that will render or animate from garbage.
 
-    Two ways that happens, both silent at build time:
+    Two ways, both silent at build time:
 
-    * the sprite is a walker that didn't fit in VRAM table 1, so its walk frames
-      (base + $80) fall outside the sprite tables and it animates from garbage;
-    * the sprite got no allocation at all, because the map ran out of tiles.
+    * the object **walks**, but its sprite landed outside VRAM table 1, so the
+      walk frames it fetches at base + $80 fall past the sprite tables;
+    * the sprite got no allocation at all, because the map ran out of tiles —
+      broken whether it moves or not.
+
+    Landing in table 2 is only a problem for an object that actually steps.
+    Standing, spinning and bobbing objects never read base + $80, so table 2 is
+    exactly where they belong, and flagging them would be crying wolf.
     """
     sd = ctx.sprites
     out = []
@@ -71,24 +76,26 @@ def sprite_vram(ctx: LintContext) -> list[Diagnostic]:
                     f"{obj.sprite} gets no VRAM on this map — the sprite tables are "
                     f"full, so it renders as garbage",
                 ))
-            elif alloc.walking and not alloc.walk_frames_ok:
+            elif alloc.walking and not alloc.walk_frames_ok and ctx.object_walks(obj):
                 out.append(Diagnostic(
                     "sprite-vram", Severity.ERROR, path, obj.lineno + 1,
-                    f"{obj.sprite} is a walking sprite allocated at tile "
-                    f"${alloc.tile:02x}, outside VRAM table 1 — its walk frames are "
+                    f"{obj.sprite} walks ({obj.movement}), but it is allocated at tile "
+                    f"${alloc.tile:02x} — outside VRAM table 1, so its walk frames are "
                     f"read from ${alloc.tile + spritepack.TABLE_2_START:03x}, past the "
-                    f"sprite tables, so it animates from garbage. This map loads too "
-                    f"many walking sprites",
+                    f"sprite tables. This map loads too many walking sprites ahead of "
+                    f"it; make it stand still or free a slot",
                 ))
     return out
 
 
 def sprite_vram_budget(ctx: LintContext) -> list[Diagnostic]:
-    """A map that loads more walking sprites than VRAM table 1 can hold.
+    """This map has run out of slots for *moving* NPCs.
 
-    Reported even when the sprites that fall off the end aren't placed on this
-    map — for an outdoor map the whole group set is loaded, so the map is one
-    NPC away from a broken sprite, and whoever adds that NPC has no way to know.
+    Not a defect — a constraint, and the one that's invisible until you trip it.
+    VRAM table 1 is the only half with walk frames behind it, so once it's full,
+    every further sprite lands in table 2 and any object using one of them must
+    stay put. Whoever adds the next wandering NPC needs to know that before they
+    add it, not after.
     """
     sd = ctx.sprites
     out = []
@@ -97,17 +104,10 @@ def sprite_vram_budget(ctx: LintContext) -> list[Diagnostic]:
         if sprites is None:
             continue
         allocs = spritepack.arrange(sd, sprites)
-        broken = [a for a in allocs if a.walking and not a.walk_frames_ok]
-        if not broken:
+        spilled = [a for a in allocs if a.walking and not a.walk_frames_ok]
+        if not spilled:
             continue
 
-        header = ctx.header(const)
-        used = {obj.sprite for obj in header.object_events}
-        unusable = [a.sprite for a in broken if a.sprite not in used]
-        if not unusable:
-            continue                      # every broken sprite is placed; sprite-vram said so
-
-        walkers = sum(1 for a in allocs if a.walking)
         fits = sum(1 for a in allocs if a.walking and a.walk_frames_ok)
         mapdef = ctx.map_defs[const]
         source = (f"the outdoor sprite set {sd.set_names.get(mapdef.group, '?')} "
@@ -115,16 +115,13 @@ def sprite_vram_budget(ctx: LintContext) -> list[Diagnostic]:
                   else "this map's objects")
 
         out.append(Diagnostic(
-            "sprite-vram-budget", Severity.WARNING, path_of(ctx, const), 0,
-            f"{source} loads {walkers} walking sprites but only {fits} fit in VRAM "
-            f"table 1 — {', '.join(sorted(unusable))} would animate from garbage if "
-            f"placed on this map",
+            "sprite-vram-budget", Severity.INFO, ctx.rel(info.path), 0,
+            f"no walking slots left: {source} fills all {fits} of VRAM table 1's "
+            f"walk-frame slots, so {', '.join(sorted({a.sprite for a in spilled}))} "
+            f"sit in table 2 — fine as they are, but an object using one of them "
+            f"cannot be given walking movement or a trainer sight radius above 1",
         ))
     return out
-
-
-def path_of(ctx: LintContext, const: str) -> str:
-    return ctx.rel(ctx.map_infos[const].path)
 
 
 ALL = (sprite_vram, sprite_vram_budget)
