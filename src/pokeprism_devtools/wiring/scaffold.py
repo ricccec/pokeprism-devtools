@@ -1,4 +1,4 @@
-"""Adding *content* to a map: NPCs, trainers, item balls, hidden items.
+"""Adding *content* to a map: NPCs, trainers, item balls, hidden items, signs.
 
 Each of these is one conceptual thing — "put a Sage here who battles you" — that
 the source spreads across three or four files with nothing but a name to hold
@@ -36,6 +36,10 @@ ANY_TIME = -1
 
 #: person_event's event-flag argument when the object is always present.
 ALWAYS = "-1"
+
+#: The four signposts that read only when you're facing them. They are *scripts*,
+#: not text — see :func:`add_signpost`.
+FACINGS = ("SIGNPOST_UP", "SIGNPOST_DOWN", "SIGNPOST_LEFT", "SIGNPOST_RIGHT")
 
 _STILL = "SPRITEMOVEDATA_STANDING_DOWN"
 _ITEM_MOVEMENT = "SPRITEMOVEDATA_ITEM_TREE"
@@ -202,6 +206,48 @@ def add_itemball(root: Path, map_const: str, y: int, x: int, item: str, *,
         f"{item} at ({y}, {x}) in {map_const}",
         [flag_edit, ctx.to_edit(f"{item} itemball at ({y}, {x})")],
         flag_name,
+    )
+
+
+def add_signpost(root: Path, map_const: str, y: int, x: int,
+                 pages: list[list[str]], *, label: str | None = None,
+                 facing: str | None = None) -> Scaffold:
+    """A sign you read. No flag — a sign is always there.
+
+    Two shapes, and which one is right depends on the signpost type, because the
+    engine treats the pointer differently:
+
+    `SIGNPOST_TEXT` jumps straight into a **text** block (`engine/events.asm:663`
+    stuffs the pointer into a synthesised `jumptext`). That is the plain sign, and
+    it is what all 71 of this repo's gym and town signs are.
+
+    `SIGNPOST_UP` / `DOWN` / `LEFT` / `RIGHT` only read when you're facing them,
+    and all four fall through to `.read`, which **calls a script**. Point one at a
+    bare text block and the engine will execute your prose as bytecode. So a
+    facing sign gets a one-line script that jumps to its own text.
+    """
+    ctx = _MapCtx(root, map_const)
+    label = label or ctx.unique_label("Sign")
+
+    if facing is None:
+        kind, block = "SIGNPOST_TEXT", _text_block(label, pages)
+    else:
+        kind = f"SIGNPOST_{facing.upper()}"
+        if kind not in FACINGS:
+            raise ScaffoldError(
+                f"a sign faces {', '.join(f.removeprefix('SIGNPOST_').lower() for f in FACINGS)}"
+                f" — or nothing at all, and then it reads from any side. Not {facing!r}."
+            )
+        block = [f"{label}:", f"{_INDENT}jumptext .text", "", ".text",
+                 *_text_body(pages)]
+
+    ctx.add_script(label, block)
+    ctx.add_bg_event([str(y), str(x), kind, label])
+
+    return Scaffold(
+        f"sign {label} at ({y}, {x}) in {map_const}",
+        [ctx.to_edit(f"sign {label} at ({y}, {x})")],
+        label=label,
     )
 
 
