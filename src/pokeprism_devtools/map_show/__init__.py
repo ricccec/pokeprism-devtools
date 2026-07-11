@@ -223,16 +223,19 @@ def fit_zoom(rows: int, cols: int, size: os.terminal_size | None = None) -> int:
     return min(ZOOMS)
 
 
+def _paint(fg: swatches.Rgb, bg: swatches.Rgb, ch: str) -> str:
+    return (f"\033[38;2;{fg[0]};{fg[1]};{fg[2]}m"
+            f"\033[48;2;{bg[0]};{bg[1]};{bg[2]}m{ch}")
+
+
 def _cell(top: swatches.Rgb, bottom: swatches.Rgb, glyph: str | None) -> str:
     if glyph is None:
-        return (f"\033[38;2;{top[0]};{top[1]};{top[2]}m"
-                f"\033[48;2;{bottom[0]};{bottom[1]};{bottom[2]}m{_HALF}")
-    # A marker needs a whole cell — there is no half a character — so it costs
-    # the half-block. Keep the terrain as its background and pick the ink that
-    # stays legible on it, dark on sand, light on water.
-    bg = tuple((t + b) // 2 for t, b in zip(top, bottom))
-    ink = "0;0;0" if sum(bg) > 380 else "255;255;255"
-    return f"\033[1m\033[38;2;{ink}m\033[48;2;{bg[0]};{bg[1]};{bg[2]}m{glyph}"
+        return _paint(top, bottom, _HALF)
+    # A marker needs a whole cell — there is no half a character — so it costs the
+    # terrain underneath either way. Spend that on a colour that says *what it is*:
+    # a fill you can read from across the room, rather than a letter you have to
+    # go looking for.
+    return "\033[1m" + _paint(coords.MARKER_INK[glyph], coords.MARKER_BG[glyph], glyph)
 
 
 def _ruler(cols: int, zoom: int) -> str:
@@ -261,14 +264,25 @@ def print_grid(root: Path, label: str, time_of_day: int = 1, zoom: int | None = 
     z = zoom or fit_zoom(rows, cols)
 
     def color(ty: int, tx: int) -> swatches.Rgb:
-        """The colour of one coordinate tile: its block's swatch, its quadrant."""
+        """The colour of one coordinate tile.
+
+        An object's tile is its object's colour, edge to edge — not the terrain
+        with a letter on it. A tile is a *place to stand*, and a tile that is
+        occupied is occupied; if you want to see what's under an NPC, move the
+        NPC. Filling the whole tile is also what makes the grid legible at a
+        distance: five red squares by the north exit is a fact you can see
+        without reading anything.
+        """
+        if (glyph := marks.get((ty, tx))) is not None:
+            return coords.MARKER_BG[glyph]
         row, col = coords.block_of(ty, tx)
         qr, qc = coords.quadrant_of(ty, tx)
         return sw[bd.blocks[row * bd.width + col]][qr * coords.TILES_PER_BLOCK + qc]
 
-    # Each marker claims the cell nearest the middle of its tile. At zoom 1 that
-    # is the tile's only cell and it shares it with a neighbour; from zoom 3 it
-    # has room to itself.
+    # The letter goes in the cell nearest the middle of its own tile, and from
+    # zoom 2 up that cell lies strictly inside the tile — so the letter never
+    # spills its colour onto a neighbour. At zoom 1 a tile is only half a cell
+    # tall, and it has to.
     glyphs = {((ty * z + z // 2) // 2, tx * z + z // 2): g for (ty, tx), g in marks.items()}
 
     print(f"{bd.name}  {bd.height}x{bd.width} blocks · {rows}x{cols} tiles · "
@@ -287,8 +301,9 @@ def print_grid(root: Path, label: str, time_of_day: int = 1, zoom: int | None = 
                              glyphs.get((r, c))))
         print("".join(out) + _RESET)
 
-    print("\n  " + "   ".join(f"{g} {name}" for g, name in _LEGEND)
-          + f"\n  ({len(marks)} placed)")
+    legend = "  ".join(
+        f"{_cell((0, 0, 0), (0, 0, 0), g)}{_RESET} {name}" for g, name in _LEGEND)
+    print(f"\n  {legend}\n  ({len(marks)} placed)")
 
 
 def main(argv: list[str] | None = None) -> int:
