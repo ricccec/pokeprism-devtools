@@ -56,8 +56,11 @@ def _fixture(tmp: Path) -> Path:
         "\tconst_def\n\tconst EVENT_0\n"
         'INCLUDE "constants/event_flags.asm"\n'
     )
+    # EVENT_ORPHANED is declared and named by nothing (flag-unused). EVENT_TWICE
+    # is the save-state record for two item balls at once (flag-multi-owner).
     (root / "constants" / "event_flags.asm").write_text(
-        "\tconst EVENT_REAL\n\tconst EVENT_SHARED\n\tconst skip\n"
+        "\tconst EVENT_REAL\n\tconst EVENT_SHARED\n"
+        "\tconst EVENT_ORPHANED\n\tconst EVENT_TWICE\n\tconst skip\n"
         "NUM_EVENTS EQU const_value\n"
     )
     (root / "constants" / "map_constants.asm").write_text(
@@ -225,8 +228,14 @@ def _fixture(tmp: Path) -> Path:
     # doesn't exist (trainer-party), and its wild data is filed under the wrong
     # region (wild-region). A `loadtrainer` reaches party #1 — the second way a
     # party can be cited, and the reason #1 is not an orphan while #2 is.
+    # Two item balls whose flag is the same bit of save state: pick up one and
+    # the other disappears (flag-multi-owner).
     _map("TownB", ["warp_def 1, 1, 1, CAVE_C"],
-         [_person("SPRITE_NPC", 1, 1, "SPRITEMOVEDATA_STANDING_DOWN", "EVENT_SHARED")])
+         [_person("SPRITE_NPC", 1, 1, "SPRITEMOVEDATA_STANDING_DOWN", "EVENT_SHARED"),
+          _person("SPRITE_BALL", 2, 2, "SPRITEMOVEDATA_ITEM_TREE", "EVENT_TWICE",
+                  ptype="PERSONTYPE_ITEMBALL"),
+          _person("SPRITE_BALL", 3, 3, "SPRITEMOVEDATA_ITEM_TREE", "EVENT_TWICE",
+                  ptype="PERSONTYPE_ITEMBALL")])
     b = root / "maps" / "TownB.asm"
     b.write_text("TownB_Trainer_1:\n"
                  "\ttrainer EVENT_REAL, SAGE, 3, .seen, .beaten\n\n"
@@ -272,6 +281,8 @@ _EXPECTED = {
     "sprite-static-walker": 1,
     "flag-unknown": 1,
     "flag-shared": 1,
+    "flag-unused": 1,        # EVENT_ORPHANED: declared, named by nothing
+    "flag-multi-owner": 1,   # EVENT_TWICE: two item balls, one bit of save state
     "sprite-vram": 1,
     "sprite-vram-budget": 1,
     "blk-size": 1,
@@ -392,10 +403,13 @@ def test_baseline(root: Path, tmp: Path) -> None:
     check("with every finding baselined, the run passes",
           maplint.main(["--root", str(root), "--baseline"]) == 0)
 
-    # A new bug on top of the baseline must still fail.
+    # A new bug on top of the baseline must still fail: over-declare TownB's
+    # object count, so the engine reads a phantom object past the end.
     path = root / "maps" / "TownB.asm"
-    path.write_text(path.read_text().replace(
-        "\tdb 1\n\tperson_event", "\tdb 3\n\tperson_event"))
+    before = path.read_text()
+    after = before.replace(".ObjectEvents\n\tdb 3\n", ".ObjectEvents\n\tdb 5\n")
+    check("the seeded bug really was seeded", after != before)
+    path.write_text(after)
     check("a new finding still fails despite the baseline",
           maplint.main(["--root", str(root), "--baseline"]) == 1)
 
@@ -429,7 +443,10 @@ def test_real_repo() -> None:
         "wild-rate": 1,             # LAUREL_FOREST's `db 3` is 1.2%, not 3%
         "trainer-class": 0,         # none: the 7 unbacked classes are all uncited
         "trainer-orphan": 7,        # info: parties nothing references — dead weight
-        "flag-shared": 10,          # deliberate: one flag gating objects in two maps
+        "flag-shared": 9,           # deliberate: one flag gating objects in two maps
+        "flag-multi-owner": 2,      # info: EmberBrook's twins, and Provincial Park's PP Ups
+        "flag-unused": 200,         # info: declared flags nothing references
+        "flag-unknown": 0,          # none: every EVENT_* named in the repo exists
     }
     for code in sorted(set(counts) | set(triaged)):
         got, want = counts.get(code, 0), triaged.get(code, 0)
