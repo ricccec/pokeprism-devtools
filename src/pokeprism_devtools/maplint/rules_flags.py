@@ -129,4 +129,54 @@ def flag_shared(ctx: LintContext) -> list[Diagnostic]:
     return out
 
 
-ALL = (flag_unknown, flag_unused, flag_multi_owner, flag_shared)
+def flag_never_set(ctx: LintContext) -> list[Diagnostic]:
+    """An object gated by a flag that nothing in the repo ever sets.
+
+    The gate is not a simple "show if set". engine/objects.asm strips bit 15 of
+    the flag word, tests the flag, then XORs the result with that bit — so the
+    polarity is part of the flag argument:
+
+        …, EVENT_FOO             the object is visible **until** FOO is set
+        …, EVENT_FOO | $8000     the object is invisible **until** FOO is set
+
+    Which makes "nothing sets it" mean two different things, and only one of them
+    is loud:
+
+    * inverted, never set — the object **can never appear**. Unreachable content.
+    * plain, never set — the object never goes away. The flag does nothing, which
+      is usually a story beat that was never wired up.
+
+    Deliberately conservative about what counts as a set: any mention this parser
+    can't classify (engine code loading the flag into `de` for EventFlagAction,
+    which sets or tests depending on a mode byte) is treated as a possible set.
+    Reporting a live NPC as unreachable would be much worse than staying quiet.
+    """
+    out = []
+    for flag, refs in sorted(ctx.flag_refs.refs.items()):
+        if flag not in ctx.flags.by_name or flagrefs.maybe_set(refs):
+            continue
+
+        for ref in refs:
+            if not ref.how.startswith("person_event") or ref.role != flagrefs.READER:
+                continue
+            if not ref.path.startswith("maps/"):
+                continue
+
+            if ref.inverted:
+                out.append(Diagnostic(
+                    "flag-never-set", Severity.WARNING, ref.path, ref.line,
+                    f"this object only appears once {flag} is set (the `| $8000` "
+                    f"inverts the gate), and nothing in the repo ever sets it — so "
+                    f"it can never appear",
+                ))
+            else:
+                out.append(Diagnostic(
+                    "flag-never-set", Severity.INFO, ref.path, ref.line,
+                    f"this object disappears once {flag} is set, and nothing in the "
+                    f"repo ever sets it — so it never disappears and the flag is "
+                    f"inert",
+                ))
+    return out
+
+
+ALL = (flag_unknown, flag_unused, flag_multi_owner, flag_shared, flag_never_set)

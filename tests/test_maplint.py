@@ -58,9 +58,12 @@ def _fixture(tmp: Path) -> Path:
     )
     # EVENT_ORPHANED is declared and named by nothing (flag-unused). EVENT_TWICE
     # is the save-state record for two item balls at once (flag-multi-owner).
+    # EVENT_DEAD gates an object that can never appear; EVENT_INERT gates one
+    # that never goes away (flag-never-set, warning and info respectively).
     (root / "constants" / "event_flags.asm").write_text(
         "\tconst EVENT_REAL\n\tconst EVENT_SHARED\n"
-        "\tconst EVENT_ORPHANED\n\tconst EVENT_TWICE\n\tconst skip\n"
+        "\tconst EVENT_ORPHANED\n\tconst EVENT_TWICE\n"
+        "\tconst EVENT_DEAD\n\tconst EVENT_INERT\n\tconst skip\n"
         "NUM_EVENTS EQU const_value\n"
     )
     (root / "constants" / "map_constants.asm").write_text(
@@ -222,7 +225,14 @@ def _fixture(tmp: Path) -> Path:
          [_person("SPRITE_NPC", 3, 3, "SPRITEMOVEDATA_STANDING_DOWN"),
           _person("SPRITE_STRANGER", 4, 4, "SPRITEMOVEDATA_STANDING_DOWN"),
           _person("SPRITE_NPC", 5, 5, "SPRITEMOVEDATA_STANDING_DOWN", "EVENT_NOPE"),
-          _person("SPRITE_NPC", 6, 6, "SPRITEMOVEDATA_STANDING_DOWN", "EVENT_SHARED")])
+          _person("SPRITE_NPC", 6, 6, "SPRITEMOVEDATA_STANDING_DOWN", "EVENT_SHARED"),
+          _person("SPRITE_NPC", 7, 7, "SPRITEMOVEDATA_STANDING_DOWN", "EVENT_INERT"),
+          _person("SPRITE_NPC", 8, 8, "SPRITEMOVEDATA_STANDING_DOWN",
+                  "EVENT_DEAD | $8000")])
+    # Something has to set EVENT_SHARED, or it would itself be never-set. Put it
+    # outside maps/, so no map's line numbers move.
+    (root / "engine" / "std_scripts.asm").write_text(
+        "StdScript:\n\tsetevent EVENT_SHARED\n")
 
     # TownB also carries a trainer pointing at SageGroup party #3, which
     # doesn't exist (trainer-party), and its wild data is filed under the wrong
@@ -283,6 +293,7 @@ _EXPECTED = {
     "flag-shared": 1,
     "flag-unused": 1,        # EVENT_ORPHANED: declared, named by nothing
     "flag-multi-owner": 1,   # EVENT_TWICE: two item balls, one bit of save state
+    "flag-never-set": 2,     # EVENT_DEAD (never appears) + EVENT_INERT (never goes)
     "sprite-vram": 1,
     "sprite-vram-budget": 1,
     "blk-size": 1,
@@ -447,6 +458,7 @@ def test_real_repo() -> None:
         "flag-multi-owner": 2,      # info: EmberBrook's twins, and Provincial Park's PP Ups
         "flag-unused": 200,         # info: declared flags nothing references
         "flag-unknown": 0,          # none: every EVENT_* named in the repo exists
+        "flag-never-set": 17,       # 1 warning (SilphWarehouse's guard never appears)
     }
     for code in sorted(set(counts) | set(triaged)):
         got, want = counts.get(code, 0), triaged.get(code, 0)
