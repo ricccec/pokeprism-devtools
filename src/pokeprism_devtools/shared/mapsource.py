@@ -39,24 +39,29 @@ def enclosing_section(path: Path, matches) -> str | None:
 
 
 def shared_section_conflicts(root: Path, spec: MapSpec) -> list[tuple[str, str, str]]:
-    """Find blobs of `spec` that are already wired but live in a section that
-    isn't dedicated to this map (e.g. hand-added into a shared 'Map Scripts 7').
+    """Find blobs of `spec` that are wired into a section the spec didn't ask for.
+
+    The expected section is whatever the spec's *placement* says: its own
+    per-map section normally, or a named existing one when the blob is
+    deliberately placed there. So a blob sitting in a shared section is only a
+    conflict when nobody asked for it — a hand-added INCLUDE in
+    'Map Scripts 7' that the spec still thinks lives on its own.
 
     Returns ``(blob, actual_section, expected_section)`` for each mismatch.
-    Empty list means every present blob is in its own per-map section (or the
-    map isn't wired yet) — i.e. the tool can manage it.
+    Empty means every present blob is where the spec says it is (or the map
+    isn't wired yet) — i.e. the tool can manage it.
     """
     label = spec.label
     checks = [
         ("script", root / "maps/map_scripts.asm",
          lambda ln, inc=f'INCLUDE "{spec.script_asm}"': ln.strip() == inc,
-         spec.section_script),
+         spec.section_for("script")),
         ("block data", root / "maps/blockdata.asm",
          lambda ln, lbl=f"{label}_BlockData:": ln.strip() == lbl,
-         spec.section_blockdata),
+         spec.section_for("blockdata")),
         ("secondary header", root / "maps/second_map_headers.asm",
          lambda ln: re.match(rf"^\s*map_header_2\s+{re.escape(label)}\s*,", ln) is not None,
-         spec.section_secondary),
+         spec.section_for("secondary")),
     ]
     conflicts = []
     for blob, path, pred, expected in checks:
