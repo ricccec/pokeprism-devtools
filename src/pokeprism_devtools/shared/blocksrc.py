@@ -79,6 +79,33 @@ def load(root: Path, label: str) -> BlockData:
     )
 
 
+def sketch(root: Path, blk: Path, height: int, width: int,
+           tileset: str, permission: str) -> BlockData:
+    """A map that is not in the game yet: the one you are about to add.
+
+    :func:`load` follows four asm files to find out what a map is made of. A map
+    being *authored* is in none of them — it is a `.blk` you drew somewhere else
+    and a form you have half filled in. So everything comes from the caller, and
+    the two things that would otherwise silently produce a wrong picture are
+    checked rather than guessed: `read_blk` refuses a file with fewer blocks than
+    `height × width`, and `_lookup` refuses a tileset that isn't a real constant.
+
+    That is what turns the size check into a picture. A `.blk` of the wrong shape
+    doesn't say "expected 675 bytes"; it draws the map skewed, which is what a
+    wrong `height` actually looks like, and you fix the number you got wrong.
+    """
+    return BlockData(
+        name=blk.stem,
+        group=0, map_id=0,               # not in the game yet; it has neither
+        width=width,
+        height=height,
+        border_block=0,
+        blocks=read_blk(blk, height, width),
+        tileset_id=_lookup(root, _TILESETS, tileset),
+        permission=_lookup(root, _PERMISSIONS, permission),
+    )
+
+
 def blk_file(root: Path, label: str) -> Path | None:
     """The `.ablk` this map's `_BlockData:` label actually points at."""
     target = mapsource.blockdata_labels(root).get(label)

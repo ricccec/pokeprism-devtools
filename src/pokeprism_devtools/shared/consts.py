@@ -20,6 +20,15 @@ ITEMS = "constants/item_constants.asm"
 MOVES = "constants/move_constants.asm"
 SPRITES = "constants/sprite_constants.asm"
 
+#: The enums a `map_header` names. One list, read by both the form that offers
+#: them and the action that checks what you typed — because a form that suggests
+#: a constant its own validator would then reject is worse than no form.
+TILESETS = "constants/tilemap_constants.asm"
+MAP = "constants/map_constants.asm"           # the permissions, and PALETTE_*
+MUSIC = "constants/music_constants.asm"
+MISC = "constants/misc_constants.asm"         # FISHGROUP_*
+LANDMARKS = "constants/landmark_constants.asm"
+
 #: `const NAME`, `NAME EQU x`, `NAME = x`, `NAME EQUS "…"` — every way a name is
 #: bound at file scope. Values are irrelevant here; only existence is.
 _CONST_RE = re.compile(r"^\s*const\s+([A-Za-z_]\w*)\s*(?:;.*)?$")

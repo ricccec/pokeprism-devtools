@@ -13,9 +13,18 @@ already-authored script ``.asm`` and ``.blk``. It does not author map content.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+#: The two spellings of a map's name. `MtEmberSmallRoom` names asm labels, files
+#: and sections; `MT_EMBER_SMALL_ROOM` names the enum and the dimension macro.
+#: Neither is derivable from the other (`MtEmber` → `MT_EMBER`? `MTEMBER`?), so
+#: both are given, and both are checked — a lowercase label produces a label the
+#: assembler reads as a local one.
+LABEL_RE = re.compile(r"^[A-Z][A-Za-z0-9]*$")
+CONST_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 #: How a blob gets placed in the ROM.
 #:
@@ -137,24 +146,34 @@ class MapSpec:
     def section_secondary(self) -> str:
         return self.secondary_section or f"Second Map Header {self.label}"
 
-    def validate(self, root: Path) -> list[str]:
-        """Return a list of human-readable problems (empty == OK)."""
+    def validate(self, root: Path, *, require_files: bool = True) -> list[str]:
+        """Return a list of human-readable problems (empty == OK).
+
+        `require_files=False` checks everything except that the script and the
+        `.blk` are already on disk. The studio needs that: it builds every edit —
+        including the two that *create* those files — before it writes any of
+        them, so at the moment it validates, the files it is about to write do
+        not exist yet. Insisting they do would mean writing content to the tree
+        before knowing whether the wiring is even legal.
+        """
         problems: list[str] = []
-        if not self.label or not self.label[0].isupper():
-            problems.append(f"label '{self.label}' should be CamelCase")
-        if self.const != self.const.upper():
-            problems.append(f"const '{self.const}' should be SCREAMING_SNAKE_CASE")
+        if not LABEL_RE.match(self.label):
+            problems.append(f"label '{self.label}' should be CamelCase, "
+                            "like MtEmberSmallRoom")
+        if not CONST_RE.match(self.const):
+            problems.append(f"const '{self.const}' should be SCREAMING_SNAKE_CASE, "
+                            "like MT_EMBER_SMALL_ROOM")
         if self.group < 1:
             problems.append(f"group must be >= 1, got {self.group}")
         if not (0 < self.width < 256 and 0 < self.height < 256):
             problems.append(f"dimensions {self.height}x{self.width} out of range")
         if not self.script_asm:
             problems.append("script_asm path is required")
-        elif not (root / self.script_asm).exists():
+        elif require_files and not (root / self.script_asm).exists():
             problems.append(f"script asm not found: {self.script_asm}")
         if not self.blk:
             problems.append("blk path is required")
-        elif not (root / self.blk).exists():
+        elif require_files and not (root / self.blk).exists():
             problems.append(f"blk file not found: {self.blk}")
 
         for blob in BLOBS:
