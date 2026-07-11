@@ -157,11 +157,19 @@ def _fixture(tmp: Path) -> Path:
     (root / "maps" / "blk" / "TownB.blk").write_bytes(b"\0" * 100)     # correct
 
     # Trainer parties are positional: SageGroup has two, so #3 doesn't exist.
+    # A class reaches its group through TrainerGroups, indexed by class id — so
+    # the enum and the pointer table have to line up for the class to resolve.
     (root / "trainers" / "groups").mkdir(parents=True)
     (root / "trainers" / "groups" / "sage.asm").write_text(
         'SageGroup:\n\t; 1\n\tdb "Genjo@"\n\tdb TRAINERTYPE_NORMAL\n'
         "\tdb 21, GASTLY\n\tdb -1\n\n"
         '\t; 2\n\tdb "Nico@"\n\tdb TRAINERTYPE_NORMAL\n\tdb 22, HAUNTER\n\tdb -1\n'
+    )
+    (root / "constants" / "trainer_constants.asm").write_text(
+        "\tconst_def\n\ttrainerclass TRAINER_NONE\n\ttrainerclass SAGE\n"
+    )
+    (root / "trainers" / "trainer_pointers.asm").write_text(
+        "TrainerGroups:\n\tdw SageGroup\n"
     )
 
     # Seeded connection bugs, one per rule:
@@ -414,6 +422,8 @@ def test_real_repo() -> None:
         "conn-missing": 2,          # one-way connections
         "conn-self": 0,             # ROUTE_69_NORTH's typo, since fixed upstream
         "wild-region": 1,           # CAPER_RIDGE's grass is filed under mystery
+        "wild-rate": 1,             # LAUREL_FOREST's `db 3` is 1.2%, not 3%
+        "trainer-class": 0,         # none: the 7 unbacked classes are all uncited
         "flag-shared": 10,          # deliberate: one flag gating objects in two maps
     }
     for code in sorted(set(counts) | set(triaged)):

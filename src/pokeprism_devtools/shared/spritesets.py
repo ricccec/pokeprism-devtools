@@ -168,7 +168,7 @@ class SpriteData:
 
 
 def load(root: Path) -> SpriteData:
-    ids = _sprite_ids(root)
+    ids = sprite_ids(root)
     misc = to_dict(parse_constants(root / _MISC_CONSTANTS))
     sets, names = _outdoor_sprites(root, ids)
     return SpriteData(
@@ -180,7 +180,7 @@ def load(root: Path) -> SpriteData:
         list_capacity=misc.get("SPRITE_GFX_LIST_CAPACITY", 0x20),
         pokemon_sprite_id=ids.get("SPRITE_POKEMON", 1 << 30),
         vars_sprite_id=ids.get("SPRITE_VARS", 1 << 30),
-        movedata_ids=_movedata_ids(root),
+        movedata_ids=movedata_ids(root),
         move_functions=_move_functions(root),
         type_ids=_type_ids(root),
     )
@@ -205,7 +205,7 @@ def _type_ids(root: Path) -> dict[str, int]:
     return out
 
 
-def _movedata_ids(root: Path) -> dict[str, int]:
+def movedata_ids(root: Path) -> dict[str, int]:
     """The SPRITEMOVEDATA_* enum — a plain run of consts from a const_def."""
     path = root / _SPRITE_CONSTANTS
     out: dict[str, int] = {}
@@ -230,7 +230,7 @@ def _move_functions(root: Path) -> list[str]:
             if (m := re.match(r"\s*sprite_movement_data\s+(\w+)\s*,", line))]
 
 
-def _sprite_ids(root: Path) -> dict[str, int]:
+def sprite_ids(root: Path) -> dict[str, int]:
     """The SPRITE_* id enum, including its ``EQU const_value`` boundary markers.
 
     Scoping this correctly is fiddly, so it is done structurally. The enum opens
