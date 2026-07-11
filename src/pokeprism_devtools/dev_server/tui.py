@@ -15,15 +15,13 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import subprocess
 import sys
 import threading
 from pathlib import Path
-import time
 
-from pokeprism_devtools.shared import paths, savefile, symfile
+from pokeprism_devtools.shared import paths
 
-from . import apply, inventory, launcher
+from . import apply, inventory, playtest
 
 
 def run(
@@ -100,7 +98,9 @@ class DevServer:
         self.state_source = (
             state_path if state_path.exists() else presets_dir / "default.json"
         )
-        self.sameboy: subprocess.Popen | None = None
+        # The emulator owns its own process and its own lock; self._lock below
+        # guards the inventory and the state, which the rebuild watcher touches.
+        self.emulator = playtest.Emulator()
         self._lock = threading.RLock()
         self._watcher_stop = threading.Event()
         self._watcher_thread: threading.Thread | None = None
@@ -120,7 +120,7 @@ class DevServer:
                 self._refresh_inventory_if_stale()
                 self._print_status_block()
 
-                running = self._sameboy_running()
+                running = self.emulator.running
                 action = questionary.select(
                     "What now?",
                     choices=[
@@ -166,14 +166,14 @@ class DevServer:
             if self._watcher_thread is not None:
                 self._watcher_thread.join(timeout=3.0)
 
-        if self._sameboy_running():
+        if self.emulator.running:
             print("\nSameBoy is still running — leaving it alone. Close it manually when done.")
         return 0
 
     def _print_status_block(self) -> None:
         player = self.state.get("player") or {}
         map_ = self.state.get("map") or {}
-        sb = "running" if self._sameboy_running() else "not running"
+        sb = "running" if self.emulator.running else "not running"
         sym_when = dt.datetime.fromtimestamp(self.sym_mtime).strftime("%Y-%m-%d %H:%M:%S")
         rom = paths.rom_path(self.root, debug=self.debug)
 
@@ -845,93 +845,34 @@ class DevServer:
         self._launch_or_relaunch(rom_path)
 
     def _patch_save(self, rom_path: Path) -> None:
-        target_sav = rom_path.with_suffix(".sav")
-
-        if not target_sav.exists():
-            print(
-                f"error: no template save at {target_sav}.\n"
-                "Run the ROM in an emulator once, complete the intro, and "
-                "save in-game first.",
-                file=sys.stderr,
+        try:
+            report = playtest.patch_save(
+                rom_path,
+                sym_path=self.sym_path,
+                inv=self.inv,
+                state=self.state,
+                backups_dir=self.sav_backups_dir,
+                keep_people=self.keep_people,
             )
+        except playtest.PlaytestError as e:
+            print(f"error: {e}", file=sys.stderr)
             return
 
-        # Validate save file
-        sav = savefile.SaveFile.load(target_sav)
-        if not apply.looks_like_real_save(sav, self.inv):
-            print(
-                f"error: template at {target_sav} doesn't look like a valid "
-                "save (validity bytes missing).",
-                file=sys.stderr,
-            )
-            return
-
-        # Backup the save file
-        self.sav_backups_dir.mkdir(parents=True, exist_ok=True)
-        ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup = self.sav_backups_dir / f"{target_sav.stem}-{ts}.sav"
-        backup.write_bytes(target_sav.read_bytes())
-        print(f"Backed up {target_sav.name} → {self._pretty(backup)}")
-
-        # Patch the save file
-        syms = symfile.SymFile.load(self.sym_path)
-        changes = apply.apply_state(
-            sav, self.state, self.inv,
-            rom_path=rom_path, syms=syms, keep_people=self.keep_people,
-        )
-        apply.recompute_checksums(sav, self.inv)
-        sav.write(target_sav)
-        print(f"Wrote {self._pretty(target_sav)} ({len(changes)} fields changed)")
-        for c in changes:
+        if report.backup is not None:
+            print(f"Backed up {report.target.name} → {self._pretty(report.backup)}")
+        print(f"Wrote {self._pretty(report.target)} "
+              f"({len(report.changes)} fields changed)")
+        for c in report.changes:
             print(f"  {c}")
 
     def _launch_or_relaunch(self, rom_path: Path, *, silent: bool = False) -> None:
-        cmd, trackable = launcher.build_cmd(rom_path)
-        if cmd is None:
-            print(
-                f"\nWARNING: SameBoy not found. Launch {rom_path} manually, "
-                "or set $SAMEBOY_BIN to the binary path.",
-                file=sys.stderr,
-            )
-            return
-
-        with self._lock:
-            if self._sameboy_running():
-                if not silent:
-                    print("Terminating old SameBoy...")
-                assert self.sameboy is not None
-                self.sameboy.terminate()
-                try:
-                    self.sameboy.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self.sameboy.kill()
-                    self.sameboy.wait()
-                self.sameboy = None
-
-        if not trackable:
-            # We only have `open -a SameBoy` to work with — Popen will
-            # hold the launcher's PID, not SameBoy's, so Re-launch
-            # can't kill the prior instance. Warn once per launch.
-            print(
-                "warning: SameBoy.app not found via $SAMEBOY_BIN, $PATH, or "
-                "Spotlight; using `open -a`. Re-launch will not be able to "
-                "terminate the previous instance. Set $SAMEBOY_BIN to the "
-                "SameBoy binary path to fix.",
-                file=sys.stderr,
-            )
-
-        if not silent:
-            print(f"Launching {cmd[0]}...")
-        try:
-            proc = subprocess.Popen(cmd)
-        except OSError as e:
-            print(f"failed to launch: {e}", file=sys.stderr)
-            return
-        with self._lock:
-            self.sameboy = proc
-        # Give it some time to settle, then bring window to the front
-        time.sleep(1)
-        launcher.focus_after_launch()
+        report = self.emulator.launch(rom_path)
+        if report.replaced and not silent:
+            print("Terminated old SameBoy.")
+        for w in report.warnings:
+            print(f"warning: {w}", file=sys.stderr)
+        if report.launched and not silent:
+            print(f"Launching {report.command}...")
 
     def _start_rebuild_watcher(self) -> None:
         def _watch() -> None:
@@ -953,10 +894,6 @@ class DevServer:
             target=_watch, daemon=True, name="rebuild-watcher"
         )
         self._watcher_thread.start()
-
-    def _sameboy_running(self) -> bool:
-        with self._lock:
-            return self.sameboy is not None and self.sameboy.poll() is None
 
     def _pretty(self, path: Path) -> str:
         try:
