@@ -7,10 +7,17 @@ name = "pokeprism-devtools"
 version = "0.4.0"
 description = "Python devtools for the pokeprism Pokémon Crystal disassembly fork"
 requires-python = ">=3.10"
+dependencies = ["questionary", "Pillow"]
+
+[project.optional-dependencies]
+# Only prism-studio needs a TUI toolkit, and the studio is one module: someone
+# who wants the command-line tools shouldn't have to install a widget library to
+# get them. `pip install pokeprism-devtools[studio]`.
+#
 # textual is pinned to a major: its widget and message APIs have moved in the
 # past across *minor* releases, and a TUI that silently stops dispatching a
 # message is a bad afternoon.
-dependencies = ["questionary", "Pillow", "textual>=8.2.8,<9"]
+studio = ["textual>=8.2.8,<9"]
 
 [project.scripts]
 prism-dev     = "pokeprism_devtools.dev_server.cli:main"
@@ -24,7 +31,7 @@ prism-mapfit  = "pokeprism_devtools.mapfit:main"
 prism-metatiles = "pokeprism_devtools.metatiles:main"
 prism-newmap  = "pokeprism_devtools.map_new:main"
 prism-maplint = "pokeprism_devtools.maplint:main"
-prism-studio  = "pokeprism_devtools.studio.app:main"
+prism-studio  = "pokeprism_devtools.studio:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

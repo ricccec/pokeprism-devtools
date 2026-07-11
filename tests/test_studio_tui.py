@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from pokeprism_devtools.shared import blocksrc, coords, eventheader, paths, swatches
-from pokeprism_devtools.studio import panels
+from pokeprism_devtools.studio import Session, panels
 from pokeprism_devtools.studio.app import Studio
 from pokeprism_devtools.studio.grid import MapGrid
 
@@ -162,20 +162,60 @@ class TestShell(unittest.TestCase):
     def test_a_map_that_doesnt_parse_still_comes_up(self) -> None:
         """It has a shape. Showing the shape and saying why the tables are empty
         beats an empty table that reads as 'this map has no NPCs'."""
-        async def go():
-            app = Studio(ROOT)
-            async with app.run_test() as pilot:
-                loaded = app._read(BROKEN)
+        data = Session(ROOT).load(BROKEN)
 
-                self.assertIsNotNone(loaded.view, "a broken header still has blocks")
-                self.assertEqual(loaded.view.marks, {})
-                self.assertIn("error", loaded.tables)
-                self.assertNotIn("Objects", loaded.tables)
-                # And the parts that don't depend on the header still work.
-                self.assertIn("Connections", loaded.tables)
-                await app.action_quit()
+        self.assertIsNotNone(data.geometry, "a broken header still has blocks")
+        self.assertEqual(data.geometry.marks, {})
+        self.assertIn("error", data.tables)
+        self.assertNotIn("Objects", data.tables)
+        # And the parts that don't depend on the header still work.
+        self.assertIn("Connections", data.tables)
 
-        drive(go())
+
+class TestTheSeam(unittest.TestCase):
+    """The view reads no files.
+
+    Everything the TUI draws comes from `Session.load` as plain data, and the
+    knowledge of what a `person_event` is — its argument order, the `+4` its
+    macro adds at assembly — stays on the model side of the line. This test is
+    the only thing that keeps that true: the rule is one careless import away
+    from being a comment, and the import is always the convenient thing to do.
+
+    It also happens to be the boundary a non-Python frontend would need. That is
+    a happy side effect, not the reason; see `docs/adapter-plan.md`.
+    """
+
+    #: The view layer.
+    VIEW = ("app.py", "grid.py")
+
+    #: Modules that open the source tree. `coords` and `swatches` are not here:
+    #: `coords.glyph_cells` and `swatches.tile_color` are the *renderer* — plain
+    #: data in, colours out — and the grid is right to use them. (Both modules do
+    #: also carry readers, `swatches.for_map` above all. A split would separate
+    #: them; today the honest guard is at module granularity.)
+    READERS = ("blocksrc", "eventheader", "wilddata", "mapsource", "blockdata",
+               "metatiles", "render", "dialogue", "trainerparty", "wiring")
+
+    def test_the_view_does_not_import_a_parser(self) -> None:
+        import ast
+        studio = Path(__file__).resolve().parents[1] / "src/pokeprism_devtools/studio"
+
+        for name in self.VIEW:
+            tree = ast.parse((studio / name).read_text())
+            imported: list[str] = []
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    imported.extend(
+                        f"{node.module or ''}.{a.name}" for a in node.names)
+                elif isinstance(node, ast.Import):
+                    imported.extend(a.name for a in node.names)
+
+            for reader in self.READERS:
+                offenders = [i for i in imported if reader in i.split(".")]
+                self.assertEqual(
+                    offenders, [],
+                    f"studio/{name} imports {reader}: the view is reading the "
+                    f"repo again. It should be asking Session for plain data.")
 
 
 if __name__ == "__main__":

@@ -5,6 +5,14 @@ what has been placed on it and what the linter thinks of it. Nothing here writes
 to the repo — :mod:`.session` is wired in and does the reading, but no action is
 bound to a key yet. That is P3.
 
+**This file opens no files.** Everything it draws arrives from `Session.load` as
+plain data — colours, marker positions, tables already reduced to columns and
+rows — and everything it will *change*, in P3, goes out through an `Action` whose
+fields it renders without knowing what they mean. The only path from here to the
+repo is `main()`, finding the root to hand to the `Session`. That rule is what
+keeps `person_event`'s argument order, and the `+4` its macro adds behind your
+back, on one side of one line. See `docs/adapter-plan.md`.
+
 Two things are worth knowing about how it loads.
 
 The linter is **not** on the path to the first map. A cold `LintContext` plus a
@@ -22,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 from rich.text import Text
@@ -33,10 +40,9 @@ from textual.widgets import (DataTable, Footer, Header, Input, OptionList, Stati
                              TabbedContent, TabPane)
 
 from ..maplint.diagnostics import Diagnostic, Severity
-from ..shared import blocksrc, coords, eventheader, paths, swatches, wilddata
-from . import panels
-from .grid import MapGrid, MapView
-from .session import Session
+from ..shared import coords, paths
+from .grid import MapGrid
+from .session import MapData, Session
 
 _SEVERITY_STYLE = {
     Severity.ERROR: "bold red",
@@ -50,17 +56,6 @@ _TABS = ("Objects", "Warps", "Signposts", "Triggers", "Connections", "Wild")
 def _marker_style(glyph: str) -> str:
     return (f"bold {coords.hex_color(coords.MARKER_INK[glyph])} "
             f"on {coords.hex_color(coords.MARKER_BG[glyph])}")
-
-
-@dataclass
-class Loaded:
-    """One map, everything about it, read off the UI thread."""
-    label: str
-    const: str
-    view: MapView | None
-    #: Why there is no grid, when there isn't.
-    error: str | None
-    tables: dict[str, panels.Table]
 
 
 class Studio(App):
@@ -160,84 +155,36 @@ class Studio(App):
     # -- loading, off the UI thread ---------------------------------------------- #
     @work(thread=True, exclusive=True, group="map")
     def _load(self, label: str) -> None:
-        loaded = self._read(label)
-        self.call_from_thread(self._loaded, loaded)
+        self.call_from_thread(self._loaded, self.session.load(label))
 
-    def _read(self, label: str) -> Loaded:
-        root = self.session.root
-        const = self.session.ctx.label_to_const.get(label, label)
-        tables: dict[str, panels.Table] = {}
-
-        header = None
-        try:
-            header = eventheader.parse_map(root / f"maps/{label}.asm")
-        except (eventheader.UnparseableHeader, FileNotFoundError) as exc:
-            tables["error"] = ([str(exc)], [])
-
-        try:
-            bd = blocksrc.load(root, label)
-        except blocksrc.BlockSourceError as exc:
-            return Loaded(label, const, None, str(exc), tables)
-
-        view = MapView(
-            label=label, blocks=bd.blocks, height=bd.height, width=bd.width,
-            swatches=swatches.for_map(root, bd.tileset_id, bd.permission),
-            marks=coords.markers(header) if header else {},
-        )
-
-        if header is not None:
-            tables["Objects"] = panels.objects(header)
-            tables["Warps"] = panels.warps(header)
-            tables["Signposts"] = panels.bg_events(header)
-            tables["Triggers"] = panels.coord_events(header)
-        tables["Connections"] = panels.connections(
-            self.session.ctx.connections_by_map.get(const, []))
-        tables["Wild"] = panels.wild(self._wild(root, const))
-
-        return Loaded(label, const, view, None, tables)
-
-    def _wild(self, root: Path, const: str) -> dict[str, wilddata.WildBlock]:
-        """The map's encounters. A map with none is the common case, not an error
-        — most maps are indoors."""
-        found: dict[str, wilddata.WildBlock] = {}
-        for kind in (wilddata.GRASS, wilddata.WATER):
-            try:
-                table = wilddata.table_for(root, const, kind)
-            except wilddata.WildDataError:
-                continue
-            for block in table.blocks:
-                if block.map_const == const:
-                    found[kind] = block
-        return found
-
-    def _loaded(self, loaded: Loaded) -> None:
-        if loaded.label != self._wanted:
+    def _loaded(self, data: MapData) -> None:
+        if data.label != self._wanted:
             return
 
         grid = self.query_one("#grid", MapGrid)
         status = self.query_one("#status", Static)
-        if loaded.view is None:
+        if data.geometry is None:
             grid.display = False
-            status.update(Text(loaded.error or "", style="bold red"))
+            status.update(Text(data.error or "", style="bold red"))
         else:
             grid.display = True
-            grid.show(loaded.view)
+            grid.show(data.geometry)
 
         for name in _TABS:
             table = self.query_one(f"#table-{name.lower()}", DataTable)
             table.clear(columns=True)
-            if name in loaded.tables:
-                cols, rows = loaded.tables[name]
+            if name in data.tables:
+                cols, rows = data.tables[name]
                 table.add_columns(*cols)
                 table.add_rows(rows)
-            elif "error" in loaded.tables:
+            elif "error" in data.tables:
                 # The map has a shape but its header doesn't parse. Say so where
                 # the objects would have been, rather than showing an empty table
                 # that reads as "this map has no NPCs".
                 table.add_columns("unreadable")
-                table.add_row(loaded.tables["error"][0][0])
+                table.add_row(data.tables["error"][0][0])
 
-        self._show_diagnostics(loaded.const)
+        self._show_diagnostics(data.const)
 
     # -- diagnostics ------------------------------------------------------------- #
     @work(thread=True, exclusive=True, group="lint")

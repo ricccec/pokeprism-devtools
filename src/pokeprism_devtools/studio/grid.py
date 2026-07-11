@@ -14,8 +14,6 @@ that hands its coordinates to the form, is not.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from rich.segment import Segment
 from rich.style import Style
 from textual.binding import Binding
@@ -25,7 +23,11 @@ from textual.reactive import reactive
 from textual.scroll_view import ScrollView
 from textual.strip import Strip
 
+# The pure renderer: given block ids and resolved colours, which cell gets which
+# colour and which letter. It opens nothing — the geometry it draws was read by
+# `Session.load` and handed over as plain data.
 from ..shared import coords, swatches
+from .session import MapGeometry
 
 #: The foreground paints the top half of the cell, the background the bottom —
 #: so one cell holds two stacked pixels and the grid's vertical resolution is
@@ -34,24 +36,6 @@ from ..shared import coords, swatches
 _HALF = "▀"
 
 ZOOMS = (1, 2, 3, 4)
-
-
-@dataclass(frozen=True)
-class MapView:
-    """Everything the grid needs to draw one map. Built off the UI thread."""
-    label: str
-    blocks: bytes
-    height: int                                    # in blocks
-    width: int                                     # in blocks
-    swatches: tuple[swatches.Swatch, ...]
-    #: Empty when the map's event header doesn't parse. The map still has a
-    #: shape, and it is still worth looking at — the tables say why it's empty.
-    marks: dict[tuple[int, int], str]
-
-    @property
-    def size(self) -> tuple[int, int]:
-        """Rows and columns, in coordinate tiles."""
-        return coords.tile_size(self.height, self.width)
 
 
 def _cursor_tint(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
@@ -80,7 +64,7 @@ class MapGrid(ScrollView):
 
     can_focus = True
 
-    view: reactive[MapView | None] = reactive(None, always_update=True)
+    view: reactive[MapGeometry | None] = reactive(None, always_update=True)
     zoom: reactive[int] = reactive(2)
     cursor: reactive[tuple[int, int]] = reactive((0, 0))
 
@@ -93,7 +77,7 @@ class MapGrid(ScrollView):
             self.x = x
             self.glyph = glyph
 
-    def show(self, view: MapView) -> None:
+    def show(self, view: MapGeometry) -> None:
         self.view = view
         self.cursor = (0, 0)
         self.scroll_to(0, 0, animate=False)

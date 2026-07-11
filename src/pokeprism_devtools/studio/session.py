@@ -1,5 +1,14 @@
 """The studio's model. No Textual in here — the TUI is a view over this.
 
+**The view reads no files.** Every byte the studio shows comes out of
+:meth:`Session.load`, which hands back plain data: block ids, resolved colours,
+where the markers go, and the tables already reduced to columns and rows. The TUI
+opens nothing and parses nothing — it draws what it is given. That is what keeps
+the knowledge of what a `person_event` is (and of the `+4` its macro adds behind
+your back) on this side of the line, where exactly one module has to be right
+about it. `docs/adapter-plan.md` is the longer version of why that line is where
+it is.
+
 Everything the app does to the repo goes through :meth:`Session.apply`, one action
 at a time. That is not an accident of implementation, it is the whole design, and
 `shared/edits.py` explains why: an :class:`Edit` carries the entire file text plus
@@ -33,7 +42,9 @@ from pathlib import Path
 from .. import maplint
 from ..maplint.context import LintContext
 from ..maplint.diagnostics import Diagnostic
+from ..shared import blocksrc, coords, eventheader, swatches, wilddata
 from ..shared.edits import Edit, StaleEdit, apply_edits
+from . import panels
 from .actions import Action, Result
 
 
@@ -44,6 +55,39 @@ class MapRef:
 
     def __str__(self) -> str:
         return self.label
+
+
+@dataclass(frozen=True)
+class MapGeometry:
+    """A map's shape, and what stands on it. Everything needed to draw it, and
+    nothing that knows how to draw."""
+    label: str
+    blocks: bytes
+    height: int                                    # in blocks
+    width: int                                     # in blocks
+    swatches: tuple[swatches.Swatch, ...]
+    #: Coordinate tile -> marker glyph. Empty when the event header doesn't parse:
+    #: the map still has a shape, and it is still worth looking at.
+    marks: dict[tuple[int, int], str]
+
+    @property
+    def size(self) -> tuple[int, int]:
+        """Rows and columns, in coordinate tiles."""
+        return coords.tile_size(self.height, self.width)
+
+
+@dataclass(frozen=True)
+class MapData:
+    """One map, read off disk once, in a form the view can render without
+    knowing what any of it means."""
+    label: str
+    const: str
+    #: None only when the blocks themselves can't be read. A map whose *header*
+    #: is broken still has geometry — see `tables["error"]`.
+    geometry: MapGeometry | None
+    #: Why there is no geometry, when there isn't.
+    error: str | None
+    tables: dict[str, panels.Table]
 
 
 @dataclass(frozen=True)
@@ -125,6 +169,60 @@ class Session:
 
     def parses(self, const: str) -> bool:
         return self.ctx.header(const) is not None
+
+    def load(self, label: str) -> MapData:
+        """Everything about one map, from source. Slow enough to want a thread —
+        four files — so it takes no locks and touches no state.
+
+        A map whose event header doesn't parse still comes back **with its
+        geometry**, and the parse error in `tables["error"]`. Hiding a broken map
+        from the person looking for the break is the worst thing this could do.
+        """
+        root = self.root
+        const = self.ctx.label_to_const.get(label, label)
+        tables: dict[str, panels.Table] = {}
+
+        header = None
+        try:
+            header = eventheader.parse_map(root / f"maps/{label}.asm")
+        except (eventheader.UnparseableHeader, FileNotFoundError) as exc:
+            tables["error"] = ([str(exc)], [])
+
+        try:
+            bd = blocksrc.load(root, label)
+        except blocksrc.BlockSourceError as exc:
+            return MapData(label, const, None, str(exc), tables)
+
+        geometry = MapGeometry(
+            label=label, blocks=bd.blocks, height=bd.height, width=bd.width,
+            swatches=swatches.for_map(root, bd.tileset_id, bd.permission),
+            marks=coords.markers(header) if header else {},
+        )
+
+        if header is not None:
+            tables["Objects"] = panels.objects(header)
+            tables["Warps"] = panels.warps(header)
+            tables["Signposts"] = panels.bg_events(header)
+            tables["Triggers"] = panels.coord_events(header)
+        tables["Connections"] = panels.connections(
+            self.ctx.connections_by_map.get(const, []))
+        tables["Wild"] = panels.wild(self._wild(const))
+
+        return MapData(label, const, geometry, None, tables)
+
+    def _wild(self, const: str) -> dict[str, wilddata.WildBlock]:
+        """The map's encounters. A map with none is the common case, not an error
+        — most maps are indoors."""
+        found: dict[str, wilddata.WildBlock] = {}
+        for kind in (wilddata.GRASS, wilddata.WATER):
+            try:
+                table = wilddata.table_for(self.root, const, kind)
+            except wilddata.WildDataError:
+                continue
+            for block in table.blocks:
+                if block.map_const == const:
+                    found[kind] = block
+        return found
 
     # -- diagnostics --------------------------------------------------------- #
     def lint(self) -> list[Diagnostic]:
