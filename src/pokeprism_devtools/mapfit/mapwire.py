@@ -41,7 +41,8 @@ _SECTION_RE = re.compile(r'^\s*SECTION\s+"([^"]+)"')
 def wire_dimensions(root: Path, spec: MapSpec) -> Edit:
     rel = "constants/map_dimension_constants.asm"
     path = root / rel
-    lines = path.read_text().splitlines()
+    original = path.read_text()
+    lines = original.splitlines()
 
     if any(re.match(rf"^\s*mapgroup\s+{re.escape(spec.const)}\s*,", ln) for ln in lines):
         return Edit(rel, False, f"mapgroup {spec.const} already present")
@@ -56,7 +57,8 @@ def wire_dimensions(root: Path, spec: MapSpec) -> Edit:
     new_line = f"\tmapgroup {spec.const}, {spec.height}, {spec.width}"
     lines.insert(insert_at + 1, new_line)
     text = "\n".join(lines) + "\n"
-    return Edit(rel, True, f"added '{new_line.strip()}' to group {spec.group}", text)
+    return Edit(rel, True, f"added '{new_line.strip()}' to group {spec.group}", text,
+                base=original)
 
 
 # --------------------------------------------------------------------------- #
@@ -66,7 +68,8 @@ def wire_dimensions(root: Path, spec: MapSpec) -> Edit:
 def wire_primary_header(root: Path, spec: MapSpec) -> Edit:
     rel = "maps/map_headers.asm"
     path = root / rel
-    lines = path.read_text().splitlines()
+    original = path.read_text()
+    lines = original.splitlines()
 
     if any(re.match(rf"^\s*map_header\s+{re.escape(spec.label)}\s*,", ln) for ln in lines):
         return Edit(rel, False, f"map_header {spec.label} already present")
@@ -85,7 +88,8 @@ def wire_primary_header(root: Path, spec: MapSpec) -> Edit:
     new_line = f"\tmap_header {fields}"
     lines.insert(insert_at + 1, new_line)
     text = "\n".join(lines) + "\n"
-    return Edit(rel, True, f"appended map_header {spec.label} to MapGroup{spec.group}", text)
+    return Edit(rel, True, f"appended map_header {spec.label} to MapGroup{spec.group}",
+                text, base=original)
 
 
 # --------------------------------------------------------------------------- #
@@ -133,8 +137,8 @@ def wire_blockdata(root: Path, spec: MapSpec) -> Edit:
 def wire_script(root: Path, spec: MapSpec) -> Edit:
     rel = "maps/map_scripts.asm"
     path = root / rel
-    text = path.read_text()
-    lines = text.splitlines()
+    original = path.read_text()
+    lines = original.splitlines()
 
     include = f'INCLUDE "{spec.script_asm}"'
     if any(include == ln.strip() for ln in lines):
@@ -142,7 +146,7 @@ def wire_script(root: Path, spec: MapSpec) -> Edit:
 
     placement = spec.placement("script")
     if placement.mode == INTO:
-        return _place(rel, text, placement, [include], barrier=SCRIPTS_GUARD)
+        return _place(rel, original, placement, [include], barrier=SCRIPTS_GUARD)
 
     guard = next((i for i, ln in enumerate(lines) if SCRIPTS_GUARD in ln), None)
     block = [
@@ -161,7 +165,8 @@ def wire_script(root: Path, spec: MapSpec) -> Edit:
             at -= 1
         new_lines = lines[:at] + ["", *block] + lines[at:]
     text = "\n".join(new_lines) + "\n"
-    return Edit(rel, True, f"added section '{spec.section_script}'", text)
+    return Edit(rel, True, f"added section '{spec.section_script}'", text,
+                base=original)
 
 
 # --------------------------------------------------------------------------- #
@@ -177,7 +182,8 @@ def pin_sections(root: Path, assignments: dict[str, int]) -> Edit:
     """
     rel = "contents/romx.link"
     path = root / rel
-    lines = path.read_text().splitlines()
+    original = path.read_text()
+    lines = original.splitlines()
 
     wanted = {name: f'\t"{name}"' for name in assignments}
     # Strip any stale placement of these sections.
@@ -206,7 +212,7 @@ def pin_sections(root: Path, assignments: dict[str, int]) -> Edit:
     text = "\n".join(lines) + "\n"
     changed = lines != before
     detail = "; ".join(changed_detail) if changed else "linker pins already current"
-    return Edit(rel, changed, detail, text)
+    return Edit(rel, changed, detail, text, base=original)
 
 
 def unpin_sections(root: Path, names: list[str]) -> Edit:
@@ -220,14 +226,15 @@ def unpin_sections(root: Path, names: list[str]) -> Edit:
     """
     rel = "contents/romx.link"
     path = root / rel
-    lines = path.read_text().splitlines()
+    original = path.read_text()
+    lines = original.splitlines()
     targets = {f'\t"{n}"' for n in names}
     kept = [ln for ln in lines if ln not in targets]
     changed = len(kept) != len(lines)
     text = "\n".join(kept) + "\n"
     detail = f"unpinned {len(lines) - len(kept)} section(s) for measurement" if changed \
         else "nothing pinned to unpin"
-    return Edit(rel, changed, detail, text)
+    return Edit(rel, changed, detail, text, base=original)
 
 
 def _romx_header(bank: int) -> str:
@@ -259,11 +266,11 @@ def _place(rel: str, text: str, placement, entry: list[str],
         return Edit(rel, True,
                     f"appended into existing section '{placement.section}' "
                     f"(inherits its bank)",
-                    "\n".join(lines))
+                    "\n".join(lines), base=text)
 
     block = ["", f'SECTION "{placement.section}", ROMX', *entry]
     return Edit(rel, True, f"added section '{placement.section}'",
-                text.rstrip("\n") + "\n" + "\n".join(block) + "\n")
+                text.rstrip("\n") + "\n" + "\n".join(block) + "\n", base=text)
 
 
 def _append_into_section(lines: list[str], section: str, entry: list[str],
