@@ -243,6 +243,15 @@ class EventHeader:
         self._set_count(lst.count_lineno, len(lst.entries) + len(lst.strays))
         self._reparse()
 
+    def reparse(self) -> None:
+        """Re-read the recorded line numbers from `lines`.
+
+        Every method here does this for itself. It is public for callers that
+        splice into ``lines`` *directly* — adding a text block above the header
+        shifts every line number below it, and nothing else would notice.
+        """
+        self._reparse()
+
     def to_edit(self, root: Path, detail: str) -> Edit:
         """This header's pending changes as an :class:`~.edits.Edit`, so callers
         get dry-run previews and idempotence the same way map wiring does."""

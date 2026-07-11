@@ -8,13 +8,11 @@ from __future__ import annotations
 
 import re
 
-from ..shared import mapsource
+from ..shared import mapsource, trainerparty, wilddata
 from .context import LintContext
 from .diagnostics import Diagnostic, Severity
 
-_TRAINER_RE = re.compile(r"^\s*trainer\s+(\w+)\s*,\s*(\w+)\s*,\s*(\d+)\s*,")
-_GROUP_LABEL_RE = re.compile(r"^(\w+)Group:")
-_PARTY_NAME_RE = re.compile(r'^\s*db\s+"[^"]*@"')
+_TRAINER_RE = re.compile(r"^\s*trainer\s+(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,")
 _WILDMAP_RE = re.compile(r"^\s*wildmap\s+(\w+)")
 
 
@@ -64,43 +62,15 @@ def blk_size(ctx: LintContext) -> list[Diagnostic]:
 # trainers                                                                    #
 # --------------------------------------------------------------------------- #
 
-def _trainer_groups(ctx: LintContext) -> dict[str, tuple[str, int]]:
-    """Trainer class -> (group label, number of parties in it).
-
-    Parties are stored **positionally** in trainers/groups/<class>.asm: the map
-    refers to one by a 1-based index, so the only thing tying them together is
-    counting. Classes are matched to their group by name, normalised — the enum
-    that formally links them is built from custom `enum`/`trainerclass` macros
-    this parser doesn't model, and a name we can't resolve is skipped rather
-    than guessed at.
-    """
-    groups: dict[str, tuple[str, int]] = {}
-    for path in sorted((ctx.root / "trainers" / "groups").glob("*.asm")):
-        label: str | None = None
-        parties = 0
-        for line in path.read_text().split("\n"):
-            m = _GROUP_LABEL_RE.match(line)
-            if m:
-                if label:
-                    groups[_normalise(label)] = (label, parties)
-                label, parties = m.group(1), 0
-                continue
-            if label and _PARTY_NAME_RE.match(line):
-                parties += 1        # each party opens with its trainer's name
-        if label:
-            groups[_normalise(label)] = (label, parties)
-    return groups
-
-
-def _normalise(name: str) -> str:
-    return name.replace("_", "").lower()
-
-
 def trainer_party(ctx: LintContext) -> list[Diagnostic]:
-    """`trainer FLAG, CLASS, party_id, …` — party_id is a 1-based index into
-    that class's group file. Point it past the end and the game reads whatever
-    follows as a Pokémon party."""
-    groups = _trainer_groups(ctx)
+    """`trainer FLAG, CLASS, party_id, …` — party_id is a 1-based index into that
+    class's group.
+
+    The class resolves to its group through ``TrainerGroups`` in
+    trainers/trainer_pointers.asm, a table the engine indexes by class id. Point
+    the index past the end of the group it lands in and the game reads whatever
+    follows as a Pokémon party.
+    """
     out = []
     for const, info in sorted(ctx.map_infos.items()):
         path = ctx.rel(info.path)
@@ -108,17 +78,41 @@ def trainer_party(ctx: LintContext) -> list[Diagnostic]:
             m = _TRAINER_RE.match(line)
             if not m:
                 continue
-            cls, party = m.group(2), int(m.group(3))
+            cls, party = m.group(2), m.group(3)
+            if not party.isdigit():
+                continue            # cited by const (RIVAL1_3) — not ours to resolve
 
-            entry = groups.get(_normalise(cls))
-            if entry is None:
-                continue            # class we can't resolve to a group — say nothing
-            label, count = entry
-            if not 1 <= party <= count:
+            group = ctx.trainer_groups.get(cls)
+            if group is None:
+                continue            # unbacked class — trainer_class reports that
+            if not 1 <= int(party) <= group.count:
                 out.append(Diagnostic(
                     "trainer-party", Severity.ERROR, path, i,
-                    f"trainer uses {cls} party #{party}, but {label} has {count} "
-                    f"part{'y' if count == 1 else 'ies'} (valid: 1-{count})",
+                    f"trainer uses {cls} party #{party}, but {group.label} has "
+                    f"{group.count} part{'y' if group.count == 1 else 'ies'} "
+                    f"(valid: 1-{group.count})",
+                ))
+    return out
+
+
+def trainer_class(ctx: LintContext) -> list[Diagnostic]:
+    """A map may only battle a trainer class that has parties behind it.
+
+    ``TrainerGroups`` is indexed by class id with no bounds check, so a class
+    whose slot is ``dw NULL`` — or that has no slot at all, because the table is
+    shorter than the enum — yields a garbage party pointer. It assembles, and it
+    is only visible when the battle starts.
+    """
+    unbacked = trainerparty.unbacked_classes(ctx.root)
+    out = []
+    for const, info in sorted(ctx.map_infos.items()):
+        path = ctx.rel(info.path)
+        for i, line in enumerate(info.path.read_text().split("\n"), start=1):
+            m = _TRAINER_RE.match(line)
+            if m and (why := unbacked.get(m.group(2))):
+                out.append(Diagnostic(
+                    "trainer-class", Severity.ERROR, path, i,
+                    f"trainer class {m.group(2)} {why}",
                 ))
     return out
 
@@ -162,4 +156,39 @@ def wild_region(ctx: LintContext) -> list[Diagnostic]:
     return out
 
 
-ALL = (blk_size, trainer_party, wild_region)
+def wild_rate(ctx: LintContext) -> list[Diagnostic]:
+    """An encounter rate should be written `N percent`, not as a bare byte.
+
+    `percent` is `EQUS "* $ff / 100"` (macros.asm): the engine compares a random
+    byte against the rate, so the scale is 255, not 100. Write `db 3` where you
+    meant `3 percent` and you get 3/255 = 1.2% instead of 2.7% — encounters that
+    are silently less than half as frequent as the number reads.
+    """
+    out = []
+    for path in sorted((ctx.root / "data" / "wild").glob("*.asm")):
+        if path.stem == "fish":
+            continue
+        region, _, kind = path.stem.rpartition("_")
+        if kind not in wilddata.SLOTS:
+            continue
+        try:
+            table = wilddata.load(ctx.root, region, kind)
+        except wilddata.WildDataError:
+            continue                    # a malformed table is blk_size's kind of problem
+
+        for block in table.blocks:
+            if not block.raw_rates:
+                continue
+            shown = ", ".join(str(r) for r in block.rates)
+            actual = block.rate_bytes[0] * 100 / 255
+            out.append(Diagnostic(
+                "wild-rate", Severity.WARNING, ctx.rel(path), block.start + 1,
+                f"{block.map_const}'s encounter rate is `db {shown}` — a bare byte, so "
+                f"it means {actual:.1f}%, not {block.rates[0]}%. Every other block in "
+                f"the repo writes `{block.rates[0]} percent` (which is byte "
+                f"{block.rates[0] * wilddata.RATE_SCALE // 100})",
+            ))
+    return out
+
+
+ALL = (blk_size, trainer_party, trainer_class, wild_region, wild_rate)
