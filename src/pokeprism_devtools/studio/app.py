@@ -45,6 +45,7 @@ from .actions import Action, EditText
 from .catalog import CATALOG
 from .forms import Confirm, Form, Palette, Picker
 from .grid import MapGrid
+from .playtest import Playtest
 from .session import MapData, Preview, Session, SessionError, TextRef
 
 _SEVERITY_STYLE = {
@@ -93,6 +94,7 @@ class Studio(App):
         ("a", "act", "Add…"),
         ("e", "edit_text", "Edit text"),
         ("u", "undo", "Undo"),
+        ("p", "playtest", "Playtest"),
         ("slash", "focus_filter", "Filter"),
         ("plus", "zoom(1)", "Zoom in"),
         ("minus", "zoom(-1)", "Zoom out"),
@@ -277,6 +279,19 @@ class Studio(App):
         grid = self.query_one("#grid", MapGrid)
         cursor = grid.cursor if grid.view is not None else None
         self.push_screen(Form(chosen, self.session, self._const, cursor), self._filled)
+
+    def action_playtest(self) -> None:
+        """Build the game and stand on the tile the cursor is on.
+
+        The cursor is the point. Everywhere else you'd have to know the map's
+        coordinates and type them into a launcher; here you have already moved to
+        the spot you want to look at, so that spot is where you spawn.
+        """
+        grid = self.query_one("#grid", MapGrid)
+        if self._const is None or self._wanted is None or grid.view is None:
+            self.bell()
+            return
+        self.push_screen(Playtest(self.session, self._const, self._wanted, grid.cursor))
 
     def action_edit_text(self) -> None:
         """Reword something the map already says.

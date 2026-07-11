@@ -232,6 +232,62 @@ def test_map_list(root: Path) -> None:
     check("a map that parses says so", s.parses("TOWN_A"))
 
 
+def test_boot_stands_you_where_the_cursor_is(root: Path) -> None:
+    """The playtest key, without building a ROM or opening an emulator.
+
+    What's worth checking is the wiring, and the wiring is a state dict: the map
+    you selected and the tile the cursor was on, laid over whatever `state.json`
+    already said. Get the override wrong in the other direction and playtesting a
+    map quietly resets the party you play it with — which you'd discover in the
+    emulator, several minutes later, having lost it.
+    """
+    print("\nplaytest")
+    from unittest import mock
+
+    from pokeprism_devtools.dev_server import playtest as devplay
+    from pokeprism_devtools.studio import session as session_mod
+
+    s = Session(root)
+    (root / "pokeprism.gbc").write_bytes(b"\x00")   # boot() refuses without one
+    (root / "pokeprism.sym").write_text("")
+
+    seen: dict = {}
+
+    def fake_patch(rom_path, **kw):
+        seen.update(kw, rom=rom_path)
+        return devplay.PatchReport(target=rom_path.with_suffix(".sav"), backup=None,
+                                   changes=["map = TOWN_A at (9, 4)"])
+
+    existing = {"player": {"name": "RED"}, "party": [{"species": "MEW"}],
+                "map": {"name": "SOMEWHERE_ELSE", "x": 1, "y": 1}}
+
+    with mock.patch.object(devplay, "patch_save", fake_patch), \
+         mock.patch.object(session_mod.inventory, "load_or_build",
+                           lambda *a, **k: {}), \
+         mock.patch.object(session_mod.devapply, "load_state",
+                           lambda *a: dict(existing)), \
+         mock.patch.object(devplay.Emulator, "launch",
+                           lambda self, rom, **k: devplay.LaunchReport(launched=True)):
+        changes = s.boot("TOWN_A", 9, 4)
+
+    state = seen["state"]
+    check("the map is the one you selected, at the tile the cursor was on",
+          state["map"] == {"name": "TOWN_A", "y": 9, "x": 4}, str(state["map"]))
+    check("and everything else in state.json survives",
+          state["player"] == {"name": "RED"} and state["party"] == [{"species": "MEW"}],
+          str({k: v for k, v in state.items() if k != "map"}))
+    check("the changes come back to be shown", changes == ["map = TOWN_A at (9, 4)"])
+
+    # No ROM, no boot: it must not patch a save against a ROM that isn't there.
+    (root / "pokeprism.gbc").unlink()
+    try:
+        s.boot("TOWN_A", 9, 4)
+    except SessionError as e:
+        check("without a built ROM it refuses, rather than patching blind", True, str(e))
+    else:
+        check("without a built ROM it refuses", False)
+
+
 # --------------------------------------------------------------------------- #
 # the real repo                                                               #
 # --------------------------------------------------------------------------- #
@@ -281,7 +337,8 @@ def main() -> int:
         tmp = Path(d)
         for fn in (test_two_items_get_two_flags, test_an_npc_is_always_there,
                    test_failure_changes_nothing, test_undo, test_undo_refuses_to_clobber,
-                   test_preview_is_what_lands, test_lint_stays_in_step, test_map_list):
+                   test_preview_is_what_lands, test_lint_stays_in_step, test_map_list,
+                   test_boot_stands_you_where_the_cursor_is):
             sub = tmp / fn.__name__
             sub.mkdir()
             fn(_fixture(sub))

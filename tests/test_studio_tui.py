@@ -636,7 +636,7 @@ class TestTheSeam(unittest.TestCase):
     """
 
     #: The view layer.
-    VIEW = ("app.py", "grid.py", "forms.py")
+    VIEW = ("app.py", "grid.py", "forms.py", "playtest.py")
 
     #: Modules that open the source tree. `coords` and `swatches` are not here:
     #: `coords.glyph_cells` and `swatches.tile_color` are the *renderer* — plain
