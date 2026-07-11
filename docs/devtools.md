@@ -47,7 +47,7 @@ the directory on first run.
 | [`prism-sym`](#prism-sym)           | shipped    | Query the `.sym` file by label or address.                       |
 | [`test_lib.py`](#smoke-test)          | shipped    | Smoke test for the library (run after each rebuild).             |
 | [`test_maps.py`](#map-sweep)          | shipped    | Sweep every map through the `prism-dev` apply pipeline.        |
-| [`prism-dev`](#prism-dev)         | partial    | Inventory + save patcher + map-change support + dev-server TUI + party/items/flags editors shipped. TM/HM + PC items pending. |
+| [`prism-dev`](#prism-dev)         | partial    | Inventory + save patcher + map-change support + dev-server TUI + party/items/flags/TM-HM editors shipped. PC items pending. |
 | `flag-finder`                         | planned    | Cross-reference `EVENT_*` set/check sites across the codebase.   |
 | `map-inspect`                         | planned    | Dump map metadata (warps, NPCs, signs, connections) as JSON.     |
 | [`prism-maps`](#prism-maps)           | shipped    | Filterable terminal table of per-map metadata (dimensions, block sizes, NPC counts, compression ratio). No ROM needed. |
@@ -339,9 +339,24 @@ To give a fresh checkout a useful starting warp, create
 `.devtools/presets/default.json` with the schema above. That file is not
 tracked by pokeprism's git, so each developer keeps their own.
 
-**Out of scope** (will arrive in follow-up commits): the TM/HM pocket
-(stored as a bit array, not id/qty pairs) and PC item storage. Those
-regions are left untouched in the template.
+The optional `tmhms` key overwrites TM/HM ownership (`wTMsHMs`, a bit
+array — not id/qty pairs, so it has its own schema):
+
+```json
+{
+  "tmhms": ["TM_DYNAMICPUNCH", "TM_TOXIC", "HM_CUT"]
+}
+```
+
+A flat list of canonical `TM_<move>` / `HM_<move>` names (matching the
+game's own item constants, in `constants/item_constants.asm`). The key
+absent from state keeps the template's ownership; the key present —
+even as `[]` — rewrites the whole bit array: listed TM/HMs are owned,
+everything else is cleared. Unknown names, bare move names (e.g. `CUT`
+instead of `HM_CUT`), and duplicates are hard errors.
+
+**Out of scope** (will arrive in follow-up commits): PC item storage.
+That region is left untouched in the template.
 
 Usage:
 
@@ -443,6 +458,7 @@ of `--out`, `--no-launch`, `--inventory-only` is set.
   Edit party...
   Edit items...
   Edit flags...
+  Edit TM/HMs...
   ───────────────────────────────
   Quit
 ```
@@ -459,8 +475,9 @@ of `--out`, `--no-launch`, `--inventory-only` is set.
 | Party (6 slots) | Per-slot editor for species (tab-autocomplete from `inventory.json`), level (1–100), nickname, and the 4 moves (autocomplete; `-` reverts to learnset default). New slots are dropped if you back out without picking a species. |
 | Items (3 pockets) | Per-pocket editor for Items (40), Balls (25), Key items (50). Add via autocomplete filtered to the pocket's items; select an entry to change its quantity (1–99, 0 removes); "Clear pocket" writes an empty pocket, "Use template's pocket" removes the override. |
 | Event / engine flags | Set/unset by name, tab-autocomplete from the inventory. |
+| TM/HMs (101 flags) | Set/unset ownership by name (`TM01 DYNAMICPUNCH`, `HM01 CUT`, ...), tab-autocomplete from the inventory; "Own all", "Clear all", and "Use template's TM/HMs" convenience actions. |
 
-The TM/HM pocket and PC items are not editable yet; those regions stay
+PC item storage is not editable yet; that region stays
 template-driven (see
 [`devtools-plan.md`](devtools-plan.md#future-work--known-v1-limitations)).
 

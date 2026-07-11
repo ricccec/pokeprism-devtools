@@ -154,6 +154,10 @@ def apply_state(
     if items_state:
         changes.extend(_apply_items(sav, items_state, inv, off))
 
+    tmhms_state = state.get("tmhms")
+    if tmhms_state is not None:
+        changes.extend(_apply_tmhms(sav, tmhms_state, inv, off))
+
     return changes
 
 
@@ -301,6 +305,50 @@ def _apply_flags(
             sav.data[sav_offset] |= bits
         changes.append(f"engine_flags = {sorted(engine_names)}")
 
+    return changes
+
+
+def _apply_tmhms(
+    sav: savefile.SaveFile,
+    names: list,
+    inv: dict,
+    off,
+) -> list[str]:
+    """Write the TM/HM ownership bitfield (`wTMsHMs`) into the .sav.
+
+    `names` is the full desired set of owned TM/HM canonical names (e.g.
+    "TM_TOXIC", "HM_CUT") — presence of the `tmhms` key always rewrites the
+    whole region (listed = owned, everything else cleared).
+    """
+    if "tmhms" not in inv:
+        raise RuntimeError(
+            "inventory has no tmhms — cached inventory.json is too old; "
+            "rerun with --rebuild-inventory"
+        )
+    bit_by_name = {e["name"]: e["bit"] for e in inv["tmhms"]}
+    size = inv["sram_offsets"]["wTMsHMs"]["size"]
+
+    seen: set[str] = set()
+    buf = bytearray(size)
+    for name in names:
+        if not isinstance(name, str):
+            raise ValueError(f"tmhms: invalid entry: {name!r}")
+        bit = bit_by_name.get(name)
+        if bit is None:
+            raise ValueError(f"tmhms: unknown TM/HM: {name!r}")
+        if name in seen:
+            raise ValueError(f"tmhms: duplicate entry: {name}")
+        seen.add(name)
+        buf[bit >> 3] |= 1 << (bit & 7)
+
+    sav.write_bytes(off("wTMsHMs"), bytes(buf))
+
+    owned = sorted(seen, key=lambda n: bit_by_name[n])
+    if len(owned) > 8:
+        desc = "[" + ", ".join(owned[:8]) + f", ... +{len(owned) - 8} more]"
+    else:
+        desc = "[" + ", ".join(owned) + "]" if owned else "(none)"
+    changes = [f"tmhms = {len(owned)}/{len(inv['tmhms'])} owned {desc}"]
     return changes
 
 
