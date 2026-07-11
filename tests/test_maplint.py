@@ -44,13 +44,98 @@ def check(label: str, cond: bool, detail: str = "") -> None:
 # 12 tiles per walker = 10 slots), which is what sprite-vram exists to catch.
 _CROWD = [f"SPRITE_W{i}" for i in range(1, 11)]
 
+#: The glyphs the fixture's text needs, plus one digraph — `'d` is a single tile,
+#: and a tokenizer that missed that would over-count every contraction.
+_GLYPHS = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
+_GLYPHS += [chr(c) for c in range(ord("a"), ord("z") + 1)]
+_GLYPHS += [" ", ".", ",", "!", "?", "-", "é", "<PK>", "<MN>", "<PO>", "<KE>", "'d"]
+
+
+def _text_engine(root: Path) -> None:
+    """The parts of the text engine the width rules read.
+
+    Nothing here is invented: it is the same shape as pokeprism's, so the widths
+    the rules derive (`#` -> 4 tiles, `<PLAYER>` -> up to 7) are *derived* in the
+    test too, not asserted against numbers this file hardcodes.
+    """
+    charmap = ["LEAST_CONTROL_CHAR EQU $44"]
+    for i, tok in enumerate(_GLYPHS):
+        charmap.append(f'\tctxtmap "{tok}", ${0x80 + i:02x}, 0')
+    for tok, byte in [("<STRBF1>", "$45"), ("<PKMN>", "$4b"), ("<POKE>", "$4d"),
+                      ("<NEXT>", "$4e"), ("<LINE>", "$4f"), ("@", "$50"),
+                      ("<PARA>", "$51"), ("<PLAYER>", "$52"), ("#", "$54"),
+                      ("<CONT>", "$55"), ("<SDONE>", "$56"), ("<DONE>", "$57"),
+                      ("<PROMPT>", "$58"), ("<TRNER>", "$5d"), ("<LNBRK>", "$5f")]:
+        charmap.append(f'\tctxtmap "{tok}", {byte}, 0')
+    (root / "macros" / "charmap.asm").write_text("\n".join(charmap) + "\n")
+
+    (root / "macros" / "text.asm").write_text(
+        'next   EQUS "dtxt \\"<NEXT>\\","\n'
+        'line   EQUS "dtxt \\"<LINE>\\","\n'
+        'para   EQUS "dtxt \\"<PARA>\\","\n'
+        'cont   EQUS "dtxt \\"<CONT>\\","\n'
+        'nl     EQUS "dtxt \\"<LNBRK>\\","\n'
+        'sdone  EQUS "dtxt \\"<SDONE>\\""\n'
+        'done   EQUS "dtxt \\"<DONE>\\""\n'
+        'prompt EQUS "dtxt \\"<PROMPT>\\""\n'
+    )
+
+    (root / "home" / "text.asm").write_text(
+        "BORDER_WIDTH   EQU 2\n"
+        "TEXTBOX_WIDTH  EQU SCREEN_WIDTH\n"
+        "TEXTBOX_INNERW EQU TEXTBOX_WIDTH - BORDER_WIDTH\n"
+        "TEXTBOX_HEIGHT EQU 6\n"
+        "TEXTBOX_Y      EQU SCREEN_HEIGHT - TEXTBOX_HEIGHT\n"
+        "TEXTBOX_INNERY EQU TEXTBOX_Y + 2\n"
+        "\n"
+        "TextControlCodeJumptable::\n"
+        '\tdw PlaceStringBuffer1       ; "<STRBF1>"\n'
+        '\tdw PlacePKMN                ; "<PKMN>"\n'
+        '\tdw PlacePOKE                ; "<POKE>"\n'
+        '\tdw NextLineChar             ; "<NEXT>"\n'
+        '\tdw LineChar                 ; "<LINE>"\n'
+        '\tdw PlaceNextChar            ; "@"\n'
+        '\tdw Paragraph                ; "<PARA>"\n'
+        '\tdw PrintPlayerName          ; "<PLAYER>"\n'
+        '\tdw PlacePOKe                ; "#"\n'
+        '\tdw ContText                 ; "<CONT>"\n'
+        '\tdw SDoneText                ; "<SDONE>"\n'
+        '\tdw DoneText                 ; "<DONE>"\n'
+        '\tdw PromptText               ; "<PROMPT>"\n'
+        '\tdw TrainerChar              ; "<TRNER>"\n'
+        '\tdw LinebreakText            ; "<LNBRK>"\n'
+        "\n"
+        "PrintPlayerName: print_name wPlayerName\n"
+        "PlaceStringBuffer1: print_name wStringBuffer1\n"
+        "TrainerChar:  print_name TrainerCharText\n"
+        "PlacePOKe:    print_name PlacePOKeText\n"
+        "PlacePKMN:    print_name PlacePKMNText\n"
+        "PlacePOKE:    print_name PlacePOKEText\n"
+        "\n"
+        'TrainerCharText:: db "Trainer@"\n'
+        'PlacePOKeText:: db "Poké@"\n'
+        'PlacePKMNText:: db "<PK><MN>@"\n'
+        'PlacePOKEText:: db "<PO><KE>@"\n'
+    )
+
+    # A signpost is a full-screen window; all the geometry that has to be read is
+    # where its *body* starts, which is the hlcoord before the FarPlaceText.
+    (root / "engine" / "signpost.asm").write_text(
+        "SignpostFront:\n"
+        "\thlcoord 2, 4\n"
+        "\tcall PlaceText\n"
+        "\thlcoord 2, 7\n"
+        "\tcall FarPlaceText\n"
+    )
+
 
 def _fixture(tmp: Path) -> Path:
     root = tmp / "repo"
-    for d in ("constants", "data", "engine", "maps"):
+    for d in ("constants", "data", "engine", "home", "macros", "maps"):
         (root / d).mkdir(parents=True)
     (root / "Makefile").write_text("")
     (root / "main.asm").write_text("")
+    _text_engine(root)
 
     (root / "constants.asm").write_text(
         "\tconst_def\n\tconst EVENT_0\n"
@@ -86,6 +171,11 @@ def _fixture(tmp: Path) -> Path:
     )
     (root / "constants" / "misc_constants.asm").write_text(
         "SPRITE_GFX_LIST_CAPACITY EQU $20\n"
+        "SCREEN_WIDTH     EQU 20\n"
+        "SCREEN_HEIGHT    EQU 18\n"
+        "PLAYER_NAME_LENGTH EQU 8\n"     # 7 letters and a terminator
+        "PKMN_NAME_LENGTH EQU 11\n"
+        "ITEM_NAME_LENGTH EQU 13\n"
     )
 
     sprites = ["SPRITE_NONE", "SPRITE_P0", "SPRITE_NPC", "SPRITE_BALL",
@@ -234,6 +324,48 @@ def _fixture(tmp: Path) -> Path:
     (root / "engine" / "std_scripts.asm").write_text(
         "StdScript:\n\tsetevent EVENT_SHARED\n")
 
+    # TownA's dialogue, one seeded bug per text rule. Text goes *above* the event
+    # header, as it does in a real map. The clean lines around each bug matter as
+    # much as the bug: the whole failure mode of a width rule is crying wolf.
+    a = root / "maps" / "TownA.asm"
+    a.write_text(
+        # 16 characters, and 19 tiles: `#` prints "Poké". This is the Route77
+        # Pokecenter bug, and it is invisible without expanding the control code.
+        "TownAWidth:\n"
+        '\tctxt "#mon Center near"\n'
+        '\tline "That fits fine."\n'
+        "\tdone\n\n"
+        # Fits a short name, overflows a seven-letter one (text-width-name).
+        "TownAName:\n"
+        '\tctxt "Nice to meet you <PLAYER>"\n'
+        "\tdone\n\n"
+        # A scratch buffer with four tiles of room (text-buffer).
+        "TownABuffer:\n"
+        '\tctxt "You just won a <STRBF1>"\n'
+        "\tdone\n\n"
+        # <LINE> is absolute, so the second `line` redraws row 16 (text-clobber).
+        "TownAClobber:\n"
+        '\tctxt "One"\n'
+        '\tline "Two"\n'
+        '\tline "Three"\n'
+        "\tdone\n\n"
+        # <NEXT> is relative: 14 -> 16 -> 18, off the bottom of the box (text-rows).
+        "TownARows:\n"
+        '\tctxt "One"\n'
+        '\tnext "Two"\n'
+        '\tnext "Three"\n'
+        "\tdone\n\n"
+        # Clean, and every line of it is a way the rule could cry wolf: one that is
+        # exactly the full 18 wide, one that is *also* exactly 18 but only if the
+        # digraph `'d` counts as one tile and `#` as four, and a block closed by an
+        # inline `@` instead of a `done`. None of these may fire.
+        "TownAClean:\n"
+        '\tctxt "Just eighteen wide"\n'
+        '\tline "I\'d like # Balls"\n'
+        '\tpara "Bye then!@"\n'
+        + a.read_text()
+    )
+
     # TownB also carries a trainer pointing at SageGroup party #3, which
     # doesn't exist (trainer-party), and its wild data is filed under the wrong
     # region (wild-region). A `loadtrainer` reaches party #1 — the second way a
@@ -300,6 +432,11 @@ _EXPECTED = {
     "trainer-party": 1,
     "trainer-orphan": 1,        # Sage #2: #1 is reached by loadtrainer, #2 by nothing
     "wild-region": 1,
+    "text-width": 1,            # "#mon Center near" -> 19 tiles, `#` prints Poké
+    "text-width-name": 1,       # fits a short <PLAYER>, not a seven-letter one
+    "text-buffer": 1,           # 4 tiles left for <STRBF1>
+    "text-clobber": 1,          # a second `line` redraws row 16
+    "text-rows": 1,             # `next` twice: row 18, off the bottom
 }
 
 
@@ -345,8 +482,12 @@ def test_messages(root: Path) -> None:
 
     d = by_code["warp-target"]
     check("warp-target names the valid range", "valid: 1-1" in d.message, d.message)
-    check("warp-target points at the warp line", d.path == "maps/TownA.asm" and d.line == 6,
-          f"{d.path}:{d.line}")
+    # Located by content, not by a line number: the fixture's maps grow as rules
+    # are added, and a hardcoded line here just breaks the next time they do.
+    src = (root / "maps" / "TownA.asm").read_text().split("\n")
+    want = 1 + next(i for i, l in enumerate(src) if "warp_def 2, 2, 9, CAVE_C" in l)
+    check("warp-target points at the warp line",
+          d.path == "maps/TownA.asm" and d.line == want, f"{d.path}:{d.line} (want :{want})")
 
     d = by_code["conn-align"]
     check("conn-align reports both deltas", "+2" in d.message and "+4" in d.message, d.message)
@@ -459,6 +600,14 @@ def test_real_repo() -> None:
         "flag-unused": 200,         # info: declared flags nothing references
         "flag-unknown": 0,          # none: every EVENT_* named in the repo exists
         "flag-never-set": 17,       # 1 warning (SilphWarehouse's guard never appears)
+        # 3 real overflows, and 11 lines of deliberately-corrupt "Glitch City"
+        # text in PhanceroRoom, which is *supposed* to spill out of the box.
+        "text-width": 14,
+        "text-width-name": 0,       # none: no line breaks on a seven-letter name
+        "text-rows": 0,             # none: `next` is never used in a speech box
+        "text-clobber": 1,          # PhanceroRoom again, same easter egg
+        "text-buffer": 12,          # info: lines whose <STRBF*> headroom is tight
+        "text-unknown": 0,          # none: every character in maps/ is in the charmap
     }
     for code in sorted(set(counts) | set(triaged)):
         got, want = counts.get(code, 0), triaged.get(code, 0)
