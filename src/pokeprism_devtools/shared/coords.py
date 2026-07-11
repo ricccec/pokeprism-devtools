@@ -87,8 +87,28 @@ def source_to_person(y: int, x: int) -> tuple[int, int]:
 
 
 #: What each kind of thing is drawn as on the grid. Deliberately one character:
-#: a coordinate tile is half a terminal cell, and there is no room to be clever.
+#: a coordinate tile is at most a few cells wide, and there is no room to be clever.
 WARP, SIGN, PERSON, TRAINER, ITEM = "W", "S", "N", "T", "I"
+
+#: ...and the colour it's drawn *on*. The letter alone means reading the grid one
+#: marker at a time; a solid fill means seeing at a glance that the trainers are
+#: all clustered by the north exit. These are loud on purpose — the game's own
+#: palettes are muted (they came off a Game Boy), so a saturated fill can't be
+#: mistaken for terrain no matter what tileset is underneath.
+MARKER_BG: dict[str, tuple[int, int, int]] = {
+    WARP:    (208,  32, 208),   # magenta
+    SIGN:    (232, 176,   0),   # amber
+    PERSON:  (  0, 176, 216),   # cyan
+    TRAINER: (224,  32,  32),   # red
+    ITEM:    (240, 128,   0),   # orange
+}
+
+#: Black ink or white, whichever survives on the fill. Perceptual weights, because
+#: amber and cyan are far brighter than their raw channel sum suggests.
+MARKER_INK: dict[str, tuple[int, int, int]] = {
+    glyph: (0, 0, 0) if (r * 299 + g * 587 + b * 114) / 1000 > 140 else (255, 255, 255)
+    for glyph, (r, g, b) in MARKER_BG.items()
+}
 
 _ITEM_TYPES = ("PERSONTYPE_ITEMBALL", "PERSONTYPE_TMHMBALL", "PERSONTYPE_FRUITTREE")
 _TRAINER_TYPES = ("PERSONTYPE_TRAINER", "PERSONTYPE_GENERICTRAINER")

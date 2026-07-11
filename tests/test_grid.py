@@ -275,21 +275,35 @@ def test_zoom_fits_the_terminal() -> None:
 
 
 def test_markers_survive_the_zoom() -> None:
-    """Zooming must not move anything. The cell a marker lands in changes; the
-    tile it means does not."""
-    print("\na marker means the same tile at every zoom")
-    if not (PRISM / "maps/CastroForest.asm").exists():
-        print("  (skipping — pokeprism not found)")
-        return
+    """Zooming must not move anything, and a marker's colour must not spill.
+
+    An object fills its whole tile, so the cell holding the letter has to lie
+    *strictly inside* that tile — both of its half-rows, not just the top one.
+    Otherwise the fill bleeds a marker colour onto the tile above or below, and
+    the grid says an NPC is standing somewhere it isn't.
+    """
+    print("\na marker fills its own tile, and only its own tile, at every zoom")
 
     for z in map_show.ZOOMS:
-        # This is the mapping print_grid uses: the cell nearest the tile's middle.
-        cell = ((28 * z + z // 2) // 2, 27 * z + z // 2)
-        # ...and it must still be inside the tile it came from.
-        back_y = (2 * cell[0]) // z
-        back_x = cell[1] // z
-        check(f"zoom {z}: the item at tile (28, 27) is drawn inside tile (28, 27)",
-              (back_y, back_x) == (28, 27), f"cell {cell} -> tile ({back_y}, {back_x})")
+        for ty, tx in ((28, 27), (0, 0), (7, 13), (35, 39)):
+            # The mapping print_grid uses: the cell nearest the tile's middle.
+            r, c = (ty * z + z // 2) // 2, tx * z + z // 2
+            # Both half-rows of that cell, back to the tile each one shows.
+            top = ((2 * r) // z, c // z)
+            bottom = ((2 * r + 1) // z, c // z)
+            if z == 1:
+                # A tile is half a cell tall here; the letter has to share.
+                ok = top == (ty, tx) or bottom == (ty, tx)
+            else:
+                ok = top == bottom == (ty, tx)
+            if not ok:
+                check(f"zoom {z}: tile ({ty}, {tx}) spills", False,
+                      f"cell ({r}, {c}) covers {top} and {bottom}")
+                break
+        else:
+            what = "shares its cell (a tile is half a cell tall)" if z == 1 else \
+                   "keeps its letter strictly inside itself"
+            check(f"zoom {z}: every marker {what}", True)
 
 
 def main() -> int:
