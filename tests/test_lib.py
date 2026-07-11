@@ -15,8 +15,8 @@ from __future__ import annotations
 import sys
 
 from pokeprism_devtools.shared import (
-    blockdata, constants, lz, maps, paths, party, render, savefile, species,
-    symfile,
+    blockdata, constants, eventheader, lz, maps, mapsource, paths, party, people,
+    render, savefile, species, symfile,
 )
 
 
@@ -156,6 +156,100 @@ def main() -> None:
             computed == actual,
             f"computed={computed.hex()} vs actual={actual.hex()}",
         )
+
+    print("\nblockdata.py — object_events, against every map's source")
+    # The ROM stores no length for the object-event array; you only reach it by
+    # counting past the warps, coord events and signposts, in the bank the
+    # engine happens to have paged in. Every one of those is a chance to land on
+    # the wrong bytes and still read a plausible count — so check all 450 maps,
+    # against what the .asm says, not a spot check. (Getting the bank wrong once
+    # scored 11/450 here, and read a *valid-looking* count for each of them.)
+    rom_mtime = rom.stat().st_mtime
+    gm = {m.name: (m.group, m.map_id) for m in maps.parse_maps(
+        root / "constants" / "map_dimension_constants.asm"
+    )}
+    agree = disagree = stale = unparseable = 0
+    first_bad = ""
+    for label, const in mapsource.header_pairs(root):
+        asm = root / "maps" / f"{label}.asm"
+        if const not in gm or not asm.exists():
+            continue
+        try:
+            hdr = eventheader.parse_map(asm)
+            declared = hdr.list_of(eventheader.ListKind.OBJECT_EVENTS).declared_count
+        except Exception:                            # noqa: BLE001
+            # A map whose *source* we can't read (HaywardMartElevator declares no
+            # object_events count). Nothing to compare against; not a ROM bug.
+            unparseable += 1
+            continue
+        try:
+            events = blockdata.object_events(rom, syms, *gm[const], name=label)
+        except Exception as e:                       # noqa: BLE001 — report, don't crash
+            disagree += 1
+            first_bad = first_bad or f"{label}: {e}"
+            continue
+        if asm.stat().st_mtime > rom_mtime:
+            # The source has been edited since this ROM was built, so the ROM is
+            # allowed to disagree with it. Nothing to check — but say so, rather
+            # than counting it as a pass.
+            stale += 1
+        elif len(events) == declared and all(
+            len(e) == blockdata.PERSON_EVENT_SIZE for e in events
+        ):
+            agree += 1
+        else:
+            disagree += 1
+            first_bad = first_bad or f"{label}: rom={len(events)} source={declared}"
+    check(
+        f"every built map's ROM object-event count matches its source ({agree} maps)",
+        disagree == 0 and agree > 400,
+        first_bad or f"{stale} edited since the build, {unparseable} unparseable, skipped",
+    )
+
+    print("\npeople.py — load_map_npcs")
+    # A map with NPCs in it, synthesized into a blank wMapObjects the way
+    # ReadObjectEvents would have.
+    events = blockdata.object_events(rom, syms, group=2, map_id=5, name="CAPER_HOUSE")
+    slots = 16
+    size = slots * people.MAP_OBJECT_LEN
+    sav = type("S", (), {"data": bytearray(size)})()
+    changes = people.load_map_npcs(
+        sav, map_objects_offset=0, map_objects_size=size, events=events
+    )
+    check("CAPER_HOUSE has NPCs to load", len(events) > 0, changes["map_npcs"])
+
+    ok = True
+    for i, e in enumerate(events):
+        at = (i + 1) * people.MAP_OBJECT_LEN
+        # $ff, then the person_event verbatim — a memcpy, like the engine's.
+        ok &= sav.data[at] == people.OBJECT_STRUCT_ID_NONE
+        ok &= bytes(sav.data[at + 1:at + 1 + people.PERSON_EVENT_LEN]) == e
+    check(
+        f"each of the {len(events)} slots is $ff + the map's person_event bytes",
+        ok,
+    )
+    # The player's slot is not ours to touch — reset_player_and_clear_npcs owns it.
+    check("slot 0 (the player) untouched", bytes(sav.data[:people.MAP_OBJECT_LEN]) == bytes(16))
+    empty = (len(events) + 1) * people.MAP_OBJECT_LEN
+    check(
+        "the first unused slot is sprite 0, y = -1 (not zeroed — 0 is a real coord)",
+        sav.data[empty + people.MAPOBJ_SPRITE] == 0
+        and sav.data[empty + people.MAPOBJ_Y_COORD] == 0xFF,
+        f"sprite={sav.data[empty + 1]} y={sav.data[empty + 2]}",
+    )
+
+    # More NPCs than slots: drop the tail rather than write past wMapObjects.
+    small = 4 * people.MAP_OBJECT_LEN
+    sav2 = type("S", (), {"data": bytearray(small)})()
+    many = [bytes([i] * people.PERSON_EVENT_LEN) for i in range(9)]
+    ch2 = people.load_map_npcs(
+        sav2, map_objects_offset=0, map_objects_size=small, events=many
+    )
+    check(
+        "more object events than slots drops the tail, and says so",
+        len(sav2.data) == small and "map_npcs_dropped" in ch2,
+        ch2.get("map_npcs_dropped", "(no warning!)"),
+    )
 
     print("\nmaps.py")
     map_defs = maps.parse_maps(root / "constants" / "map_dimension_constants.asm")
