@@ -24,19 +24,18 @@ Usage:
     prism-dev --out PATH               # write patched .sav elsewhere
     prism-dev --rebuild-inventory      # force inventory rebuild
     prism-dev --debug                  # use the debug ROM's .sym
-    prism-dev --keep-people            # don't reset NPC slots on map change
+    prism-dev --keep-people            # leave NPC slots alone on map change
 """
 
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import sys
 from pathlib import Path
 
-from pokeprism_devtools.shared import paths, savefile, symfile
+from pokeprism_devtools.shared import paths
 
-from . import apply, inventory, launcher
+from . import apply, inventory, playtest
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -91,8 +90,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--keep-people",
         action="store_true",
-        help="don't reset NPC objects on map change (default: zero NPC slots "
-        "and update the player struct to the new coords)",
+        help="don't touch NPC objects on map change (default: replace the old "
+        "map's NPCs with the new map's, and update the player struct to the "
+        "new coords)",
     )
     p.add_argument(
         "--no-tui",
@@ -102,12 +102,12 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     root = paths.repo_root()
-    devtools_dir = root / ".devtools"
-    devtools_dir.mkdir(parents=True, exist_ok=True)
-    inventory_path = devtools_dir / "inventory.json"
-    state_path = args.state if args.state is not None else devtools_dir / "state.json"
-    presets_dir = devtools_dir / "presets"
-    sav_backups_dir = devtools_dir / "sav-backups"
+    (root / ".devtools").mkdir(parents=True, exist_ok=True)
+    layout = playtest.Layout.under(root)
+    inventory_path = layout.inventory
+    state_path = args.state if args.state is not None else layout.state
+    presets_dir = layout.presets
+    sav_backups_dir = layout.backups
 
     sym_path_resolved = paths.sym_path(root, debug=args.debug)
 
@@ -165,47 +165,26 @@ def main(argv: list[str] | None = None) -> int:
         args.template if args.template is not None else rom_path.with_suffix(".sav")
     )
 
-    if not template_sav.exists():
-        print(
-            f"\nerror: no template save at {template_sav}.\n"
-            "Run the ROM in an emulator once, complete the intro, and save "
-            "the game in-game to create a starting .sav. Then re-run "
-            "prism-dev.",
-            file=sys.stderr,
+    try:
+        report = playtest.patch_save(
+            rom_path,
+            sym_path=sym_path_resolved,
+            inv=inv,
+            state=state,
+            backups_dir=sav_backups_dir,
+            keep_people=args.keep_people,
+            template=template_sav,
+            target=target_sav,
         )
+    except playtest.PlaytestError as e:
+        print(f"\nerror: {e}", file=sys.stderr)
         return 2
 
-    sav = savefile.SaveFile.load(template_sav)
-    if not apply.looks_like_real_save(sav, inv):
-        print(
-            f"\nerror: template at {template_sav} doesn't look like a valid "
-            "save (validity bytes missing). Play the game once to create "
-            "a proper save.",
-            file=sys.stderr,
-        )
-        return 2
-
-    # Back up the existing target so we never silently destroy progress.
-    if target_sav.exists():
-        sav_backups_dir.mkdir(parents=True, exist_ok=True)
-        ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup = sav_backups_dir / f"{target_sav.stem}-{ts}.sav"
-        backup.write_bytes(target_sav.read_bytes())
-        print(f"Backed up {target_sav.name} → {_pretty_path(backup, root)}")
-
-    changes = apply.apply_state(
-        sav,
-        state,
-        inv,
-        rom_path=rom_path,
-        syms=symfile.SymFile.load(sym_path_resolved),
-        keep_people=args.keep_people,
-    )
-    apply.recompute_checksums(sav, inv)
-
-    sav.write(target_sav)
-    print(f"Wrote {_pretty_path(target_sav, root)} ({len(changes)} fields changed)")
-    for c in changes:
+    if report.backup is not None:
+        print(f"Backed up {target_sav.name} → {_pretty_path(report.backup, root)}")
+    print(f"Wrote {_pretty_path(report.target, root)} "
+          f"({len(report.changes)} fields changed)")
+    for c in report.changes:
         print(f"  {c}")
 
     if args.out is not None or args.no_launch:
@@ -224,25 +203,21 @@ def _pretty_path(path: Path, root: Path) -> str:
 
 
 def _launch(rom_path: Path) -> int:
-    """Spawn SameBoy with the ROM. SameBoy auto-loads the adjacent .sav."""
-    import subprocess
+    """Spawn SameBoy with the ROM. SameBoy auto-loads the adjacent .sav.
 
-    cmd, _trackable = launcher.build_cmd(rom_path)
-    if cmd is None:
-        print(
-            f"\nWARNING: SameBoy not found. ROM and patched .sav are ready "
-            f"at:\n  {rom_path}\nLaunch manually, or set $SAMEBOY_BIN.",
-            file=sys.stderr,
-        )
+    One-shot, so nothing tracks the process afterwards — but it is the same
+    launch the dev server does, so it stays the same code.
+    """
+    report = playtest.Emulator().launch(rom_path)
+    for w in report.warnings:
+        print(f"\nwarning: {w}", file=sys.stderr)
+    if not report.found:
+        print(f"The ROM and patched .sav are ready at:\n  {rom_path}",
+              file=sys.stderr)
         return 0
-
-    print(f"\nLaunching {cmd[0]} ...")
-    try:
-        subprocess.Popen(cmd)
-    except OSError as e:
-        print(f"failed to launch: {e}", file=sys.stderr)
+    if not report.launched:
         return 1
-    launcher.focus_after_launch()
+    print(f"\nLaunched {report.command}.")
     return 0
 
 
