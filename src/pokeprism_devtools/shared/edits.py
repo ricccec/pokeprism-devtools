@@ -38,10 +38,19 @@ class Edit:
     #: for editors that create a file, or that were written before the check
     #: existed and only ever produce one edit per file per run.
     base: str | None = None
+    #: A file that is not text. A `.blk` is one byte per block and decodes as
+    #: nothing, so it cannot travel in `new_text` — the encoder would mangle it.
+    #: When this is set it is what gets written, and `new_text` is only a
+    #: sentence about it, because a diff has nothing useful to say about bytes.
+    data: bytes | None = None
+
+    @property
+    def binary(self) -> bool:
+        return self.data is not None
 
 
 def apply_edits(root: Path, edits: list[Edit], *, dry_run: bool) -> None:
-    """Write each edit's new_text to disk (unless dry_run).
+    """Write each edit to disk (unless dry_run), creating files as needed.
 
     Raises :class:`StaleEdit` rather than clobbering a file that has changed
     since the edit was computed.
@@ -49,7 +58,7 @@ def apply_edits(root: Path, edits: list[Edit], *, dry_run: bool) -> None:
     if dry_run:
         return
     for e in edits:
-        if not (e.changed and e.new_text):
+        if not (e.changed and (e.new_text or e.binary)):
             continue
         path = root / e.path
         if e.base is not None and path.exists() and path.read_text() != e.base:
@@ -58,4 +67,10 @@ def apply_edits(root: Path, edits: list[Edit], *, dry_run: bool) -> None:
                 f"({e.detail!r}); applying it would discard those changes. "
                 f"Build an edit, apply it, then build the next."
             )
-        path.write_text(e.new_text)
+        # An editor that creates a file may be creating the first one in its
+        # directory — `.devtools/specs/` doesn't exist until a spec is saved.
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if e.binary:
+            path.write_bytes(e.data)      # type: ignore[arg-type]
+        else:
+            path.write_text(e.new_text)

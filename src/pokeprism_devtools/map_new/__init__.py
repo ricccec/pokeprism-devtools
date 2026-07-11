@@ -29,7 +29,10 @@ from ..shared.paths import RepoNotFound, repo_root
 
 _PERMISSIONS = ("TOWN", "ROUTE", "INDOOR", "CAVE", "PERM_5", "GATE", "DUNGEON")
 
-_TEMPLATE = """{label}_MapScriptHeader:
+#: An empty map: no triggers, no callbacks, and an event header with four empty
+#: lists. Public because the studio's `NewMap` action writes the same one, and a
+#: second copy of it would be a second definition of what an empty map *is*.
+TEMPLATE = """{label}_MapScriptHeader:
  ;trigger count
 \tdb 0
  ;callback count
@@ -107,7 +110,7 @@ def write_template(root: Path, label: str) -> str:
     path = root / rel
     if path.exists():
         raise FileExistsError(f"{rel} already exists")
-    path.write_text(_TEMPLATE.format(label=label))
+    path.write_text(TEMPLATE.format(label=label))
     return rel
 
 
