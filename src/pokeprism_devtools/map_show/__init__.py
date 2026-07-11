@@ -7,11 +7,16 @@ the asm sources, report where each of its sections lives (bank) and how big its
 blobs are, and emit the TOML `MapSpec` that `prism-mapfit` consumes.
 
     prism-map MtEmberSmallRoom                 # human report
+    prism-map MtEmberSmallRoom --grid          # draw it, with its objects on it
     prism-map MtEmberSmallRoom --toml          # emit the spec TOML to stdout
     prism-map MtEmberSmallRoom -o mymap.toml   # ...and write it to a file
 
-No ROM is required. A built `.map` (next to the ROM, or via `--map`) adds the
-bank each section is pinned to; without it the bank column is omitted.
+No ROM is required — not even for `--grid`, which reads the block data out of the
+`.ablk` in the tree rather than out of the built game. That matters: the map you
+are authoring is exactly the one that isn't in the ROM yet.
+
+A built `.map` (next to the ROM, or via `--map`) adds the bank each section is
+pinned to; without it the bank column is omitted.
 """
 
 from __future__ import annotations
@@ -22,7 +27,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..shared import mapsource, maps as maps_mod, paths
+from ..shared import (
+    blocksrc, coords, eventheader, mapsource, maps as maps_mod, paths, render, swatches,
+)
 from ..shared.blobsizes import PRIMARY_HEADER_GROWTH, compressed_blk_size, secondary_size
 from ..shared.mapfile import MapFile
 from ..shared.mapspec import MapSpec
@@ -181,11 +188,74 @@ def _print_report(spec: MapSpec, blobs: list[BlobRow], mp: MapFile | None) -> No
               "section to measure); the assembled size differs.")
 
 
+# --------------------------------------------------------------------------- #
+# the grid                                                                    #
+# --------------------------------------------------------------------------- #
+
+#: Half-block: the foreground paints the top of the cell, the background the
+#: bottom. So one cell is two coordinate tiles stacked, and one block is two
+#: cells side by side — which makes the map come out roughly square.
+_HALF = "▀"
+_RESET = "\033[0m"
+
+_LEGEND = ((coords.WARP, "warp"), (coords.SIGN, "signpost"), (coords.PERSON, "npc"),
+           (coords.TRAINER, "trainer"), (coords.ITEM, "item"))
+
+
+def _cell(top: swatches.Rgb, bottom: swatches.Rgb, glyph: str | None) -> str:
+    """One terminal cell: two stacked coordinate tiles, or a marker sitting on them."""
+    if glyph is None:
+        return (f"\033[38;2;{top[0]};{top[1]};{top[2]}m"
+                f"\033[48;2;{bottom[0]};{bottom[1]};{bottom[2]}m{_HALF}")
+    # A marker needs the whole cell — there is no half a character. Keep the
+    # terrain as its background and pick the ink that stays legible on it.
+    bg = tuple((t + b) // 2 for t, b in zip(top, bottom))
+    ink = "0;0;0" if sum(bg) > 380 else "255;255;255"
+    return f"\033[1m\033[38;2;{ink}m\033[48;2;{bg[0]};{bg[1]};{bg[2]}m{glyph}"
+
+
+def print_grid(root: Path, label: str, time_of_day: int = 1) -> None:
+    """Draw the map, in colour, with everything that's been placed on it."""
+    bd = blocksrc.load(root, label)
+    sw = swatches.for_map(root, bd.tileset_id, bd.permission, time_of_day)
+
+    marks: dict[tuple[int, int], str] = {}
+    try:
+        marks = coords.markers(eventheader.parse_map(root / f"maps/{label}.asm"))
+    except (eventheader.UnparseableHeader, FileNotFoundError) as e:
+        print(f"  (no objects drawn — {e})\n", file=sys.stderr)
+
+    rows, cols = coords.tile_size(bd.height, bd.width)
+    print(f"{bd.name}  {bd.height}x{bd.width} blocks · {rows}x{cols} tiles · "
+          f"tileset {bd.tileset_id} · {render.table_for_permission(bd.permission)} palette\n")
+
+    # A ruler in coordinate tiles, because that is the unit you type into a macro.
+    ruler = "".join(str((x // 10) % 10) if x % 10 == 0 else " " for x in range(cols))
+    print(f"    {ruler}")
+
+    for row in range(bd.height):
+        out = [f"{row * coords.TILES_PER_BLOCK:>3} "]
+        for col in range(bd.width):
+            block = sw[bd.blocks[row * bd.width + col]]
+            for q in range(coords.TILES_PER_BLOCK):
+                y, x = coords.tile_of(row, col)
+                out.append(_cell(block[q], block[2 + q],
+                                 marks.get((y, x + q)) or marks.get((y + 1, x + q))))
+        print("".join(out) + _RESET)
+
+    print("\n  " + "   ".join(f"{g} {name}" for g, name in _LEGEND)
+          + f"\n  ({len(marks)} placed)")
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="prism-map",
         description="Inspect one map and optionally export its prism-mapfit spec.")
     p.add_argument("label", help="the map's CamelCase label, e.g. MtEmberSmallRoom")
+    p.add_argument("--grid", action="store_true",
+                   help="draw the map's blocks and everything placed on them (no ROM needed)")
+    p.add_argument("--time-of-day", type=int, default=1, choices=(0, 1, 2, 3),
+                   help="palette for --grid: 0=morn 1=day 2=nite 3=dark (default: 1)")
     p.add_argument("--toml", action="store_true", help="emit the spec TOML")
     p.add_argument("-o", "--out", metavar="FILE", help="write the spec TOML to FILE (implies --toml)")
     p.add_argument("--map", metavar="PATH", help="override the .map used for bank info")
@@ -197,6 +267,14 @@ def main(argv: list[str] | None = None) -> int:
     except (paths.RepoNotFound, MapNotFound) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
+
+    if args.grid:
+        try:
+            print_grid(root, args.label, args.time_of_day)
+        except blocksrc.BlockSourceError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        return 0
 
     if args.out or args.toml:
         toml = spec.to_toml()
