@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from ..shared import mapsource, trainerparty, wilddata
+from ..shared import mapsource, trainercite, trainerparty, wilddata
 from .context import LintContext
 from .diagnostics import Diagnostic, Severity
 
@@ -191,4 +191,43 @@ def wild_rate(ctx: LintContext) -> list[Diagnostic]:
     return out
 
 
-ALL = (blk_size, trainer_party, trainer_class, wild_region, wild_rate)
+def trainer_orphan(ctx: LintContext) -> list[Diagnostic]:
+    """A party nothing references — usually the residue of a deleted trainer.
+
+    Not a defect: the bytes ship and the game is fine. But it is the one party
+    that would be *safe* to delete, and it is worth knowing about, because the
+    tools deliberately leave it behind (removing a trainer can't delete its party
+    without renumbering every party below it — see wiring/removal.py).
+
+    Being sure a party is dead means finding every way it could be reached, and
+    there are three: the `trainer` macro, the `loadtrainer` script command, and
+    the engine naming a party-ordinal const directly. Miss the last two and you
+    would call Bugsy dead.
+    """
+    out = []
+    for label, party in trainercite.orphans(ctx.root):
+        group = ctx.trainer_groups_by_label.get(label)
+        if group is None:
+            continue
+
+        # Being unreferenced doesn't make a party *deletable*. Only a trailing one
+        # is: delete a party from the middle and every party below it moves up an
+        # ordinal, re-teaming whichever trainers cite them.
+        if party.index == group.count:
+            advice = "it is the last party in the group, so it can simply be deleted"
+        else:
+            advice = (f"but it sits at #{party.index} of {group.count}, so deleting it "
+                      f"would still renumber #{party.index + 1}-{group.count} and "
+                      f"re-team the trainers citing them")
+
+        out.append(Diagnostic(
+            "trainer-orphan", Severity.INFO,
+            str(group.path.relative_to(ctx.root)), party.start + 1,
+            f"{label} #{party.index} ({party.name}) is referenced by nothing — no "
+            f"trainer or loadtrainer cites it, and no const names it. Dead weight: "
+            f"{advice}",
+        ))
+    return out
+
+
+ALL = (blk_size, trainer_party, trainer_class, trainer_orphan, wild_region, wild_rate)

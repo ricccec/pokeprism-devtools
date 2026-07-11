@@ -223,12 +223,15 @@ def _fixture(tmp: Path) -> Path:
 
     # TownB also carries a trainer pointing at SageGroup party #3, which
     # doesn't exist (trainer-party), and its wild data is filed under the wrong
-    # region (wild-region).
+    # region (wild-region). A `loadtrainer` reaches party #1 — the second way a
+    # party can be cited, and the reason #1 is not an orphan while #2 is.
     _map("TownB", ["warp_def 1, 1, 1, CAVE_C"],
          [_person("SPRITE_NPC", 1, 1, "SPRITEMOVEDATA_STANDING_DOWN", "EVENT_SHARED")])
     b = root / "maps" / "TownB.asm"
     b.write_text("TownB_Trainer_1:\n"
-                 "\ttrainer EVENT_REAL, SAGE, 3, .seen, .beaten\n\n" + b.read_text())
+                 "\ttrainer EVENT_REAL, SAGE, 3, .seen, .beaten\n\n"
+                 "TownB_Script:\n"
+                 "\tloadtrainer SAGE, 1\n\n" + b.read_text())
 
     # CaveC is indoor, so the outdoor-set rule doesn't apply to it. A STILL
     # sprite is told to wander (sprite-static-walker), and the object count
@@ -273,6 +276,7 @@ _EXPECTED = {
     "sprite-vram-budget": 1,
     "blk-size": 1,
     "trainer-party": 1,
+    "trainer-orphan": 1,        # Sage #2: #1 is reached by loadtrainer, #2 by nothing
     "wild-region": 1,
 }
 
@@ -424,6 +428,7 @@ def test_real_repo() -> None:
         "wild-region": 1,           # CAPER_RIDGE's grass is filed under mystery
         "wild-rate": 1,             # LAUREL_FOREST's `db 3` is 1.2%, not 3%
         "trainer-class": 0,         # none: the 7 unbacked classes are all uncited
+        "trainer-orphan": 7,        # info: parties nothing references — dead weight
         "flag-shared": 10,          # deliberate: one flag gating objects in two maps
     }
     for code in sorted(set(counts) | set(triaged)):

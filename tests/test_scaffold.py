@@ -22,10 +22,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools.shared import (  # noqa: E402
-    eventheader as eh, landmarks, trainerparty as tp, wilddata as wd,
+    eventheader as eh, landmarks, trainercite as tc, trainerparty as tp, wilddata as wd,
 )
-from pokeprism_devtools.shared.edits import apply_edits  # noqa: E402
-from pokeprism_devtools.wiring import scaffold as sc  # noqa: E402
+from pokeprism_devtools.shared.edits import StaleEdit, apply_edits  # noqa: E402
+from pokeprism_devtools.wiring import removal as rm, scaffold as sc  # noqa: E402
 
 _failures = 0
 
@@ -43,7 +43,8 @@ def raises(label: str, fn, *, wanted: str = "") -> None:
     try:
         fn()
         check(label, False, "no error raised")
-    except (sc.ScaffoldError, tp.TrainerPartyError, wd.WildDataError) as e:
+    except (sc.ScaffoldError, tp.TrainerPartyError, wd.WildDataError,
+            rm.RemovalError, StaleEdit) as e:
         check(label, wanted in str(e), str(e) if wanted not in str(e) else "")
 
 
@@ -336,6 +337,113 @@ def test_rejects_unknown_consts(root: Path) -> None:
     check("the map is untouched", _snapshot(root) == before)
 
 
+def test_stale_edit(root: Path) -> None:
+    print("\nan Edit carries the whole file, so a stale one must not be applied")
+    saved = _snapshot(root)
+
+    a = sc.add_itemball(root, "TOWN_A", 3, 4, "ULTRA_BALL")
+    b = sc.add_itemball(root, "TOWN_A", 5, 6, "RARE_CANDY")   # built from the SAME text
+    apply_edits(root, a.edits, dry_run=False)
+
+    check("both edits allocated the same flag slot — which is the danger",
+          a.flag != b.flag and
+          _snapshot(root)["constants/event_flags.asm"] != saved["constants/event_flags.asm"])
+    raises("applying the second overwrites the first, so it is refused",
+           lambda: apply_edits(root, b.edits, dry_run=False),
+           wanted="has changed since this edit was computed")
+
+    _reset(root, saved)
+    print("  (build an edit, apply it, then build the next)")
+
+
+# --------------------------------------------------------------------------- #
+# removal — the safe half                                                     #
+# --------------------------------------------------------------------------- #
+
+def test_removal(root: Path) -> None:
+    print("\nadding and then removing leaves the file exactly as it was")
+    saved = _snapshot(root)
+
+    def add_and_remove(what, add, **how):
+        s = add()
+        apply_edits(root, s.edits, dry_run=False)
+        r = rm.remove(root, "TOWN_A", **(how or {"label": s.label}))
+        apply_edits(root, r.edits, dry_run=False)
+        check(f"{what}: back to byte-for-byte identical", _snapshot(root) == saved)
+        return s, r
+
+    npc, _ = add_and_remove(
+        "NPC", lambda: sc.add_npc(root, "TOWN_A", sc.Object("SPRITE_YOUNGSTER", 5, 6),
+                                  pages=[["Hi."]]))
+
+    _, r = add_and_remove(
+        "trainer",
+        lambda: sc.add_trainer(root, "TOWN_A", sc.Object("SPRITE_YOUNGSTER", 7, 8),
+                               cls="YOUNGSTER", party=1,
+                               seen=[["You!"]], defeated=[["Ugh."]], after=[["GG."]]))
+    check("the trainer's flag is freed back to `const skip`",
+          r.freed_flag == "EVENT_TOWN_A_TRAINER_1")
+    check("even though a person_event's own flag arg says -1 — it lives in the "
+          "`trainer` macro", r.freed_flag is not None)
+
+    ball, r = add_and_remove(
+        "item ball", lambda: sc.add_itemball(root, "TOWN_A", 3, 4, "ULTRA_BALL"),
+        flag="EVENT_TOWN_A_ITEM_ULTRA_BALL")
+    check("an item ball has no label, so it is found by its flag",
+          r.freed_flag == "EVENT_TOWN_A_ITEM_ULTRA_BALL")
+
+    _, r = add_and_remove(
+        "hidden item", lambda: sc.add_hidden_item(root, "TOWN_A", 9, 10, "RARE_CANDY"),
+        at=(9, 10))
+    check("a hidden item's flag lives in the record, not the signpost",
+          r.freed_flag == "EVENT_TOWN_A_HIDDENITEM_RARE_CANDY")
+
+    _reset(root, saved)
+
+
+def test_removal_leaves_what_it_must(root: Path) -> None:
+    print("\nremoval refuses to free anything somebody else is still using")
+    saved = _snapshot(root)
+
+    s = sc.add_trainer(root, "TOWN_A", sc.Object("SPRITE_YOUNGSTER", 7, 8),
+                       cls="YOUNGSTER",
+                       new_party=("Testy", [tp.Mon(9, "SENTRET")], tp.NORMAL),
+                       seen=[["You!"]], defeated=[["Ugh."]], after=[["GG."]])
+    apply_edits(root, s.edits, dry_run=False)
+
+    r = rm.remove(root, "TOWN_A", label=s.label)
+    apply_edits(root, r.edits, dry_run=False)
+    check("the party is left in place — deleting it would renumber the group",
+          tp.group_for(root, "YOUNGSTER").find("Testy") is not None)
+    check("and the caller is told so",
+          any("orphan" in w for w in r.warnings), str(r.warnings))
+    _reset(root, saved)
+
+    # A flag another map reads must survive, or the allocator would hand it out
+    # again while that map still gates on it.
+    shared = "EVENT_TOWN_A_GUARD"
+    (root / "constants/event_flags.asm").write_text(
+        (root / "constants/event_flags.asm").read_text().replace(
+            "\tconst skip\n", f"\tconst {shared}\n", 1))
+    (root / "maps/RouteB.asm").write_text(
+        "RouteB_MapEventHeader:: db 0, 0\n\n.Warps\n\tdb 0\n\n.CoordEvents\n\tdb 0\n\n"
+        ".BGEvents\n\tdb 0\n\n.ObjectEvents\n\tdb 1\n"
+        f"\tperson_event SPRITE_SAGE, 1, 1, SPRITEMOVEDATA_STANDING_DOWN, 0, 0, -1, -1, "
+        f"PAL_OW_RED, PERSONTYPE_TEXT, 0, RouteBSign, {shared}\n"
+    )
+    s = sc.add_npc(root, "TOWN_A", sc.Object("SPRITE_YOUNGSTER", 5, 6),
+                   pages=[["Hi."]], flag=shared)
+    apply_edits(root, s.edits, dry_run=False)
+
+    r = rm.remove(root, "TOWN_A", label=s.label)
+    check("a flag another map still gates on is left allocated", r.freed_flag is None)
+    check("and the caller is told why",
+          any("still gates something else" in w for w in r.warnings), str(r.warnings))
+
+    _reset(root, saved)
+    (root / "maps/RouteB.asm").unlink(missing_ok=True)
+
+
 # --------------------------------------------------------------------------- #
 # the real repo                                                               #
 # --------------------------------------------------------------------------- #
@@ -423,20 +531,27 @@ def test_real_scaffold(tmp: Path) -> None:
     before = lint(scratch)
 
     MAP = "CASTRO_FOREST"
-    for s in (
-        sc.add_npc(scratch, MAP, sc.Object("SPRITE_YOUNGSTER", 12, 20, palette="PAL_OW_BLUE"),
-                   pages=[["Hi! I'm new", "around here."]]),
-        sc.add_trainer(scratch, MAP,
-                       sc.Object("SPRITE_SAGE", 14, 22, palette="PAL_OW_BLUE", behind_bg=True),
-                       cls="SAGE", party=6, sight=3,
-                       seen=[["You there!"]], defeated=[["I yield."]], after=[["Well fought."]]),
-        sc.add_trainer(scratch, MAP, sc.Object("SPRITE_YOUNGSTER", 16, 8), cls="YOUNGSTER",
-                       new_party=("Testy", [tp.Mon(12, "SENTRET")], tp.NORMAL),
-                       seen=[["Let's go!"]], defeated=[["Aw, man."]], after=[["Good game."]]),
-        sc.add_itemball(scratch, MAP, 20, 30, "ULTRA_BALL"),
-        sc.add_hidden_item(scratch, MAP, 5, 6, "RARE_CANDY"),
+    # Built and applied one at a time. An Edit carries the whole file, so five of
+    # them computed against the same starting text would overwrite each other —
+    # StaleEdit enforces this now, but the order still has to be right.
+    for build in (
+        lambda: sc.add_npc(scratch, MAP,
+                           sc.Object("SPRITE_YOUNGSTER", 12, 20, palette="PAL_OW_BLUE"),
+                           pages=[["Hi! I'm new", "around here."]]),
+        lambda: sc.add_trainer(scratch, MAP,
+                               sc.Object("SPRITE_SAGE", 14, 22, palette="PAL_OW_BLUE",
+                                         behind_bg=True),
+                               cls="SAGE", party=6, sight=3, seen=[["You there!"]],
+                               defeated=[["I yield."]], after=[["Well fought."]]),
+        lambda: sc.add_trainer(scratch, MAP, sc.Object("SPRITE_YOUNGSTER", 16, 8),
+                               cls="YOUNGSTER",
+                               new_party=("Testy", [tp.Mon(12, "SENTRET")], tp.NORMAL),
+                               seen=[["Let's go!"]], defeated=[["Aw, man."]],
+                               after=[["Good game."]]),
+        lambda: sc.add_itemball(scratch, MAP, 20, 30, "ULTRA_BALL"),
+        lambda: sc.add_hidden_item(scratch, MAP, 5, 6, "RARE_CANDY"),
     ):
-        apply_edits(scratch, s.edits, dry_run=False)
+        apply_edits(scratch, build().edits, dry_run=False)
 
     after = lint(scratch)
     new, gone = after - before, before - after
@@ -450,6 +565,81 @@ def test_real_scaffold(tmp: Path) -> None:
           tp.group_for(scratch, "YOUNGSTER").find("Testy") is not None)
 
 
+def test_real_citations(tmp: Path) -> None:
+    """The citation index has to find *every* way a party is reached, or the
+    orphan rule will call a live trainer dead. There are three ways, and the
+    third one is only used once in the whole repo."""
+    root = _real_repo()
+    if root is None:
+        return
+
+    print("\nevery way a party can be reached, in the real repo")
+    cited = tc.citations(root)
+    by_macro = {m: sum(1 for v in cited.values() for c in v if c.macro == m)
+                for m in (tc.TRAINER, tc.LOADTRAINER, tc.SYMBOL)}
+    check("the `trainer` macro reaches most of them", by_macro[tc.TRAINER] > 250)
+    check("`loadtrainer` reaches the gym leaders and rivals",
+          by_macro[tc.LOADTRAINER] > 40, str(by_macro))
+    check("and the engine names one party by const, from outside maps/",
+          by_macro[tc.SYMBOL] >= 1, str(by_macro))
+
+    consts = tc.party_consts(root)
+    check("RIVAL1_3 resolves to RIVAL1 party 3", consts.get("RIVAL1_3") == ("RIVAL1", 3))
+    check("the AI-flag enum after `trainerclass CAL` is not swept up as CAL's parties",
+          "NO_AI" not in consts and not any(c.startswith("TRNATTR") for c in consts))
+
+    groups = tp.load(root)
+    orphans = tc.orphans(root)
+    named = {f"{label}#{p.index}" for label, p in orphans}
+    check(f"{len(orphans)} of {sum(g.count for g in groups.values())} parties are orphans",
+          0 < len(orphans) < 20)
+    check("ArcadePC is NOT one of them — the engine loads it by const",
+          not any(label == "ArcadePCGroup" for label, _ in orphans))
+    check("nor is any gym leader", not any("Group#" in n and n.startswith(
+        ("Bugsy", "Blue", "Lance")) for n in named))
+
+
+def test_real_removal(tmp: Path) -> None:
+    """Remove content a *human* wrote — the tools have never touched it, so this
+    is the only test that proves removal understands the real source."""
+    root = _real_repo()
+    if root is None:
+        return
+
+    print("\nremoving hand-written content from a real map")
+    scratch = tmp / "pokeprism-rm"
+    shutil.copytree(root, scratch, symlinks=True,
+                    ignore=shutil.ignore_patterns(".git", "*.o", "*.gbc", "*.sym", "*.map"))
+
+    before = (scratch / "maps/CastroForest.asm").read_text()
+    r = rm.remove(scratch, "CASTRO_FOREST", label="CastroForest_Trainer_2")
+    apply_edits(scratch, r.edits, dry_run=False)
+    after = (scratch / "maps/CastroForest.asm").read_text()
+
+    check("the trainer's person_event is gone", "CastroForest_Trainer_2," not in after)
+    check("its whole script block went with it, local labels and all",
+          "CastroForest_Trainer_2:" not in after and 'ctxt "How droll."' not in after)
+    check("the object count came down", after.count("person_event") ==
+          before.count("person_event") - 1)
+    check("the map still parses and round-trips",
+          eh.parse_map(scratch / "maps/CastroForest.asm").to_text() == after)
+
+    # EVENT_CASTRO_FOREST_TRAINER_2 gates two guards in JaeruGate — beating this
+    # Sage is what opens that gate. Freeing it would hand a live flag back out.
+    check("its flag is NOT freed, because another map still gates on it",
+          r.freed_flag is None)
+    check("and the caller is told which",
+          any("still gates" in w for w in r.warnings), str(r.warnings))
+    check("the party is left alone, with a warning",
+          any("orphan" in w for w in r.warnings))
+
+    # A hidden item whose flag is registered in event/gold_tokens.asm — a
+    # reference that isn't in maps/ at all.
+    r = rm.remove(scratch, "CASTRO_FOREST", at=(2, 5))
+    check("a flag referenced outside maps/ is also spared",
+          r.freed_flag is None, str(r.freed_flag))
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
@@ -461,8 +651,13 @@ def main() -> int:
         test_trainer(root)
         test_items(root)
         test_rejects_unknown_consts(root)
+        test_stale_edit(root)
+        test_removal(root)
+        test_removal_leaves_what_it_must(root)
         test_real_parsers(tmp)
         test_real_scaffold(tmp)
+        test_real_citations(tmp)
+        test_real_removal(tmp)
 
     print()
     if _failures:

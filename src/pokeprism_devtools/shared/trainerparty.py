@@ -131,8 +131,9 @@ class TrainerGroup:
     def to_edit(self, root: Path, detail: str) -> Edit:
         rel = str(self.path.relative_to(root))
         text = self.to_text()
-        changed = text != self.path.read_text()
-        return Edit(rel, changed, detail, text if changed else "")
+        base = self.path.read_text()
+        changed = text != base
+        return Edit(rel, changed, detail, text if changed else "", base=base)
 
 
 def _check(name: str, mons: list[Mon], kind: str) -> None:
