@@ -54,6 +54,15 @@ _SEVERITY_STYLE = {
 
 _TABS = ("Objects", "Warps", "Signposts", "Triggers", "Connections", "Wild")
 
+#: The studio shows wild encounters and will not edit them, and that had better
+#: be on screen rather than in a design document: a wild record is a fixed-size
+#: slot in a table the engine indexes by *position*, so writing a short one
+#: silently shifts every map below it onto somebody else's Pokémon.
+_WILD_IS_READ_ONLY = (
+    "read-only — wild records are fixed-size and read by position; "
+    "a short one shifts every map below it. Edit data/wild/*.asm by hand."
+)
+
 
 def _marker_style(glyph: str) -> str:
     return (f"bold {coords.hex_color(coords.MARKER_INK[glyph])} "
@@ -74,6 +83,7 @@ class Studio(App):
     #legend { height: 1; padding: 0 1; }
     #findings { width: 46; border-left: solid $panel; padding: 0 1; }
     #tabs { height: 16; border-top: solid $panel; }
+    #wild-note { height: 1; padding: 0 1; color: $text-disabled; }
     DataTable { height: 1fr; }
     """
 
@@ -119,6 +129,8 @@ class Studio(App):
         with TabbedContent(id="tabs"):
             for name in _TABS:
                 with TabPane(name, id=f"tab-{name.lower()}"):
+                    if name == "Wild":
+                        yield Static(_WILD_IS_READ_ONLY, id="wild-note")
                     yield DataTable(id=f"table-{name.lower()}", cursor_type="row",
                                     zebra_stripes=True)
         yield Footer()
