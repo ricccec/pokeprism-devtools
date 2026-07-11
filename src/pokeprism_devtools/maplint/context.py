@@ -16,7 +16,8 @@ from functools import cached_property
 from pathlib import Path
 
 from ..shared import (
-    eventflags, eventheader as eh, landmarks, maps, mapsource, spritesets, trainerparty,
+    eventflags, eventheader as eh, flagrefs, landmarks, maps, mapsource, spritesets,
+    trainerparty,
 )
 from ..shared.maps import MapDef
 
@@ -262,6 +263,11 @@ class LintContext:
     @cached_property
     def flags(self) -> eventflags.EventFlags:
         return eventflags.load(self.root)
+
+    @cached_property
+    def flag_refs(self) -> flagrefs.Index:
+        """Every reference to every event flag, anywhere in the repo."""
+        return flagrefs.index(self.root)
 
     @cached_property
     def trainer_groups_by_label(self) -> dict[str, trainerparty.TrainerGroup]:
