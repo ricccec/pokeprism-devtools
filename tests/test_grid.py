@@ -18,11 +18,13 @@ produces a picture that still *looks* like a map, just not this one.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from pokeprism_devtools import map_show  # noqa: E402
 from pokeprism_devtools.shared import (  # noqa: E402
     blockdata, blocksrc, coords, eventheader, render, swatches, symfile,
 )
@@ -236,6 +238,60 @@ def test_markers_are_where_the_source_says() -> None:
           all(coords.in_bounds(y, x, bd.height, bd.width) for y, x in marks))
 
 
+# --------------------------------------------------------------------------- #
+# zoom                                                                        #
+# --------------------------------------------------------------------------- #
+
+def test_zoom_fits_the_terminal() -> None:
+    """A tile is `zoom` columns wide and `zoom` *half-rows* tall — square, since a
+    cell is about twice as tall as it is wide. Half-rows are what make an odd zoom
+    work at all, and a map is always an even number of tiles, so it always pairs
+    up into whole terminal rows with nothing left over."""
+    print("\nzoom picks the biggest size that fits")
+
+    # CastroForest: 36x40 tiles. At zoom z that is 40z columns and 18z rows.
+    for z, want in ((1, (44, 18)), (2, (84, 36)), (3, (124, 54)), (4, (164, 72))):
+        cols = 40 * z + 4
+        rows = 36 * z // 2
+        check(f"zoom {z}: {cols}x{rows} on screen", (cols, rows) == want, str((cols, rows)))
+
+    def term(columns: int, lines: int) -> os.terminal_size:
+        return os.terminal_size((columns, lines))
+
+    check("a roomy terminal gets the biggest zoom",
+          map_show.fit_zoom(36, 40, term(200, 100)) == 4)
+    check("an 80x24 terminal gets zoom 1",
+          map_show.fit_zoom(36, 40, term(80, 24)) == 1)
+    # Height binds long before width: zoom 2 needs 36 rows of map, and a 40-line
+    # terminal only has 33 once the title, ruler and legend are paid for.
+    check("a 120x40 terminal is too short for zoom 2, so zoom 1",
+          map_show.fit_zoom(36, 40, term(120, 40)) == 1)
+    check("give it 50 lines and zoom 2 fits",
+          map_show.fit_zoom(36, 40, term(100, 50)) == 2)
+    check("a small map gets the biggest zoom even on a small screen",
+          map_show.fit_zoom(8, 10, term(80, 24)) == 4)
+    check("a map too big for any zoom still draws, at zoom 1",
+          map_show.fit_zoom(200, 200, term(40, 10)) == 1)
+
+
+def test_markers_survive_the_zoom() -> None:
+    """Zooming must not move anything. The cell a marker lands in changes; the
+    tile it means does not."""
+    print("\na marker means the same tile at every zoom")
+    if not (PRISM / "maps/CastroForest.asm").exists():
+        print("  (skipping — pokeprism not found)")
+        return
+
+    for z in map_show.ZOOMS:
+        # This is the mapping print_grid uses: the cell nearest the tile's middle.
+        cell = ((28 * z + z // 2) // 2, 27 * z + z // 2)
+        # ...and it must still be inside the tile it came from.
+        back_y = (2 * cell[0]) // z
+        back_x = cell[1] // z
+        check(f"zoom {z}: the item at tile (28, 27) is drawn inside tile (28, 27)",
+              (back_y, back_x) == (28, 27), f"cell {cell} -> tile ({back_y}, {back_x})")
+
+
 def main() -> int:
     test_units()
     test_source_agrees_with_the_rom()
@@ -243,6 +299,8 @@ def main() -> int:
     test_swatch_is_the_block()
     test_swatches_are_cached_per_map()
     test_markers_are_where_the_source_says()
+    test_zoom_fits_the_terminal()
+    test_markers_survive_the_zoom()
 
     print()
     if FAILED:

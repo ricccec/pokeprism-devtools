@@ -8,6 +8,7 @@ blobs are, and emit the TOML `MapSpec` that `prism-mapfit` consumes.
 
     prism-map MtEmberSmallRoom                 # human report
     prism-map MtEmberSmallRoom --grid          # draw it, with its objects on it
+    prism-map MtEmberSmallRoom --grid --zoom 3 # bigger tiles, roomier markers
     prism-map MtEmberSmallRoom --toml          # emit the spec TOML to stdout
     prism-map MtEmberSmallRoom -o mymap.toml   # ...and write it to a file
 
@@ -22,7 +23,9 @@ pinned to; without it the bank column is omitted.
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -193,28 +196,57 @@ def _print_report(spec: MapSpec, blobs: list[BlobRow], mp: MapFile | None) -> No
 # --------------------------------------------------------------------------- #
 
 #: Half-block: the foreground paints the top of the cell, the background the
-#: bottom. So one cell is two coordinate tiles stacked, and one block is two
-#: cells side by side — which makes the map come out roughly square.
+#: bottom. So a terminal cell holds *two* stacked pixels, and the vertical
+#: resolution of the grid is half-rows — which is what lets an odd zoom work.
 _HALF = "▀"
 _RESET = "\033[0m"
+
+#: Columns per coordinate tile. A tile is drawn `zoom` columns wide and `zoom`
+#: half-rows tall: square, because a terminal cell is about twice as tall as it
+#: is wide. Zoom 1 is a block per two columns — dense, but the markers have to
+#: share a cell with the terrain. From zoom 3 a tile has a cell of its own and
+#: the letter sits in the middle of it.
+ZOOMS = (1, 2, 3, 4)
+_GUTTER = 4          # width of the row-number column
+_CHROME = 7          # title, ruler, legend — rows that aren't map
 
 _LEGEND = ((coords.WARP, "warp"), (coords.SIGN, "signpost"), (coords.PERSON, "npc"),
            (coords.TRAINER, "trainer"), (coords.ITEM, "item"))
 
 
+def fit_zoom(rows: int, cols: int, size: os.terminal_size | None = None) -> int:
+    """The biggest zoom whose map still fits the terminal. `rows`/`cols` in tiles."""
+    term = size or shutil.get_terminal_size((80, 24))
+    for z in sorted(ZOOMS, reverse=True):
+        if cols * z + _GUTTER <= term.columns and rows * z // 2 <= term.lines - _CHROME:
+            return z
+    return min(ZOOMS)
+
+
 def _cell(top: swatches.Rgb, bottom: swatches.Rgb, glyph: str | None) -> str:
-    """One terminal cell: two stacked coordinate tiles, or a marker sitting on them."""
     if glyph is None:
         return (f"\033[38;2;{top[0]};{top[1]};{top[2]}m"
                 f"\033[48;2;{bottom[0]};{bottom[1]};{bottom[2]}m{_HALF}")
-    # A marker needs the whole cell — there is no half a character. Keep the
-    # terrain as its background and pick the ink that stays legible on it.
+    # A marker needs a whole cell — there is no half a character — so it costs
+    # the half-block. Keep the terrain as its background and pick the ink that
+    # stays legible on it, dark on sand, light on water.
     bg = tuple((t + b) // 2 for t, b in zip(top, bottom))
     ink = "0;0;0" if sum(bg) > 380 else "255;255;255"
     return f"\033[1m\033[38;2;{ink}m\033[48;2;{bg[0]};{bg[1]};{bg[2]}m{glyph}"
 
 
-def print_grid(root: Path, label: str, time_of_day: int = 1) -> None:
+def _ruler(cols: int, zoom: int) -> str:
+    """Tile numbers along the top — the unit you type into a macro, not blocks."""
+    every = 10 if zoom < 2 else 5
+    out = [" "] * (cols * zoom)
+    for x in range(0, cols, every):
+        for i, ch in enumerate(str(x)):
+            if x * zoom + i < len(out):
+                out[x * zoom + i] = ch
+    return "".join(out)
+
+
+def print_grid(root: Path, label: str, time_of_day: int = 1, zoom: int | None = None) -> None:
     """Draw the map, in colour, with everything that's been placed on it."""
     bd = blocksrc.load(root, label)
     sw = swatches.for_map(root, bd.tileset_id, bd.permission, time_of_day)
@@ -226,21 +258,33 @@ def print_grid(root: Path, label: str, time_of_day: int = 1) -> None:
         print(f"  (no objects drawn — {e})\n", file=sys.stderr)
 
     rows, cols = coords.tile_size(bd.height, bd.width)
+    z = zoom or fit_zoom(rows, cols)
+
+    def color(ty: int, tx: int) -> swatches.Rgb:
+        """The colour of one coordinate tile: its block's swatch, its quadrant."""
+        row, col = coords.block_of(ty, tx)
+        qr, qc = coords.quadrant_of(ty, tx)
+        return sw[bd.blocks[row * bd.width + col]][qr * coords.TILES_PER_BLOCK + qc]
+
+    # Each marker claims the cell nearest the middle of its tile. At zoom 1 that
+    # is the tile's only cell and it shares it with a neighbour; from zoom 3 it
+    # has room to itself.
+    glyphs = {((ty * z + z // 2) // 2, tx * z + z // 2): g for (ty, tx), g in marks.items()}
+
     print(f"{bd.name}  {bd.height}x{bd.width} blocks · {rows}x{cols} tiles · "
-          f"tileset {bd.tileset_id} · {render.table_for_permission(bd.permission)} palette\n")
+          f"tileset {bd.tileset_id} · {render.table_for_permission(bd.permission)} "
+          f"palette · zoom {z}\n")
+    print(" " * _GUTTER + _ruler(cols, z))
 
-    # A ruler in coordinate tiles, because that is the unit you type into a macro.
-    ruler = "".join(str((x // 10) % 10) if x % 10 == 0 else " " for x in range(cols))
-    print(f"    {ruler}")
-
-    for row in range(bd.height):
-        out = [f"{row * coords.TILES_PER_BLOCK:>3} "]
-        for col in range(bd.width):
-            block = sw[bd.blocks[row * bd.width + col]]
-            for q in range(coords.TILES_PER_BLOCK):
-                y, x = coords.tile_of(row, col)
-                out.append(_cell(block[q], block[2 + q],
-                                 marks.get((y, x + q)) or marks.get((y + 1, x + q))))
+    last = None
+    for r in range(rows * z // 2):
+        ty = (2 * r) // z                      # the tile this row starts in
+        out = [f"{ty:>3} " if ty != last else " " * _GUTTER]
+        last = ty
+        for c in range(cols * z):
+            out.append(_cell(color((2 * r) // z, c // z),
+                             color((2 * r + 1) // z, c // z),
+                             glyphs.get((r, c))))
         print("".join(out) + _RESET)
 
     print("\n  " + "   ".join(f"{g} {name}" for g, name in _LEGEND)
@@ -254,6 +298,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("label", help="the map's CamelCase label, e.g. MtEmberSmallRoom")
     p.add_argument("--grid", action="store_true",
                    help="draw the map's blocks and everything placed on them (no ROM needed)")
+    p.add_argument("--zoom", type=int, choices=ZOOMS,
+                   help="columns per coordinate tile (default: the biggest that fits)")
     p.add_argument("--time-of-day", type=int, default=1, choices=(0, 1, 2, 3),
                    help="palette for --grid: 0=morn 1=day 2=nite 3=dark (default: 1)")
     p.add_argument("--toml", action="store_true", help="emit the spec TOML")
@@ -270,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.grid:
         try:
-            print_grid(root, args.label, args.time_of_day)
+            print_grid(root, args.label, args.time_of_day, args.zoom)
         except blocksrc.BlockSourceError as e:
             print(f"error: {e}", file=sys.stderr)
             return 2
