@@ -649,9 +649,14 @@ def test_real_repo() -> None:
         "flag-unused": 200,         # info: declared flags nothing references
         "flag-unknown": 0,          # none: every EVENT_* named in the repo exists
         "flag-never-set": 17,       # 1 warning (SilphWarehouse's guard never appears)
-        # 3 real overflows, and 11 lines of deliberately-corrupt "Glitch City"
+        # 3 real overflows, and 13 lines of deliberately-corrupt "Glitch City"
         # text in PhanceroRoom, which is *supposed* to spill out of the box.
-        "text-width": 14,
+        #
+        # Was 14 until `dialogue.decomment` landed: the parser used to cut every
+        # line at the first `;`, so a string *containing* one measured as zero
+        # tiles and could not overflow. Two of the glitch lines have one. The
+        # linter was blind to them, not innocent of them.
+        "text-width": 16,
         "text-width-name": 0,       # none: no line breaks on a seven-letter name
         "text-rows": 0,             # none: `next` is never used in a speech box
         "text-clobber": 1,          # PhanceroRoom again, same easter egg
