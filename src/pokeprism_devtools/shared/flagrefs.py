@@ -107,13 +107,44 @@ class FlagRef:
     inverted: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass
 class Index:
-    refs: dict[str, list[FlagRef]]
+    """Every flag reference in the repo, kept **per file**.
+
+    Merging is a detail; the file is the unit. Scanning all ~3400 asm files takes
+    long enough that a tool which re-scans after every edit is a tool nobody
+    leaves running, and an edit only ever changes one file. So the per-file
+    entries are the state, the merged views are derived and cached, and
+    :meth:`reindex` drops one file's entries and rescans just that file.
+    """
+    #: repo-relative path -> (its refs, the prefixes it builds by concatenation)
+    by_file: dict[str, tuple[list[FlagRef], frozenset[str]]]
+    _refs: dict[str, list[FlagRef]] | None = None
+    _built: frozenset[str] | None = None
+
+    def _merge(self) -> None:
+        refs: dict[str, list[FlagRef]] = defaultdict(list)
+        built: set[str] = set()
+        for file_refs, prefixes in self.by_file.values():
+            for ref in file_refs:
+                refs[ref.flag].append(ref)
+            built |= prefixes
+        self._refs, self._built = dict(refs), frozenset(built)
+
+    @property
+    def refs(self) -> dict[str, list[FlagRef]]:
+        if self._refs is None:
+            self._merge()
+        return self._refs
+
     #: Literal prefixes of flag names *built* by macro concatenation. Any declared
     #: flag starting with one of these is referenced in a way no text scan can
     #: see, so it must never be reported as unused.
-    built_prefixes: frozenset[str]
+    @property
+    def built_prefixes(self) -> frozenset[str]:
+        if self._built is None:
+            self._merge()
+        return self._built
 
     def get(self, flag: str) -> list[FlagRef]:
         return self.refs.get(flag, [])
@@ -122,6 +153,17 @@ class Index:
         """Including the references a text scan cannot see."""
         return flag in self.refs or any(flag.startswith(p) for p in self.built_prefixes)
 
+    def reindex(self, root: Path, rel: str) -> None:
+        """Re-read one file. The merged views rebuild themselves on next use."""
+        if rel == _DECLARATION:
+            return
+        path = root / rel
+        if path.is_file():
+            self.by_file[rel] = _refs_in(path, rel)
+        else:
+            self.by_file.pop(rel, None)
+        self._refs = self._built = None
+
 
 def index(root: Path) -> Index:
     """Every reference to every flag, anywhere in the repo's asm.
@@ -129,19 +171,11 @@ def index(root: Path) -> Index:
     The declaration in constants/event_flags.asm is not a reference: it is the
     thing being referenced.
     """
-    out: dict[str, list[FlagRef]] = defaultdict(list)
-    built: set[str] = set()
-
-    for path in sorted(root.rglob("*.asm")):
-        rel = path.relative_to(root).as_posix()
-        if rel == _DECLARATION:
-            continue
-        refs, prefixes = _refs_in(path, rel)
-        for ref in refs:
-            out[ref.flag].append(ref)
-        built |= prefixes
-
-    return Index(dict(out), frozenset(built))
+    return Index({
+        rel: _refs_in(path, rel)
+        for path in sorted(root.rglob("*.asm"))
+        if (rel := path.relative_to(root).as_posix()) != _DECLARATION
+    })
 
 
 def _refs_in(path: Path, rel: str) -> tuple[list[FlagRef], set[str]]:

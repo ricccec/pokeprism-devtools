@@ -205,7 +205,7 @@ def trainer_orphan(ctx: LintContext) -> list[Diagnostic]:
     would call Bugsy dead.
     """
     out = []
-    for label, party in trainercite.orphans(ctx.root):
+    for label, party in trainercite.orphans(ctx.root, ctx.trainer_citations):
         group = ctx.trainer_groups_by_label.get(label)
         if group is None:
             continue
