@@ -25,6 +25,35 @@ from .textbox import Box, Metrics
 #: Opens a text block. `stxt` is `loadsignpost`'s flavour of `ctxt` (macros/text.asm)
 _OPENERS = ("text", "ctxt", "stxt")
 
+def decomment(raw: str) -> str:
+    """Drop the comment, if there is one — but a `;` inside a string is a
+    semicolon, not a comment.
+
+    `raw.split(";")[0]` is what this used to be, and it silently truncated every
+    line whose dialogue contains a semicolon (`line "gift as well;"` measured as
+    an *empty* line). 27 blocks are written that way. It matters twice over: the
+    linter was measuring those lines as zero tiles wide, and a rewrite that
+    believed it would have written the emptiness back into the game.
+    """
+    out: list[str] = []
+    in_string = escaped = False
+    for ch in raw:
+        if escaped:
+            out.append(ch)
+            escaped = False
+            continue
+        if ch == "\\":
+            out.append(ch)
+            escaped = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+        elif ch == ";" and not in_string:
+            break
+        out.append(ch)
+    return "".join(out)
+
+
 _LABEL_RE = re.compile(r"^(\.?\w+):{0,2}\s*$")
 _MACRO_RE = re.compile(r"^\s*(\w+)\b(.*)$")
 _STR_RE = re.compile(r'"((?:[^"\\]|\\.)*)"')
@@ -44,6 +73,11 @@ class Line:
     bounded: int         # extra tiles when every bounded buffer is at its max
     unbounded: list[str] = field(default_factory=list)   # <STRBF*>, text_from_ram
     unknown: list[str] = field(default_factory=list)     # not in the charmap
+    #: Whether a blank source line sat above this one. Pure formatting, and the
+    #: repo is of two minds about it — 2621 `para`s have one and 1412 don't — so
+    #: a rewrite copies what was there rather than imposing a house style and
+    #: churning a thousand blocks nobody touched.
+    blank_before: bool = False
 
     @property
     def worst(self) -> int:
@@ -58,6 +92,13 @@ class Block:
     box: Box
     lineno: int          # where the block opens
     lines: list[Line]
+    #: Last source line of the block, inclusive. With `lineno` this is the span a
+    #: rewrite replaces — the label above it is not ours to touch.
+    end: int = 0
+    #: The macro that closed the block, or "" when an `@` inside the last string
+    #: did. 105 of pokeprism's strings terminate that way, and a rewrite that
+    #: "helpfully" converted them to `done` would be churn in 105 files.
+    ends_with: str = ""
 
 
 def sign_owners(source: list[str]) -> set[str]:
@@ -70,7 +111,7 @@ def sign_owners(source: list[str]) -> set[str]:
     owners: set[str] = set()
     owner: str | None = None
     for raw in source:
-        line = raw.split(";")[0]
+        line = decomment(raw)
         if m := _SIGN_RE.match(line):
             owners.add(m.group(1))
         if m := _LABEL_RE.match(line.rstrip()):
@@ -104,27 +145,32 @@ def parse(root: Path, path: Path) -> list[Block]:
     unb: list[str] = []
     unk: list[str] = []
     parts: list[str] = []
+    #: The last source line that belonged to the block, and what closed it.
+    last = 0
+    closer = ""
 
     def close_line() -> None:
         nonlocal det, bnd, unb, unk, parts
         if not open_block:
             return
+        blank = at >= 2 and source[at - 2].strip() == ""
         cur.append(Line(at, macro, act, row, " ".join(parts), det, bnd,
-                        list(unb), list(unk)))
+                        list(unb), list(unk), blank))
         det = bnd = 0
         unb, unk, parts = [], [], []
 
     def close_block() -> None:
-        nonlocal open_block
+        nonlocal open_block, closer
         if not open_block:
             return
         close_line()
-        blocks.append(Block(label, owner, box, opened, list(cur)))
+        blocks.append(Block(label, owner, box, opened, list(cur), last, closer))
         cur.clear()
         open_block = False
+        closer = ""
 
     for i, raw in enumerate(source, start=1):
-        line = raw.split(";")[0].rstrip()
+        line = decomment(raw).rstrip()
 
         if m := _LABEL_RE.match(line):
             name = m.group(1)
@@ -143,7 +189,7 @@ def parse(root: Path, path: Path) -> list[Block]:
             close_block()
             box = bx["sign"] if owner in signs else bx["speech"]
             open_block = True
-            opened = i
+            opened = last = i
             row, macro, act, at = box.first_row, name, "", i
             det, bnd, unb, unk, parts = _measure(root, mt, rest)
             if _terminates(root, rest):
@@ -157,6 +203,7 @@ def parse(root: Path, path: Path) -> list[Block]:
         action = mt.action.get(token) if token else None
 
         if action == textbox.END:
+            last, closer = i, name
             close_block()
             continue
 
@@ -164,6 +211,7 @@ def parse(root: Path, path: Path) -> list[Block]:
             close_line()
             row = box.rows_for(action, row)
             macro, act, at = name, action, i
+            last = i
             det, bnd, unb, unk, parts = _measure(root, mt, rest)
             # `@` inside this macro's own string still closes the block
             if _terminates(root, rest):
@@ -177,10 +225,12 @@ def parse(root: Path, path: Path) -> list[Block]:
                 det += int(args[-1])
             except (ValueError, IndexError):
                 pass
+            last = i
             continue
 
         if name == "text_from_ram":
             unb.append("text_from_ram")
+            last = i
             continue
 
     close_block()
@@ -207,3 +257,134 @@ def _terminates(root: Path, rest: str) -> bool:
     """Whether a `@` inside one of these strings ends the block itself."""
     return any(charmap.TERMINATOR in charmap.tokenize(root, s.replace('\\"', '"'))
                for s in _STR_RE.findall(rest))
+
+
+# -- writing ------------------------------------------------------------------ #
+#
+# The studio's promise is that you write the words and the macros are somebody
+# else's problem. That only holds if the macros survive being somebody else's
+# problem, which is what the two functions below are careful about.
+
+_ESCAPE = str.maketrans({'"': '\\"'})
+
+#: The macro for a line you have just written, when there is no old one to copy.
+_NEW_LINE = "line"
+#: …and for the first line after a blank, which starts a fresh box.
+_NEW_BOX = "para"
+
+
+def _words(block: Block) -> list[str]:
+    """Each rendered line's words, one per line, terminator stripped."""
+    texts = [line.text for line in block.lines]
+    if texts and not block.ends_with and texts[-1].endswith(charmap.TERMINATOR):
+        texts[-1] = texts[-1][:-1]   # the terminator is punctuation, not words
+    return texts
+
+
+def plain(block: Block) -> str:
+    """A block as editable prose: one screen line per line, and a blank line
+    wherever the text starts a fresh box. This is what a person types into.
+
+    It shows no macros, which is the point — you write the words. What makes that
+    safe is that :func:`render` walks the old lines in lockstep and copies each
+    one's macro back, so the `cont` that scrolls the box is still a `cont` when
+    you have only changed a word in it.
+    """
+    out: list[str] = []
+    for i, (line, words) in enumerate(zip(block.lines, _words(block))):
+        if i and line.action == textbox.NEW_BOX:
+            out.append("")
+        out.append(words)
+    return "\n".join(out)
+
+
+def render(block: Block, text: str, source: list[str] | None = None,
+           indent: str = "\t") -> list[str]:
+    """Edited prose back into macro lines.
+
+    The prose and the old block's lines are walked **in lockstep**, and each old
+    line hands back its macro and its blank-line-above. Two reasons, both learned
+    from the repo rather than guessed:
+
+    *The macros are not interchangeable.* `cont` scrolls the box, `next` moves a
+    single row, `nl` leaves an empty one — 49 blocks use it — and none of them is
+    a `line`. Reusing them positionally means a wording edit changes wording.
+
+    *There is no house style to impose.* 2621 `para`s have a blank source line
+    above them and 1412 don't. A rewrite that picked one would churn a thousand
+    blocks nobody asked it to touch, so it copies what was there instead.
+
+    Lines you *add* get `line`, or `para` after a blank. If that overruns the box
+    the preview will say so — which is what the preview is for.
+
+    A line whose words you did **not** change is copied back from `source`
+    verbatim, byte for byte — its own spacing, its own quoting, its own
+    everything. That is what makes it safe to run this over a block you barely
+    touched: `nl   ""` keeps the alignment somebody chose, and the diff shows
+    only the line you actually edited.
+    """
+    old = block.lines
+    was = _words(block)
+    out: list[str] = []
+    i = 0                     # index into the old rendered lines, in lockstep
+    fresh_box = False         # a blank line was seen; the next line starts a box
+
+    def emit(prose: str, at: int, blank: bool, macro: str) -> None:
+        # `bool(out)` — never a blank line above the first: the span starts at the
+        # opener, so a blank above it belongs to whatever came before and is not
+        # ours to move.
+        blank = blank and bool(out)
+        if source is not None and at < len(old) and prose == was[at]:
+            line = source[old[at].lineno - 1]          # untouched: copy it back
+        else:
+            line = f'{indent}{macro} "{prose.translate(_ESCAPE)}"'
+        out.append(f"\n{line}" if blank else line)
+
+    # Nothing is stripped, at either end: `plain` and `render` are exact inverses,
+    # and one prose line is one rendered line. A *leading* blank is a genuinely
+    # empty first line (`ctxt ""`) and eating it would splice the second line's
+    # words into the opener; a *trailing* blank is a block whose terminator sits
+    # alone on the last line (`line "@"`), and eating that moves the `@` up a line.
+    for prose in text.split("\n"):
+        if not prose.strip():
+            # A blank means a new box — *unless* the old block had a genuinely
+            # empty rendered line here (an `nl`), in which case that is what the
+            # blank is, and it survives.
+            if i < len(old) and was[i] == "" and old[i].action != textbox.NEW_BOX:
+                emit("", i, old[i].blank_before, old[i].macro)
+                i += 1
+            else:
+                fresh_box = True
+            continue
+
+        if i < len(old):
+            macro, blank = old[i].macro, old[i].blank_before
+        else:
+            macro, blank = (_NEW_BOX if fresh_box else _NEW_LINE), fresh_box
+        emit(prose, i, blank, macro)
+        fresh_box = False
+        i += 1
+
+    if not out:
+        emit("", 0, False, old[0].macro if old else _OPENERS[0])
+
+    if block.ends_with:
+        out.append(f"{indent}{block.ends_with}")
+    elif not out[-1].rstrip().endswith(f'{charmap.TERMINATOR}"'):
+        # It ended with an `@` inside the last string. Put it back where it was —
+        # 105 of pokeprism's strings terminate this way, and converting them to
+        # `done` would be a diff in 105 files that nobody asked for. (Unless the
+        # last line came back verbatim, in which case it still has its own.)
+        out[-1] = out[-1][:-1] + f'{charmap.TERMINATOR}"'
+    return out
+
+
+def rewrite(source: list[str], block: Block, text: str) -> list[str]:
+    """The map's source with one block's text replaced, and nothing else.
+
+    The span is the block's own macros — `lineno` to `end`. The label above it is
+    not ours: scripts jump to it, and a rewrite that moved it would be a rewrite
+    that broke every caller.
+    """
+    body = "\n".join(render(block, text, source)).split("\n")
+    return source[:block.lineno - 1] + body + source[block.end:]

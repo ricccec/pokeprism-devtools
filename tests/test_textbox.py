@@ -206,18 +206,102 @@ def test_real_repo() -> None:
     check("sign text never exceeds the sign box's 17", widest.get("signpost", 0) <= 17,
           str(widest))
 
-    # 11 of the 14 are PhanceroRoom's "Glitch City" easter egg, which is corrupt
+    # 13 of the 16 are PhanceroRoom's "Glitch City" easter egg, which is corrupt
     # on purpose. The other three are real, and one of them — Route77Pokecenter's
     # "#mon Center near" — is only visible once `#` is expanded to Poké.
+    #
+    # It was 11 of 14 until `dialogue.decomment` taught the parser that a `;`
+    # inside a string is a semicolon and not a comment. Two of the glitch lines
+    # contain one, and used to be truncated to nothing and measured as zero tiles
+    # wide — so the linter could not see that they overflowed. They always did.
     real = sorted(f"{f}:{l}" for f, l, _ in over if f != "PhanceroRoom.asm")
     check("the deliberate glitch text is the bulk of the overflow",
-          sum(1 for f, _, _ in over if f == "PhanceroRoom.asm") == 11, str(len(over)))
+          sum(1 for f, _, _ in over if f == "PhanceroRoom.asm") == 13, str(len(over)))
     check("and exactly three real overflows remain",
           real == ["MtEmberSmallRoom.asm:171", "MtEmberWest.asm:184",
                    "Route77Pokecenter.asm:8"], str(real))
     check("each of them is one tile over",
           all(w == 19 for f, _, w in over if f != "PhanceroRoom.asm"),
           str([w for f, _, w in over if f != "PhanceroRoom.asm"]))
+
+
+def test_the_writer() -> None:
+    """Rewriting a block you didn't change must not change it.
+
+    This is the property the whole dialogue editor rests on. The studio will run
+    `rewrite` over blocks in a repo it does not own, and if the round trip is
+    lossy then editing one NPC's line silently reformats his neighbour's — or
+    worse, drops the `cont` that scrolls his box. So: every text block in the
+    repo, out and back, byte for byte.
+    """
+    root = Path(__file__).resolve().parent.parent.parent / "pokeprism"
+    if not (root / "maps").is_dir():
+        print("\n(skipping the writer's round trip — ../pokeprism not found)")
+        return
+    print("\nthe writer: what you didn't touch, it doesn't touch")
+
+    total = clean = 0
+    churn: list[str] = []
+    for path in sorted((root / "maps").glob("*.asm")):
+        source = path.read_text().split("\n")
+        for block in dialogue.parse(root, path):
+            total += 1
+            if dialogue.rewrite(source, block, dialogue.plain(block)) == source:
+                clean += 1
+            elif len(churn) < 5:
+                churn.append(f"{path.name}:{block.label}")
+    check(f"all {total} blocks survive an untouched round trip",
+          clean == total, str(churn))
+
+    # And an edit lands, alone. One word, one line — not a reflowed block.
+    path = root / "maps/AcaniaDocks.asm"
+    source = path.read_text().split("\n")
+    block = next(b for b in dialogue.parse(root, path)
+                 if b.label == "AcaniaDocksNPC1")
+    out = dialogue.rewrite(source, block,
+                           dialogue.plain(block).replace("Glaceon", "Vaporeon"))
+    moved = [i for i, (a, b) in enumerate(zip(source, out)) if a != b]
+    check("changing one word changes exactly one line",
+          len(moved) == 1 and len(out) == len(source), str(moved))
+    check("and it is the line with the word in it",
+          "Vaporeon" in out[moved[0]] and out[moved[0]].startswith("\tline "),
+          out[moved[0]].strip() if moved else "")
+
+    # The macros are not interchangeable, and the round trip must not level them.
+    kinds = {ln.macro for _, b in
+             ((p, b) for p in [root / "maps/AcaniaDocks.asm"]
+              for b in dialogue.parse(root, p))
+             for ln in b.lines}
+    check("`cont` survives the trip (it scrolls the box; `line` doesn't)",
+          "cont" in kinds, str(sorted(kinds)))
+
+
+def test_a_semicolon_is_not_a_comment() -> None:
+    """`line "gift as well;"` is a line of dialogue, not an empty one.
+
+    The parser used to cut every source line at the first `;`. A string that
+    contains one was therefore truncated to nothing and measured as zero tiles —
+    so the linter could not see it overflow, and the writer would have written
+    the emptiness back into the game.
+    """
+    print("\na `;` inside a string is a semicolon")
+    check("the comment is dropped", dialogue.decomment('\tline "x"  ; note') ==
+          '\tline "x"  ')
+    check("the semicolon is not",
+          dialogue.decomment('\tline "gift as well;"') == '\tline "gift as well;"')
+    check("nor is one inside an escaped quote",
+          dialogue.decomment(r'ctxt "he said \"go;\" and left"')
+          == r'ctxt "he said \"go;\" and left"')
+
+    root = Path(__file__).resolve().parent.parent.parent / "pokeprism"
+    if not (root / "maps").is_dir():
+        return
+    block = next(b for b in dialogue.parse(root, root / "maps/AzaleaGym.asm")
+                 if b.label == ".before_giving_TM_text")
+    line = next(ln for ln in block.lines if "gift" in ln.text)
+    check("so the line is measured, not silently zero",
+          line.text == "gift as well;" and line.determinate > 0,
+          f"{line.text!r} -> {line.determinate} tiles")
 
 
 def main() -> int:
@@ -231,6 +315,8 @@ def main() -> int:
         test_terminator(root)
         test_sign_context(tmp, root)
     test_real_repo()
+    test_a_semicolon_is_not_a_comment()
+    test_the_writer()
 
     print()
     if _failures:
