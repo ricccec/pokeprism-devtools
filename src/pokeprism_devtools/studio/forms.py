@@ -14,6 +14,15 @@ that measures what you type in *tiles*, against the box the text will really be
 drawn in. `#` is four tiles, not one; `<PLAYER>` is seven at its longest; and the
 speech bubble is eighteen columns wide. Finding that out from the linter after
 you've saved is finding it out too late, so the count updates on the keystroke.
+
+The map sketch is the same idea, and it is why the new-map form is worth having
+at all. An action that says `sketches = True` gets a grid under its fields, and on
+every keystroke it is asked to draw itself. It is drawn by the very widget that
+draws the real map, from the very colours — so the `.blk` you are pointing at,
+at the height and width you have typed so far, in the tileset you have named,
+appears before a byte is written. This file still doesn't know what a `.blk` is.
+It knows that some actions can show you what they mean, and that showing beats
+telling.
 """
 
 from __future__ import annotations
@@ -23,11 +32,13 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.geometry import Size
 from textual.screen import ModalScreen
 from textual.suggester import SuggestFromList
 from textual.widgets import Button, Input, Label, OptionList, Static, TextArea
 
 from .actions import Action, ActionError, Field
+from .grid import ZOOMS, MapGrid
 from .session import Preview, Session, TextPreview
 
 #: Fields the grid can answer for you. The cursor is *on* the tile; making you
@@ -97,6 +108,15 @@ class Form(ModalScreen["Preview | None"]):
             border: round $accent; background: $surface; }
     #form-title { padding: 0 1; background: $accent; color: $text; }
     #form-body { height: auto; max-height: 24; padding: 1 1 0 1; }
+    /* A form with a picture in it is a tall one — the new map's has nineteen
+       fields. The modal takes the height it is given, and of the two things
+       competing for it the *map* wins: you fill the fields in one at a time and
+       can scroll them, but a map you can only see the top of is not a map you
+       can check. Without this the picture would also push Apply off the bottom
+       of a short terminal. */
+    #form.tall { height: 90%; }
+    #form.tall #form-body { height: auto; max-height: 10; }
+    #form.tall #sketch { height: 1fr; }
     #form-error { padding: 0 1; color: $error; height: auto; }
     #form-buttons { height: 3; align: right middle; padding: 0 1; }
     .field-label { color: $text-muted; }
@@ -104,6 +124,8 @@ class Form(ModalScreen["Preview | None"]):
     .field-fixed { color: $accent; text-style: bold; }
     TextArea { height: 8; border: solid $panel; }
     #tiles { height: auto; max-height: 10; padding: 0 1 1 1; }
+    #sketch { height: 10; margin: 0 1; border: solid $panel; }
+    #sketch-why { padding: 0 1; color: $warning; height: auto; }
     """
 
     def __init__(self, action: type[Action], session: Session, map_const: str,
@@ -124,13 +146,18 @@ class Form(ModalScreen["Preview | None"]):
         self._box_of = boxes or {}
         #: Why the last submit was refused, if it was.
         self.error = ""
+        #: Why the sketch can't be drawn yet, if it can't.
+        self.unsketchable = ""
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="form"):
+        with Vertical(id="form", classes="tall" if self._action.sketches else ""):
             yield Static(self._action.title, id="form-title")
             with VerticalScroll(id="form-body"):
                 for f in self._action.FIELDS:
                     yield from self._widgets(f)
+            if self._action.sketches:
+                yield MapGrid(id="sketch")
+                yield Static(id="sketch-why")
             yield Static(id="tiles")
             yield Static(id="form-error")
             with Horizontal(id="form-buttons"):
@@ -181,12 +208,54 @@ class Form(ModalScreen["Preview | None"]):
         for widget in self.query("#form-body Input, #form-body TextArea"):
             widget.focus()
             break
+        if self._action.sketches:
+            # A preview is for looking at, not for walking around. Its cursor and
+            # its scrollbars would only be somewhere for the tab key to get lost.
+            self.query_one("#sketch", MapGrid).can_focus = False
         self._retile()
+        self._resketch()
 
     # -- the tile counter ------------------------------------------------------ #
     @on(TextArea.Changed)
     def _typed(self) -> None:
         self._retile()
+
+    # -- the map, before it exists ---------------------------------------------- #
+    @on(Input.Changed)
+    def _edited(self) -> None:
+        self._resketch()
+
+    @on(MapGrid.Moved)
+    def _sketch_moved(self, event: MapGrid.Moved) -> None:
+        # The sketch is a MapGrid, so it announces its cursor like any other. It
+        # is a picture, though, and the app behind it has a real map with a real
+        # cursor on it: let this reach the status bar and drawing the sketch would
+        # move the coordinates the *next* form gets prefilled with.
+        event.stop()
+
+    def _resketch(self) -> None:
+        """Draw the action, from the form as it stands. Or say why not.
+
+        Every field is a way for this to be unanswerable, and none of them is an
+        error: a form you have typed four characters into is *supposed* to be
+        unanswerable. So the refusal goes where the picture would have gone, in
+        the wording the action chose, and you carry on typing.
+        """
+        if not self._action.sketches:
+            return
+        grid = self.query_one("#sketch", MapGrid)
+        try:
+            view = self._session.sketch(self._action(self._map, **self._submitted_values()))
+        except ActionError as err:
+            self.unsketchable = str(err)
+            grid.view = None
+            grid.refresh()
+        else:
+            self.unsketchable = ""
+            if view is not None:
+                grid.show(view)
+                grid.zoom = _fit(view.size, grid.size)
+        self.query_one("#sketch-why", Static).update(self.unsketchable)
 
     def _retile(self) -> None:
         """Measure every dialogue box in the form, on every keystroke.
@@ -245,6 +314,24 @@ class Form(ModalScreen["Preview | None"]):
             else:
                 out[f.name] = self.query_one(f"#field-{f.name}", Input).value
         return out
+
+
+def _fit(size: tuple[int, int], panel: Size) -> int:
+    """The biggest zoom that shows the whole map at once, or the smallest there is.
+
+    A cell is two tiles tall and one wide — see `grid._HALF` — so a map fits when
+    `cols × zoom` cells across and `rows × zoom / 2` down are both inside the
+    panel. A gym is four blocks square and should not be a postage stamp; a route
+    is forty and will not fit however hard you squint, so it scrolls. Falling back
+    to zoom 1 rather than refusing is the point: a partial picture of the wrong
+    tileset is still a picture of the wrong tileset.
+    """
+    rows, cols = size
+    if not (panel.width and panel.height):
+        return ZOOMS[0]            # not laid out yet; the next keystroke re-fits
+    return next((z for z in reversed(ZOOMS)
+                 if cols * z <= panel.width and rows * z // 2 <= panel.height),
+                ZOOMS[0])
 
 
 def _tiles(measured: TextPreview) -> Text:

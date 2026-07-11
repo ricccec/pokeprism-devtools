@@ -35,8 +35,6 @@ changed under us is one whose old contents we have no business restoring.
 
 from __future__ import annotations
 
-import difflib
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from functools import cached_property
@@ -46,160 +44,18 @@ from ..maplint.context import LintContext
 from ..maplint.diagnostics import Diagnostic
 from ..shared import (blocksrc, consts, coords, dialogue, eventheader, spritesets,
                       swatches, textbox, trainerparty, wilddata)
-from ..shared.edits import Edit, StaleEdit, apply_edits
+from ..shared.edits import StaleEdit, apply_edits
 from ..wiring import connections, scaffold
-from . import actions, panels
-from .actions import Action, Result
+from . import actions, newmap, panels
+from .actions import Action
+# The shapes of the answers — see `model.py`. Re-exported, because whatever wants
+# a `MapData` wants it *from the session*: the session is the only thing that can
+# hand it one, and the split between the two files is a size, not a boundary.
+from .model import (Applied, MapData, MapGeometry, MapRef, Measured, Preview,
+                    TextPreview, TextRef)
 
-
-@dataclass(frozen=True)
-class MapRef:
-    const: str
-    label: str
-
-    def __str__(self) -> str:
-        return self.label
-
-
-@dataclass(frozen=True)
-class MapGeometry:
-    """A map's shape, and what stands on it. Everything needed to draw it, and
-    nothing that knows how to draw."""
-    label: str
-    blocks: bytes
-    height: int                                    # in blocks
-    width: int                                     # in blocks
-    swatches: tuple[swatches.Swatch, ...]
-    #: Coordinate tile -> marker glyph. Empty when the event header doesn't parse:
-    #: the map still has a shape, and it is still worth looking at.
-    marks: dict[tuple[int, int], str]
-
-    @property
-    def size(self) -> tuple[int, int]:
-        """Rows and columns, in coordinate tiles."""
-        return coords.tile_size(self.height, self.width)
-
-
-@dataclass(frozen=True)
-class MapData:
-    """One map, read off disk once, in a form the view can render without
-    knowing what any of it means."""
-    label: str
-    const: str
-    #: None only when the blocks themselves can't be read. A map whose *header*
-    #: is broken still has geometry — see `tables["error"]`.
-    geometry: MapGeometry | None
-    #: Why there is no geometry, when there isn't.
-    error: str | None
-    tables: dict[str, panels.Table]
-
-
-@dataclass(frozen=True)
-class TextRef:
-    """A block of dialogue already in the game, as prose."""
-    label: str          # what a script jumps to, or `.local` under an owner
-    owner: str          # the top-level label that owns it
-    lineno: int
-    prose: str
-    #: Which box it is drawn in — the key :meth:`Session.measure` takes. Nearly
-    #: everything is "speech"; the full-screen "sign" box is only SIGNPOST_LOAD.
-    box: str
-
-    @property
-    def opening(self) -> str:
-        """Its first words, for a list you are choosing from."""
-        first = next((line for line in self.prose.split("\n") if line.strip()), "")
-        return first[:40]
-
-
-@dataclass(frozen=True)
-class Measured:
-    """One line of dialogue, as the engine will draw it."""
-    text: str
-    #: Tiles it certainly prints. `#` is four of them.
-    tiles: int
-    #: Extra tiles if every bounded buffer (`<PLAYER>`, `<RIVAL>`) is at its
-    #: longest. A line that fits *today* and not when the player is called
-    #: BARTHOLOMEW is a line that overflows in somebody's game and not in yours.
-    bounded: int
-    #: Tokens whose length can't be bounded from the text at all (`<STRBF1>`).
-    unbounded: list[str]
-    #: Tokens with no charmap entry — a typo'd `<PLAYR>` prints as garbage.
-    unknown: list[str]
-    #: How many tiles past the right edge. 0 fits.
-    over: int
-    #: How many it would be over at the buffers' worst.
-    over_at_worst: int
-
-
-@dataclass(frozen=True)
-class TextPreview:
-    """A whole speech, measured against the box it will be drawn in."""
-    box: str                # what to call it: "speech textbox", "signpost"
-    cols: int               # tiles per line
-    lines: list[Measured]
-
-    @property
-    def fits(self) -> bool:
-        return all(m.over == 0 for m in self.lines)
-
-    @property
-    def risky(self) -> bool:
-        """Fits as written, and won't once a name buffer is at its longest."""
-        return self.fits and any(m.over_at_worst for m in self.lines)
-
-
-@dataclass(frozen=True)
-class Preview:
-    """What an action *would* do. Nothing has been written.
-
-    Holds the actual edits, so applying it writes exactly what was shown rather
-    than re-deriving something that might differ.
-    """
-    action: Action
-    result: Result
-
-    @property
-    def edits(self) -> list[Edit]:
-        return self.result.edits
-
-    @property
-    def summary(self) -> str:
-        return self.result.summary
-
-    @property
-    def notes(self) -> list[str]:
-        return self.result.notes
-
-    @property
-    def touches(self) -> list[str]:
-        return [e.path for e in self.edits]
-
-    def diff(self, context: int = 3) -> str:
-        """Unified diff of every file this touches."""
-        out: list[str] = []
-        for e in self.edits:
-            before = (e.base or "").split("\n")
-            after = e.new_text.split("\n")
-            out.extend(difflib.unified_diff(
-                before, after,
-                fromfile=f"a/{e.path}", tofile=f"b/{e.path}",
-                lineterm="", n=context,
-            ))
-        return "\n".join(out)
-
-
-@dataclass
-class Applied:
-    """An action that landed, and everything needed to take it back."""
-    summary: str
-    paths: list[str]
-    #: path -> the text that was there before. None means the file did not exist,
-    #: so undoing means deleting it again.
-    undo_to: dict[str, str | None] = field(default_factory=dict)
-    #: path -> what we wrote. Undo refuses if the file no longer matches this.
-    wrote: dict[str, str] = field(default_factory=dict)
-    notes: list[str] = field(default_factory=list)
+__all__ = ["Applied", "MapData", "MapGeometry", "MapRef", "Measured", "Preview",
+           "Session", "SessionError", "TextPreview", "TextRef"]
 
 
 class SessionError(RuntimeError):
@@ -283,6 +139,26 @@ class Session:
                     found[kind] = block
         return found
 
+    def sketch(self, action: Action) -> MapGeometry | None:
+        """A picture of what an action would put on the grid, before it exists.
+
+        Only the new-map action has anything to show — see :meth:`Action.sketch`.
+        The form calls this on every keystroke and either draws the result or
+        prints why it can't, which is how a `.blk` of the wrong size stops being
+        an arithmetic complaint and becomes a map of the wrong shape.
+
+        Raises :class:`~.actions.ActionError` for a form that isn't ready yet.
+        That is the normal state of a form you are typing into, not a failure.
+        """
+        bd = action.sketch(self.root)
+        if bd is None:
+            return None
+        return MapGeometry(
+            label=bd.name, blocks=bd.blocks, height=bd.height, width=bd.width,
+            swatches=swatches.for_map(self.root, bd.tileset_id, bd.permission),
+            marks={},                    # nothing stands on it yet
+        )
+
     # -- what a form may offer ------------------------------------------------ #
     def choices(self, kind: str) -> list[str]:
         """The constants a field of this kind will accept.
@@ -313,6 +189,18 @@ class Session:
             actions.DIRECTIONS: tuple(sorted(connections.OPPOSITE)),
             actions.FACINGS: tuple(f.removeprefix("SIGNPOST_").lower()
                                    for f in scaffold.FACINGS),
+            # The map header's enums, from the same table the new-map action
+            # checks them against — so the form cannot suggest a constant that
+            # the action would then refuse.
+            actions.PERMISSIONS: newmap.PERMS,
+            **{kind: tuple(sorted(consts.with_prefix(root, rel, prefix)))
+               for kind, (rel, prefix) in (
+                   (actions.TILESETS, newmap.ENUMS["tileset"]),
+                   (actions.LANDMARKS, newmap.ENUMS["landmark"]),
+                   (actions.MUSIC, newmap.ENUMS["music"]),
+                   (actions.TIMES, newmap.ENUMS["palette"]),
+                   (actions.FISHGROUPS, newmap.ENUMS["fishgroup"]),
+               )},
         }
 
     # -- text already in the game --------------------------------------------- #
@@ -390,16 +278,17 @@ class Session:
         file has changed since they were computed, so a stale preview raises
         rather than quietly discarding somebody else's work.
         """
-        changed = [e for e in preview.edits if e.changed and e.new_text]
+        changed = [e for e in preview.edits if e.changed and (e.new_text or e.binary)]
         if not changed:
             raise SessionError(f"{preview.summary}: nothing to change")
 
         applied = Applied(preview.summary, [e.path for e in changed],
-                          notes=list(preview.notes))
+                          notes=list(preview.notes),
+                          select=preview.action.selects())
         for e in changed:
             path = self.root / e.path
-            applied.undo_to[e.path] = path.read_text() if path.exists() else None
-            applied.wrote[e.path] = e.new_text
+            applied.undo_to[e.path] = _read(path, e.binary)
+            applied.wrote[e.path] = e.data if e.binary else e.new_text  # type: ignore[assignment]
 
         try:
             apply_edits(self.root, changed, dry_run=False)
@@ -432,8 +321,7 @@ class Session:
 
         for rel, written in last.wrote.items():
             path = self.root / rel
-            current = path.read_text() if path.exists() else None
-            if current != written:
+            if _read(path, isinstance(written, bytes)) != written:
                 raise SessionError(
                     f"{rel} has changed since '{last.summary}' was applied, so "
                     f"undoing it would discard whatever changed it. Left alone."
@@ -443,6 +331,8 @@ class Session:
             path = self.root / rel
             if before is None:
                 path.unlink(missing_ok=True)
+            elif isinstance(before, bytes):
+                path.write_bytes(before)
             else:
                 path.write_text(before)
 
@@ -454,3 +344,14 @@ class Session:
     def _invalidate(self, paths: list[str]) -> None:
         self.ctx.invalidate(paths)
         self._found = None
+        # A new map is a new entry in every list of maps, including the one the
+        # forms autocomplete from.
+        self.__dict__.pop("_choices", None)
+
+
+def _read(path: Path, binary: bool) -> str | bytes | None:
+    """What is in a file, in the units the edit that wrote it speaks. None if it
+    isn't there — which is a state undo has to be able to restore."""
+    if not path.exists():
+        return None
+    return path.read_bytes() if binary else path.read_text()

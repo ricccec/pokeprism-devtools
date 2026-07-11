@@ -41,7 +41,8 @@ from textual.widgets import (DataTable, Footer, Header, Input, OptionList, Stati
 
 from ..maplint.diagnostics import Diagnostic, Severity
 from ..shared import coords, paths
-from .actions import CATALOG, Action, EditText
+from .actions import Action, EditText
+from .catalog import CATALOG
 from .forms import Confirm, Form, Palette, Picker
 from .grid import MapGrid
 from .session import MapData, Preview, Session, SessionError, TextRef
@@ -107,10 +108,13 @@ class Studio(App):
         #: looking at whichever map happened to finish last.
         self._wanted: str | None = None
         self._const: str | None = None
-        #: Where to put the cursor back after a reload. Re-reading the map is how
-        #: a new NPC appears on the grid, but it would also send the cursor home
-        #: — off the tile you were working on, the moment you worked on it.
-        self._keep_cursor: tuple[int, int] | None = None
+        #: Where to put the cursor back after a reload, and on which map. Re-reading
+        #: the map is how a new NPC appears on the grid, but it would also send the
+        #: cursor home — off the tile you were working on, the moment you worked on
+        #: it. Keyed by label because a write can bring a *different* map with it:
+        #: adding one selects it, and (9, 11) on the map you left is not (9, 11) on
+        #: the one you arrived at.
+        self._keep_cursor: tuple[str, tuple[int, int]] | None = None
         self._texts: list[TextRef] = []
         self._linted = False
 
@@ -150,7 +154,7 @@ class Studio(App):
         return out
 
     # -- the map list ----------------------------------------------------------- #
-    def _fill_list(self, needle: str) -> None:
+    def _fill_list(self, needle: str, select: str | None = None) -> None:
         needle = needle.strip().lower()
         self._shown = [m.label for m in self._maps
                        if needle in m.label.lower() or needle in m.const.lower()]
@@ -158,7 +162,11 @@ class Studio(App):
         options.clear_options()
         options.add_options(self._shown)
         if self._shown:
-            options.highlighted = 0
+            # Highlighting is what loads a map, so it is set once, to what we
+            # actually want — highlighting the first map and then correcting it
+            # would load two maps and show you the wrong one on the way.
+            options.highlighted = (self._shown.index(select)
+                                   if select in self._shown else 0)
 
     @on(Input.Changed, "#filter")
     def _filtered(self, event: Input.Changed) -> None:
@@ -193,9 +201,8 @@ class Studio(App):
         else:
             grid.display = True
             grid.show(data.geometry)
-            if self._keep_cursor is not None:
-                grid.cursor = self._keep_cursor
-                self._keep_cursor = None
+            if self._keep_cursor and self._keep_cursor[0] == data.label:
+                grid.cursor = self._keep_cursor[1]
 
         for name in _TABS:
             table = self.query_one(f"#table-{name.lower()}", DataTable)
@@ -317,8 +324,9 @@ class Studio(App):
         except SessionError as exc:
             self.notify(str(exc), severity="error", timeout=10)
             return
-        self.notify("\n".join([applied.summary, *applied.notes]))
-        self._after_write()
+        self.notify("\n".join([applied.summary, *applied.notes]),
+                    timeout=10 if applied.notes else 5)
+        self._after_write(applied.select)
 
     def action_undo(self) -> None:
         try:
@@ -327,9 +335,11 @@ class Studio(App):
             self.notify(str(exc), severity="error", timeout=10)
             return
         self.notify(f"undone: {last.summary}")
+        # Deliberately not `last.select`: undoing the map you just made unmakes
+        # it, and the one thing you must not be left looking at is that.
         self._after_write()
 
-    def _after_write(self) -> None:
+    def _after_write(self, select: str | None = None) -> None:
         """Bring the screen back in step with the repo.
 
         The session has already dropped the caches for the files that moved, so
@@ -338,12 +348,26 @@ class Studio(App):
         on the UI thread. The grid, on the other hand, is re-read immediately:
         the NPC you just placed should be on the map before you have let go of
         the key.
+
+        The list of maps is re-read too, and that is not decoration. Adding a map
+        puts one in it; undoing that takes it back out, and the map you were
+        looking at can be the one that has just stopped existing.
         """
         self._linted = False
         grid = self.query_one("#grid", MapGrid)
-        self._keep_cursor = grid.cursor if grid.view is not None else None
-        if self._wanted:
-            self._load(self._wanted)
+        if self._wanted and grid.view is not None:
+            self._keep_cursor = (self._wanted, grid.cursor)
+
+        self._maps = self.session.maps
+        known = [m.label for m in self._maps]
+        want = select if select in known else self._wanted
+        if want not in known:
+            want = known[0] if known else None
+        self._wanted = want
+
+        self._fill_list(self.query_one("#filter", Input).value, select=want)
+        if want:
+            self._load(want)
         self._lint()
 
     # -- keys --------------------------------------------------------------------- #

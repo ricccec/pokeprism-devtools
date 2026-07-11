@@ -24,9 +24,11 @@ from textual.widgets import Input, OptionList, TextArea
 
 from pokeprism_devtools.shared import blocksrc, coords, eventheader, paths, swatches
 from pokeprism_devtools.studio import Session, panels
+from pokeprism_devtools.studio.actions import ActionError
 from pokeprism_devtools.studio.app import Studio
 from pokeprism_devtools.studio.forms import Confirm, Form, Palette, Picker
 from pokeprism_devtools.studio.grid import MapGrid
+from pokeprism_devtools.studio.newmap import NewMap
 
 ROOT = paths.repo_root(Path.home() / "code/ricccec/pokeprism")
 
@@ -225,7 +227,7 @@ class TestChoices(unittest.TestCase):
         cls.session = Session(ROOT)
 
     def test_every_declared_kind_can_be_answered(self) -> None:
-        from pokeprism_devtools.studio.actions import CATALOG
+        from pokeprism_devtools.studio.catalog import CATALOG
         for action in CATALOG:
             for f in action.FIELDS:
                 if f.choices:
@@ -442,8 +444,181 @@ class TestEditing(unittest.TestCase):
         drive(go())
 
 
+class TestNewMap(unittest.TestCase):
+    """Adding a map to the game: the picture first, then the whole loop.
+
+    Every other action changes a map you are looking at. This one has nothing to
+    look at — the map does not exist until five source files say it does — which
+    is why it draws itself out of the form, and why this test looks at the
+    drawing before it looks at the diff.
+    """
+
+    HEIGHT, WIDTH = 4, 5
+    #: 20 blocks, none of them 0, so a picture of them is a picture of something.
+    BLOCKS = bytes((i * 7) % 100 + 1 for i in range(HEIGHT * WIDTH))
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        tmp = Path(cls._tmp.name)
+        cls.root = tmp / "pokeprism"
+        shutil.copytree(ROOT, cls.root, symlinks=True, ignore=shutil.ignore_patterns(
+            ".git", "*.o", "*.gbc", "*.sym", "*.map"))
+        # The .blk as it comes out of polished-map: somewhere else entirely, and
+        # named whatever you called it there.
+        cls.blk = tmp / "drawn-this-morning.ablk"
+        cls.blk.write_bytes(cls.BLOCKS)
+        cls.session = Session(ROOT)          # read-only: a sketch writes nothing
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def form(self, **override: str) -> dict[str, str]:
+        """A complete, valid form. Every constant in it is real."""
+        return {
+            "label": "TestIsland", "const": "TEST_ISLAND", "group": "1",
+            "height": str(self.HEIGHT), "width": str(self.WIDTH),
+            "blk": str(self.blk),
+            "tileset": "TILESET_FOREST", "permission": "CAVE",
+            "landmark": "SPECIAL_MAP", "music": "MUSIC_ROUTE_2",
+            "palette": "PALETTE_NITE", "fishgroup": "FISHGROUP_POND",
+            "phone": "0", "border_block": "0", "conn_flags": "0", "bank": "",
+            "blockdata_section": "", "script_section": "", "secondary_section": "",
+        } | override
+
+    # -- the picture ------------------------------------------------------------ #
+    def test_the_blk_is_on_the_grid_before_it_is_written(self) -> None:
+        view = self.session.sketch(NewMap(**self.form()))
+        self.assertIsNotNone(view)
+        self.assertEqual((view.height, view.width), (self.HEIGHT, self.WIDTH))
+        self.assertEqual(view.blocks, self.BLOCKS)
+        self.assertEqual(view.size, coords.tile_size(self.HEIGHT, self.WIDTH))
+        self.assertTrue(view.swatches, "no colours: the tileset never resolved")
+        self.assertEqual(view.marks, {}, "nothing stands on a map this new")
+
+    def test_a_blk_that_is_the_wrong_size_says_so_rather_than_drawing(self) -> None:
+        """The one mistake that silently ruins a new map. The engine copies
+        height x width bytes and reads whatever follows the file into the rest —
+        which is why it shows up in-game as a band of garbage along the bottom
+        rather than as an error."""
+        with self.assertRaises(ActionError) as caught:
+            self.session.sketch(NewMap(**self.form(height="9")))
+        self.assertIn("holds 20 blocks", str(caught.exception))
+        self.assertIn("9×5 = 45", str(caught.exception))
+
+    def test_a_tileset_that_does_not_exist_is_refused_not_guessed(self) -> None:
+        """Falling back to tileset 0 would draw a picture of a map that does not
+        exist, and the picture would look perfectly fine."""
+        with self.assertRaises(ActionError) as caught:
+            self.session.sketch(NewMap(**self.form(tileset="TILESET_FORREST")))
+        self.assertIn("TILESET_FORREST", str(caught.exception))
+
+    def test_a_half_filled_form_asks_for_the_rest_instead_of_failing(self) -> None:
+        """The normal state of a form you are typing into is 'not answerable yet'.
+        That is not an error, and it must not read like one."""
+        with self.assertRaises(ActionError) as caught:
+            self.session.sketch(NewMap(**self.form(blk="")))
+        self.assertIn("point at the", str(caught.exception))
+
+    # -- the writing ------------------------------------------------------------- #
+    def test_adding_a_map_and_taking_it_back(self) -> None:
+        wired = ["constants/map_dimension_constants.asm", "maps/map_headers.asm",
+                 "maps/second_map_headers.asm", "maps/blockdata.asm",
+                 "maps/map_scripts.asm"]
+        before = {rel: (self.root / rel).read_text() for rel in wired}
+        made = ["maps/TestIsland.asm", "maps/blk/TestIsland.ablk",
+                ".devtools/specs/TestIsland.toml"]
+
+        async def go():
+            app = Studio(self.root)
+            async with app.run_test() as pilot:
+                await self._loaded(app, pilot)
+
+                await pilot.press("a")
+                await pilot.pause()
+                palette = app.screen
+                options = palette.query_one("#picker-list", OptionList)
+                titles = [str(o.prompt) for o in options._options]
+                options.highlighted = titles.index("Add a new map")
+                await pilot.press("enter")
+                await pilot.pause()
+
+                form = app.screen
+                self.assertIsInstance(form, Form)
+                for name, value in self.form().items():
+                    form.query_one(f"#field-{name}", Input).value = value
+                await pilot.pause()
+
+                # The map is on screen, in colour, at the size you typed — and
+                # not one byte of it is in the repo yet. This is the whole reason
+                # the studio exists rather than another wizard.
+                sketch = form.query_one("#sketch", MapGrid)
+                self.assertIsNotNone(sketch.view, form.unsketchable)
+                self.assertEqual(sketch.view.blocks, self.BLOCKS)
+                self.assertEqual(form.unsketchable, "")
+
+                form.action_submit()
+                await pilot.pause()
+                confirm = app.screen
+                self.assertIsInstance(confirm, Confirm, form.error)
+
+                diff = confirm._preview.diff()
+                for line in ("+\tmapgroup TEST_ISLAND, 4, 5",
+                             "+\tmap_header TestIsland, TILESET_FOREST, CAVE,",
+                             "+\tmap_header_2 TestIsland, TEST_ISLAND, 0, 0",
+                             "+TestIsland_BlockData:",
+                             '+\tINCBIN "maps/blk/TestIsland.ablk.lz"',
+                             '+INCLUDE "maps/TestIsland.asm"',
+                             "+++ b/maps/blk/TestIsland.ablk"):
+                    self.assertIn(line, diff)
+
+                confirm.action_yes()
+                await pilot.pause()
+
+                # The blocks that landed are the blocks that were drawn.
+                self.assertEqual((self.root / "maps/blk/TestIsland.ablk").read_bytes(),
+                                 self.BLOCKS)
+                for rel in made:
+                    self.assertTrue((self.root / rel).exists(), f"{rel} not written")
+
+                # And the studio is looking at it: a map you added and then had to
+                # go and find would be a map you might not have added.
+                for _ in range(300):
+                    await pilot.pause(0.02)
+                    grid = app.query_one("#grid", MapGrid)
+                    if grid.view is not None and grid.view.label == "TestIsland":
+                        break
+                self.assertEqual(app._wanted, "TestIsland")
+                self.assertEqual(grid.view.blocks, self.BLOCKS)
+                self.assertIn("TestIsland", app._shown)
+
+                # Undo unmakes it — including the files it created, and including
+                # the map you are standing on.
+                app.action_undo()
+                await pilot.pause()
+                for rel in made:
+                    self.assertFalse((self.root / rel).exists(), f"{rel} survived undo")
+                for rel, text in before.items():
+                    self.assertEqual((self.root / rel).read_text(), text, rel)
+                self.assertNotIn("TestIsland", app._shown)
+
+                await app.action_quit()
+
+        drive(go())
+
+    async def _loaded(self, app, pilot) -> None:
+        """Wait for whatever map the list opens on. Adding a map needs no map,
+        but the studio still has one selected, and the palette wants it."""
+        for _ in range(300):
+            await pilot.pause(0.02)
+            if app._const is not None:
+                return
+        self.fail("no map ever loaded")
+
+
 def _action(title: str):
-    from pokeprism_devtools.studio.actions import CATALOG
+    from pokeprism_devtools.studio.catalog import CATALOG
     return next(a for a in CATALOG if a.title == title)
 
 

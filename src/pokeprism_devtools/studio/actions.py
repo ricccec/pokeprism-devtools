@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..shared import trainerparty
+from ..shared.blockdata import BlockData
 from ..shared.edits import Edit
 from ..wiring import connections, removal, scaffold, warps
 # By name, not by module: `Action.text()` is a method, and `text.reword(...)`
@@ -47,6 +48,15 @@ ITEMS = "items"
 CLASSES = "classes"
 DIRECTIONS = "directions"
 FACINGS = "facings"
+TILESETS = "tilesets"
+PERMISSIONS = "permissions"
+LANDMARKS = "landmarks"
+MUSIC = "music"
+#: The map header's palette — `PALETTE_DAY`, `PALETTE_NITE`. Not :data:`PALETTES`,
+#: which is a *sprite's* `PAL_OW_RED`. Two different words spelled the same, and
+#: putting one where the other goes assembles perfectly.
+TIMES = "times"
+FISHGROUPS = "fishgroups"
 
 
 class ActionError(RuntimeError):
@@ -86,6 +96,10 @@ class Action:
     name = "action"
     title = "Action"
     FIELDS: tuple[Field, ...] = ()
+    #: Whether this action can draw a picture of itself while you fill it in —
+    #: see :meth:`sketch`. Declared rather than discovered, so the form can put
+    #: the panel on screen before the fields have anything in them.
+    sketches = False
 
     def __init__(self, **values: str) -> None:
         self.values = values
@@ -93,11 +107,32 @@ class Action:
     def __str__(self) -> str:
         return self.describe()
 
+    def run(self, root: Path) -> Result:
+        raise NotImplementedError
+
     def describe(self) -> str:
         return self.title
 
-    def run(self, root: Path) -> Result:
-        raise NotImplementedError
+    def selects(self) -> str | None:
+        """The map to be looking at once this has landed, if it isn't this one.
+
+        Only adding a map answers this. Every other action changes the map that
+        is already on screen, and moving you somewhere else would be rude; adding
+        one that you then have to go and find would be worse.
+        """
+        return None
+
+    def sketch(self, root: Path) -> BlockData | None:
+        """The blocks this action would put on the grid, from a half-filled form.
+
+        Only :class:`~.newmap.NewMap` has anything to draw: it is the one action
+        whose subject doesn't exist yet, so it is the one action you cannot check
+        by looking at the map. Everything else acts *on* a map already on screen.
+
+        Raises :class:`ActionError` for a form that isn't ready, which is not a
+        failure — it is what the panel says instead of a picture.
+        """
+        return None
 
     # -- reading the form ---------------------------------------------------- #
     def text(self, name: str) -> str:
@@ -434,10 +469,3 @@ class Remove(_Placed):
         if r.freed_flag:
             notes.append(f"freed {r.freed_flag}")
         return Result(r.summary, r.changes, notes)
-
-
-#: Everything the studio can do to a map, in the order the palette offers it.
-CATALOG: tuple[type[Action], ...] = (
-    AddNpc, AddTrainer, AddItemball, AddHiddenItem, AddSignpost,
-    Remove, Connect, AddWarp,
-)
