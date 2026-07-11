@@ -85,18 +85,24 @@ class LintContext:
         self.root = root
         self._headers: dict[str, eh.EventHeader | None] = {}
         self._text: dict[str, list[dialogue.Block]] = {}
+        self._source: dict[str, list[str]] = {}
 
     # -- files -------------------------------------------------------------- #
     def rel(self, path: Path) -> str:
         return str(path.relative_to(self.root))
 
-    @cached_property
-    def source_lines(self) -> dict[str, list[str]]:
-        """Every file a diagnostic can point at, for suppression lookups."""
-        out: dict[str, list[str]] = {}
-        for path in [self.root / _SECOND_HEADERS, *sorted((self.root / "maps").glob("*.asm"))]:
-            out[self.rel(path)] = path.read_text().split("\n")
-        return out
+    def source_lines(self, rel: str) -> list[str]:
+        """One file's lines, by repo-relative path, cached.
+
+        Findings point at maps, but also at constants/event_flags.asm and the
+        trainer groups, and a suppression comment has to work wherever the
+        finding lands. So this is keyed off whatever a diagnostic actually names
+        rather than off a fixed list of directories that quietly went stale.
+        """
+        if rel not in self._source:
+            path = self.root / rel
+            self._source[rel] = path.read_text().split("\n") if path.is_file() else []
+        return self._source[rel]
 
     # -- maps --------------------------------------------------------------- #
     @cached_property
