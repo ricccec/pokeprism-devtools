@@ -56,12 +56,16 @@ class EventFlags:
     start_value: int                                  # counter on entering the file
     flags: list[Flag] = field(default_factory=list)
     skips: list[Flag] = field(default_factory=list)   # free slots (name == "skip")
+    #: Flags defined in constants.asm *before* the INCLUDE — EVENT_0 lives there.
+    #: They are real flags and maps reference them, but they are not ours to edit.
+    preamble: dict[str, int] = field(default_factory=dict)
     _eol: str = "\n"
 
     # -- read --------------------------------------------------------------- #
     @property
     def by_name(self) -> dict[str, int]:
-        return {f.name: f.value for f in self.flags}
+        """Every event flag that exists, including the preamble's."""
+        return {**self.preamble, **{f.name: f.value for f in self.flags}}
 
     @property
     def num_events(self) -> int:
@@ -124,28 +128,40 @@ def load(root: Path) -> EventFlags:
     path = root / _REL
     if not path.exists():
         raise FlagError(f"{path} not found")
-    text = path.read_text()
-    return _parse(path, text.split("\n"), start_value(root), "\n")
+    start, preamble = _preamble(root)
+    flags = _parse(path, path.read_text().split("\n"), start, "\n")
+    flags.preamble = preamble
+    return flags
 
 
 def start_value(root: Path) -> int:
     """The const counter as it stands when ``constants.asm`` INCLUDEs the event
     flags — read from source, so a change upstream is picked up rather than
     silently shifting every flag value this tool reports."""
+    return _preamble(root)[0]
+
+
+def _preamble(root: Path) -> tuple[int, dict[str, int]]:
+    """Walk constants.asm up to the event-flag INCLUDE, returning the counter it
+    hands over and any EVENT_* it defined on the way (EVENT_0 is defined there,
+    and maps do reference it)."""
     parent = root / _PARENT_REL
     if not parent.exists():
         raise FlagError(f"{parent} not found")
 
     counter = 0
+    defined: dict[str, int] = {}
     for line in parent.read_text().split("\n"):
         m = _INCLUDE_RE.match(line)
         if m and m.group(1) == _REL:
-            return counter
+            return counter, defined
         if m := _CONST_DEF_RE.match(line):
             counter = _to_int(m.group(1)) if m.group(1) else 0
         elif m := _CONST_VALUE_RE.match(line):
             counter = _to_int(m.group(1))
-        elif _CONST_RE.match(line):
+        elif m := _CONST_RE.match(line):
+            if m.group(1).startswith("EVENT_"):
+                defined[m.group(1)] = counter
             counter += 1
     raise FlagError(f"{_PARENT_REL} does not INCLUDE {_REL}")
 

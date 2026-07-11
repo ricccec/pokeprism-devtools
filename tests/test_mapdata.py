@@ -73,10 +73,19 @@ def _fixture(tmp: Path) -> Path:
         "\tconst WALKING_SPRITE\n"
         "\tconst STANDING_SPRITE\n"
         "\tconst STILL_SPRITE\n"
+        "\n; movement data\n"
+        "\tconst_def\n"
+        "\tconst SPRITEMOVEDATA_STANDING_DOWN\n"
+        "\tconst SPRITEMOVEDATA_WANDER\n"
         "\n; a later enum that also starts with SPRITE_ — must not leak\n"
         "\tconst_def\n"
         "\tconst SPRITE_ANIM_FRAMESET_00\n"
         "\tconst SPRITE_ANIM_FRAMESET_CUT_TREE\n"
+    )
+    (root / "data" / "map_objects.asm").write_text(
+        "SpriteMovementData::\n"
+        "\tsprite_movement_data SPRITEMOVEFN_STANDING, DOWN, PERSON_ACTION_STAND, $00, $00, %0000 ; 00\n"
+        "\tsprite_movement_data SPRITEMOVEFN_RANDOM_WALK_XY, DOWN, PERSON_ACTION_STAND, $00, $00, %0000 ; 01\n"
     )
     # Positional: the nth sprite_header is sprite id n.
     (root / "data" / "sprite_headers.asm").write_text(
@@ -195,6 +204,18 @@ def test_spritesets(root: Path) -> None:
           sd.is_variable_sprite("SPRITE_COPYCAT") and not sd.needs_header("SPRITE_COPYCAT"))
     check("no sprite is missing a header it ought to have", not sd.missing_headers,
           str(sd.missing_headers))
+
+    print("\nsprites: movement data (which movements actually walk)")
+    check("sprite types ranked WALKING < STANDING < STILL — the sort order that "
+          "packs walkers into VRAM table 1 first",
+          sd.type_rank("WALKING_SPRITE") < sd.type_rank("STANDING_SPRITE")
+          < sd.type_rank("STILL_SPRITE"))
+    check("movedata resolves to its movement function",
+          sd.move_function("SPRITEMOVEDATA_WANDER") == "SPRITEMOVEFN_RANDOM_WALK_XY")
+    check("a raw literal resolves too (some maps write $1)",
+          sd.move_function("$1") == "SPRITEMOVEFN_RANDOM_WALK_XY")
+    check("wandering steps", sd.steps("SPRITEMOVEDATA_WANDER"))
+    check("standing does not", not sd.steps("SPRITEMOVEDATA_STANDING_DOWN"))
 
     print("\nsprites: outdoor sets per map group")
     check("group -> set name", sd.set_names[2] == "TownSprites")

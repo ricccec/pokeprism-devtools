@@ -1,0 +1,191 @@
+"""Rules about what a map puts *in* itself: objects, sprites, events, flags.
+
+These are the failures that never reach the assembler. A sprite missing from the
+map group's outdoor set still builds — it just renders as garbage. A count byte
+that over-declares still builds — the engine spawns a phantom NPC out of the
+following bytes. An event flag that doesn't exist still builds, because the
+`dw` takes any expression.
+"""
+
+from __future__ import annotations
+
+import re
+
+from ..shared.eventheader import ListKind
+from .context import LintContext
+from .diagnostics import Diagnostic, Severity
+
+_LIST_NAMES = {
+    ListKind.WARPS: "warps",
+    ListKind.COORD_EVENTS: "coord events",
+    ListKind.BG_EVENTS: "BG events",
+    ListKind.OBJECT_EVENTS: "object events",
+}
+
+_EVENT_RE = re.compile(r"\bEVENT_[A-Z0-9_]+\b")
+
+
+def obj_count(ctx: LintContext) -> list[Diagnostic]:
+    """Each list's count byte must match the entries under it.
+
+    The count is what the engine trusts. Too high and it reads the bytes after
+    the list as another object — a phantom NPC you can walk into and talk to.
+    Too low and the trailing entries simply never spawn.
+    """
+    out = []
+    for const, info in sorted(ctx.map_infos.items()):
+        header = ctx.header(const)
+        if header is None:
+            continue
+        path = ctx.rel(info.path)
+        for kind in ListKind:
+            lst = header.lists[kind]
+            if lst.count_matches:
+                continue
+            present = len(lst.entries) + len(lst.strays)
+            if lst.declared_count > present:
+                msg = (f"{_LIST_NAMES[kind]} count is {lst.declared_count} but only "
+                       f"{present} entr{'y' if present == 1 else 'ies'} follow — the "
+                       f"engine will read the bytes after the list as "
+                       f"{lst.declared_count - present} more")
+            else:
+                msg = (f"{_LIST_NAMES[kind]} count is {lst.declared_count} but "
+                       f"{present} entries follow — the last "
+                       f"{present - lst.declared_count} will never spawn")
+            out.append(Diagnostic("obj-count", Severity.ERROR, path,
+                                  lst.count_lineno + 1, msg))
+    return out
+
+
+def sprite_outdoor(ctx: LintContext) -> list[Diagnostic]:
+    """On an outdoor map, every object's sprite must be in the map group's
+    `OutdoorSprites` set.
+
+    `AddMapSprites` (engine/overworld.asm) loads graphics for an outdoor map from
+    the *group's* set, not from the map's own objects. A sprite the set doesn't
+    list gets no graphics loaded and renders as whatever tiles happen to be
+    there — with no build error.
+    """
+    sd = ctx.sprites
+    out = []
+    for const, info in sorted(ctx.map_infos.items()):
+        header = ctx.header(const)
+        if header is None or not ctx.is_outdoor(const):
+            continue
+        mapdef = ctx.map_defs.get(const)
+        if mapdef is None:
+            continue
+
+        allowed = set(sd.outdoor_set(mapdef.group))
+        set_name = sd.set_names.get(mapdef.group, "?")
+        path = ctx.rel(info.path)
+        for obj in header.object_events:
+            sprite = obj.sprite
+            if not sd.needs_header(sprite):
+                continue                  # Pokemon / variable sprites load elsewhere
+            if sprite not in allowed:
+                out.append(Diagnostic(
+                    "sprite-outdoor", Severity.ERROR, path, obj.lineno + 1,
+                    f"{sprite} is not in {set_name}, the outdoor sprite set for map "
+                    f"group {mapdef.group} — it will render as garbage. Add it to "
+                    f"{set_name} or use a sprite from that set",
+                ))
+    return out
+
+
+def sprite_static_walker(ctx: LintContext) -> list[Diagnostic]:
+    """An object that takes steps needs a `WALKING_SPRITE`.
+
+    Walk-frame graphics are fetched at a fixed +$80 tile offset from the
+    sprite's base tile (data/facings.asm). A sprite without them animates its
+    walk cycle out of whatever tiles sit at that offset.
+    """
+    sd = ctx.sprites
+    out = []
+    for const, info in sorted(ctx.map_infos.items()):
+        header = ctx.header(const)
+        if header is None:
+            continue
+        path = ctx.rel(info.path)
+        for obj in header.object_events:
+            hdr = sd.header(obj.sprite)
+            if hdr is None or hdr.walking:
+                continue                  # no header (Pokemon/variable), or already fine
+
+            if sd.steps(obj.movement):
+                fn = sd.move_function(obj.movement)
+                out.append(Diagnostic(
+                    "sprite-static-walker", Severity.ERROR, path, obj.lineno + 1,
+                    f"{obj.sprite} is a {hdr.type} but its movement {obj.movement} "
+                    f"({fn}) makes it walk — it has no walk frames",
+                ))
+                continue
+
+            radius = (obj.int_arg(4) or 0, obj.int_arg(5) or 0)
+            if "TRAINER" in obj.persontype and any(r > 0 for r in radius):
+                out.append(Diagnostic(
+                    "sprite-static-walker", Severity.ERROR, path, obj.lineno + 1,
+                    f"{obj.sprite} is a {hdr.type} but this trainer has a sight "
+                    f"radius of {radius[0]},{radius[1]} — it walks up to the player "
+                    f"and has no walk frames",
+                ))
+    return out
+
+
+def flag_unknown(ctx: LintContext) -> list[Diagnostic]:
+    """Every `EVENT_*` a map references must exist in constants/event_flags.asm.
+
+    An undefined symbol here would normally fail the link — but these are
+    referenced from `dw` expressions inside macros, and a typo'd flag name can
+    resolve to a *different* flag or to 0, silently.
+    """
+    known = ctx.flags.by_name
+    out = []
+    for const, info in sorted(ctx.map_infos.items()):
+        header = ctx.header(const)
+        if header is None:
+            continue
+        path = ctx.rel(info.path)
+        for kind in ListKind:
+            for entry in header.lists[kind].entries:
+                for arg in entry.args:
+                    for name in _EVENT_RE.findall(arg):
+                        if name not in known:
+                            out.append(Diagnostic(
+                                "flag-unknown", Severity.ERROR, path, entry.lineno + 1,
+                                f"{name} is not defined in constants/event_flags.asm",
+                            ))
+    return out
+
+
+def flag_shared(ctx: LintContext) -> list[Diagnostic]:
+    """The same appearance flag on objects in different maps.
+
+    Usually deliberate (one NPC that moves between maps, a gym leader who
+    vanishes everywhere at once), so this is `info` — but it's also what an
+    accidentally copy-pasted flag looks like.
+    """
+    usage: dict[str, list[tuple[str, str, int]]] = {}
+    for const, info in sorted(ctx.map_infos.items()):
+        header = ctx.header(const)
+        if header is None:
+            continue
+        for obj in header.object_events:
+            flag = obj.event_flag
+            if flag.startswith("EVENT_"):
+                usage.setdefault(flag, []).append((const, ctx.rel(info.path), obj.lineno + 1))
+
+    out = []
+    for flag, uses in sorted(usage.items()):
+        maps_using = {const for const, _, _ in uses}
+        if len(maps_using) > 1:
+            const, path, line = uses[0]
+            others = ", ".join(sorted(maps_using - {const}))
+            out.append(Diagnostic(
+                "flag-shared", Severity.INFO, path, line,
+                f"{flag} also gates objects in {others}",
+            ))
+    return out
+
+
+ALL = (obj_count, sprite_outdoor, sprite_static_walker, flag_unknown, flag_shared)
