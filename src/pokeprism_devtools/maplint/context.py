@@ -21,6 +21,7 @@ from ..shared.maps import MapDef
 _SECOND_HEADERS = "maps/second_map_headers.asm"
 _MAP_CONSTANTS = "constants/map_constants.asm"          # direction / permission enums
 _MAP_DIMENSIONS = "constants/map_dimension_constants.asm"   # the `mapgroup` lines
+_LANDMARK_CONSTANTS = "constants/landmark_constants.asm"
 
 #: Connection direction bits — `shift_const EAST, WEST, SOUTH, NORTH` in
 #: constants/map_constants.asm, i.e. EAST=1, WEST=2, SOUTH=4, NORTH=8. Read from
@@ -217,6 +218,39 @@ class LintContext:
     def find_connection(self, owner: str, direction: str, target: str) -> Connection | None:
         return next((c for c in self.connections_by_map.get(owner, [])
                      if c.direction == direction and c.target == target), None)
+
+    # -- landmarks / regions ------------------------------------------------ #
+    @cached_property
+    def landmark_regions(self) -> dict[str, str]:
+        """landmark const -> region name (lowercase), as `RegionCheck` resolves it.
+
+        constants/landmark_constants.asm is one flat enum with `region_def NALJO`
+        markers dropped into it, each recording where a region's landmarks start.
+        `RegionCheck` (engine/landmarks.asm) walks those same starts as
+        thresholds and returns the last region whose start is <= the landmark —
+        so regions are contiguous ranges, and this reproduces that exactly.
+        """
+        path = self.root / _LANDMARK_CONSTANTS
+        if not path.exists():
+            return {}
+
+        out: dict[str, str] = {}
+        region = None
+        for line in path.read_text().split("\n"):
+            s = line.split(";")[0].strip()
+            if m := re.match(r"^region_def\s+(\w+)$", s):
+                region = m.group(1).lower()
+            elif m := re.match(r"^const\s+(\w+)$", s):
+                if region:
+                    out[m.group(1)] = region
+        return out
+
+    def region_of(self, const: str) -> str | None:
+        """The region a *map* belongs to, via its landmark."""
+        header = self.primary_headers.get(const)
+        if header is None:
+            return None
+        return self.landmark_regions.get(header.landmark)
 
     # -- shared data -------------------------------------------------------- #
     @cached_property
