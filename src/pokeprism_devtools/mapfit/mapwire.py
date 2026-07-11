@@ -15,21 +15,14 @@ alternative, since ``MapGroupN`` is an ordered array indexed by map id.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
+from ..shared.edits import Edit, apply_edits
 from ..shared.mapspec import MapSpec
 
+__all__ = ["Edit", "apply_edits", "WiringError", "SCRIPTS_GUARD"]
 
 SCRIPTS_GUARD = "DO NOT ADD ANYTHING BELOW THIS LINE"
-
-
-@dataclass
-class Edit:
-    path: str            # repo-relative
-    changed: bool
-    detail: str
-    new_text: str = ""   # full file text after the edit (for dry-run diffing)
 
 
 # --------------------------------------------------------------------------- #
@@ -281,12 +274,3 @@ ALL_ASM_EDITORS = (
     wire_blockdata,
     wire_script,
 )
-
-
-def apply_edits(root: Path, edits: list[Edit], *, dry_run: bool) -> None:
-    """Write each edit's new_text to disk (unless dry_run)."""
-    if dry_run:
-        return
-    for e in edits:
-        if e.changed and e.new_text:
-            (root / e.path).write_text(e.new_text)
