@@ -43,6 +43,11 @@ from pathlib import Path
 OWNER = "owner"
 #: A reference that only *reads* the flag to decide something. Any number is fine.
 READER = "reader"
+#: A mention this parser cannot classify — an engine `ld de, EVENT_X` handed to
+#: EventFlagAction, whose mode byte decides whether it sets or tests the flag.
+#: Callers asking "does anything set this?" must treat UNKNOWN as "possibly yes",
+#: because the alternative is calling a live flag dead.
+UNKNOWN = "unknown"
 
 #: Script commands, and which side they fall on. `checkcode` and the `seteventvar`
 #: family take a flag as a value; treat them as readers — they don't own it.
@@ -91,10 +96,15 @@ _DECLARATION = "constants/event_flags.asm"
 @dataclass(frozen=True)
 class FlagRef:
     flag: str
-    role: str            # OWNER | READER
-    how: str             # "person_event" | "trainer" | "hidden item" | "setevent" | …
+    role: str            # OWNER | READER | UNKNOWN
+    how: str             # "person_event (…)" | "trainer" | "item record" | "setevent" | …
     path: str            # repo-relative
     line: int            # 1-based
+    #: Only meaningful on a person_event gate. The `| $8000` bit inverts the test
+    #: (engine/objects.asm: `res 7, d` … `xor b`), and it inverts the *meaning* of
+    #: the gate: normally an object is visible until its flag is set, and with
+    #: this bit it is invisible until its flag is set.
+    inverted: bool = False
 
 
 @dataclass(frozen=True)
@@ -171,10 +181,10 @@ def _refs_in(path: Path, rel: str) -> tuple[list[FlagRef], set[str]]:
             refs.append(FlagRef(m.group(2), role, m.group(1), rel, i))
             continue
 
-        # Anything else naming a flag — engine tables, expressions — is a reader.
-        # It keeps the flag alive without claiming to own it.
+        # Anything else naming a flag — engine code, expressions, tables. We
+        # can't tell a set from a test here, so we don't pretend to.
         for name in _EVENT_RE.findall(line):
-            refs.append(FlagRef(name, READER, "reference", rel, i))
+            refs.append(FlagRef(name, UNKNOWN, "reference", rel, i))
     return refs, built
 
 
@@ -197,7 +207,8 @@ def _person_refs(args: str, rel: str, line: int) -> list[FlagRef]:
         return []
     persontype = parts[9] if len(parts) > 9 else ""
     role = OWNER if persontype in _OWNING_PERSONTYPES else READER
-    return [FlagRef(name, role, f"person_event ({persontype})", rel, line)
+    inverted = "$8000" in parts[-1]
+    return [FlagRef(name, role, f"person_event ({persontype})", rel, line, inverted)
             for name in names]
 
 
@@ -207,3 +218,15 @@ def owners(refs: list[FlagRef]) -> list[FlagRef]:
 
 def readers(refs: list[FlagRef]) -> list[FlagRef]:
     return [r for r in refs if r.role == READER]
+
+
+def maybe_set(refs: list[FlagRef]) -> bool:
+    """Whether *anything* might set this flag.
+
+    True for an explicit owner, and also for any reference this parser could not
+    classify — engine code that loads the flag into `de` and hands it to
+    EventFlagAction may be setting it or testing it, and there is no way to tell
+    from the text. Erring towards "it is set" keeps the never-set rule from
+    reporting live flags.
+    """
+    return any(r.role in (OWNER, UNKNOWN) for r in refs)
