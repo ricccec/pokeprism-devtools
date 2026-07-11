@@ -11,20 +11,44 @@ whole-repo run should parse each file exactly once.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
 from ..shared import (
     dialogue, eventflags, eventheader as eh, flagrefs, landmarks, maps, mapsource,
-    spritesets, textbox, trainerparty,
+    spritesets, textbox, trainercite, trainerparty,
 )
 from ..shared.maps import MapDef
 
 _SECOND_HEADERS = "maps/second_map_headers.asm"
+_PRIMARY_HEADERS = "maps/map_headers.asm"
 _MAP_CONSTANTS = "constants/map_constants.asm"          # direction / permission enums
 _MAP_DIMENSIONS = "constants/map_dimension_constants.asm"   # the `mapgroup` lines
 _LANDMARK_CONSTANTS = "constants/landmark_constants.asm"
+_EVENT_FLAGS = "constants/event_flags.asm"
+_TRAINER_CONSTANTS = "constants/trainer_constants.asm"
+
+#: Which cached views a write to a given file invalidates.
+#:
+#: The studio holds one context for a whole session and writes into the tree it
+#: is describing, so "parsed once and cached" has to mean "cached until the thing
+#: it was parsed from changes". Getting this table wrong is quiet: the lint panel
+#: keeps reporting a finding you just fixed, or stops reporting one you just
+#: broke. The two repo-wide indices (`flag_refs`, `trainer_citations`) are not
+#: listed — they are file-keyed and are re-indexed per path instead of dropped,
+#: which is what keeps a re-lint interactive.
+_INVALIDATES: dict[str, tuple[str, ...]] = {
+    _SECOND_HEADERS: ("_second_headers", "connections", "connections_by_map",
+                      "conn_flag_exprs", "label_to_const", "const_to_label", "map_infos"),
+    _PRIMARY_HEADERS: ("primary_headers",),
+    _MAP_CONSTANTS: ("direction_bits",),
+    _MAP_DIMENSIONS: ("map_defs",),
+    _LANDMARK_CONSTANTS: ("landmark_regions",),
+    _EVENT_FLAGS: ("flags",),
+    _TRAINER_CONSTANTS: ("trainer_groups", "trainer_groups_by_label"),
+}
 
 #: Connection direction bits — `shift_const EAST, WEST, SOUTH, NORTH` in
 #: constants/map_constants.asm, i.e. EAST=1, WEST=2, SOUTH=4, NORTH=8. Read from
@@ -86,10 +110,58 @@ class LintContext:
         self._headers: dict[str, eh.EventHeader | None] = {}
         self._text: dict[str, list[dialogue.Block]] = {}
         self._source: dict[str, list[str]] = {}
+        self._rel: dict[Path, str] = {}
+
+    # -- staying current ----------------------------------------------------- #
+    def invalidate(self, paths: Iterable[str]) -> None:
+        """Forget whatever these files told us. Repo-relative paths.
+
+        Called after an edit lands, so the next lint sees the tree as it now is.
+        The expensive part is deliberately *not* a rebuild: `flag_refs` and
+        `trainer_citations` each scan every asm file in the repo (~1.5s together),
+        and an edit only ever touches one file — so they are re-indexed per path,
+        which is what turns a re-lint from seconds into milliseconds.
+        """
+        for rel in paths:
+            self._source.pop(rel, None)
+
+            for name in _INVALIDATES.get(rel, ()):
+                self.__dict__.pop(name, None)
+            if rel.startswith("trainers/"):
+                self.__dict__.pop("trainer_groups", None)
+                self.__dict__.pop("trainer_groups_by_label", None)
+
+            if (const := self._const_of(rel)) is not None:
+                self._headers.pop(const, None)
+                self._text.pop(const, None)
+
+            # The party-ordinal enum: every citation resolves through it, so a
+            # change there re-resolves all of them. Cheaper to drop than to reason
+            # about, and it happens roughly never.
+            if rel == _TRAINER_CONSTANTS:
+                self.__dict__.pop("trainer_citations", None)
+            elif rel.endswith(".asm"):
+                if "flag_refs" in self.__dict__:
+                    self.flag_refs.reindex(self.root, rel)
+                if "trainer_citations" in self.__dict__:
+                    self.trainer_citations.reindex(self.root, rel)
+
+    def _const_of(self, rel: str) -> str | None:
+        """The map a `maps/<Label>.asm` path belongs to, if it is one."""
+        if not (rel.startswith("maps/") and rel.endswith(".asm")):
+            return None
+        return self.label_to_const.get(Path(rel).stem)
 
     # -- files -------------------------------------------------------------- #
     def rel(self, path: Path) -> str:
-        return str(path.relative_to(self.root))
+        """Repo-relative, memoised.
+
+        Every rule asks this for every map, so it runs thousands of times per
+        pass, and `Path.relative_to` is not cheap. The answer never changes.
+        """
+        if (cached := self._rel.get(path)) is None:
+            cached = self._rel[path] = str(path.relative_to(self.root))
+        return cached
 
     def source_lines(self, rel: str) -> list[str]:
         """One file's lines, by repo-relative path, cached.
@@ -288,6 +360,15 @@ class LintContext:
     def flag_refs(self) -> flagrefs.Index:
         """Every reference to every event flag, anywhere in the repo."""
         return flagrefs.index(self.root)
+
+    @cached_property
+    def trainer_citations(self) -> trainercite.Citations:
+        """Every reference to every trainer party, anywhere in the repo.
+
+        The single most expensive thing the linter builds. It used to be rebuilt
+        from scratch on every run — `trainer_orphan` alone was 59% of a warm lint.
+        """
+        return trainercite.index(self.root)
 
     @cached_property
     def trainer_groups_by_label(self) -> dict[str, trainerparty.TrainerGroup]:
