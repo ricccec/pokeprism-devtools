@@ -276,6 +276,59 @@ def test_the_writer() -> None:
           "cont" in kinds, str(sorted(kinds)))
 
 
+def test_a_blank_line_is_a_new_box(root: Path) -> None:
+    """The blank lines in the prose are the author's, and they mean something.
+
+    `plain` has exactly one way to say "a fresh box starts here" — a blank line —
+    so `render` has to read it back the same way. It used to copy each old line's
+    macro back positionally and drop the blanks on the floor, which meant a break
+    you *added* mid-block did nothing and a break you *deleted* did nothing: the
+    form took the edit, wrote the file back byte-identical, and said it had
+    applied. Silence is the worst answer an editor can give.
+
+    Adding a box past the end of the block always worked. It is editing one in
+    place — in either direction — that did not.
+    """
+    print("\na blank line means a new box, wherever you put it")
+
+    def out(src: list[str], prose: str) -> list[str]:
+        block = dialogue.parse_source(root, src)[0]
+        return [ln.strip() for ln in dialogue.rewrite(src, block, prose) if ln.strip()]
+
+    one = ['Foo:', '\ttext "A"', '\tline "B"', '\tdone']
+    two = ['Foo:', '\ttext "A"', '', '\tpara "B"', '\tdone']
+
+    check("plain() shows a box break as a blank line",
+          dialogue.plain(dialogue.parse_source(root, two)[0]) == "A\n\nB")
+
+    check("a blank you add splits the box: `line` becomes `para`",
+          out(one, "A\n\nB") == ['Foo:', 'text "A"', 'para "B"', 'done'],
+          str(out(one, "A\n\nB")))
+    check("a blank you delete merges it back: `para` becomes `line`",
+          out(two, "A\nB") == ['Foo:', 'text "A"', 'line "B"', 'done'],
+          str(out(two, "A\nB")))
+    check("a blank past the end still opens a box (this always worked)",
+          out(one, "A\nB\n\nC")
+          == ['Foo:', 'text "A"', 'line "B"', 'para "C"', 'done'],
+          str(out(one, "A\nB\n\nC")))
+
+    # The opener is not promotable: the box it opens is already the first one, and
+    # a `para` in its place would open the text by clearing the screen.
+    check("the opener keeps its macro even with a blank above it",
+          out(one, "\nA\nB")[1].startswith("text "), str(out(one, "\nA\nB")))
+
+    # And the bit that makes the whole thing safe: only the box-or-not is
+    # overridden. `cont` scrolls the box and `line` doesn't, so a `cont` you left
+    # alone had better still be a `cont`.
+    cont = ['Foo:', '\ttext "A"', '\tcont "B"', '\tdone']
+    check("a `cont` you didn't touch is still a `cont`",
+          out(cont, "A\nB") == ['Foo:', 'text "A"', 'cont "B"', 'done'],
+          str(out(cont, "A\nB")))
+    check("...and rewording it does not level it to a `line`",
+          out(cont, "A\nZ") == ['Foo:', 'text "A"', 'cont "Z"', 'done'],
+          str(out(cont, "A\nZ")))
+
+
 def test_a_semicolon_is_not_a_comment() -> None:
     """`line "gift as well;"` is a line of dialogue, not an empty one.
 
@@ -314,6 +367,7 @@ def main() -> int:
         test_expansion_beats_eyeballing(root)
         test_terminator(root)
         test_sign_context(tmp, root)
+        test_a_blank_line_is_a_new_box(root)
     test_real_repo()
     test_a_semicolon_is_not_a_comment()
     test_the_writer()
