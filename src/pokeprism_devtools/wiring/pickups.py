@@ -33,7 +33,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..shared import consts
+from ..shared import consts, eventheader as eh
+from .objedit import (FLAG, PARAM, POINTER, S_FACING, X, Y, Change, EditError,
+                      MapEdit, spliced)
 from .scaffold import (ALWAYS, INDENT, MapCtx, Object, Scaffold, ScaffoldError,
                        allocate_flag, camel, require)
 
@@ -189,3 +191,107 @@ def tmhms(root: Path) -> frozenset[str]:
         for line in path.read_text().split("\n")
         if (m := _ADD_TM_RE.match(line))
     )
+
+
+# --------------------------------------------------------------------------- #
+# editing one that is already there                                           #
+# --------------------------------------------------------------------------- #
+#
+# The kind is not editable and these four functions are why. An item ball and a
+# hidden item are not two settings of one thing — one is a `person_event` and the
+# other is a `signpost`, in different lists, and turning one into the other is a
+# delete and an add wearing a dropdown. What *is* editable is everything inside a
+# kind, and each kind reads those two bytes its own way. See the module docstring.
+
+def edit_itemball(root: Path, map_const: str, index: int, y: int, x: int, item: str,
+                  *, quantity: int = 1, flag: str | None = None) -> Change:
+    require(root, "item", item, consts.names(root, consts.ITEMS))
+    return _edit_ball(root, map_const, index, y, x, {PARAM: quantity, POINTER: item},
+                      flag, f"{quantity}x {item}" if quantity != 1 else f"{item} ball",
+                      f"{item} ball at ({y}, {x})")
+
+
+def edit_tmhm_ball(root: Path, map_const: str, index: int, y: int, x: int, item: str,
+                   *, flag: str | None = None) -> Change:
+    require(root, "TM or HM", item, tmhms(root))
+    # The TM goes in the slot an item ball keeps its *count* in. The count slot is
+    # then spare, and a new one is written 0 — but it is not ours, so we leave it.
+    # One TM ball on Route74 keeps `ObjectEvent` there, and rewriting that to 0
+    # because we assumed we knew what belonged in a slot nobody asked us about is
+    # exactly the edit this module exists not to make.
+    return _edit_ball(root, map_const, index, y, x, {PARAM: item}, flag,
+                      f"{item} ball", f"{item} ball at ({y}, {x})")
+
+
+def edit_fruit_tree(root: Path, map_const: str, index: int, y: int, x: int,
+                    tree: str) -> Change:
+    # No flag, on purpose: a tree regrows. See `add_fruit_tree`.
+    require(root, "fruit tree", tree, trees(root))
+    return _edit_ball(root, map_const, index, y, x, {POINTER: tree}, None,
+                      tree, f"{tree} at ({y}, {x})")
+
+
+def edit_hidden_item(root: Path, map_const: str, index: int, y: int, x: int,
+                     item: str, *, flag: str | None = None) -> Change:
+    """A hidden item: a `signpost`, and the three-byte record it points at.
+
+    The item and the flag are not on the entry line at all — they are the `dw` and
+    the `db` of the record. Which is the whole reason this kind is its own shape,
+    and why the entry line here carries only a position.
+    """
+    require(root, "item", item, consts.names(root, consts.ITEMS))
+    ctx = MapEdit(root, map_const)
+    entry = ctx.entry(eh.ListKind.BG_EVENTS, index)
+    pointer = entry.pointer
+    if entry.arg(S_FACING) != "SIGNPOST_ITEM" or not pointer:
+        raise EditError("that is not a hidden item — it points at no item record")
+
+    was, _ = item_record(ctx, pointer)
+    _set_record(ctx, pointer, ctx.flag(flag or was, was), item)
+
+    entry = ctx.entry(eh.ListKind.BG_EVENTS, index)
+    ctx.replace_entry(eh.ListKind.BG_EVENTS, index, spliced(entry, {0: y, 1: x}))
+    return ctx.done(f"hidden {item} at ({y}, {x}) in {map_const}",
+                    f"hidden {item} at ({y}, {x})")
+
+
+def _edit_ball(root: Path, map_const: str, index: int, y: int, x: int,
+               args: dict[int, object], flag: str | None,
+               what: str, detail: str) -> Change:
+    """The three pickups that are a `person_event`. The sprite and the movement
+    are left out: they follow from the kind, and the kind cannot change."""
+    ctx = MapEdit(root, map_const)
+    entry = ctx.entry(eh.ListKind.OBJECT_EVENTS, index)
+    changed: dict[int, object] = {Y: y, X: x, **args}
+    if flag is not None:
+        changed[FLAG] = ctx.flag(flag, entry.event_flag)
+    ctx.replace_entry(eh.ListKind.OBJECT_EVENTS, index, spliced(entry, changed))
+    return ctx.done(f"{what} at ({y}, {x}) in {map_const}", detail)
+
+
+def item_record(ctx: MapEdit, label: str) -> tuple[str, str]:
+    """The (flag, item) a hidden item's three-byte record holds. The read side of
+    :func:`_set_record`, and what the edit form opens with."""
+    flag = item = ""
+    for i in ctx.block(label):
+        if m := _DW_RE.match(ctx.lines[i]):
+            flag = m.group("arg")
+        elif m := _DB_RE.match(ctx.lines[i]):
+            item = m.group("arg")
+    if not flag or not item:
+        raise EditError(f"{label} is not an item record — it wants a `dw` and a `db`")
+    return flag, item
+
+
+def _set_record(ctx: MapEdit, label: str, flag: str, item: str) -> None:
+    span = ctx.block(label)
+    dw = next((i for i in span if _DW_RE.match(ctx.lines[i])), None)
+    db = next((i for i in span if _DB_RE.match(ctx.lines[i])), None)
+    if dw is None or db is None:
+        raise EditError(f"{label} is not an item record — it wants a `dw` and a `db`")
+    ctx.lines[dw] = f"{INDENT}dw {flag}"
+    ctx.lines[db] = f"{INDENT}db {item}"
+
+
+_DW_RE = re.compile(r"^(?P<head>\s*dw\s+)(?P<arg>\S+)(?P<tail>.*)$")
+_DB_RE = re.compile(r"^(?P<head>\s*db\s+)(?P<arg>\S+)(?P<tail>.*)$")

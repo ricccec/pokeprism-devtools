@@ -19,6 +19,8 @@ from pathlib import Path
 from ..shared import eventheader as eh, mapsource
 from ..shared.edits import Edit
 from ..shared.eventheader import ListKind
+from .objedit import (W_MAP, W_TO, W_X, W_Y, Change, MapEdit, same,
+                      spliced)
 
 
 class WarpError(RuntimeError):
@@ -80,3 +82,63 @@ def add_paired_warp(root: Path, a: str, a_at: tuple[int, int],
             f"warp {warp.back_index}",
         ))
     return edits, (warp_a, warp_b)
+
+def edit_warp(root: Path, map_const: str, index: int, y: int, x: int, *,
+              dest: str = "", dest_warp: int = 1) -> Change:
+    """Where one warp is, and where it goes.
+
+    **Renumbers nothing**, which is the whole reason this is safe and deleting a
+    warp is not. `warp_to` is a *pointer* into the destination's list, not an
+    identity, so rewriting this line moves no other warp and invalidates nobody
+    else's `warp_to`. The warp keeps its own position in this map's list, and
+    every map that counts its way to it still counts right.
+
+    The destination warp number is checked against the warps that map actually
+    has. It is the one mistake here that assembles perfectly and is only found by
+    walking into the door.
+    """
+    ctx = MapEdit(root, map_const)
+    entry = ctx.entry(ListKind.WARPS, index)
+
+    if not dest:
+        # A door to nowhere — `dummy_warp`, and never `-1`, which in this engine is
+        # a *dynamic* warp the engine fills in from wBackupWarpNumber.
+        args = ([str(y), str(x)] if entry.macro == "warp_def"
+                else spliced(entry, {W_Y: y, W_X: x}))
+        ctx.replace_entry(ListKind.WARPS, index, args, macro="dummy_warp")
+        return ctx.done(f"{map_const} warp #{index + 1} leads nowhere",
+                        f"warp #{index + 1}: a door to nowhere")
+
+    # A destination that was already there is not re-checked. Two warps in this
+    # repo point at -1 — dynamic warps — and refusing to let you nudge one of those
+    # a tile sideways, on the grounds that its destination is a number we would not
+    # write ourselves, is refusing to leave alone what we cannot improve. You may
+    # keep what is there. You may not type a new one that is wrong.
+    kept = (entry.macro == "warp_def" and same(entry.args[W_MAP], dest)
+            and same(entry.args[W_TO], dest_warp))
+    if not kept:
+        count = _warp_count(root, dest)
+        if not 1 <= dest_warp <= count:
+            raise WarpError(
+                f"{dest} has {count} warp{'s' if count != 1 else ''}, so there is "
+                f"no warp #{dest_warp} to come out of."
+                if count else f"{dest} has no warps to come out of.")
+
+    args = ([str(y), str(x), str(dest_warp), dest] if entry.macro == "dummy_warp"
+            else spliced(entry, {W_Y: y, W_X: x, W_TO: dest_warp, W_MAP: dest}))
+    ctx.replace_entry(ListKind.WARPS, index, args, macro="warp_def")
+    return ctx.done(f"{map_const} warp #{index + 1} -> {dest} warp #{dest_warp}",
+                    f"warp #{index + 1} -> {dest} #{dest_warp}")
+
+
+def _warp_count(root: Path, dest: str) -> int:
+    """How many warps the destination map has — what bounds a `warp_to`. Read from
+    the destination's own file: this is the number the player's feet will meet."""
+    label = {c: l for l, c in mapsource.header_pairs(root)}.get(dest)
+    if label is None:
+        raise WarpError(f"{dest} is not a map in this repo")
+    try:
+        return len(eh.parse_map(root / "maps" / f"{label}.asm").warps)
+    except (eh.UnparseableHeader, FileNotFoundError) as exc:
+        raise WarpError(f"{dest}'s event header can't be read, so its warps "
+                        f"can't be counted: {exc}") from exc
