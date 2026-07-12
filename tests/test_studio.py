@@ -26,7 +26,7 @@ from test_maplint import _fixture as _lint_fixture  # noqa: E402
 
 from pokeprism_devtools import maplint  # noqa: E402
 from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
-from pokeprism_devtools.studio import actions  # noqa: E402
+from pokeprism_devtools.studio import actions, content  # noqa: E402
 from pokeprism_devtools.studio.session import Session, SessionError  # noqa: E402
 
 FAILED = 0
@@ -64,8 +64,8 @@ def _fixture(tmp: Path) -> Path:
     return root
 
 
-def _npc(y: int, x: int, said: str = "Hello.") -> actions.AddNpc:
-    return actions.AddNpc("TOWN_A", sprite="SPRITE_NPC", y=str(y), x=str(x),
+def _npc(y: int, x: int, said: str = "Hello.") -> content.AddNpc:
+    return content.AddNpc("TOWN_A", sprite="SPRITE_NPC", y=str(y), x=str(x),
                           movement="SPRITEMOVEDATA_STANDING_DOWN",
                           palette="PAL_OW_RED", text=said)
 
@@ -92,8 +92,8 @@ def test_two_items_get_two_flags(root: Path) -> None:
     s = Session(root)
 
     before = (root / "constants/event_flags.asm").read_text().count("const skip")
-    first = s.act(actions.AddHiddenItem("TOWN_A", y="5", x="5", item="ULTRA_BALL"))
-    second = s.act(actions.AddHiddenItem("TOWN_A", y="6", x="6", item="RARE_CANDY"))
+    first = s.act(content.AddPickup("TOWN_A", kind=content.HIDDEN, y="5", x="5", item="ULTRA_BALL"))
+    second = s.act(content.AddPickup("TOWN_A", kind=content.HIDDEN, y="6", x="6", item="RARE_CANDY"))
 
     flags = [n.removeprefix("allocated ") for a in (first, second)
              for n in a.notes if n.startswith("allocated ")]
@@ -125,7 +125,7 @@ def test_failure_changes_nothing(root: Path) -> None:
     s = Session(root)
     before = _snapshot(root)
 
-    bad = actions.AddNpc("TOWN_A", sprite="SPRITE_NOSUCH", y="1", x="1",
+    bad = content.AddNpc("TOWN_A", sprite="SPRITE_NOSUCH", y="1", x="1",
                          movement="SPRITEMOVEDATA_STANDING_DOWN",
                          palette="PAL_OW_RED", text="hi")
     try:
@@ -142,7 +142,7 @@ def test_failure_changes_nothing(root: Path) -> None:
     s.act(_npc(6, 6))
     mid = _snapshot(root)
     try:
-        s.act(actions.AddHiddenItem("TOWN_A", y="7", x="7", item="NOT_AN_ITEM"))
+        s.act(content.AddPickup("TOWN_A", kind=content.HIDDEN, y="7", x="7", item="NOT_AN_ITEM"))
     except actions.ActionError:
         pass
     check("a failure after two successes changes nothing further",
@@ -158,7 +158,7 @@ def test_undo(root: Path) -> None:
     # A hidden item, because it spans two files — the map and the flag enum — and
     # an undo that only put back one of them would leave a flag allocated to
     # nothing, which is the failure worth catching.
-    s.act(actions.AddHiddenItem("TOWN_A", y="5", x="5", item="ULTRA_BALL"))
+    s.act(content.AddPickup("TOWN_A", kind=content.HIDDEN, y="5", x="5", item="ULTRA_BALL"))
     check("the item landed", _snapshot(root) != before)
     check("across both files it touches", len(s.history[-1].paths) == 2,
           str(s.history[-1].paths))
@@ -245,7 +245,7 @@ def test_boot_stands_you_where_the_cursor_is(root: Path) -> None:
     from unittest import mock
 
     from pokeprism_devtools.dev_server import playtest as devplay
-    from pokeprism_devtools.studio import session as session_mod
+    from pokeprism_devtools.studio import play as play_mod
 
     s = Session(root)
     (root / "pokeprism.gbc").write_bytes(b"\x00")   # boot() refuses without one
@@ -262,9 +262,9 @@ def test_boot_stands_you_where_the_cursor_is(root: Path) -> None:
                 "map": {"name": "SOMEWHERE_ELSE", "x": 1, "y": 1}}
 
     with mock.patch.object(devplay, "patch_save", fake_patch), \
-         mock.patch.object(session_mod.inventory, "load_or_build",
+         mock.patch.object(play_mod.inventory, "load_or_build",
                            lambda *a, **k: {}), \
-         mock.patch.object(session_mod.devapply, "load_state",
+         mock.patch.object(play_mod.devapply, "load_state",
                            lambda *a: dict(existing)), \
          mock.patch.object(devplay.Emulator, "launch",
                            lambda self, rom, **k: devplay.LaunchReport(launched=True)):
@@ -309,7 +309,7 @@ def test_real_repo(tmp: Path) -> None:
     check(f"a cold lint of {len(s.maps)} maps finds {len(found)}", len(found) > 300,
           f"{cold:.2f}s")
 
-    npc = actions.AddNpc("CASTRO_FOREST", sprite="SPRITE_GRAMPS", y="5", x="7",
+    npc = content.AddNpc("CASTRO_FOREST", sprite="SPRITE_GRAMPS", y="5", x="7",
                          movement="SPRITEMOVEDATA_STANDING_DOWN",
                          palette="PAL_OW_RED", text="I have seen things.")
     applied = s.act(npc)

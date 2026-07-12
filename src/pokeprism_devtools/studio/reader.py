@@ -28,7 +28,7 @@ from ..maplint.context import LintContext
 from ..shared import (blocksrc, coords, dialogue, eventheader, maps as maps_mod,
                       mapsource, roofs, swatches, textbox, wilddata)
 from . import panels
-from .model import MapData, MapGeometry
+from .model import MapData, MapGeometry, Measured, TextPreview, TextRef
 
 #: A map's three relocatable blobs, and the line that marks each one. Only these
 #: three ever get a bank: the primary `map_header` is a positional line inside
@@ -216,3 +216,45 @@ def _wild(root: Path, const: str) -> dict[str, wilddata.WildBlock]:
             if block.map_const == const:
                 found[kind] = block
     return found
+
+
+# --------------------------------------------------------------------------- #
+# the words                                                                   #
+# --------------------------------------------------------------------------- #
+
+def texts(root: Path, label: str, boxes: dict[str, textbox.Box]) -> list[TextRef]:
+    """Every text block in one map, as prose you could hand to a person.
+
+    The macros are deliberately not here. `plain` shows the words; `wiring/text.
+    reword` puts the macros back from the block itself, positionally — so a `cont`
+    that scrolls the box is still a `cont` after you fix a typo in it.
+    """
+    sign = boxes["sign"]
+    return [
+        TextRef(label=b.label, owner=b.owner, lineno=b.lineno,
+                prose=dialogue.plain(b),
+                box="sign" if b.box.name == sign.name else "speech")
+        for b in dialogue.parse(root, root / f"maps/{label}.asm")
+    ]
+
+
+def measure(root: Path, ctx: LintContext, text: str,
+            box: textbox.Box) -> TextPreview:
+    """Dialogue-in-progress against the box it lands in.
+
+    The same prose model the form submits: one line per screen line, a blank line
+    starts a new box. Only *width* is checked, and that is not a shortcut — the
+    third row of a box and every row after it are `cont`, which scrolls, so a
+    speech can be any length. What it cannot be is wide.
+    """
+    return TextPreview(box.name, box.cols, [
+        _measured(root, ctx, line, box.cols)
+        for line in text.replace("\r\n", "\n").split("\n")
+    ])
+
+
+def _measured(root: Path, ctx: LintContext, line: str, cols: int) -> Measured:
+    det, bnd, unb, unknown = ctx.textbox_metrics.tiles(root, line)
+    return Measured(text=line, tiles=det, bounded=bnd, unbounded=unb,
+                    unknown=unknown, over=max(0, det - cols),
+                    over_at_worst=max(0, det + bnd - cols))

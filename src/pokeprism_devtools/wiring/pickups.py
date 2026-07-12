@@ -1,0 +1,191 @@
+"""The four things you pick up off the floor — and the four ways the engine reads
+the same two bytes.
+
+An item ball, a TM ball, a fruit tree and a hidden item look like one idea, and on
+the Pickups tab they are one. Underneath they are not. Three of them are
+`person_event`s and the fourth is a `signpost`; and of the three, each reads the
+macro's 11th and 12th arguments as something different:
+
+    person_event …, PERSONTYPE_ITEMBALL,  6,       POTION,               EVENT_…
+                                          ^quantity ^item
+
+    person_event …, PERSONTYPE_TMHMBALL,  TM_HAIL, 0,                    EVENT_…
+                                          ^item    ^dead
+
+    person_event …, PERSONTYPE_FRUITTREE, 0,       GREY_APRICORN_TREE_1, -1
+                                          ^dead    ^tree id             ^never a flag
+
+    signpost      …, SIGNPOST_ITEM, HiddenNugget      ; -> dw EVENT_… / db NUGGET
+
+The assembler cannot see any of this: every one of those slots takes a number, and
+a TM written into an item ball's item slot assembles perfectly and hands the player
+`0` of it, because `.itemball` reads the *quantity* out of the slot the TM is in.
+That is the class of bug this module exists to make unwriteable — the form asks
+what kind of pickup you want and the shape follows from the answer, rather than
+the other way round.
+
+`engine/events.asm`: `.itemball` at 513, `.tmhm` at 529, the fruit tree at 598, and
+the hidden item's three-byte record at 682.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from ..shared import consts
+from .scaffold import (ALWAYS, INDENT, MapCtx, Object, Scaffold, ScaffoldError,
+                       allocate_flag, camel, require)
+
+_ITEM_MOVEMENT = "SPRITEMOVEDATA_ITEM_TREE"
+_ITEM_SPRITE = "SPRITE_POKE_BALL"
+_TREE_SPRITE = "SPRITE_FRUIT_TREE"
+
+
+def add_itemball(root: Path, map_const: str, y: int, x: int, item: str, *,
+                 quantity: int = 1, flag: str | None = None,
+                 sprite: str = _ITEM_SPRITE,
+                 palette: str = "PAL_OW_RED") -> Scaffold:
+    """A Poké Ball on the ground, holding `quantity` of an item.
+
+    The slot a person spends on sight range is read here as *how many*
+    (`engine/events.asm:513-522` copies both bytes into `wCurItemBallContents`), so
+    a 6 in it is six Potions, not a ball that notices you from six tiles away.
+    """
+    if quantity < 1:
+        raise ScaffoldError(f"an item ball holds at least one of something, not {quantity}")
+
+    obj = Object(sprite=sprite, y=y, x=x, movement=_ITEM_MOVEMENT, palette=palette)
+    obj.check(root)
+    require(root, "item", item, consts.names(root, consts.ITEMS))
+
+    ctx = MapCtx(root, map_const)
+    flag_name, flag_edit = allocate_flag(root, flag or ctx.flag_name(f"ITEM_{item}"))
+    ctx.add_object(obj, "PERSONTYPE_ITEMBALL", quantity, item, flag_name)
+
+    many = f"{quantity} " if quantity > 1 else ""
+    return Scaffold(
+        f"{many}{item} at ({y}, {x}) in {map_const}",
+        [flag_edit, ctx.to_edit(f"{many}{item} itemball at ({y}, {x})")],
+        flag_name,
+    )
+
+
+def add_tmhm_ball(root: Path, map_const: str, y: int, x: int, item: str, *,
+                  flag: str | None = None, sprite: str = _ITEM_SPRITE,
+                  palette: str = "PAL_OW_YELLOW") -> Scaffold:
+    """A ball holding a TM or HM. Not an item ball with a TM in it.
+
+    `.tmhm` reads *one* byte (`engine/events.asm:529-535`), out of the slot where an
+    item ball keeps its quantity. So the item goes first and the second argument is
+    a dead `0` — which is what every TM ball in the repo looks like.
+
+    There is no quantity because a TM cannot be stacked, which is the same reason
+    there is no quantity to get wrong.
+    """
+    obj = Object(sprite=sprite, y=y, x=x, movement=_ITEM_MOVEMENT, palette=palette)
+    obj.check(root)
+    # Against the TMs, not against the items: `TM_HAIL` is not in the item enum in
+    # any form a scanner can see (see :func:`tmhms`), and checking it there would
+    # reject every TM there is. Checking it *here* also rejects a Potion, which is
+    # the other half of the point — a Potion in a TM ball assembles.
+    require(root, "TM or HM", item, tmhms(root))
+
+    ctx = MapCtx(root, map_const)
+    flag_name, flag_edit = allocate_flag(root, flag or ctx.flag_name(f"ITEM_{item}"))
+    ctx.add_object(obj, "PERSONTYPE_TMHMBALL", item, "0", flag_name)
+
+    return Scaffold(
+        f"{item} at ({y}, {x}) in {map_const}",
+        [flag_edit, ctx.to_edit(f"{item} ball at ({y}, {x})")],
+        flag_name,
+    )
+
+
+def add_fruit_tree(root: Path, map_const: str, y: int, x: int, tree: str, *,
+                   sprite: str = _TREE_SPRITE,
+                   palette: str = "PAL_OW_SILVER") -> Scaffold:
+    """A tree you headbutt for apricorns or berries.
+
+    The tree *is* a constant — `GREY_APRICORN_TREE_1` — and it sits in the pointer
+    slot, where the engine reads it as an id rather than an address
+    (`engine/events.asm:598-604`). The id says which fruit and when it regrows, so
+    two trees sharing an id share a cooldown.
+
+    **No event flag**, and that is not an omission. A tree is not picked up, it
+    regrows; every fruit tree in the repo carries `-1` here, and giving one a flag
+    would make the tree itself vanish the first time you shook it.
+    """
+    obj = Object(sprite=sprite, y=y, x=x, movement=_ITEM_MOVEMENT, palette=palette)
+    obj.check(root)
+    require(root, "fruit tree", tree, trees(root))
+
+    ctx = MapCtx(root, map_const)
+    ctx.add_object(obj, "PERSONTYPE_FRUITTREE", 0, tree, ALWAYS)
+
+    return Scaffold(
+        f"{tree} at ({y}, {x}) in {map_const}",
+        [ctx.to_edit(f"{tree} at ({y}, {x})")],
+    )
+
+
+def add_hidden_item(root: Path, map_const: str, y: int, x: int, item: str, *,
+                    flag: str | None = None, label: str | None = None) -> Scaffold:
+    """An item hidden in the scenery, found with the Itemfinder.
+
+    The odd one out: a `signpost`, not a `person_event`, because there is nothing
+    to draw. `SIGNPOST_ITEM` points at a three-byte record — the flag, then the
+    item — which is why this one needs a label as well as a flag, and why it has no
+    sprite for the form to ask about.
+    """
+    require(root, "item", item, consts.names(root, consts.ITEMS))
+    ctx = MapCtx(root, map_const)
+    label = label or ctx.unique_label(camel(item))
+    flag_name, flag_edit = allocate_flag(root, flag or ctx.flag_name(f"HIDDENITEM_{item}"))
+
+    ctx.add_script(label, [f"{label}:", f"{INDENT}dw {flag_name}", f"{INDENT}db {item}"])
+    ctx.add_bg_event([str(y), str(x), "SIGNPOST_ITEM", label])
+
+    return Scaffold(
+        f"hidden {item} at ({y}, {x}) in {map_const}",
+        [flag_edit, ctx.to_edit(f"hidden {item} at ({y}, {x})")],
+        flag_name, label,
+    )
+
+
+def trees(root: Path) -> frozenset[str]:
+    """The fruit-tree ids. They live in the map constants, in a counter of their
+    own that restarts at 1 — `RED_APRICORN_TREE_1` and its ten colours, twice
+    over, plus the berry trees."""
+    return frozenset(n for n in consts.names(root, consts.MAP)
+                     if re.search(r"_TREE_\d+$", n))
+
+
+#: `add_tm HAIL` — which is where `TM_HAIL` comes from, and the reason a plain
+#: scan of the item constants cannot find it.
+_ADD_TM_RE = re.compile(r"^\s*add_(tm|hm)\s+(\w+)")
+
+
+def tmhms(root: Path) -> frozenset[str]:
+    """Every TM and HM.
+
+    They are not in the item enum in any form you can grep for. `constants/
+    item_constants.asm` says `add_tm HAIL`, and the macro (`macros/basestats.asm`)
+    builds the name at assembly time out of a string paste:
+
+        define_s _\\@_1, "TM_\\1"
+        const _\\@_1
+
+    So `TM_HAIL` never appears in the source as a token, and the only `TM_*` names
+    a constant-scanner finds are `TM_CASE` (the bag) and `TM_HM` (the pocket) —
+    neither of which is a TM. Reconstruct them from the macro instead, or the form
+    offers you two wrong answers and the validator rejects all 99 right ones.
+    """
+    path = root / consts.ITEMS
+    if not path.exists():
+        return frozenset()
+    return frozenset(
+        f"{m.group(1).upper()}_{m.group(2)}"
+        for line in path.read_text().split("\n")
+        if (m := _ADD_TM_RE.match(line))
+    )

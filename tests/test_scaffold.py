@@ -22,10 +22,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools.shared import (  # noqa: E402
-    eventheader as eh, landmarks, trainercite as tc, trainerparty as tp, wilddata as wd,
+    consts, eventheader as eh, landmarks, trainercite as tc, trainerparty as tp,
+    wilddata as wd,
 )
 from pokeprism_devtools.shared.edits import StaleEdit, apply_edits  # noqa: E402
-from pokeprism_devtools.wiring import removal as rm, scaffold as sc  # noqa: E402
+from pokeprism_devtools.wiring import (  # noqa: E402
+    pickups as pk, removal as rm, scaffold as sc)
 
 _failures = 0
 
@@ -66,8 +68,14 @@ def _fixture(tmp: Path) -> Path:
     (root / "constants/pokemon_constants.asm").write_text(
         "\tconst_def\n\tconst PIDGEY\n\tconst SENTRET\n\tconst ZUBAT\n"
     )
+    # The TMs are not `const`s: `add_tm HEADBUTT` pastes the name together at
+    # assembly time (macros/basestats.asm), so `TM_HEADBUTT` appears nowhere in the
+    # source and a constant-scanner cannot find it. The fixture has to have that
+    # shape or the thing it is testing isn't here.
     (root / "constants/item_constants.asm").write_text(
         "\tconst_def\n\tconst ULTRA_BALL\n\tconst RARE_CANDY\n\tconst ORAN_BERRY\n"
+        "\tconst POTION\n\tconst TM_CASE\n"
+        "\tadd_tm HEADBUTT\n\tadd_tm HAIL\n\tadd_hm CUT\n"
     )
     (root / "constants/move_constants.asm").write_text(
         "\tconst_def\n\tconst TACKLE\n\tconst GROWL\n\tconst NO_MOVE\n"
@@ -78,18 +86,21 @@ def _fixture(tmp: Path) -> Path:
     )
     (root / "constants/map_constants.asm").write_text(
         "\tconst_def\n\tconst TOWN\n\tconst ROUTE\n"
+        "\nconst_value = 1\n\tconst RED_APRICORN_TREE_1\n\tconst BLUE_APRICORN_TREE_1\n"
     )
 
     # sprites: ids, movement data, palettes — the enums an Object is checked against
     (root / "constants/sprite_constants.asm").write_text(
         "\tconst_def\n"
         "\tconst SPRITE_SAGE\n\tconst SPRITE_YOUNGSTER\n\tconst SPRITE_POKE_BALL\n"
+        "\tconst SPRITE_FRUIT_TREE\n"
         "SPRITE_POKEMON EQU const_value\nSPRITE_VARS EQU const_value + 10\n"
         "\n\tconst_def\n\tconst SPRITE_ANIM_FRAMESET_DECOY\n"
         "\n\tconst_def\n"
         "\tconst SPRITEMOVEDATA_STANDING_DOWN\n\tconst SPRITEMOVEDATA_ITEM_TREE\n"
         "\tconst SPRITEMOVEDATA_WALK_UP_DOWN\n"
         "\n\tconst_def\n\tconst PAL_OW_RED\n\tconst PAL_OW_BLUE\n"
+        "\tconst PAL_OW_YELLOW\n\tconst PAL_OW_SILVER\n"
     )
     (root / "maps/map_headers.asm").write_text(
         "\tmap_header TownA, TS, TOWN, LM_A, MU, 0, PAL, F0\n"
@@ -287,7 +298,7 @@ def test_trainer(root: Path) -> None:
 def test_items(root: Path) -> None:
     print("\nitem balls and hidden items")
     saved = _snapshot(root)
-    s = sc.add_itemball(root, "TOWN_A", 3, 4, "ULTRA_BALL")
+    s = pk.add_itemball(root, "TOWN_A", 3, 4, "ULTRA_BALL")
     apply_edits(root, s.edits, dry_run=False)
     text = (root / "maps/TownA.asm").read_text()
     check("the flag is named for map and item",
@@ -295,7 +306,7 @@ def test_items(root: Path) -> None:
     check("the item const sits where a script pointer would",
           f"PERSONTYPE_ITEMBALL, 1, ULTRA_BALL, {s.flag}" in text)
 
-    h = sc.add_hidden_item(root, "TOWN_A", 9, 10, "RARE_CANDY")
+    h = pk.add_hidden_item(root, "TOWN_A", 9, 10, "RARE_CANDY")
     apply_edits(root, h.edits, dry_run=False)
     text = (root / "maps/TownA.asm").read_text()
     check("a hidden item gets a flag+item record",
@@ -305,6 +316,51 @@ def test_items(root: Path) -> None:
     check("which lands in BGEvents, count 0 -> 1",
           eh.parse_map(root / "maps/TownA.asm").lists[eh.ListKind.BG_EVENTS].declared_count == 1)
     _reset(root, saved)
+
+
+def test_the_other_two_pickups(root: Path) -> None:
+    print("\nTM balls and fruit trees: the same two bytes, read differently")
+    saved = _snapshot(root)
+
+    # An item ball's 11th argument is the quantity. A TM ball's is the *item* —
+    # the engine reads one byte out of that slot (engine/events.asm:529). Put a TM
+    # in an item ball and it assembles, and hands you `0` of it.
+    s = pk.add_itemball(root, "TOWN_A", 3, 4, "ULTRA_BALL", quantity=6)
+    apply_edits(root, s.edits, dry_run=False)
+    check("an item ball's quantity goes in the sight slot",
+          f"PERSONTYPE_ITEMBALL, 6, ULTRA_BALL, {s.flag}"
+          in (root / "maps/TownA.asm").read_text())
+
+    t = pk.add_tmhm_ball(root, "TOWN_A", 5, 5, "TM_HEADBUTT")
+    apply_edits(root, t.edits, dry_run=False)
+    check("a TM ball's item goes there instead, and the pointer slot is dead",
+          f"PERSONTYPE_TMHMBALL, TM_HEADBUTT, 0, {t.flag}"
+          in (root / "maps/TownA.asm").read_text())
+
+    check("a TM is not in the item enum — the macro builds the name",
+          "TM_HEADBUTT" not in consts.names(root, consts.ITEMS)
+          and "TM_HEADBUTT" in pk.tmhms(root))
+    check("so a Potion in a TM ball is refused, though it would assemble",
+          _raises(lambda: pk.add_tmhm_ball(root, "TOWN_A", 6, 6, "POTION"),
+                  sc.ScaffoldError))
+
+    f = pk.add_fruit_tree(root, "TOWN_A", 7, 7, "RED_APRICORN_TREE_1")
+    apply_edits(root, f.edits, dry_run=False)
+    check("a tree's id goes in the pointer slot, and it never gets a flag",
+          "PERSONTYPE_FRUITTREE, 0, RED_APRICORN_TREE_1, -1"
+          in (root / "maps/TownA.asm").read_text())
+    check("which is why nothing was written to the flag enum",
+          f.flag is None and len(f.edits) == 1)
+
+    _reset(root, saved)
+
+
+def _raises(fn, exc) -> bool:
+    try:
+        fn()
+    except exc:
+        return True
+    return False
 
 
 def test_signpost(root: Path) -> None:
@@ -363,7 +419,7 @@ def test_rejects_unknown_consts(root: Path) -> None:
            lambda: npc(sprite="SPRITE_SAGE", y=1, x=1, palette="PAL_OW_PINK"),
            wanted="not a palette")
     raises("an item that doesn't exist",
-           lambda: sc.add_itemball(root, "TOWN_A", 1, 1, "ULTRABALL"),
+           lambda: pk.add_itemball(root, "TOWN_A", 1, 1, "ULTRABALL"),
            wanted="Did you mean ULTRA_BALL")
     raises("a species this fork doesn't have",
            lambda: sc.add_trainer(root, "TOWN_A", sc.Object("SPRITE_SAGE", 1, 1),
@@ -375,7 +431,7 @@ def test_rejects_unknown_consts(root: Path) -> None:
     print("\n  and nothing is written when it is")
     before = _snapshot(root)
     try:
-        sc.add_itemball(root, "TOWN_A", 1, 1, "NOPE_BALL")
+        pk.add_itemball(root, "TOWN_A", 1, 1, "NOPE_BALL")
     except sc.ScaffoldError:
         pass
     check("the map is untouched", _snapshot(root) == before)
@@ -385,8 +441,8 @@ def test_stale_edit(root: Path) -> None:
     print("\nan Edit carries the whole file, so a stale one must not be applied")
     saved = _snapshot(root)
 
-    a = sc.add_itemball(root, "TOWN_A", 3, 4, "ULTRA_BALL")
-    b = sc.add_itemball(root, "TOWN_A", 5, 6, "RARE_CANDY")   # built from the SAME text
+    a = pk.add_itemball(root, "TOWN_A", 3, 4, "ULTRA_BALL")
+    b = pk.add_itemball(root, "TOWN_A", 5, 6, "RARE_CANDY")   # built from the SAME text
     apply_edits(root, a.edits, dry_run=False)
 
     check("both edits allocated the same flag slot — which is the danger",
@@ -431,13 +487,13 @@ def test_removal(root: Path) -> None:
           "`trainer` macro", r.freed_flag is not None)
 
     ball, r = add_and_remove(
-        "item ball", lambda: sc.add_itemball(root, "TOWN_A", 3, 4, "ULTRA_BALL"),
+        "item ball", lambda: pk.add_itemball(root, "TOWN_A", 3, 4, "ULTRA_BALL"),
         flag="EVENT_TOWN_A_ITEM_ULTRA_BALL")
     check("an item ball has no label, so it is found by its flag",
           r.freed_flag == "EVENT_TOWN_A_ITEM_ULTRA_BALL")
 
     _, r = add_and_remove(
-        "hidden item", lambda: sc.add_hidden_item(root, "TOWN_A", 9, 10, "RARE_CANDY"),
+        "hidden item", lambda: pk.add_hidden_item(root, "TOWN_A", 9, 10, "RARE_CANDY"),
         at=(9, 10))
     check("a hidden item's flag lives in the record, not the signpost",
           r.freed_flag == "EVENT_TOWN_A_HIDDENITEM_RARE_CANDY")
@@ -592,8 +648,8 @@ def test_real_scaffold(tmp: Path) -> None:
                                new_party=("Testy", [tp.Mon(12, "SENTRET")], tp.NORMAL),
                                seen=[["Let's go!"]], defeated=[["Aw, man."]],
                                after=[["Good game."]]),
-        lambda: sc.add_itemball(scratch, MAP, 20, 30, "ULTRA_BALL"),
-        lambda: sc.add_hidden_item(scratch, MAP, 5, 6, "RARE_CANDY"),
+        lambda: pk.add_itemball(scratch, MAP, 20, 30, "ULTRA_BALL"),
+        lambda: pk.add_hidden_item(scratch, MAP, 5, 6, "RARE_CANDY"),
     ):
         apply_edits(scratch, build().edits, dry_run=False)
 
@@ -694,6 +750,7 @@ def main() -> int:
         test_npc(root)
         test_trainer(root)
         test_items(root)
+        test_the_other_two_pickups(root)
         test_signpost(root)
         test_rejects_unknown_consts(root)
         test_stale_edit(root)

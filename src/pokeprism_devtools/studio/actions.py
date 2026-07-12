@@ -22,21 +22,20 @@ model of one.
 
 Each action declares its fields, so the TUI builds its own form and its own
 autocomplete from that declaration and knows nothing about NPCs or connections.
+
+Here: the base class, and the two actions that wire one map to *another*. The
+ones that put something inside a single map are in :mod:`.content`, and adding a
+whole map is in :mod:`.newmap`.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..shared import trainerparty
 from ..shared.blockdata import BlockData
 from ..shared.edits import Edit
-from ..wiring import connections, removal, scaffold, warps
-# By name, not by module: `Action.text()` is a method, and `text.reword(...)`
-# sitting next to `self.text("label")` in the same three lines is a trap.
-from ..wiring.text import TextError, reword
+from ..wiring import connections, scaffold, warps
 
 #: A field's `choices` names a set of constants the session can enumerate; the
 #: form turns it into autocomplete. Empty means free text.
@@ -57,6 +56,17 @@ MUSIC = "music"
 #: putting one where the other goes assembles perfectly.
 TIMES = "times"
 FISHGROUPS = "fishgroups"
+#: Event flags, which are the one kind where the list is *only* a suggestion: a
+#: name that isn't in it is a name that will be created. See `Combo`.
+FLAGS = "flags"
+#: The TMs and HMs, which are the only items a TM ball may hold, and the fruit
+#: trees, which are ids rather than items. Both are subsets of a bigger enum, and
+#: offering the bigger enum would offer the mistake.
+TMHMS = "tmhms"
+TREES = "trees"
+#: The parties of a trainer class — the one kind whose answers depend on another
+#: field. See :meth:`Field.depends`.
+PARTIES = "parties"
 
 
 class ActionError(RuntimeError):
@@ -79,6 +89,14 @@ class Field:
     #: against the right width. A sign is a different shape from a speech bubble
     #: and the same sentence fits one and not the other.
     box: str = "speech"
+    #: This field decides which *other* fields the form has — a pickup's kind. The
+    #: form re-asks :meth:`Action.fields_for` when it changes. Nothing here says
+    #: what it reveals; that is the action's business.
+    reveals: bool = False
+    #: Field names whose value changes what this one may *offer*. A party belongs
+    #: to a class, so the parties on offer change when the class does. The form
+    #: refetches the choices; it still doesn't know what a party is.
+    depends: tuple[str, ...] = ()
 
 
 @dataclass
@@ -110,6 +128,39 @@ class Action:
     def run(self, root: Path) -> Result:
         raise NotImplementedError
 
+    # -- a form that changes shape -------------------------------------------- #
+    @classmethod
+    def fields_for(cls, values: dict[str, str]) -> tuple[Field, ...]:
+        """The fields this action wants, *given what has been filled in so far*.
+
+        Static for almost everything, which is why the default just hands back
+        `FIELDS`. It is not static for a pickup: a hidden item has no sprite, an
+        item ball has a quantity and a TM ball must not, a fruit tree has neither
+        and has no event flag either. One form with every field on it would be a
+        form on which most of the fields are a mistake — and the engine reads those
+        slots differently per kind, so the mistake assembles.
+
+        The form re-asks this whenever a `reveals` field changes. It learns nothing
+        about pickups by doing so: it learns that the shape moved.
+        """
+        return cls.FIELDS
+
+    @classmethod
+    def follows(cls, root: Path, changed: str, values: dict[str, str]) -> dict[str, str]:
+        """What other fields should say, now that `changed` has changed.
+
+        Picking a trainer class fills in the sprite and the palette that class
+        usually wears — see `shared/trainerstats.py`, which *counts* rather than
+        guessing, because the sprite for a `SKIER` is `SPRITE_BUENA` and no rule
+        was ever going to produce that.
+
+        The form applies these only to fields you have not typed in yourself: a
+        suggestion is allowed to fill an empty box and never to overwrite an
+        answer. Takes `root` because the answer is measured from the repo, and this
+        is the model layer, which is the side of the seam allowed to read it.
+        """
+        return {}
+
     def describe(self) -> str:
         return self.title
 
@@ -138,8 +189,14 @@ class Action:
     def text(self, name: str) -> str:
         return (self.values.get(name) or "").strip()
 
-    def integer(self, name: str) -> int:
+    def integer(self, name: str, default: int | None = None) -> int:
+        """A number out of the form. `default` is what an *empty* box means, which
+        is not the same as what a missing one means: a form always sends every
+        field it showed, but an action built in code sends only what it cares
+        about, and a quantity nobody mentioned is one."""
         raw = self.text(name)
+        if not raw and default is not None:
+            return default
         try:
             return int(raw, 0)
         except ValueError:
@@ -237,235 +294,3 @@ class AddWarp(Action):
             f"{self.a} warp #{wa.index} <-> {self.text('b')} warp #{wb.index}",
             [e for e in edits if e.changed],
         )
-
-
-# --------------------------------------------------------------------------- #
-# content                                                                     #
-# --------------------------------------------------------------------------- #
-
-class _Placed(Action):
-    """An action that puts a body somewhere on this map."""
-
-    def __init__(self, map_const: str, **values: str) -> None:
-        super().__init__(**values)
-        self.map = map_const
-
-    def _scaffolded(self, s: scaffold.Scaffold) -> Result:
-        notes = []
-        if s.flag:
-            notes.append(f"allocated {s.flag}")
-        return Result(s.summary, s.changes, notes)
-
-
-_BODY = (
-    Field("sprite", "Sprite", choices=SPRITES, default="SPRITE_GRAMPS"),
-    Field("y", "Y", kind="int"),
-    Field("x", "X", kind="int"),
-    Field("movement", "Movement", choices=MOVEMENTS,
-          default="SPRITEMOVEDATA_STANDING_DOWN"),
-    Field("palette", "Palette", choices=PALETTES, default="PAL_OW_RED"),
-)
-
-
-class AddNpc(_Placed):
-    name = "npc"
-    title = "Add an NPC"
-    FIELDS = _BODY + (
-        Field("text", "What they say", kind="lines",
-              help="one line per textbox line; a blank line starts a new box"),
-    )
-
-    def describe(self) -> str:
-        return f"NPC {self.text('sprite')} at ({self.text('y')}, {self.text('x')})"
-
-    def run(self, root: Path) -> Result:
-        try:
-            return self._scaffolded(
-                scaffold.add_npc(root, self.map, self.obj(), self.pages("text")))
-        except scaffold.ScaffoldError as e:
-            raise ActionError(str(e)) from e
-
-
-class AddTrainer(_Placed):
-    name = "trainer"
-    title = "Add a trainer"
-    FIELDS = _BODY + (
-        Field("cls", "Class", choices=CLASSES, default="YOUNGSTER"),
-        Field("party", "Party", default="1",
-              help="an existing party number, or `Name: 5 PIDGEY, 6 RATTATA` to append one"),
-        Field("sight", "Sight", kind="int", default="1",
-              help="tiles away they notice you; above 1 they WALK to you"),
-        Field("seen", "On spotting you", kind="lines"),
-        Field("defeated", "On losing", kind="lines"),
-        Field("after", "Afterwards", kind="lines"),
-    )
-
-    def describe(self) -> str:
-        return (f"{self.text('cls')} at ({self.text('y')}, {self.text('x')}) "
-                f"[party {self.text('party')}]")
-
-    def run(self, root: Path) -> Result:
-        party, new_party = self._party()
-        try:
-            s = scaffold.add_trainer(
-                root, self.map, self.obj(), self.text("cls"),
-                seen=self.pages("seen"), defeated=self.pages("defeated"),
-                after=self.pages("after"), party=party, new_party=new_party,
-                sight=self.integer("sight"),
-            )
-        except scaffold.ScaffoldError as e:
-            raise ActionError(str(e)) from e
-        result = self._scaffolded(s)
-        if new_party:
-            result.notes.append(f"appended {self.text('cls')} party #{s.party}")
-        return result
-
-    def _party(self) -> tuple[int | None, tuple[str, list[trainerparty.Mon], str] | None]:
-        """Either an existing party index, or a new one to append. Appending is
-        the only way to make a party: inserting renumbers every party below it
-        and re-teams every trainer citing them by position."""
-        raw = self.text("party")
-        if raw.isdigit():
-            return int(raw), None
-        if ":" not in raw:
-            raise ActionError(
-                f"{raw!r} is neither a party number nor a new party — write "
-                f"`Name: 5 PIDGEY, 6 RATTATA` to append one"
-            )
-        name, _, roster = raw.partition(":")
-        mons = [self._mon(part) for part in roster.split(",") if part.strip()]
-        if not mons:
-            raise ActionError(f"{name.strip()} has no Pokémon in it")
-        return None, (name.strip(), mons, trainerparty.NORMAL)
-
-    @staticmethod
-    def _mon(part: str) -> trainerparty.Mon:
-        m = re.fullmatch(r"\s*(\d+)\s+([A-Za-z_]\w*)\s*", part)
-        if not m:
-            raise ActionError(f"{part.strip()!r} should read like `5 PIDGEY` — level, then species")
-        return trainerparty.Mon(level=int(m.group(1)), species=m.group(2).upper())
-
-
-class AddItemball(_Placed):
-    name = "itemball"
-    title = "Add an item ball"
-    FIELDS = (
-        Field("y", "Y", kind="int"),
-        Field("x", "X", kind="int"),
-        Field("item", "Item", choices=ITEMS, default="POTION"),
-    )
-
-    def describe(self) -> str:
-        return f"{self.text('item')} ball at ({self.text('y')}, {self.text('x')})"
-
-    def run(self, root: Path) -> Result:
-        y, x = self.coords()
-        try:
-            return self._scaffolded(
-                scaffold.add_itemball(root, self.map, y, x, self.text("item")))
-        except scaffold.ScaffoldError as e:
-            raise ActionError(str(e)) from e
-
-
-class AddHiddenItem(_Placed):
-    name = "hidden"
-    title = "Add a hidden item"
-    FIELDS = AddItemball.FIELDS
-
-    def describe(self) -> str:
-        return f"hidden {self.text('item')} at ({self.text('y')}, {self.text('x')})"
-
-    def run(self, root: Path) -> Result:
-        y, x = self.coords()
-        try:
-            return self._scaffolded(
-                scaffold.add_hidden_item(root, self.map, y, x, self.text("item")))
-        except scaffold.ScaffoldError as e:
-            raise ActionError(str(e)) from e
-
-
-class AddSignpost(_Placed):
-    name = "sign"
-    title = "Add a signpost"
-    FIELDS = (
-        Field("y", "Y", kind="int"),
-        Field("x", "X", kind="int"),
-        Field("facing", "Read when facing", choices=FACINGS, default="",
-              help="leave blank and it reads from any side, like a gym sign"),
-        # A sign's text is measured in the *speech* box, not the signpost one,
-        # obvious as the opposite sounds. SIGNPOST_TEXT and the facing signs both
-        # end in a `jumptext`, which draws in the ordinary bubble. Only
-        # SIGNPOST_LOAD opens the full-screen signpost window — see
-        # `dialogue.sign_owners`. Measure this against 17 columns and every sign
-        # you write is one tile too wide, in-game, and nowhere else.
-        Field("text", "What it says", kind="lines",
-              help="one line per textbox line; a blank line starts a new box"),
-    )
-
-    def describe(self) -> str:
-        return f"sign at ({self.text('y')}, {self.text('x')})"
-
-    def run(self, root: Path) -> Result:
-        y, x = self.coords()
-        try:
-            return self._scaffolded(scaffold.add_signpost(
-                root, self.map, y, x, self.pages("text"),
-                facing=self.text("facing") or None))
-        except scaffold.ScaffoldError as e:
-            raise ActionError(str(e)) from e
-
-
-class EditText(_Placed):
-    """Reword a text block that is already in the game.
-
-    Not reachable from the palette, and that is on purpose: it needs a block to
-    act on, so it is reached by *picking one* (`e` on a map). What arrives here
-    is prose — the macros come back from the block itself.
-    """
-
-    name = "reword"
-    title = "Edit dialogue"
-    FIELDS = (
-        Field("label", "Text block", kind="fixed"),
-        Field("text", "What it says", kind="lines"),
-    )
-
-    def describe(self) -> str:
-        return f"reword {self.text('label')}"
-
-    def run(self, root: Path) -> Result:
-        try:
-            edit = reword(root, self.map, self.text("label"),
-                          self.values.get("text", ""))
-        except TextError as e:
-            raise ActionError(str(e)) from e
-        return Result(edit.detail, [edit] if edit.changed else [],
-                      [] if edit.changed else ["unchanged — nothing to write"])
-
-
-class Remove(_Placed):
-    name = "remove"
-    title = "Remove an object"
-    FIELDS = (
-        Field("label", "Label", help="the script label it points at"),
-        Field("y", "Y", kind="int", default="", help="or its position, if it has no label"),
-        Field("x", "X", kind="int", default=""),
-    )
-
-    def describe(self) -> str:
-        what = self.text("label") or f"({self.text('y')}, {self.text('x')})"
-        return f"remove {what} from {self.map}"
-
-    def run(self, root: Path) -> Result:
-        label = self.text("label") or None
-        at = self.coords() if (self.text("y") and self.text("x")) else None
-        if (label is None) == (at is None):
-            raise ActionError("name the object by its label or by its position, not both")
-        try:
-            r = removal.remove(root, self.map, label=label, at=at)
-        except removal.RemovalError as e:
-            raise ActionError(str(e)) from e
-        notes = list(r.warnings)
-        if r.freed_flag:
-            notes.append(f"freed {r.freed_flag}")
-        return Result(r.summary, r.changes, notes)

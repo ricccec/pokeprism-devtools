@@ -27,9 +27,12 @@ from textual.widgets import DataTable, Input, OptionList, TabbedContent, TextAre
 
 from pokeprism_devtools.shared import blocksrc, coords, eventheader, paths, swatches
 from pokeprism_devtools.studio import Session, panels
-from pokeprism_devtools.studio.actions import (ActionError, AddItemball, AddNpc,
-                                               AddSignpost)
+from pokeprism_devtools.studio.actions import ActionError
+from pokeprism_devtools.studio.content import (HIDDEN, ITEMBALL, TMHM, TREE,
+                                               AddNpc, AddPickup, AddSignpost,
+                                               AddTrainer)
 from pokeprism_devtools.studio.app import Studio
+from pokeprism_devtools.studio.combo import Combo
 from pokeprism_devtools.studio.grid import MapGrid
 from pokeprism_devtools.studio.newmap import NewMap
 from pokeprism_devtools.studio.screens import Confirm, Findings, Form, History, Picker
@@ -370,7 +373,7 @@ class TestTheCursorAndTheMouse(_Driven):
                 grid.cursor = (12, 7)
                 await pilot.pause()
 
-                for action in (AddNpc, AddSignpost, AddItemball):
+                for action in (AddNpc, AddSignpost, AddPickup):
                     form = Form(action, app.session, app._const, grid.cursor)
                     await app.push_screen(form)
                     await pilot.pause(0.2)
@@ -772,7 +775,7 @@ class TestHistory(_Driven):
         # An item ball, not an NPC: it always allocates an event flag, so it
         # writes the map *and* constants/event_flags.asm — and a mutation that
         # spans two files is the only kind this rule has anything to say about.
-        session.act(AddItemball("CASTRO_FOREST", y="4", x="4", item="POTION"))
+        session.act(AddPickup("CASTRO_FOREST", kind=ITEMBALL, y="4", x="4", item="POTION"))
 
         applied = session.history[-1]
         self.assertIn("constants/event_flags.asm", applied.paths)
@@ -796,8 +799,8 @@ class TestHistory(_Driven):
 
     def test_a_change_a_later_one_wrote_over_says_which(self) -> None:
         session = Session(self.root)
-        session.act(AddItemball("OXALIS_CITY", y="4", x="4", item="POTION"))
-        session.act(AddItemball("OXALIS_CITY", y="5", x="4", item="ANTIDOTE"))
+        session.act(AddPickup("OXALIS_CITY", kind=ITEMBALL, y="4", x="4", item="POTION"))
+        session.act(AddPickup("OXALIS_CITY", kind=ITEMBALL, y="5", x="4", item="ANTIDOTE"))
 
         first, second = session.mutations()
         self.assertFalse(first.undoable)
@@ -809,7 +812,7 @@ class TestHistory(_Driven):
             app = Studio(self.root)
             async with app.run_test() as pilot:
                 await self.ready(app, pilot)
-                app.session.act(AddItemball("CASTRO_FOREST", y="6", x="6",
+                app.session.act(AddPickup("CASTRO_FOREST", kind=ITEMBALL, y="6", x="6",
                                             item="POTION"))
 
                 await pilot.press("H")
@@ -1029,16 +1032,54 @@ class TestChoices(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.session = Session(ROOT)
 
+    #: Enough of a form to answer the fields whose choices depend on another field.
+    #: A party belongs to a class, so "which parties are there" has no answer until
+    #: you say which class — and `[]` is the right answer to a question nobody has
+    #: finished asking.
+    ENOUGH = {"cls": "YOUNGSTER"}
+
     def test_every_declared_kind_can_be_answered(self) -> None:
+        """Including every shape a form that changes shape can take. A pickup's
+        `tree` field only exists once the kind is a fruit tree, and a choices kind
+        the session has never heard of would show up as an empty dropdown in a form
+        nobody opened during the tests."""
         from pokeprism_devtools.studio.session import ADDERS
         every = {a for group in ADDERS.values() for a in group} | {NewMap}
         for action in every:
-            for f in action.FIELDS:
-                if f.choices:
+            shapes = [{}] if action is not AddPickup else [
+                {"kind": k} for k in (ITEMBALL, TMHM, TREE, HIDDEN)]
+            for shape in shapes:
+                for f in action.fields_for(shape):
+                    if not f.choices:
+                        continue
                     self.assertTrue(
-                        self.session.choices(f.choices),
+                        self.session.choices(f.choices, self.ENOUGH),
                         f"{action.name}.{f.name} wants {f.choices!r} and the "
-                        f"session has nothing to offer for it")
+                        f"session has nothing to offer for it ({shape or 'default'})")
+
+    def test_a_field_that_depends_on_another_is_empty_until_it_is_answered(self) -> None:
+        """The parties on offer are that class's parties. Before a class is picked
+        there is no honest list — and every party in the repo would be a list in
+        which all but a handful are the wrong team."""
+        party = next(f for f in AddTrainer.FIELDS if f.name == "party")
+        self.assertEqual(party.depends, ("cls",))
+        self.assertEqual(self.session.choices(party.choices, {}), [])
+
+        for cls in ("YOUNGSTER", "LASS"):
+            rows = self.session.choices(party.choices, {"cls": cls})
+            self.assertTrue(rows, f"{cls} has parties")
+            self.assertTrue(rows[0].startswith("1  "), rows[0])
+
+    def test_the_tm_list_is_not_the_item_list(self) -> None:
+        """`TM_HAIL` is built by a macro at assembly time and appears nowhere in
+        the source. Scan the item constants for `TM_` and you find `TM_CASE` — the
+        bag — and nothing that is actually a TM."""
+        tms = set(self.session.choices("tmhms"))
+        items = set(self.session.choices("items"))
+        self.assertIn("TM_HAIL", tms)
+        self.assertNotIn("TM_CASE", tms)
+        self.assertNotIn("TM_HAIL", items, "the item enum cannot see its own TMs")
+        self.assertGreater(len(tms), 90)
 
     def test_a_class_the_engine_would_crash_on_is_not_offered(self) -> None:
         from pokeprism_devtools.shared import trainerparty
@@ -1176,6 +1217,256 @@ class TestTheDialogueGutter(_Driven):
         drive(go())
 
 
+class TestTheCombo(_Driven):
+    """A box you can type anything into, over a list of what there is.
+
+    Textual's `Select` cannot be this, and the reason is the event-flag field: it
+    insists its value be one of its options, and a flag you name that doesn't exist
+    is a flag that gets *created*. The list has to be an offer, never a fence.
+    """
+
+    async def _form(self, app, pilot, action, **kwargs):
+        form = Form(action, app.session, app._const, (3, 4), **kwargs)
+        await app.push_screen(form)
+        await pilot.pause(0.3)
+        return form
+
+    def test_it_matches_the_middle_of_a_name_not_only_the_front(self) -> None:
+        """The whole reason the dropdown exists. Inline autocomplete only helps if
+        you know how the name starts — and you want the black belt's sprite, which
+        is `SPRITE_BLACK_BELT` while the class is `BLACKBELT_T`."""
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot)
+                form = await self._form(app, pilot, AddNpc)
+                box = form.query_one("#field-sprite", Combo)
+
+                hits = box.matches("belt")
+                self.assertIn("SPRITE_BLACK_BELT", hits)
+
+                # And what starts with the text comes before what merely contains
+                # it: "LASS" should not be led by SPRITE_POKEFAN_F's neighbours.
+                hits = box.matches("SPRITE_LASS")
+                self.assertEqual(hits[0], "SPRITE_LASS")
+                await app.action_quit()
+
+        drive(go())
+
+    def test_a_name_that_does_not_exist_is_still_typable(self) -> None:
+        """An event flag you invent is the point of the field. If the combo held
+        you to its list, the only NPCs you could gate would be ones gated already."""
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot)
+                form = await self._form(app, pilot, AddNpc)
+                box = form.query_one("#field-flag", Combo)
+
+                self.assertTrue(box.matches("EVENT_"), "the known flags are offered")
+                box.value = "EVENT_A_FLAG_THAT_IS_NOT_IN_THE_LIST"
+                await pilot.pause()
+                self.assertEqual(form.values()["flag"],
+                                 "EVENT_A_FLAG_THAT_IS_NOT_IN_THE_LIST")
+                await app.action_quit()
+
+        drive(go())
+
+    def test_enter_takes_the_highlighted_row_and_stays_in_the_field(self) -> None:
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot)
+                form = await self._form(app, pilot, AddNpc)
+                box = form.query_one("#field-sprite", Combo)
+                box.focus()
+                box.value = "SPRITE_LA"
+                await pilot.pause()
+
+                # The first row on offer, whatever it is — the test's business is
+                # that enter takes the highlighted one, not which one that is.
+                wanted = box.matches("SPRITE_LA")[0]
+                self.assertTrue(wanted.startswith("SPRITE_LA"), wanted)
+
+                await pilot.press("down")           # opens the list
+                await pilot.pause()
+                await pilot.press("enter")          # takes the highlighted row
+                await pilot.pause()
+
+                self.assertEqual(box.value, wanted)
+                self.assertIs(app.screen.focused, box,
+                              "enter chose a value; it must not also mean `next field`")
+                await app.action_quit()
+
+        drive(go())
+
+
+class TestAFormThatChangesShape(_Driven):
+    """A pickup is four different things wearing the same coat.
+
+    And the fields a kind *doesn't* have are exactly the ones that are a bug if you
+    fill them in: the engine reads the quantity slot of a TM ball as the item. So
+    the form's shape follows the kind — and the view is told only that the shape
+    moved, never what moved it.
+    """
+
+    async def _pickup(self, app, pilot, kind: str):
+        form = Form(AddPickup, app.session, app._const, (3, 4))
+        await app.push_screen(form)
+        await pilot.pause(0.3)
+        form.query_one("#field-kind", Input).value = kind
+        await pilot.pause(0.3)
+        return form
+
+    def _fields(self, form) -> list[str]:
+        return [f.name for f in form._shown]
+
+    def test_a_tm_ball_has_no_quantity_box_to_get_wrong(self) -> None:
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot)
+                form = await self._pickup(app, pilot, ITEMBALL)
+                self.assertIn("quantity", self._fields(form))
+
+                form.query_one("#field-kind", Input).value = TMHM
+                await pilot.pause(0.3)
+                self.assertNotIn("quantity", self._fields(form))
+                self.assertEqual(len(form.query("#field-quantity")), 0,
+                                 "the box is gone from the screen, not just the list")
+                await app.action_quit()
+
+        drive(go())
+
+    def test_a_fruit_tree_has_no_flag_and_a_hidden_item_has_no_sprite(self) -> None:
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot)
+                form = await self._pickup(app, pilot, TREE)
+                # A tree regrows. A flag would make the tree itself disappear.
+                self.assertNotIn("flag", self._fields(form))
+                self.assertIn("tree", self._fields(form))
+
+                form.query_one("#field-kind", Input).value = HIDDEN
+                await pilot.pause(0.3)
+                self.assertNotIn("sprite", self._fields(form))
+                self.assertIn("item", self._fields(form))
+                await app.action_quit()
+
+        drive(go())
+
+    def test_what_you_typed_survives_a_change_of_shape(self) -> None:
+        """Change your mind twice and the item you named is still there. A form
+        that forgets what you told it is a form you fill in twice."""
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot)
+                form = await self._pickup(app, pilot, ITEMBALL)
+                form.query_one("#field-item", Input).value = "RARE_CANDY"
+                await pilot.pause(0.2)
+
+                form.query_one("#field-kind", Input).value = TREE
+                await pilot.pause(0.3)
+                form.query_one("#field-kind", Input).value = ITEMBALL
+                await pilot.pause(0.3)
+
+                self.assertEqual(form.values()["item"], "RARE_CANDY")
+                await app.action_quit()
+
+        drive(go())
+
+    def test_the_pickup_it_builds_is_the_pickup_you_asked_for(self) -> None:
+        """Down to the bytes: a TM ball puts the item where an item ball puts the
+        quantity, and the assembler cannot tell you which you meant."""
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot)
+                preview = app.session.preview(AddPickup(
+                    app._const, kind=TMHM, y="6", x="6", item="TM_HAIL"))
+                written = next(e.new_text for e in preview.edits
+                               if e.path.endswith(f"{MAP}.asm"))
+                line = next(ln for ln in written.split("\n")
+                            if "PERSONTYPE_TMHMBALL" in ln)
+                after = line.split("PERSONTYPE_TMHMBALL,")[1].split(",")
+                self.assertEqual(after[0].strip(), "TM_HAIL")
+                self.assertEqual(after[1].strip(), "0")
+                await app.action_quit()
+
+        drive(go())
+
+
+class TestAClassKnowsWhatItWears(_Driven):
+    """Pick a trainer class and the sprite and palette fill themselves in.
+
+    From the mode of what is already in the repo, because the class name does not
+    tell you: a SKIER is a SPRITE_BUENA, and 17 of the 43 classes with a trainer on
+    a map wear a sprite that isn't named after them.
+    """
+
+    async def _trainer(self, app, pilot):
+        form = Form(AddTrainer, app.session, app._const, (3, 4))
+        await app.push_screen(form)
+        await pilot.pause(0.3)
+        return form
+
+    def test_picking_a_class_dresses_the_trainer(self) -> None:
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot)
+                form = await self._trainer(app, pilot)
+
+                form.query_one("#field-cls", Input).value = "SKIER"
+                await pilot.pause(0.3)
+                self.assertEqual(form.values()["sprite"], "SPRITE_BUENA")
+
+                # And the parties on offer are that class's parties.
+                party = form.query_one("#field-party", Combo)
+                self.assertTrue(party.matches(""))
+                await app.action_quit()
+
+        drive(go())
+
+    def test_it_will_not_overwrite_a_sprite_you_chose_yourself(self) -> None:
+        """A suggestion may fill an empty box. It may not undo your answer — and a
+        form that quietly reverts what you typed is worse than one that never
+        offered."""
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot)
+                form = await self._trainer(app, pilot)
+
+                sprite = form.query_one("#field-sprite", Combo)
+                sprite.focus()
+                await pilot.pause()
+                sprite.value = "SPRITE_ROCKET"     # typed, in the focused box
+                await pilot.pause(0.2)
+
+                form.query_one("#field-cls", Input).value = "SKIER"
+                await pilot.pause(0.3)
+                self.assertEqual(form.values()["sprite"], "SPRITE_ROCKET")
+                await app.action_quit()
+
+        drive(go())
+
+    def test_a_party_row_is_read_back_as_its_number(self) -> None:
+        """The combo shows `3  Joey — RATTATA 4` because a party has no name the
+        assembler can see. What gets written is the 3."""
+        action = AddTrainer(
+            "CASTRO_FOREST", cls="YOUNGSTER", party="2  Wilson — MARILL 5",
+            sprite="SPRITE_YOUNGSTER", y="6", x="6",
+            movement="SPRITEMOVEDATA_STANDING_DOWN", palette="PAL_OW_BLUE",
+            sight="1", seen="Hey!", defeated="Argh.", after="Well done.")
+        self.assertEqual(action._party(), 2)
+
+        with self.assertRaises(ActionError):
+            AddTrainer("CASTRO_FOREST", party="Wilson")._party()
+
+
 class TestTheSeam(unittest.TestCase):
     """The view reads no files.
 
@@ -1189,7 +1480,7 @@ class TestTheSeam(unittest.TestCase):
     #: The view layer. `screens/` is a directory precisely so that this list is
     #: a fact about the tree rather than a list somebody has to remember to add
     #: to — every screen is in it by construction.
-    VIEW = ("app.py", "tabs.py", "grid.py")
+    VIEW = ("app.py", "tabs.py", "grid.py", "combo.py")
 
     #: Modules that open the source tree. `coords` and `swatches` are not here:
     #: `coords.glyph_cells` and `swatches.tile_color` are the *renderer* — plain
@@ -1228,8 +1519,8 @@ class TestTheSeam(unittest.TestCase):
     def test_every_screen_is_checked(self) -> None:
         """The guard above is only as good as the list of files it walks."""
         names = {p.name for p in self._files()}
-        for wanted in ("app.py", "tabs.py", "grid.py", "forms.py", "confirm.py",
-                       "build.py", "lint.py", "history.py"):
+        for wanted in ("app.py", "tabs.py", "grid.py", "combo.py", "forms.py",
+                       "confirm.py", "build.py", "lint.py", "history.py"):
             self.assertIn(wanted, names)
 
 

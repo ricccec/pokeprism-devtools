@@ -1,4 +1,9 @@
-"""Adding *content* to a map: NPCs, trainers, item balls, hidden items, signs.
+"""Adding *content* to a map: NPCs, trainers, signs — the things that talk.
+
+The things you *pick up* are next door in :mod:`.pickups`. They build on the
+machinery here (:class:`MapCtx`, :func:`allocate_flag`), and they are a separate
+module because what makes a pickup hard is not the wiring: it is that the engine
+reads the same two macro arguments four different ways.
 
 Each of these is one conceptual thing — "put a Sage here who battles you" — that
 the source spreads across three or four files with nothing but a name to hold
@@ -42,10 +47,8 @@ ALWAYS = "-1"
 FACINGS = ("SIGNPOST_UP", "SIGNPOST_DOWN", "SIGNPOST_LEFT", "SIGNPOST_RIGHT")
 
 _STILL = "SPRITEMOVEDATA_STANDING_DOWN"
-_ITEM_MOVEMENT = "SPRITEMOVEDATA_ITEM_TREE"
-_ITEM_SPRITE = "SPRITE_POKE_BALL"
 
-_INDENT = "\t"
+INDENT = "\t"
 
 
 class ScaffoldError(RuntimeError):
@@ -72,13 +75,13 @@ class Object:
 
     def check(self, root: Path) -> None:
         """Every constant this object will emit must actually exist."""
-        _require(root, "sprite", self.sprite, frozenset(spritesets.sprite_ids(root)))
-        _require(root, "movement", self.movement, frozenset(spritesets.movedata_ids(root)))
-        _require(root, "palette", self.palette,
+        require(root, "sprite", self.sprite, frozenset(spritesets.sprite_ids(root)))
+        require(root, "movement", self.movement, frozenset(spritesets.movedata_ids(root)))
+        require(root, "palette", self.palette,
                  consts.with_prefix(root, consts.SPRITES, "PAL_OW_"))
 
 
-def _require(root: Path, kind: str, name: str, known: frozenset[str]) -> None:
+def require(root: Path, kind: str, name: str, known: frozenset[str]) -> None:
     if name not in known:
         raise ScaffoldError(_unknown(kind, name, known))
 
@@ -118,13 +121,13 @@ def add_npc(root: Path, map_const: str, obj: Object, pages: list[list[str]], *,
     default is an NPC that is always there.
     """
     obj.check(root)
-    ctx = _MapCtx(root, map_const)
+    ctx = MapCtx(root, map_const)
     label = label or ctx.unique_label("NPC")
     edits: list[Edit] = []
 
     flag_name = None
     if flag:
-        flag_name, flag_edit = _allocate(root, flag)
+        flag_name, flag_edit = allocate_flag(root, flag)
         edits.append(flag_edit)
 
     ctx.add_script(label, _text_block(label, pages))
@@ -157,7 +160,7 @@ def add_trainer(root: Path, map_const: str, obj: Object, cls: str, *,
         raise ScaffoldError("give exactly one of party= (reuse) or new_party= (append)")
 
     obj.check(root)
-    ctx = _MapCtx(root, map_const)
+    ctx = MapCtx(root, map_const)
     edits: list[Edit] = []
 
     try:
@@ -177,7 +180,7 @@ def add_trainer(root: Path, map_const: str, obj: Object, cls: str, *,
         )
 
     label = label or ctx.unique_label("Trainer", numbered=True)
-    flag_name, flag_edit = _allocate(root, flag or ctx.flag_name("TRAINER", numbered=True))
+    flag_name, flag_edit = allocate_flag(root, flag or ctx.flag_name("TRAINER", numbered=True))
     edits.append(flag_edit)
 
     ctx.add_script(label, _trainer_block(label, flag_name, cls, party,
@@ -187,26 +190,6 @@ def add_trainer(root: Path, map_const: str, obj: Object, cls: str, *,
 
     return Scaffold(f"{cls} #{party} as {label} in {map_const}",
                     edits, flag_name, label, party)
-
-
-def add_itemball(root: Path, map_const: str, y: int, x: int, item: str, *,
-                 flag: str | None = None, sprite: str = _ITEM_SPRITE,
-                 palette: str = "PAL_OW_RED") -> Scaffold:
-    """A Poké Ball on the ground. The item const goes where a script pointer
-    normally would — PERSONTYPE_ITEMBALL reads that argument as an item id."""
-    obj = Object(sprite=sprite, y=y, x=x, movement=_ITEM_MOVEMENT, palette=palette)
-    obj.check(root)
-    _require(root, "item", item, consts.names(root, consts.ITEMS))
-
-    ctx = _MapCtx(root, map_const)
-    flag_name, flag_edit = _allocate(root, flag or ctx.flag_name(f"ITEM_{item}"))
-    ctx.add_object(obj, "PERSONTYPE_ITEMBALL", 1, item, flag_name)
-
-    return Scaffold(
-        f"{item} at ({y}, {x}) in {map_const}",
-        [flag_edit, ctx.to_edit(f"{item} itemball at ({y}, {x})")],
-        flag_name,
-    )
 
 
 def add_signpost(root: Path, map_const: str, y: int, x: int,
@@ -226,7 +209,7 @@ def add_signpost(root: Path, map_const: str, y: int, x: int,
     bare text block and the engine will execute your prose as bytecode. So a
     facing sign gets a one-line script that jumps to its own text.
     """
-    ctx = _MapCtx(root, map_const)
+    ctx = MapCtx(root, map_const)
     label = label or ctx.unique_label("Sign")
 
     if facing is None:
@@ -238,7 +221,7 @@ def add_signpost(root: Path, map_const: str, y: int, x: int,
                 f"a sign faces {', '.join(f.removeprefix('SIGNPOST_').lower() for f in FACINGS)}"
                 f" — or nothing at all, and then it reads from any side. Not {facing!r}."
             )
-        block = [f"{label}:", f"{_INDENT}jumptext .text", "", ".text",
+        block = [f"{label}:", f"{INDENT}jumptext .text", "", ".text",
                  *_text_body(pages)]
 
     ctx.add_script(label, block)
@@ -251,33 +234,11 @@ def add_signpost(root: Path, map_const: str, y: int, x: int,
     )
 
 
-def add_hidden_item(root: Path, map_const: str, y: int, x: int, item: str, *,
-                    flag: str | None = None, label: str | None = None) -> Scaffold:
-    """An item hidden in the scenery, found with the Itemfinder.
-
-    A SIGNPOST_ITEM points at a two-line record — the flag, then the item — which
-    is why this one needs a label as well as a flag.
-    """
-    _require(root, "item", item, consts.names(root, consts.ITEMS))
-    ctx = _MapCtx(root, map_const)
-    label = label or ctx.unique_label(_camel(item))
-    flag_name, flag_edit = _allocate(root, flag or ctx.flag_name(f"HIDDENITEM_{item}"))
-
-    ctx.add_script(label, [f"{label}:", f"{_INDENT}dw {flag_name}", f"{_INDENT}db {item}"])
-    ctx.add_bg_event([str(y), str(x), "SIGNPOST_ITEM", label])
-
-    return Scaffold(
-        f"hidden {item} at ({y}, {x}) in {map_const}",
-        [flag_edit, ctx.to_edit(f"hidden {item} at ({y}, {x})")],
-        flag_name, label,
-    )
-
-
 # --------------------------------------------------------------------------- #
 # the map file, mid-edit                                                      #
 # --------------------------------------------------------------------------- #
 
-class _MapCtx:
+class MapCtx:
     """A map's asm held open across several splices, so one Edit carries them all.
 
     Script and text blocks go *above* the ``X_MapEventHeader::`` line, which is
@@ -357,12 +318,17 @@ class _MapCtx:
         self.header.lines[at:at] = [*block, ""]
         self.header.reparse()
 
-    def add_object(self, obj: Object, persontype: str, sight: int,
+    def add_object(self, obj: Object, persontype: str, param: str | int,
                    pointer: str, flag: str) -> None:
+        """One person_event. `param` is the macro's 11th argument, and what it
+        means is decided by the persontype: sight range for a person, quantity for
+        an item ball, the item itself for a TM ball, an ignored `0` for a tree.
+        The macro has one slot; the engine reads four different things out of it.
+        """
         self.header.add_entry(eh.ListKind.OBJECT_EVENTS, [
             obj.sprite, str(obj.y), str(obj.x), obj.movement,
             str(obj.radius_y), str(obj.radius_x), str(obj.hour), str(obj.daytime),
-            obj.palette_arg(), persontype, str(sight), pointer, flag,
+            obj.palette_arg(), persontype, str(param), pointer, flag,
         ])
 
     def add_bg_event(self, args: list[str]) -> None:
@@ -398,8 +364,8 @@ def _text_body(pages: list[list[str]]) -> list[str]:
             raise ScaffoldError("a textbox with no lines in it")
         for i, line in enumerate(lines):
             macro = ("ctxt" if p == 0 else "para") if i == 0 else ("line" if i == 1 else "cont")
-            out.append(f'{_INDENT}{macro} "{_escape(line)}"')
-    out.append(f"{_INDENT}done")
+            out.append(f'{INDENT}{macro} "{_escape(line)}"')
+    out.append(f"{INDENT}done")
     return out
 
 
@@ -411,7 +377,7 @@ def _trainer_block(label: str, flag: str, cls: str, party: int,
     macro points at, as local labels."""
     return [
         f"{label}:",
-        f"{_INDENT}trainer {flag}, {cls}, {party}, .before_battle_text, .defeated_text",
+        f"{INDENT}trainer {flag}, {cls}, {party}, .before_battle_text, .defeated_text",
         "",
         *_text_body(after),
         "",
@@ -429,7 +395,7 @@ def _escape(line: str) -> str:
     return line
 
 
-def _camel(const: str) -> str:
+def camel(const: str) -> str:
     return "".join(part.capitalize() for part in const.split("_"))
 
 
@@ -445,14 +411,14 @@ def _check_mons(root: Path, mons: list[trainerparty.Mon]) -> None:
     moves = consts.names(root, consts.MOVES)
 
     for mon in mons:
-        _require(root, "species", mon.species, species)
+        require(root, "species", mon.species, species)
         if mon.item:
-            _require(root, "held item", mon.item, items)
+            require(root, "held item", mon.item, items)
         for move in mon.moves:
-            _require(root, "move", move, moves)
+            require(root, "move", move, moves)
 
 
-def _allocate(root: Path, name: str) -> tuple[str, Edit]:
+def allocate_flag(root: Path, name: str) -> tuple[str, Edit]:
     flags = eventflags.load(root)
     flag = flags.allocate(name)
     return flag.name, flags.to_edit(root, f"{name} = {flag.value}")

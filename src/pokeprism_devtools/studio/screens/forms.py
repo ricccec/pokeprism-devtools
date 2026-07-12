@@ -1,12 +1,20 @@
 """Picking one of a list, and filling one in. The confirmation is next door.
 
-Nothing in here knows what an NPC is. A form is built by walking an action's
-`FIELDS` and putting a box on screen for each one; a box that names a `choices`
-kind gets its autocomplete by asking the session, which is the only thing allowed
-to know that sprites live in `constants/sprite_constants.asm`. Add an action with
-a new field tomorrow and this file renders it without being touched — that is the
-whole point of the declaration, and the moment a `if field.name == "sprite"`
-appears here, the seam has leaked and `session.py`'s promise is broken.
+Nothing in here knows what an NPC is. A form is built by asking an action which
+fields it wants and putting a box on screen for each one; a box that names a
+`choices` kind gets its list by asking the session, which is the only thing
+allowed to know that sprites live in `constants/sprite_constants.asm`. Add an
+action with a new field tomorrow and this file renders it without being touched —
+that is the whole point of the declaration, and the moment a `if field.name ==
+"sprite"` appears here, the seam has leaked and `session.py`'s promise is broken.
+
+The three things a field can do to the rest of the form are all declared, for the
+same reason. A field with `choices` gets a combo. A field that `reveals` makes the
+form ask for its fields again — that is how one pickup form is four forms, and it
+is why a TM ball has no quantity box to get wrong. A field that changes lets the
+*action* fill in others (a trainer class knows what it wears), and the form
+applies that only where you haven't typed. Not one of those rules mentions a
+pickup, a TM or a trainer.
 
 The dialogue box is the exception worth explaining. It is still schema-driven —
 it appears because a field said `kind="lines"` — but it carries a second panel
@@ -34,12 +42,13 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.geometry import Size
 from textual.screen import ModalScreen
-from textual.suggester import SuggestFromList
+from textual.widget import Widget
 from textual.widgets import Button, Input, Label, OptionList, Static, TextArea
 
 from .speech import Dialogue
 
 from ..actions import Action, ActionError, Field
+from ..combo import Combo
 from ..grid import ZOOMS, MapGrid
 from ..session import Preview, Session
 
@@ -125,6 +134,19 @@ class Form(ModalScreen["Preview | None"]):
     party index past the end of the group — refuses. It refuses here, having
     touched not one byte of the repo, and the message the wiring layer wrote for
     a human is shown under the form with everything you typed still in it.
+
+    Three things the form does without knowing what any of them mean:
+
+    *A field with `choices` becomes a combo* — a box with the known answers under
+    it. It asks the session for the list.
+
+    *A field that `reveals` rebuilds the form.* Change a pickup's kind and the
+    fields change with it, because the action is asked again what fields it wants
+    now. The form learns that the shape moved, not what moved it.
+
+    *A field that changed can fill in others.* Pick a trainer class and the sprite
+    and palette fill themselves in — but only if you have not typed in them
+    yourself. A suggestion may fill an empty box; it may not overwrite an answer.
     """
 
     BINDINGS = [
@@ -133,7 +155,10 @@ class Form(ModalScreen["Preview | None"]):
     ]
 
     CSS = """
-    Form { align: center middle; }
+    /* The combo's dropdown lives on the screen rather than in the scrolling body,
+       so that a field near the bottom of a long form can still show its list over
+       whatever is beneath it instead of being clipped by the scroll box. */
+    Form { align: center middle; layers: base dropdown; }
     #form { width: 78; height: auto; max-height: 90%;
             border: round $accent; background: $surface; }
     #form-title { padding: 0 1; background: $accent; color: $text; }
@@ -173,16 +198,25 @@ class Form(ModalScreen["Preview | None"]):
         #: Which box a `lines` field is really drawn in, when it isn't the one the
         #: field declares. An existing block knows its own.
         self._box_of = boxes or {}
+        #: The fields whose value came from *you*, rather than from a default or
+        #: from another field filling them in. Nothing may overwrite one of these:
+        #: a form that undoes your typing because you later changed a menu is a
+        #: form you cannot trust with the thing you typed.
+        self._typed_in: set[str] = set()
+        #: The fields on screen, which for a form that changes shape is not the
+        #: same thing as the fields the action declares.
+        self._shown: tuple[Field, ...] = ()
         #: Why the last submit was refused, if it was.
         self.error = ""
         #: Why the sketch can't be drawn yet, if it can't.
         self.unsketchable = ""
 
     def compose(self) -> ComposeResult:
+        self._shown = self._action.fields_for(dict(self._values))
         with Vertical(id="form", classes="tall" if self._action.sketches else ""):
             yield Static(self._action.title, id="form-title")
             with VerticalScroll(id="form-body"):
-                for f in self._action.FIELDS:
+                for f in self._shown:
                     yield from self._widgets(f)
             if self._action.sketches:
                 yield MapGrid(id="sketch")
@@ -192,26 +226,26 @@ class Form(ModalScreen["Preview | None"]):
                 yield Button("Cancel", id="cancel")
                 yield Button("Preview", variant="primary", id="ok")
 
-    def _widgets(self, f: Field) -> ComposeResult:
+    def _widgets(self, f: Field) -> list[Widget]:
         if f.kind == "fixed":
             # Decided by context, not typed. Shown, because you should be able to
             # see *which* block you are about to reword — but not editable, or a
             # careless keystroke would aim your new words at a different one.
-            yield Label(f"{f.label}: {self._prefill(f)}", classes="field-fixed")
-            return
+            return [Label(f"{f.label}: {self._prefill(f)}", classes="field-fixed")]
 
-        yield Label(f.label, classes="field-label")
+        out: list[Widget] = [Label(f.label, classes="field-label")]
         if f.help:
-            yield Label(f.help, classes="field-help")
+            out.append(Label(f.help, classes="field-help"))
         if f.kind == "lines":
             # Not a bare TextArea: a Dialogue draws what each line costs in tiles
             # in its own right margin, so the count is on the line it is about.
-            yield Dialogue(self._prefill(f), id=f"field-{f.name}")
+            out.append(Dialogue(self._prefill(f), id=f"field-{f.name}"))
+        elif options := self._options(f):
+            out.append(Combo(options, value=self._prefill(f), id=f"field-{f.name}",
+                             placeholder=f.choices))
         else:
-            yield Input(
-                value=self._prefill(f), id=f"field-{f.name}",
-                suggester=self._suggester(f), placeholder=f.choices,
-            )
+            out.append(Input(value=self._prefill(f), id=f"field-{f.name}"))
+        return out
 
     def _prefill(self, f: Field) -> str:
         """What the caller knows, then what the cursor knows, then the default."""
@@ -224,18 +258,41 @@ class Form(ModalScreen["Preview | None"]):
     def _box(self, f: Field) -> str:
         return self._box_of.get(f.name, f.box)
 
-    def _suggester(self, f: Field) -> SuggestFromList | None:
-        if not f.choices:
-            return None
-        options = self._session.choices(f.choices)
-        return SuggestFromList(options, case_sensitive=False) if options else None
+    def _options(self, f: Field) -> list[str]:
+        return self._session.choices(f.choices, self.values()) if f.choices else []
+
+    def values(self) -> dict[str, str]:
+        """The form as it stands.
+
+        What is in the boxes — plus what was typed into fields that have since left
+        (a pickup that is now a tree still remembers the item you named before you
+        changed your mind), plus, for a field whose box is not on screen *yet*, what
+        it is about to be filled with.
+
+        That last one is not a detail. This is called from `compose`, to decide
+        whether a field's list has anything in it — and the party list depends on
+        the class, whose box does not exist at that moment. Read only the mounted
+        widgets and the class reads as blank, the parties come back empty, and the
+        party field is built as a plain box with no list behind it: correct-looking,
+        and inert until you happened to retype the class.
+        """
+        out = dict(self._values)
+        for f in self._shown:
+            widget = self._widget(f.name)
+            if isinstance(widget, Dialogue):
+                out[f.name] = widget.text
+            elif isinstance(widget, Input):
+                out[f.name] = widget.value
+            else:
+                out[f.name] = self._prefill(f)      # not mounted, or `fixed`
+        return out
+
+    def _widget(self, name: str) -> Widget | None:
+        found = self.query(f"#field-{name}")
+        return found.first() if found else None
 
     def on_mount(self) -> None:
-        # Focus the first thing you can type in — which for "Edit dialogue" is
-        # the text area, since its only other field is fixed.
-        for widget in self.query("#form-body Input, #form-body TextArea"):
-            widget.focus()
-            break
+        self._focus_first()
         if self._action.sketches:
             # A preview is for looking at, not for walking around. Its cursor and
             # its scrollbars would only be somewhere for the tab key to get lost.
@@ -243,15 +300,87 @@ class Form(ModalScreen["Preview | None"]):
         self._retile()
         self._resketch()
 
+    def _focus_first(self) -> None:
+        # The first thing you can type in — which for "Edit dialogue" is the text
+        # area, since its only other field is fixed.
+        for widget in self.query("#form-body Input, #form-body TextArea"):
+            widget.focus()
+            return
+
     # -- the tile counter ------------------------------------------------------ #
     @on(TextArea.Changed)
     def _typed(self) -> None:
         self._retile()
 
-    # -- the map, before it exists ---------------------------------------------- #
+    # -- one field changing the rest -------------------------------------------- #
     @on(Input.Changed)
-    def _edited(self) -> None:
+    async def _edited(self, event: Input.Changed) -> None:
+        name = (event.input.id or "").removeprefix("field-")
+        field = next((f for f in self._shown if f.name == name), None)
+        if field is None:
+            return
+
+        # Typed in by hand, so nothing may fill it in from now on. `Input.Changed`
+        # fires for programmatic writes too, hence the check: only a change to the
+        # *focused* box is a change you made.
+        if self.focused is event.input:
+            self._typed_in.add(name)
+
+        self._follow(name)
+        self._refresh_choices(name)
+        if field.reveals:
+            await self._reshape(name)
         self._resketch()
+
+    def _follow(self, changed: str) -> None:
+        """Let the action fill in the fields this one implies — a trainer class
+        knows what it usually wears. Never over an answer you gave yourself."""
+        for name, value in self._session.follows(
+                self._action, changed, self.values()).items():
+            if name in self._typed_in:
+                continue
+            widget = self._widget(name)
+            if isinstance(widget, Input):
+                widget.value = value
+
+    def _refresh_choices(self, changed: str) -> None:
+        """Re-offer the lists that depended on the field that just changed. Which
+        parties exist depends on the class, and offering the old class's parties
+        after you have changed it is offering the wrong team."""
+        for f in self._shown:
+            if changed in f.depends:
+                widget = self._widget(f.name)
+                if isinstance(widget, Combo):
+                    widget.set_options(self._options(f))
+
+    async def _reshape(self, changed: str) -> None:
+        """Rebuild the body, because a `reveals` field says the form is now a
+        different form. Nothing happens if the fields turn out to be the same
+        ones — a rebuild you cannot see is still a rebuild that takes the cursor
+        out of the box you are typing in.
+        """
+        was = self.values()
+        fields = self._action.fields_for(was)
+        if [f.name for f in fields] == [f.name for f in self._shown]:
+            return
+
+        # Everything typed so far is carried across, including into fields that are
+        # about to leave: change a pickup from an item ball to a tree and back, and
+        # the item is still there.
+        self._values = was
+        self._shown = fields
+        body = self.query_one("#form-body", VerticalScroll)
+        await body.remove_children()
+        for f in fields:
+            await body.mount_all(self._widgets(f))
+        self._retile()
+        # Back to the field you were on — it is the one that caused all this, and
+        # a rebuild that dumped you at the top of the form would punish you for
+        # using it.
+        if (widget := self._widget(changed)) is not None:
+            widget.focus()
+
+    # -- the map, before it exists ---------------------------------------------- #
 
     @on(MapGrid.Moved)
     def _sketch_moved(self, event: MapGrid.Moved) -> None:
@@ -273,7 +402,7 @@ class Form(ModalScreen["Preview | None"]):
             return
         grid = self.query_one("#sketch", MapGrid)
         try:
-            view = self._session.sketch(self._action(self._map, **self._submitted_values()))
+            view = self._session.sketch(self._action(self._map, **self.values()))
         except ActionError as err:
             self.unsketchable = str(err)
             grid.view = None
@@ -296,7 +425,7 @@ class Form(ModalScreen["Preview | None"]):
         The answer goes back into the box it came from, not into a panel that
         repeats the words underneath. See `screens/speech.py`.
         """
-        for f in self._action.FIELDS:
+        for f in self._shown:
             if f.kind != "lines":
                 continue
             box = self.query_one(f"#field-{f.name}", Dialogue)
@@ -307,7 +436,7 @@ class Form(ModalScreen["Preview | None"]):
     def action_submit(self) -> None:
         """Build the action and preview it. Every action's first argument is the
         map it acts on; everything after that is the form, by name."""
-        action = self._action(self._map, **self._submitted_values())
+        action = self._action(self._map, **self.values())
         try:
             preview = self._session.preview(action)
         except ActionError as err:
@@ -324,17 +453,6 @@ class Form(ModalScreen["Preview | None"]):
     @on(Input.Submitted)
     def _next_field(self) -> None:
         self.focus_next()
-
-    def _submitted_values(self) -> dict[str, str]:
-        out: dict[str, str] = {}
-        for f in self._action.FIELDS:
-            if f.kind == "fixed":
-                out[f.name] = self._prefill(f)
-            elif f.kind == "lines":
-                out[f.name] = self.query_one(f"#field-{f.name}", Dialogue).text
-            else:
-                out[f.name] = self.query_one(f"#field-{f.name}", Input).value
-        return out
 
 
 def _fit(size: tuple[int, int], panel: Size) -> int:

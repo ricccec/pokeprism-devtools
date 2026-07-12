@@ -35,28 +35,23 @@ changed under us is one whose old contents we have no business restoring.
 
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Callable
+from functools import cached_property
 from pathlib import Path
 
-from functools import cached_property
-
 from .. import maplint
-from ..dev_server import apply as devapply
-from ..dev_server import inventory, playtest as devplay
+from ..dev_server import playtest as devplay
 from ..maplint.context import LintContext
 from ..maplint.diagnostics import Diagnostic, Severity
-from ..shared import (caches, consts, dialogue, eventheader, paths, spritesets,
-                      swatches, textbox, trainerparty)
+from ..shared import caches, eventheader, swatches, textbox
 from ..shared.edits import StaleEdit, apply_edits
-from ..wiring import connections, scaffold
-from . import actions, newmap, panels, reader
+from . import actions, content, offers, panels, play, reader
 from .actions import Action
 # The shapes of the answers — see `model.py`. Re-exported, because whatever wants
 # a `MapData` wants it *from the session*: the session is the only thing that can
 # hand it one, and the split between the two files is a size, not a boundary.
 from .model import (Applied, Finding, MapData, MapGeometry, MapRef, Measured,
-                    Mutation, Preview, TextPreview, TextRef)
+                    Mutation, Preview, TextPreview, TextRef)  # noqa: F401
 
 __all__ = ["Applied", "Finding", "MapData", "MapGeometry", "MapRef", "Measured",
            "Mutation", "Preview", "Session", "SessionError", "TextPreview",
@@ -68,12 +63,16 @@ class SessionError(RuntimeError):
 
 
 #: What each tab's "Add new…" row opens. See :meth:`Session.adders`.
+#:
+#: One action per tab now, including Pickups: the four kinds of pickup are one
+#: form that changes shape, rather than four entries in a menu you have to choose
+#: between before you know what the fields are. See `content.AddPickup`.
 ADDERS: dict[str, tuple[type[Action], ...]] = {
-    "NPC": (actions.AddNpc,),
-    "trainer": (actions.AddTrainer,),
-    "pickup": (actions.AddItemball, actions.AddHiddenItem),
+    "NPC": (content.AddNpc,),
+    "trainer": (content.AddTrainer,),
+    "pickup": (content.AddPickup,),
     "warp": (actions.AddWarp,),
-    "signpost": (actions.AddSignpost,),
+    "signpost": (content.AddSignpost,),
     "connection": (actions.Connect,),
 }
 
@@ -155,48 +154,29 @@ class Session:
         )
 
     # -- what a form may offer ------------------------------------------------ #
-    def choices(self, kind: str) -> list[str]:
-        """The constants a field of this kind will accept.
+    def choices(self, kind: str, values: dict[str, str] | None = None) -> list[str]:
+        """The constants a field of this kind will accept — see :mod:`.offers`.
 
-        The form calls this and turns the answer into autocomplete. It is the
-        other half of "the view reads no files": a field says *what sort* of
-        thing it wants, and the model — which knows where sprite constants live
-        and that a trainer class with a NULL group cannot be battled — says which
-        ones exist. An unknown kind is empty, i.e. free text, not an error: a new
-        action with a new kind should degrade to a plain box, not crash the form.
+        `values` is the form as it stands, because some lists depend on another
+        field: which parties exist depends entirely on which class you picked.
         """
-        return list(self._choices.get(kind, ()))
+        return offers.for_kind(self.root, kind, self._map_consts, values)
 
-    @cached_property
-    def _choices(self) -> dict[str, tuple[str, ...]]:
-        root = self.root
-        backed = [cls for cls, group in trainerparty.class_groups(root).items() if group]
-        return {
-            actions.MAPS: tuple(m.const for m in self.maps),
-            actions.SPRITES: tuple(sorted(spritesets.sprite_ids(root))),
-            actions.MOVEMENTS: tuple(sorted(spritesets.movedata_ids(root))),
-            actions.PALETTES: tuple(sorted(
-                consts.with_prefix(root, consts.SPRITES, "PAL_OW_"))),
-            actions.ITEMS: tuple(sorted(consts.names(root, consts.ITEMS))),
-            # Only classes with a party group behind them: offering a class the
-            # engine will crash on is worse than offering nothing.
-            actions.CLASSES: tuple(sorted(backed)),
-            actions.DIRECTIONS: tuple(sorted(connections.OPPOSITE)),
-            actions.FACINGS: tuple(f.removeprefix("SIGNPOST_").lower()
-                                   for f in scaffold.FACINGS),
-            # The map header's enums, from the same table the new-map action
-            # checks them against — so the form cannot suggest a constant that
-            # the action would then refuse.
-            actions.PERMISSIONS: newmap.PERMS,
-            **{kind: tuple(sorted(consts.with_prefix(root, rel, prefix)))
-               for kind, (rel, prefix) in (
-                   (actions.TILESETS, newmap.ENUMS["tileset"]),
-                   (actions.LANDMARKS, newmap.ENUMS["landmark"]),
-                   (actions.MUSIC, newmap.ENUMS["music"]),
-                   (actions.TIMES, newmap.ENUMS["palette"]),
-                   (actions.FISHGROUPS, newmap.ENUMS["fishgroup"]),
-               )},
-        }
+    def follows(self, action: type[Action], changed: str,
+                values: dict[str, str]) -> dict[str, str]:
+        """What the form should fill in for itself, now one field has changed — a
+        trainer class knows what it usually wears."""
+        return offers.follows(self.root, action, changed, values)
+
+    def warm(self) -> None:
+        """Read everything a form will want, before a form asks."""
+        offers.warm(self.root)
+
+    @property
+    def _map_consts(self) -> tuple[str, ...]:
+        """The one list `offers` can't build for itself: which maps exist is a
+        question for the lint context, which is this object's, not the module's."""
+        return tuple(m.const for m in self.maps)
 
     # -- what a selected row can do ------------------------------------------- #
     def adders(self, kind: str) -> tuple[type[Action], ...]:
@@ -246,14 +226,14 @@ class Session:
         # name rather than guessing — which is the behaviour we want to reach.
         pointer = entry.pointer
         if pointer and any(ln.startswith(f"{pointer}:") for ln in header.lines):
-            return actions.Remove(const, label=pointer, y="", x="")
+            return content.Remove(const, label=pointer, y="", x="")
 
         y, x = entry.coords
         if y is None or x is None:
             raise SessionError(
                 f"this {ref.what} has neither a script label nor readable "
                 f"coordinates, so there is no unambiguous way to name it.")
-        return actions.Remove(const, label="", y=str(y), x=str(x))
+        return content.Remove(const, label="", y=str(y), x=str(x))
 
     def dialogue_of(self, label: str, ref: panels.Ref) -> TextRef | None:
         """The text block this row's object points at, if it points at one.
@@ -267,44 +247,14 @@ class Session:
             return None
         return next((t for t in self.texts(label) if t.label == entry.pointer), None)
 
-    # -- text already in the game --------------------------------------------- #
+    # -- the words ------------------------------------------------------------ #
     def texts(self, label: str) -> list[TextRef]:
-        """Every text block in one map, as prose you could hand to a person.
+        """Every text block in one map, as prose — see :func:`.reader.texts`."""
+        return reader.texts(self.root, label, self._boxes)
 
-        The macros are deliberately not here. `plain` shows the words; `reword`
-        puts the macros back from the block itself, positionally — so a `cont`
-        that scrolls the box is still a `cont` after you fix a typo in it.
-        """
-        path = self.root / f"maps/{label}.asm"
-        sign = self._boxes["sign"]
-        return [
-            TextRef(label=b.label, owner=b.owner, lineno=b.lineno,
-                    prose=dialogue.plain(b),
-                    box="sign" if b.box.name == sign.name else "speech")
-            for b in dialogue.parse(self.root, path)
-        ]
-
-    # -- text, as it will look ------------------------------------------------ #
     def measure(self, text: str, box: str = "speech") -> TextPreview:
-        """Dialogue-in-progress against the box it lands in.
-
-        Same prose model the form submits: one line per screen line, a blank line
-        starts a new box. Only *width* is checked, and that is not a shortcut —
-        the third row of a box and every row after it are `cont`, which scrolls,
-        so a speech can be any length. What it cannot be is wide.
-        """
-        b = self._boxes[box]
-        lines = [self._measure_line(line, b.cols)
-                 for line in text.replace("\r\n", "\n").split("\n")]
-        return TextPreview(b.name, b.cols, lines)
-
-    def _measure_line(self, line: str, cols: int) -> Measured:
-        det, bnd, unb, unknown = self.ctx.textbox_metrics.tiles(self.root, line)
-        return Measured(
-            text=line, tiles=det, bounded=bnd, unbounded=unb, unknown=unknown,
-            over=max(0, det - cols),
-            over_at_worst=max(0, det + bnd - cols),
-        )
+        """Dialogue-in-progress against the box it lands in, in *tiles*."""
+        return reader.measure(self.root, self.ctx, text, self._boxes[box])
 
     @cached_property
     def _boxes(self) -> dict[str, textbox.Box]:
@@ -470,70 +420,24 @@ class Session:
 
     # -- playing it ----------------------------------------------------------- #
     def build(self, log: Callable[[str], None]) -> bool:
-        """`make`, streamed a line at a time. True if the ROM built.
-
-        Streamed rather than captured because it takes minutes, and a progress
-        bar that cannot fail is worse than the compiler's own output: when the
-        map you just added doesn't link, the reason is in these lines, and it
-        names your map.
-        """
-        proc = subprocess.Popen(
-            ["make"], cwd=self.root,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1,
-        )
-        assert proc.stdout is not None
-        with proc.stdout:
-            for line in proc.stdout:
-                log(line.rstrip("\n"))
-        return proc.wait() == 0
+        """`make`, streamed a line at a time. True if the ROM built."""
+        return play.build(self.root, log)
 
     def boot(self, const: str, y: int, x: int, *, keep_people: bool = False) -> list[str]:
-        """Stand at (y, x) on this map, in the game, now.
-
-        The save, the state file and the backups are `prism-dev`'s — the studio
-        does not keep a second game. What it overrides is where you are standing:
-        the map you have selected, at the tile the cursor is on. Everything else
-        (your party, your badges, your items) is whatever `state.json` already
-        said, so playtesting a map does not cost you the character you play it as.
-
-        `y` and `x` are coordinate tiles, which is what the grid cursor reports
-        and what `wYCoord`/`wXCoord` hold. No `+4` here: that offset lives inside
-        the object structs, and `shared/people.py` is the one that knows it.
-        """
+        """Stand at (y, x) on this map, in the game, now — see :mod:`.play`."""
         try:
-            rom = paths.rom_path(self.root)
-        except FileNotFoundError as e:
-            # Nothing built. Patching a save against a ROM that isn't there would
-            # read map headers out of whatever *is* there, which is nothing.
+            return play.boot(self.root, self._emulator, const, y, x,
+                             keep_people=keep_people)
+        except play.PlayError as e:
             raise SessionError(str(e)) from e
-
-        layout = devplay.Layout.under(self.root)
-        layout.inventory.parent.mkdir(parents=True, exist_ok=True)
-        sym = paths.sym_path(self.root)
-        inv = inventory.load_or_build(self.root, sym, layout.inventory, log=lambda _: None)
-
-        state = devapply.load_state(layout.state, layout.presets)
-        state.setdefault("map", {}).update({"name": const, "y": y, "x": x})
-
-        try:
-            report = devplay.patch_save(
-                rom, sym_path=sym, inv=inv, state=state,
-                backups_dir=layout.backups, keep_people=keep_people,
-            )
-        except devplay.PlaytestError as e:
-            raise SessionError(str(e)) from e
-
-        launched = self._emulator.launch(rom)
-        return report.changes + launched.warnings
 
     # -- keeping the linter honest -------------------------------------------- #
     def _invalidate(self, paths: list[str]) -> None:
         self.ctx.invalidate(paths)
         self._found = None
-        # A new map is a new entry in every list of maps, including the one the
-        # forms autocomplete from.
-        self.__dict__.pop("_choices", None)
+        # A new map is a new entry in every list of maps, and a new NPC's flag is
+        # a new entry in the list the forms offer.
+        offers.forget()
 
     def reload(self) -> None:
         """Forget everything and read the repo again.
@@ -558,10 +462,9 @@ class Session:
         hand refuses of its own accord and says so. Dropping the history would
         silently give up that guard instead of exercising it.
         """
-        caches.clear()
+        caches.clear()          # which finds `offers._index` too, by discovery
         self.ctx = LintContext(self.root)
         self._found = None
-        self.__dict__.pop("_choices", None)
         self.__dict__.pop("_boxes", None)
 
 

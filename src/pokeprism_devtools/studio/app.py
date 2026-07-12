@@ -44,7 +44,8 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Footer, Header, Input, OptionList, Static
 
 from ..shared import coords, paths
-from .actions import Action, EditText
+from .actions import Action
+from .content import EditText
 from .grid import MapGrid
 from .newmap import NewMap
 from .panels import Ref
@@ -151,12 +152,13 @@ class Studio(App):
         """Read the constants a form autocompletes from, before a form asks.
 
         Every sprite, movement, item, trainer class, tileset, landmark and piece
-        of music in the repo — two seconds of parsing, cached on the session for
-        the rest of the run. Left to happen lazily it happens on the keystroke
-        that opens the first form, and a form that takes two seconds to appear is
-        a form you pressed the key for twice.
+        of music in the repo, plus what each trainer class usually wears — two
+        seconds of parsing, cached on the session for the rest of the run. Left to
+        happen lazily it happens on the keystroke that opens the first form, and a
+        form that takes two seconds to appear is a form you pressed the key for
+        twice.
         """
-        self.session.choices("maps")
+        self.session.warm()
 
     def _legend(self) -> Text:
         out = Text()
