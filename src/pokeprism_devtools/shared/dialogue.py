@@ -327,11 +327,19 @@ def render(block: Block, text: str, source: list[str] | None = None,
     Lines you *add* get `line`, or `para` after a blank. If that overruns the box
     the preview will say so — which is what the preview is for.
 
+    *The blank lines, though, are yours.* A blank is the only way `plain` has of
+    saying "a fresh box starts here", so where the prose and the old line disagree
+    about that, **the prose wins**: a blank you added promotes the line below it to
+    a `para`, and a blank you deleted demotes a `para` back to a `line`. Only that
+    one bit is overridden — a `cont` you left alone is still a `cont`.
+
     A line whose words you did **not** change is copied back from `source`
     verbatim, byte for byte — its own spacing, its own quoting, its own
     everything. That is what makes it safe to run this over a block you barely
     touched: `nl   ""` keeps the alignment somebody chose, and the diff shows
-    only the line you actually edited.
+    only the line you actually edited. A promoted or demoted line is *not* copied
+    back, even though its words are untouched: its macro has to change, and
+    copying the old bytes would throw that away and silently write the old box.
     """
     old = block.lines
     was = _words(block)
@@ -339,12 +347,12 @@ def render(block: Block, text: str, source: list[str] | None = None,
     i = 0                     # index into the old rendered lines, in lockstep
     fresh_box = False         # a blank line was seen; the next line starts a box
 
-    def emit(prose: str, at: int, blank: bool, macro: str) -> None:
+    def emit(prose: str, at: int, blank: bool, macro: str, kept: bool = True) -> None:
         # `bool(out)` — never a blank line above the first: the span starts at the
         # opener, so a blank above it belongs to whatever came before and is not
         # ours to move.
         blank = blank and bool(out)
-        if source is not None and at < len(old) and prose == was[at]:
+        if kept and source is not None and at < len(old) and prose == was[at]:
             line = source[old[at].lineno - 1]          # untouched: copy it back
         else:
             line = f'{indent}{macro} "{prose.translate(_ESCAPE)}"'
@@ -367,11 +375,18 @@ def render(block: Block, text: str, source: list[str] | None = None,
                 fresh_box = True
             continue
 
-        if i < len(old):
+        # The opener is never promoted: the box it opens is already the first one,
+        # and a `para` in its place would open the text with a screen-clear.
+        box = fresh_box and i > 0
+        # Keep the old line's macro only where it *agrees* with the prose about
+        # starting a box. Where they disagree the prose is the edit, and the macro
+        # becomes the plain one for what the prose asked for.
+        kept = i < len(old) and box == (i > 0 and old[i].action == textbox.NEW_BOX)
+        if kept:
             macro, blank = old[i].macro, old[i].blank_before
         else:
-            macro, blank = (_NEW_BOX if fresh_box else _NEW_LINE), fresh_box
-        emit(prose, i, blank, macro)
+            macro, blank = (_NEW_BOX if box else _NEW_LINE), box
+        emit(prose, i, blank, macro, kept)
         fresh_box = False
         i += 1
 
