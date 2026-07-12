@@ -206,20 +206,24 @@ def test_real_repo() -> None:
     check("sign text never exceeds the sign box's 17", widest.get("signpost", 0) <= 17,
           str(widest))
 
-    # 13 of the 16 are PhanceroRoom's "Glitch City" easter egg, which is corrupt
-    # on purpose. The other three are real, and one of them — Route77Pokecenter's
+    # 13 of the 15 are PhanceroRoom's "Glitch City" easter egg, which is corrupt
+    # on purpose. The other two are real, and one of them — Route77Pokecenter's
     # "#mon Center near" — is only visible once `#` is expanded to Poké.
     #
     # It was 11 of 14 until `dialogue.decomment` taught the parser that a `;`
     # inside a string is a semicolon and not a comment. Two of the glitch lines
     # contain one, and used to be truncated to nothing and measured as zero tiles
     # wide — so the linter could not see that they overflowed. They always did.
+    #
+    # It was *three* real ones until 9ea8675, where the overflow this test had been
+    # asserting the existence of in MtEmberWest got split into two lines. Which is
+    # the linter working: a calibration that never moves is a calibration nobody is
+    # acting on.
     real = sorted(f"{f}:{l}" for f, l, _ in over if f != "PhanceroRoom.asm")
     check("the deliberate glitch text is the bulk of the overflow",
           sum(1 for f, _, _ in over if f == "PhanceroRoom.asm") == 13, str(len(over)))
-    check("and exactly three real overflows remain",
-          real == ["MtEmberSmallRoom.asm:171", "MtEmberWest.asm:184",
-                   "Route77Pokecenter.asm:8"], str(real))
+    check("and exactly two real overflows remain",
+          real == ["MtEmberSmallRoom.asm:171", "Route77Pokecenter.asm:8"], str(real))
     check("each of them is one tile over",
           all(w == 19 for f, _, w in over if f != "PhanceroRoom.asm"),
           str([w for f, _, w in over if f != "PhanceroRoom.asm"]))

@@ -27,6 +27,7 @@ from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
 from pokeprism_devtools.shared import eventheader as eh  # noqa: E402
 from pokeprism_devtools.shared.edits import apply_edits  # noqa: E402
 from pokeprism_devtools.wiring import connections as C, objedit as O  # noqa: E402
+from pokeprism_devtools.wiring import removal as R, warpdel as WD  # noqa: E402
 from pokeprism_devtools.wiring import warps as W  # noqa: E402
 from pokeprism_devtools.wiring.scaffold import Object  # noqa: E402
 
@@ -325,6 +326,198 @@ def test_real_repo(tmp: Path) -> None:
               header.to_text() == path.read_text())
 
     test_editing(scratch, before)
+    test_deleting(scratch, before)
+
+
+def test_deleting(root: Path, before: Counter) -> None:
+    """Taking things back out — `warpdel`, `disconnect`, and `removal`'s third list.
+
+    Deleting a warp is the only mutation the studio has whose blast radius is the
+    whole repo, because `warp_to` is a *position* in the destination's warp list
+    and not a name. So the property under test is not "the line is gone" — that is
+    trivial — but **every door that survives still opens on the same tile**.
+    """
+    print("\ndeleting what is already there")
+    K = eh.ListKind
+
+    def warps(label: str) -> list[eh.Entry]:
+        return eh.parse_map(root / f"maps/{label}.asm").warps
+
+    # -- a renumber that names no warp rewrites nothing ------------------------- #
+    # The same rule the editor rests on, one layer down: an editor that cannot
+    # leave a warp alone cannot be trusted to renumber one.
+    dirty = [rel for rel, was in WD._sources(root).items()
+             if WD._renumber(was, "CASTRO_FOREST", 9999) != (was, 0, [])]
+    check("a renumber for a warp that does not exist rewrites nothing",
+          not dirty, str(dirty[:3]))
+
+    # -- the paired warp from above, now deleted from under Route62 ------------- #
+    # CastroForest's last warp is the one just added, and Route62's last warp is
+    # the one that points at it. Delete CastroForest's *first* warp and Route62's
+    # `warp_to` must come back one, because everything below the hole slid up.
+    was_castro, was_route = warps("CastroForest"), warps("Route62")
+    aimed = eh.as_int(was_route[-1].args[2])
+    check("Route62's new warp points at CastroForest's last warp",
+          aimed == len(was_castro), f"{aimed} vs {len(was_castro)}")
+
+    d = WD.delete_warp(root, "CASTRO_FOREST", 0)
+    paths = [e.path for e in d.changes]
+    check("one file, one edit — even the map that is both cut and renumbered",
+          len(paths) == len(set(paths)), str(paths))
+    check("it touches Route62, which counted past the hole",
+          "maps/Route62.asm" in paths, str(paths))
+
+    apply_edits(root, d.changes, dry_run=False)
+    now_castro, now_route = warps("CastroForest"), warps("Route62")
+    check("CastroForest has one warp fewer", len(now_castro) == len(was_castro) - 1)
+    check("and its count byte agrees with its lines",
+          eh.parse_map(root / "maps/CastroForest.asm")
+          .list_of(K.WARPS).declared_count == len(now_castro))
+    check("Route62's warp_to came back one, and still opens on the same tile",
+          eh.as_int(now_route[-1].args[2]) == aimed - 1
+          and now_castro[aimed - 2].coords == was_castro[aimed - 1].coords,
+          f"{eh.as_int(now_route[-1].args[2])} vs {aimed - 1}")
+
+    # -- a door that led to the deleted warp is dummied, not deleted ------------ #
+    # Deleting it would renumber *that* map's warps and cascade the problem
+    # outward, one map at a time. A dead door holds its slot; the caller is told.
+    d2 = WD.delete_warp(root, "ROUTE_62", len(now_route) - 1)
+    castro_after = eh.parse_text(
+        next(e.new_text for e in d2.changes if e.path == "maps/CastroForest.asm"),
+        root / "maps/CastroForest.asm").warps
+    check("the door that led to it is now a dummy_warp",
+          castro_after[-1].macro == "dummy_warp", castro_after[-1].raw.strip())
+    check("...standing on the very same tile",
+          castro_after[-1].coords == now_castro[-1].coords)
+    check("...holding its slot, so no other map's warp_to moved",
+          len(castro_after) == len(now_castro))
+    check("and the deletion says so out loud",
+          any("nowhere" in w for w in d2.warnings), str(d2.warnings))
+
+    # -- a dynamic warp is not a position, and is not renumbered ---------------- #
+    # PokecenterBackroom writes two `-1`s: the engine fills those in at runtime
+    # from wBackupWarpNumber. They are not indices, so they must not move.
+    dyn = [i for i, e in enumerate(warps("PokecenterBackroom"))
+           if e.macro == "warp_def" and eh.as_int(e.args[2]) == -1]
+    check("PokecenterBackroom still has its two dynamic warps", len(dyn) == 2, str(dyn))
+    d3 = WD.delete_warp(root, "POKECENTER_BACKROOM", 1)
+    after = eh.parse_text(
+        next(e.new_text for e in d3.changes if e.path == "maps/PokecenterBackroom.asm"),
+        root / "maps/PokecenterBackroom.asm").warps
+    still = [e for e in after if e.macro == "warp_def" and eh.as_int(e.args[2]) == -1]
+    check("deleting a warp beside them leaves both `-1`s alone", len(still) == 2,
+          str([e.raw.strip() for e in after]))
+
+    # -- a connection comes out of both sides ----------------------------------- #
+    edit, notes = C.disconnect(root, "CASTRO_FOREST", "north")
+    apply_edits(root, [edit], dry_run=False)
+    lines = _conn_lines(root)
+    check("CastroForest's north connection is gone",
+          not any("north, ROUTE_62" in ln for ln in lines), str(notes))
+    check("and so is Route62's south one — a connection the neighbour still "
+          "mirrors is a wall you can walk through one way",
+          not any("south, CASTRO_FOREST" in ln for ln in lines))
+
+    # -- a trigger, which is `removal` with a third list ------------------------ #
+    # CaperRidge is the one map in the repo where a trigger and an NPC run the very
+    # same script, so its name is ambiguous *unless* the list is named too. That is
+    # the whole reason `kind` exists, and this is the map that proves it — checked
+    # before the deletion below, which is what takes the ambiguity away.
+    trig = eh.parse_map(root / "maps/CaperRidge.asm").list_of(K.COORD_EVENTS).entries
+    shared = "CaperRidgeRoute70Block"
+    try:
+        R.remove(root, "CAPER_RIDGE", label=shared)
+        check("a script two lists share cannot be named by its label alone", False)
+    except R.RemovalError as exc:
+        check("a script two lists share cannot be named by its label alone",
+              "unambiguously" in str(exc), str(exc))
+    check("...but naming the list resolves it",
+          R.remove(root, "CAPER_RIDGE", label=shared, kind=K.COORD_EVENTS).changes != [])
+
+    r = R.remove(root, "CAPER_RIDGE", label=trig[0].pointer, kind=K.COORD_EVENTS)
+    apply_edits(root, r.changes, dry_run=False)
+    left = eh.parse_map(root / "maps/CaperRidge.asm").list_of(K.COORD_EVENTS)
+    check("the trigger is gone and its count byte with it",
+          len(left.entries) == len(trig) - 1
+          and left.declared_count == len(trig) - 1)
+
+    # -- pointing at a thing beats describing it -------------------------------- #
+    # Saffron Gates has eight guards with one script between them, and Owsauri's
+    # game corner sixteen slot machines. A *description* cannot pick one of eight;
+    # a position always can. This is why a Ref carries an index, and why `d` on the
+    # third guard deletes the third guard rather than refusing.
+    gates = eh.parse_map(root / "maps/SaffronGates.asm").list_of(K.OBJECT_EVENTS)
+    same = [i for i, e in enumerate(gates.entries) if e.pointer == "SaffronGatesGuard"]
+    check("SaffronGates really does have eight guards sharing one name",
+          len(same) == 8, str(same))
+    try:
+        R.remove(root, "SAFFRON_GATES", label="SaffronGatesGuard", kind=K.OBJECT_EVENTS)
+        check("so naming them cannot pick one out", False)
+    except R.RemovalError as exc:
+        check("so naming them cannot pick one out", "matches 8" in str(exc), str(exc))
+
+    r = R.remove(root, "SAFFRON_GATES", index=same[2], kind=K.OBJECT_EVENTS)
+    left = eh.parse_text(
+        next(e.new_text for e in r.changes if e.path == "maps/SaffronGates.asm"),
+        root / "maps/SaffronGates.asm").list_of(K.OBJECT_EVENTS)
+    check("but pointing at the third one deletes the third one",
+          len(left.entries) == len(gates.entries) - 1
+          and left.entries[same[2]].raw == gates.entries[same[2] + 1].raw)
+    check("and the script the other seven still run is left alone",
+          any("referenced elsewhere" in w for w in r.warnings), str(r.warnings))
+
+    # -- the linter has nothing new to say -------------------------------------- #
+    after_lint = Counter((d.code, d.path) for d in maplint.run(LintContext(root)))
+    new = {k: after_lint[k] - before.get(k, 0)
+           for k in after_lint if after_lint[k] > before.get(k, 0)}
+    check("the deletions introduce no new findings anywhere", not new, str(new))
+
+    # -- what it will not do ---------------------------------------------------- #
+    _refusals(root)
+
+
+def _refusals(root: Path) -> None:
+    """The two things `warpdel` refuses, each proved by making it true first.
+
+    Neither exists in pokeprism today — there are no non-literal `warp_to`s and
+    not one `warpmod` call site. That is *why* they need a test: a guard nothing
+    trips is a guard nobody would notice was broken.
+    """
+    aimed = re.compile(r"(warp_def\s+[^,\n]+,[^,\n]+,)([^,\n]+)(,\s*CAPER_RIDGE)")
+
+    # A warp number that is not a number cannot be renumbered, so nothing is —
+    # and it refuses *before* writing, not halfway through the repo.
+    victim = next(p for p in sorted((root / "maps").glob("*.asm"))
+                  if aimed.search(p.read_text()))
+    kept = victim.read_text()
+    victim.write_text(aimed.sub(r"\1 A_CONST\3", kept, count=1))
+    try:
+        WD.delete_warp(root, "CAPER_RIDGE", 0)
+        check("an unreadable warp_to refuses the whole deletion", False)
+    except WD.WarpDelError as exc:
+        check("an unreadable warp_to refuses the whole deletion",
+              "cannot be read as a number" in str(exc), str(exc)[:100])
+    victim.write_text(kept)
+
+    # A `warpmod` aimed at the warp being deleted has no dummy form — there is no
+    # such thing as a warpmod to nowhere — so the deletion is refused instead.
+    script = root / "maps/CaperRidge.asm"
+    was = script.read_text()
+    script.write_text(f"{was}\nCaperRidgeElevator:\n\twarpmod 1, CAPER_RIDGE\n")
+    try:
+        WD.delete_warp(root, "CAPER_RIDGE", 0)
+        check("a warpmod aimed at the deleted warp refuses the deletion", False)
+    except WD.WarpDelError as exc:
+        check("a warpmod aimed at the deleted warp refuses the deletion",
+              "warpmod" in str(exc), str(exc)[:100])
+
+    # But one that merely counted *past* it is renumbered like any other reference.
+    script.write_text(f"{was}\nCaperRidgeElevator:\n\twarpmod 3, CAPER_RIDGE\n")
+    d = WD.delete_warp(root, "CAPER_RIDGE", 0)
+    text = next(e.new_text for e in d.changes if e.path == "maps/CaperRidge.asm")
+    check("a warpmod that counted past the hole is pulled back one",
+          "warpmod 2, CAPER_RIDGE" in text)
+    script.write_text(was)
 
 
 def test_editing(root: Path, before: Counter) -> None:
