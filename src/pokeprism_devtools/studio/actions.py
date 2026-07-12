@@ -36,6 +36,7 @@ from pathlib import Path
 from ..shared.blockdata import BlockData
 from ..shared.edits import Edit
 from ..wiring import connections, scaffold, warps
+from .panels import Ref
 
 #: A field's `choices` names a set of constants the session can enumerate; the
 #: form turns it into autocomplete. Empty means free text.
@@ -118,6 +119,16 @@ class Action:
     #: see :meth:`sketch`. Declared rather than discovered, so the form can put
     #: the panel on screen before the fields have anything in them.
     sketches = False
+
+    #: The thing this action changes, when it changes something already there.
+    #: None for everything that adds.
+    #:
+    #: **Not a form field**, and that is the point: you did not type which warp you
+    #: meant, you *pointed* at it, and a box you could edit would let a careless
+    #: keystroke aim your changes at a different one. The form carries it across
+    #: untouched — see `screens/forms.py` — for the same reason a `fixed` field
+    #: exists at all.
+    target: Ref | None = None
 
     def __init__(self, **values: str) -> None:
         self.values = values

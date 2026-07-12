@@ -50,6 +50,7 @@ from .speech import Dialogue
 from ..actions import Action, ActionError, Field
 from ..combo import Combo
 from ..grid import ZOOMS, MapGrid
+from ..panels import Ref
 from ..session import Preview, Session
 
 #: Fields the grid can answer for you. The cursor is *on* the tile; making you
@@ -185,12 +186,17 @@ class Form(ModalScreen["Preview | None"]):
     def __init__(self, action: type[Action], session: Session, map_const: str,
                  cursor: tuple[int, int] | None = None,
                  values: dict[str, str] | None = None,
-                 boxes: dict[str, str] | None = None) -> None:
+                 boxes: dict[str, str] | None = None,
+                 target: Ref | None = None) -> None:
         super().__init__()
         self._action = action
         self._session = session
         self._map = map_const
         self._cursor = cursor
+        #: The object being edited, when this form is editing one. Carried, never
+        #: shown: it is not something you typed, it is the row you were standing
+        #: on. See :attr:`Action.target`.
+        self._target = target
         #: What to open the form with, when the caller already knows — the prose
         #: of the text block you picked, the label it hangs off. Still by field
         #: name: the form is filling in boxes, not editing dialogue.
@@ -435,8 +441,11 @@ class Form(ModalScreen["Preview | None"]):
     @on(Button.Pressed, "#ok")
     def action_submit(self) -> None:
         """Build the action and preview it. Every action's first argument is the
-        map it acts on; everything after that is the form, by name."""
+        map it acts on; everything after that is the form, by name — plus, for a
+        form that is editing something, *which* something, which came from the row
+        you picked and never from a box."""
         action = self._action(self._map, **self.values())
+        action.target = self._target
         try:
             preview = self._session.preview(action)
         except ActionError as err:

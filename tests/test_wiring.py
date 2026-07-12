@@ -26,7 +26,9 @@ from pokeprism_devtools.maplint import rules_geometry  # noqa: E402
 from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
 from pokeprism_devtools.shared import eventheader as eh  # noqa: E402
 from pokeprism_devtools.shared.edits import apply_edits  # noqa: E402
-from pokeprism_devtools.wiring import connections as C, warps as W  # noqa: E402
+from pokeprism_devtools.wiring import connections as C, objedit as O  # noqa: E402
+from pokeprism_devtools.wiring import warps as W  # noqa: E402
+from pokeprism_devtools.wiring.scaffold import Object  # noqa: E402
 
 _failures = 0
 
@@ -321,6 +323,115 @@ def test_real_repo(tmp: Path) -> None:
         header = eh.parse_map(path)
         check(f"{label}.asm still round-trips byte-for-byte",
               header.to_text() == path.read_text())
+
+    test_editing(scratch, before)
+
+
+def test_editing(root: Path, before: Counter) -> None:
+    """Changing things that are already there — `wiring/objedit.py`.
+
+    The companion to `test_studio.py`'s round-trip, which proves an edit that
+    changes nothing writes nothing. This proves the other half: that an edit which
+    *does* change something changes only that.
+    """
+    print("\nediting what is already there")
+    K = eh.ListKind
+
+    # -- one file, one edit ---------------------------------------------------- #
+    # An object and the words it says live in the same maps/*.asm, and an Edit
+    # carries the whole file. Two of them would silently overwrite each other.
+    npc = next(i for i, e in enumerate(eh.parse_map(root / "maps/CastroForest.asm")
+                                       .object_events)
+               if e.persontype == "PERSONTYPE_TEXTFP")
+    entry = eh.parse_map(root / "maps/CastroForest.asm").object_events[npc]
+    change = O.edit_npc(
+        root, "CASTRO_FOREST", npc,
+        Object(sprite="SPRITE_GRAMPS", y=entry.y, x=entry.x, movement=entry.movement,
+               palette=O.palette_of(entry.args[O.PALETTE])),
+        flag=entry.event_flag, prose="New words.")
+    maps = [e for e in change.changes if e.path.startswith("maps/")]
+    check("a sprite and its words change in exactly one edit to the map file",
+          len(maps) == 1, f"{[e.path for e in change.changes]}")
+    check("and the two changes are both in it",
+          "SPRITE_GRAMPS" in maps[0].new_text
+          and "New words." in maps[0].new_text)
+
+    # -- the palette keeps its arithmetic -------------------------------------- #
+    check("the `8 +` that draws a body behind the background survives a recolour",
+          "8 + PAL_OW_BLUE" in maps[0].new_text or "8 +" not in entry.args[O.PALETTE])
+
+    # -- a door to nowhere, and back ------------------------------------------- #
+    dummy = W.edit_warp(root, "CASTRO_FOREST", 0, 29, 35, dest="")
+    text = next(e for e in dummy.changes if e.path.startswith("maps/")).new_text
+    check("a warp whose destination is cleared becomes a dummy_warp",
+          "dummy_warp 29, 35" in text)
+    check("and it keeps its place in the list, so nobody else's warp_to moves",
+          text.split("dummy_warp 29, 35")[0].count("warp_def")
+          == 0)
+
+    # -- a warp_to past the end is the one mistake that assembles --------------- #
+    try:
+        W.edit_warp(root, "CASTRO_FOREST", 0, 29, 35, dest="CASTRO_GATE",
+                    dest_warp=99)
+        check("a warp pointing past the end of its destination is refused", False)
+    except W.WarpError as exc:
+        check("a warp pointing past the end of its destination is refused",
+              "no warp #99" in str(exc), str(exc))
+
+    # -- the trainer macro's tail ---------------------------------------------- #
+    # `trainer FLAG, CLASS, PARTY, seen, beaten` is the common shape, not the only
+    # one: some carry `, NULL, .script`, and rebuilding the line from the five we
+    # know about would delete the script the trainer runs.
+    tails = [(label, i) for label in ("AcaniaGym",)
+             for i, e in enumerate(eh.parse_map(root / f"maps/{label}.asm")
+                                   .object_events)
+             if e.pointer and "NULL" in _macro_of(root, label, e.pointer)]
+    if tails:
+        label, i = tails[0]
+        e = eh.parse_map(root / f"maps/{label}.asm").object_events[i]
+        was = _macro_of(root, label, e.pointer)
+        c = O.edit_trainer(
+            root, "ACANIA_GYM", i,
+            Object(sprite=e.sprite, y=e.y, x=e.x, movement=e.movement,
+                   palette=O.palette_of(e.args[O.PALETTE])),
+            _macro_args(was)[1], _macro_args(was)[2],
+            sight=e.int_arg(O.PARAM) or 0, seen="A new taunt.")
+        after = next(x for x in c.changes if x.path.startswith("maps/")).new_text
+        now = next(ln for ln in after.split("\n") if ln.strip().startswith("trainer "))
+        check("a trainer macro with a tail keeps its tail when its words change",
+              "NULL" in now, now.strip())
+
+    # -- flags are leaked, never freed ----------------------------------------- #
+    e = eh.parse_map(root / "maps/CastroForest.asm").object_events[npc]
+    c = O.edit_npc(root, "CASTRO_FOREST", npc,
+                   Object(sprite=e.sprite, y=e.y, x=e.x, movement=e.movement,
+                          palette=O.palette_of(e.args[O.PALETTE])),
+                   flag="EVENT_A_BRAND_NEW_FLAG")
+    check("naming a new flag allocates it",
+          any(x.path == "constants/event_flags.asm" for x in c.changes))
+    check("and says the old one is left allocated, because another map may hold it",
+          any("left allocated" in n for n in c.notes), str(c.notes))
+
+    # -- and the linter still has nothing new to say --------------------------- #
+    apply_edits(root, change.changes, dry_run=False)
+    after_lint = Counter((d.code, d.path) for d in maplint.run(LintContext(root)))
+    new = {k: after_lint[k] - before.get(k, 0)
+           for k in after_lint if after_lint[k] > before.get(k, 0)}
+    check("an applied edit introduces no new findings anywhere", not new, str(new))
+    check("and the map it touched still round-trips byte-for-byte",
+          eh.parse_map(root / "maps/CastroForest.asm").to_text()
+          == (root / "maps/CastroForest.asm").read_text())
+
+
+def _macro_of(root: Path, label: str, pointer: str) -> str:
+    lines = (root / f"maps/{label}.asm").read_text().split("\n")
+    start = next(i for i, ln in enumerate(lines) if ln.startswith(f"{pointer}:"))
+    return next((ln for ln in lines[start:start + 4]
+                 if ln.strip().startswith("trainer ")), "")
+
+
+def _macro_args(line: str) -> list[str]:
+    return [a.strip() for a in line.split("trainer ", 1)[1].split(",")]
 
 
 def main() -> int:

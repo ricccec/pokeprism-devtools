@@ -45,7 +45,8 @@ from ..maplint.context import LintContext
 from ..maplint.diagnostics import Diagnostic, Severity
 from ..shared import caches, eventheader, textbox, world
 from ..shared.edits import StaleEdit, apply_edits
-from . import actions, content, offers, panels, play, reader, undo
+from ..wiring import objedit
+from . import actions, content, edits, offers, panels, play, reader, undo
 from .actions import Action
 # The shapes of the answers — see `model.py`. Re-exported, because whatever wants
 # a `MapData` wants it *from the session*: the session is the only thing that can
@@ -79,20 +80,6 @@ class StaleWorld(SessionError):
             f"repo ({', '.join(paths[:3])}{rest}). Everything it would check this "
             f"against is out of date, so it will not write. Press r to re-read.")
 
-
-#: What each tab's "Add new…" row opens. See :meth:`Session.adders`.
-#:
-#: One action per tab now, including Pickups: the four kinds of pickup are one
-#: form that changes shape, rather than four entries in a menu you have to choose
-#: between before you know what the fields are. See `content.AddPickup`.
-ADDERS: dict[str, tuple[type[Action], ...]] = {
-    "NPC": (content.AddNpc,),
-    "trainer": (content.AddTrainer,),
-    "pickup": (content.AddPickup,),
-    "warp": (actions.AddWarp,),
-    "signpost": (content.AddSignpost,),
-    "connection": (actions.Connect,),
-}
 
 #: The rows `d` cannot act on yet, and the reason — which is the useful part, and
 #: is why these are messages rather than a missing key.
@@ -215,7 +202,7 @@ class Session:
         one means the view asks which — a pickup is four different things wearing
         the same coat, and until they share one form the honest thing is to ask.
         """
-        return ADDERS.get(kind, ())
+        return edits.ADDERS.get(kind, ())
 
     def _header(self, label: str) -> eventheader.EventHeader:
         try:
@@ -263,17 +250,26 @@ class Session:
                 f"coordinates, so there is no unambiguous way to name it.")
         return content.Remove(const, label="", y=str(y), x=str(x))
 
-    def dialogue_of(self, label: str, ref: panels.Ref) -> TextRef | None:
-        """The text block this row's object points at, if it points at one.
+    def editor(self, label: str, const: str,
+               ref: panels.Ref) -> tuple[type[Action], dict[str, str], dict[str, str]]:
+        """The form `e` would open on this row, filled in with what is there.
 
-        What `e` opens for now. An item ball points at an item const and a trainer
-        at a script, so this is None for them and the key stays quiet — until the
-        edit forms land and `e` can mean what it should.
+        The mirror of :meth:`deletion`, and like it, it refuses by *explaining* —
+        an absent key tells you nothing, and the reason is the interesting part.
         """
-        entry = self.entry(label, ref)
-        if not entry.pointer:
-            return None
-        return next((t for t in self.texts(label) if t.label == entry.pointer), None)
+        if (action := edits.EDITORS.get(ref.what)) is None:
+            raise SessionError(edits.NOT_YET.get(
+                ref.what, f"editing a {ref.what} is not wired up yet."))
+        try:
+            # A map's header lives in two *other* files, and a couple of maps here
+            # have one without having a script file at all — the dark Mound floors
+            # borrow their neighbour's. So the words are read only for a row that
+            # could have any.
+            said = [] if ref.what == "map" else self.texts(label)
+            values, boxes = edits.prefill(self.root, label, const, ref, said)
+        except (objedit.EditError, FileNotFoundError) as exc:
+            raise SessionError(str(exc)) from exc
+        return action, values, boxes
 
     # -- the words ------------------------------------------------------------ #
     def texts(self, label: str) -> list[TextRef]:

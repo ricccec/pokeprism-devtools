@@ -124,7 +124,17 @@ def sign_owners(source: list[str]) -> set[str]:
 
 def parse(root: Path, path: Path) -> list[Block]:
     """Every text block in one map."""
-    source = path.read_text().split("\n")
+    return parse_source(root, path.read_text().split("\n"))
+
+
+def parse_source(root: Path, source: list[str]) -> list[Block]:
+    """The same, over lines already in hand rather than a file on disk.
+
+    For a caller who is partway through changing the map and needs to find a
+    block in the file as it *will* be — editing an object rewrites its line and
+    rewords what it says, and both land in one file, so both have to be spliced
+    into one buffer before any of it is written. See `wiring/objedit.py`.
+    """
     mt = textbox.metrics(root)
     bx = textbox.boxes(root)
     signs = sign_owners(source)

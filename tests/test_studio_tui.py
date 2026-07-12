@@ -35,6 +35,8 @@ from pokeprism_devtools.studio.content import (HIDDEN, ITEMBALL, TMHM, TREE,
                                                AddTrainer)
 from pokeprism_devtools.studio.app import Studio
 from pokeprism_devtools.studio.combo import Combo
+from pokeprism_devtools.studio.edits import (EditMap, EditNpc, EditPickup,
+                                             EditWarp)
 from pokeprism_devtools.studio.grid import MapGrid
 from pokeprism_devtools.studio.maplist import MapList
 from pokeprism_devtools.studio.newmap import NewMap
@@ -1053,6 +1055,172 @@ class TestEditing(_Driven):
 
         drive(go())
 
+    def test_e_on_an_npc_now_reaches_the_npc_and_not_only_its_words(self) -> None:
+        """The point of the whole phase. `e` used to open the one thing that was
+        writable — what the NPC said — and to move him one tile you had to delete
+        him and put him back, which reallocated his flag and rewrote his script.
+
+        Now the form is the one you added him with, filled in with what is in the
+        file, and the person_event line is the thing that changes.
+        """
+        path = self.root / f"maps/{MAP}.asm"
+
+        async def go():
+            app = Studio(self.root)
+            async with app.run_test() as pilot:
+                await self.ready(app, pilot)
+                await self.open_tab(app, pilot, "npcs")
+                await pilot.press("e")
+                await pilot.pause(0.2)
+
+                form = app.screen
+                self.assertIsInstance(form, Form, "e on an NPC opened nothing")
+                self.assertIs(form._action, EditNpc)
+                # It knows *which* NPC — and not because anybody typed it.
+                self.assertEqual(form._target, app._ref)
+
+                sprite = form.query_one("#field-sprite", Combo)
+                was = sprite.value
+                self.assertTrue(was.startswith("SPRITE_"), was)
+                sprite.value = "SPRITE_GRAMPS" if was != "SPRITE_GRAMPS" else "SPRITE_SAGE"
+                want = sprite.value
+                await pilot.pause()
+
+                form.action_submit()
+                await pilot.pause()
+                confirm = app.screen
+                self.assertIsInstance(confirm, Confirm, form.error)
+                diff = confirm._preview.diff()
+                self.assertIn(f"-\tperson_event {was},", diff)
+                self.assertIn(f"+\tperson_event {want},", diff)
+                confirm.action_yes()
+                await pilot.pause()
+
+                self.assertIn(f"person_event {want},", path.read_text())
+                app.action_undo()
+                await pilot.pause()
+                self.assertIn(f"person_event {was},", path.read_text())
+                await app.action_quit()
+
+        drive(go())
+
+    def test_e_on_a_warp_opens_where_it_goes(self) -> None:
+        """And refuses a destination warp that does not exist, which is the one
+        mistake here that assembles perfectly: `warp_to` is a *position* in the
+        destination's warp list, so a number past the end is a door that opens onto
+        whatever happens to be assembled next."""
+        async def go():
+            app = Studio(self.root)
+            async with app.run_test() as pilot:
+                await self.ready(app, pilot)
+                await self.open_tab(app, pilot, "warps")
+                await pilot.press("e")
+                await pilot.pause(0.2)
+
+                form = app.screen
+                self.assertIsInstance(form, Form, "e on a warp opened nothing")
+                self.assertIs(form._action, EditWarp)
+                # Where it goes today, read out of the file.
+                self.assertTrue(form.query_one("#field-b", Combo).value)
+                self.assertTrue(form.query_one("#field-bw", Input).value)
+
+                form.query_one("#field-bw", Input).value = "99"
+                await pilot.pause()
+                form.action_submit()
+                await pilot.pause()
+
+                self.assertIs(app.screen, form, "a warp to nowhere was accepted")
+                self.assertIn("no warp #99", form.error)
+                await app.action_quit()
+
+        drive(go())
+
+    def test_a_pickups_kind_is_shown_and_not_editable(self) -> None:
+        """An item ball and a hidden item are not two settings of one thing — one
+        is a person_event and the other a signpost, in different lists. Changing
+        one into the other is a delete and an add, and a dropdown that quietly did
+        both would be a dropdown that lied."""
+        async def go():
+            app = Studio(self.root)
+            async with app.run_test() as pilot:
+                await self.ready(app, pilot)
+                await self.open_tab(app, pilot, "pickups")
+                await pilot.press("e")
+                await pilot.pause(0.2)
+
+                form = app.screen
+                self.assertIsInstance(form, Form)
+                self.assertIs(form._action, EditPickup)
+                kind = next(f for f in form._shown if f.name == "kind")
+                self.assertEqual(kind.kind, "fixed")
+                self.assertFalse(form.query("#field-kind"),
+                                 "the kind has an editable box")
+
+                # And the *rest* of the form still follows from it, as it does when
+                # you are adding one: this is the add form, in edit mode.
+                shown = {f.name for f in form._shown}
+                self.assertIn("y", shown)
+                self.assertIn("x", shown)
+                await app.action_quit()
+
+        drive(go())
+
+    def test_e_on_the_attributes_tab_opens_the_map_header(self) -> None:
+        """With the label, the map id and — deliberately — the group left out. See
+        `wiring/mapedit.py`: moving a map between groups renumbers the ids in both,
+        and a .sav stores the numeric pair, so every save file would drop the player
+        onto the wrong map."""
+        async def go():
+            app = Studio(self.root)
+            async with app.run_test() as pilot:
+                await self.ready(app, pilot)
+                await self.open_tab(app, pilot, "attributes")
+                await pilot.press("e")
+                await pilot.pause(0.2)
+
+                form = app.screen
+                self.assertIsInstance(form, Form, "e on Attributes opened nothing")
+                self.assertIs(form._action, EditMap)
+
+                shown = {f.name: f for f in form._shown}
+                self.assertEqual(shown["label"].kind, "fixed")
+                self.assertEqual(shown["const"].kind, "fixed")
+                self.assertNotIn("group", shown)
+                self.assertNotIn("conn_flags", shown)
+                self.assertNotIn("height", shown)
+                self.assertEqual(form.query_one("#field-tileset", Combo).value,
+                                 "TILESET_FOREST")
+
+                form.query_one("#field-music", Combo).value = "MUSIC_ROUTE_36"
+                await pilot.pause()
+                form.action_submit()
+                await pilot.pause()
+
+                confirm = app.screen
+                self.assertIsInstance(confirm, Confirm, form.error)
+                diff = confirm._preview.diff()
+                self.assertIn("+\tmap_header CastroForest, TILESET_FOREST,", diff)
+                self.assertIn("MUSIC_ROUTE_36", diff)
+                confirm.action_yes()
+                await pilot.pause()
+
+                # Its line, and not the file — MUSIC_ROUTE_36 is somebody else's
+                # music too, and a test that looked for it anywhere would pass
+                # whether or not this map's header ever changed.
+                def ours() -> str:
+                    return next(ln for ln in (self.root / "maps/map_headers.asm")
+                                .read_text().split("\n")
+                                if ln.strip().startswith("map_header CastroForest,"))
+
+                self.assertIn("MUSIC_ROUTE_36", ours())
+                self.assertIn("TILESET_FOREST", ours())     # and nothing else moved
+                app.action_undo()
+                await pilot.pause()
+                self.assertNotIn("MUSIC_ROUTE_36", ours())
+                await app.action_quit()
+
+        drive(go())
+
     def test_d_on_a_trainer_warns_about_his_party_before_you_agree(self) -> None:
         """The confirmation is not a formality.
 
@@ -1460,12 +1628,20 @@ class TestChoices(unittest.TestCase):
         """Including every shape a form that changes shape can take. A pickup's
         `tree` field only exists once the kind is a fruit tree, and a choices kind
         the session has never heard of would show up as an empty dropdown in a form
-        nobody opened during the tests."""
-        from pokeprism_devtools.studio.session import ADDERS
-        every = {a for group in ADDERS.values() for a in group} | {NewMap}
+        nobody opened during the tests.
+
+        The edit forms are in here too, and they are the ones most likely to sprout
+        a field nobody offers anything for: they inherit their shape from the add
+        forms, so a new field on one of those arrives on the other for free — and a
+        new field on an *edit* form arrives with nothing behind it at all.
+        """
+        from pokeprism_devtools.studio.edits import ADDERS, EDITORS
+        every = ({a for group in ADDERS.values() for a in group}
+                 | set(EDITORS.values()) | {NewMap})
         for action in every:
-            shapes = [{}] if action is not AddPickup else [
-                {"kind": k} for k in (ITEMBALL, TMHM, TREE, HIDDEN)]
+            pickupish = issubclass(action, AddPickup)
+            shapes = [{"kind": k} for k in (ITEMBALL, TMHM, TREE, HIDDEN)] \
+                if pickupish else [{}]
             for shape in shapes:
                 for f in action.fields_for(shape):
                     if not f.choices:
@@ -1914,9 +2090,15 @@ class TestTheSeam(unittest.TestCase):
     #: view that could answer it differently from the session that does the
     #: writing. There must be exactly one opinion about whether the repo has moved,
     #: and it belongs to the side that refuses the write.
+    #: `edits` is here for the same reason `reader` is. It is where the edit forms
+    #: live, and the temptation is real: `e` opens a form, forms are the view's
+    #: business, so why not let the view reach for `EditNpc` itself? Because
+    #: choosing *which* form a row opens means reading that row out of the source
+    #: first — `edits.prefill` opens the map — and a view that could do that could
+    #: prefill a form from a file the session has not agreed to trust.
     READERS = ("blocksrc", "eventheader", "wilddata", "mapsource", "blockdata",
                "metatiles", "render", "dialogue", "trainerparty", "wiring",
-               "roofs", "reader", "world")
+               "roofs", "reader", "world", "edits", "objedit", "mapedit")
 
     def _files(self) -> list[Path]:
         studio = Path(__file__).resolve().parents[1] / "src/pokeprism_devtools/studio"

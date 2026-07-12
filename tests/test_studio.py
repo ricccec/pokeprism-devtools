@@ -547,6 +547,83 @@ def test_real_repo(tmp: Path) -> None:
           (root / "maps/CastroForest.asm").read_text()
           == (real / "maps/CastroForest.asm").read_text())
 
+    test_editing_leaves_alone_what_it_did_not_touch(root)
+
+
+def test_editing_leaves_alone_what_it_did_not_touch(root: Path) -> None:
+    """Open every editable row on every map, submit it untouched, write nothing.
+
+    **An editor that cannot leave a thing alone cannot be trusted to change it.**
+    This is the whole warranty on `e`, and it is not a formality — it found five
+    separate silent corruptions while it was being written, each of which
+    assembles perfectly:
+
+    * a `trainer` macro with a tail (`…, NULL, .script`) rebuilt from the five
+      arguments we knew about, deleting the script it runs;
+    * `Action.pages()` stripping each line, so a sign's centred `"  Closed due to"`
+      quietly lost the two spaces that centre it;
+    * a warp whose `warp_to` is written `$06`, which `int(raw, 0)` cannot read;
+    * a trainer whose party is a *constant*, `RIVAL1_3`, not a number;
+    * a header validated in full, so `IntroCave`'s unfindable `MUSIC_NONE` refused
+      an edit to the tileset beside it.
+
+    None of those show up in a test that only checks that a *change* works. They
+    only show up if you insist that a non-change be a non-change.
+    """
+    s = Session(root)
+    rows = wrote = crashed = 0
+    trouble: list[str] = []
+
+    for m in s.maps:
+        try:
+            data = s.load(m.label)
+        except Exception:                                     # noqa: BLE001
+            continue
+        for tab in data.tabs:
+            for row in tab.table[1]:
+                ref = row.ref
+                if ref is None or ref.what == "add":
+                    continue
+                try:
+                    action, values, boxes = s.editor(m.label, m.const, ref)
+                except SessionError:
+                    continue                # says why it can't; that is its own test
+                missing = [f.name for f in action.fields_for(values)
+                           if f.name not in values]
+                if missing and len(trouble) < 5:
+                    trouble.append(f"{m.label} {ref.what} #{ref.index}: the form asks "
+                                   f"for {missing} and the prefill has no answer")
+                rows += 1
+
+                built = action(m.const, **values)
+                built.target = ref
+                try:
+                    result = built.run(root)
+                except Exception as exc:                      # noqa: BLE001
+                    crashed += 1
+                    if len(trouble) < 5:
+                        trouble.append(f"{m.label} {ref.what} #{ref.index}: {exc}")
+                    continue
+                if result.edits:
+                    wrote += 1
+                    if len(trouble) < 5:
+                        trouble.append(f"{m.label} {ref.what} #{ref.index} rewrote "
+                                       f"{[e.path for e in result.edits]}")
+
+    check(f"every editable row on every map opens a filled-in form ({rows})",
+          rows > 10000, f"only {rows}")
+    check("submitting one of them untouched writes nothing at all",
+          wrote == 0 and crashed == 0 and not trouble,
+          "; ".join(trouble))
+    check("and the repo is byte-for-byte where it started",
+          not [p for p in ("maps/CastroForest.asm", "maps/map_headers.asm",
+                           "constants/event_flags.asm")
+               if (root / p).read_text() != (real_root() / p).read_text()])
+
+
+def real_root() -> Path:
+    return Path.home() / "code/ricccec/pokeprism"
+
 
 def main() -> int:
     with tempfile.TemporaryDirectory() as d:

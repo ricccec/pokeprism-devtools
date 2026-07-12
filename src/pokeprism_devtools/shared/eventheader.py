@@ -19,6 +19,10 @@ list. A map whose header doesn't fit that shape raises :class:`UnparseableHeader
 and callers must treat it as unmanaged rather than guess (10 maps under
 ``maps/`` have no event header at all — script includes).
 
+What an entry *is* — the four lists, the argument order of a `person_event`, the
+number a `$hex` denotes — lives in :mod:`.eventmodel`, and is re-exported here so
+that callers never have to care that the split exists.
+
 Round-trip contract
 -------------------
 The whole file is retained verbatim as :attr:`EventHeader.lines`; mutations
@@ -30,174 +34,25 @@ above the header label — hand-written scripts and text — is never touched.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
 from pathlib import Path
 
 from .edits import Edit
+# What an entry *means* is :mod:`.eventmodel`; this module is about the file it
+# lives in. Re-exported, because every caller wants both and the split is ours,
+# not theirs.
+from .eventmodel import (LIST_MACROS, LIST_ORDER, Entry, EventList, ListKind,
+                         UnparseableHeader, as_int, format_entry, _INDENT,
+                         _MACRO_RE, _split_args)
 
+__all__ = ["LIST_MACROS", "LIST_ORDER", "Entry", "EventHeader", "EventList",
+           "ListKind", "UnparseableHeader", "as_int", "format_entry",
+           "parse_map", "parse_text"]
 
-class UnparseableHeader(RuntimeError):
-    """The map's event header doesn't fit the four-counted-lists shape."""
-
-
-class ListKind(Enum):
-    """The four lists, in the order the engine reads them."""
-    WARPS = "warps"
-    COORD_EVENTS = "coord_events"
-    BG_EVENTS = "bg_events"
-    OBJECT_EVENTS = "object_events"
-
-
-#: Entry macros legal in each list. The first is what new entries are written as.
-LIST_MACROS: dict[ListKind, tuple[str, ...]] = {
-    ListKind.WARPS: ("warp_def", "dummy_warp"),
-    ListKind.COORD_EVENTS: ("xy_trigger",),
-    ListKind.BG_EVENTS: ("signpost",),
-    ListKind.OBJECT_EVENTS: ("person_event",),
-}
-
-LIST_ORDER: tuple[ListKind, ...] = (
-    ListKind.WARPS,
-    ListKind.COORD_EVENTS,
-    ListKind.BG_EVENTS,
-    ListKind.OBJECT_EVENTS,
-)
-
+#: Finding the block in a file, which is this module's whole job. The regex that
+#: reads *one line of it* is `eventmodel._MACRO_RE` — a different question.
 _HEADER_RE = re.compile(r"^(\w+)_MapEventHeader::?(.*)$")
 _DB_RE = re.compile(r"^(?P<prefix>.*?\bdb\s+)(?P<args>.+?)\s*(?P<comment>;.*)?$")
-_MACRO_RE = re.compile(r"^\s*(?P<macro>[a-z_]\w*)\s+(?P<args>.*?)\s*(?P<comment>;.*)?$")
-
-_INDENT = "\t"
-
-
-# --------------------------------------------------------------------------- #
-# model                                                                       #
-# --------------------------------------------------------------------------- #
-
-@dataclass
-class Entry:
-    """One ``warp_def`` / ``xy_trigger`` / ``signpost`` / ``person_event`` line.
-
-    ``args`` keeps the source text of each argument verbatim — expressions like
-    ``8 + PAL_OW_BLUE`` and constants like ``SPRITE_SAGE`` survive a round trip
-    untouched. Typed reads go through the accessors below.
-    """
-    macro: str
-    args: list[str]
-    lineno: int          # 0-based index into EventHeader.lines
-    raw: str             # the source line, verbatim
-
-    def arg(self, i: int) -> str:
-        return self.args[i]
-
-    def int_arg(self, i: int) -> int | None:
-        """The argument as an int, or None if it's a symbol/expression."""
-        return _try_int(self.args[i])
-
-    # -- person_event ------------------------------------------------------- #
-    # macros/map.asm:20 — sprite, y, x, movement, radius_y, radius_x, hour,
-    # daytime, color, persontype, <11>, then a persontype-dependent tail.
-    @property
-    def sprite(self) -> str:
-        return self.args[0]
-
-    @property
-    def y(self) -> int | None:
-        """The y written in the source. The macro adds +4 when assembling."""
-        return self.int_arg(1)
-
-    @property
-    def x(self) -> int | None:
-        return self.int_arg(2)
-
-    @property
-    def movement(self) -> str:
-        return self.args[3]
-
-    @property
-    def persontype(self) -> str:
-        return self.args[9]
-
-    @property
-    def script_pointer(self) -> str | None:
-        """The script/text/item pointer — ``dw \\<12>``. Only meaningful for the
-        common tail shape; MART and JUMPSTD spend that slot on a db instead."""
-        if self.persontype in ("PERSONTYPE_MART", "PERSONTYPE_JUMPSTD"):
-            return None
-        return self.args[11]
-
-    @property
-    def event_flag(self) -> str:
-        """The event flag. It is the last argument in *every* person_event tail
-        shape (plain ``dw \\<13>``, MART's ``dw \\<14>``, and both JUMPSTD
-        arities), which is what makes flag analysis shape-independent."""
-        return self.args[-1]
-
-    # -- any entry ---------------------------------------------------------- #
-    # The accessors above read a person_event's layout. The four macros put the
-    # same ideas in different places, so anything that walks entries generically
-    # (removal, the studio's map grid) has to go through these instead.
-    @property
-    def coords(self) -> tuple[int | None, int | None]:
-        """(y, x), wherever this macro happens to keep them."""
-        at = _YX.get(self.macro)
-        if at is None or len(self.args) <= max(at):
-            return None, None
-        return self.int_arg(at[0]), self.int_arg(at[1])
-
-    @property
-    def pointer(self) -> str | None:
-        """The script/text/item this entry points at, if it points at anything.
-
-        ``dummy_warp`` has none. A ``signpost`` only has one when its function
-        isn't a JUMPSTD — those spend the slot on a ``db`` instead, exactly as
-        the MART and JUMPSTD person_events do.
-        """
-        i = _POINTER.get(self.macro)
-        if i is None or len(self.args) <= i:
-            return None
-        if self.macro == "person_event" and self.args[9] in _PERSON_NO_POINTER:
-            return None
-        if self.macro == "signpost" and self.args[2] in _SIGNPOST_NO_POINTER:
-            return None
-        return self.args[i]
-
-
-#: Where (y, x) sit in each entry macro's arguments (macros/map.asm).
-_YX = {
-    "person_event": (1, 2),
-    "signpost": (0, 1),
-    "warp_def": (0, 1),
-    "dummy_warp": (0, 1),
-    "xy_trigger": (1, 2),
-}
-
-#: Where the pointer sits, for the macros that have one.
-_POINTER = {"person_event": 11, "signpost": 3, "xy_trigger": 3}
-
-_PERSON_NO_POINTER = ("PERSONTYPE_MART", "PERSONTYPE_JUMPSTD")
-_SIGNPOST_NO_POINTER = ("SIGNPOST_JUMPSTD", "SIGNPOST_JUMPSTDNOSFX")
-
-
-@dataclass
-class EventList:
-    """One counted list: its ``db N`` line plus the entry lines under it."""
-    kind: ListKind
-    count_lineno: int              # 0-based index of the `db N` line
-    declared_count: int            # the N actually written in the source
-    entries: list[Entry] = field(default_factory=list)
-    strays: list[int] = field(default_factory=list)   # entry lines past the count
-
-    @property
-    def count_matches(self) -> bool:
-        """False = a real bug, not a parse failure. The count byte is what the
-        engine trusts: declaring more entries than exist makes it read the
-        following bytes as a phantom object (three maps in pokeprism do this
-        today); declaring fewer silently drops the tail. Either way the map
-        still parses — the mismatch is a lint finding, so callers can edit and
-        fix it rather than being locked out of the map."""
-        return self.declared_count == len(self.entries) and not self.strays
 
 
 @dataclass
@@ -270,11 +125,29 @@ class EventHeader:
         self._set_count(lst.count_lineno, lst.declared_count - 1)
         self._reparse()
 
-    def replace_entry(self, kind: ListKind, index: int, args: list[str]) -> None:
-        """Rewrite an entry in place, keeping its macro."""
+    def replace_entry(self, kind: ListKind, index: int, args: list[str], *,
+                      macro: str | None = None) -> None:
+        """Rewrite an entry in place, keeping its macro, and its comment.
+
+        Renumbers nothing and moves nothing — one line becomes another line — so a
+        ``warp_to`` elsewhere in the repo that counts its way to this entry still
+        counts right. That is what makes editing safe where deleting is not.
+
+        `macro` is for the one case where an entry's *shape* changes with its
+        contents: a ``dummy_warp`` is a door to nowhere, and giving it a
+        destination makes it a ``warp_def``. The comment is kept because it is
+        about the thing, not about the arguments it had when somebody wrote it.
+        """
         lst = self.lists[kind]
         entry = lst.entries[index]
-        self.lines[entry.lineno] = format_entry(entry.macro, args)
+        chosen = macro or entry.macro
+        if chosen not in LIST_MACROS[kind]:
+            raise UnparseableHeader(f"{chosen} is not a {kind.value} macro — those "
+                                    f"are {', '.join(LIST_MACROS[kind])}")
+        m = _MACRO_RE.match(entry.raw)
+        comment = m.group("comment") if m else None
+        line = format_entry(chosen, args)
+        self.lines[entry.lineno] = f"{line} {comment}" if comment else line
         self._reparse()
 
     def fix_count(self, kind: ListKind) -> None:
@@ -326,10 +199,6 @@ class EventHeader:
 # formatting                                                                  #
 # --------------------------------------------------------------------------- #
 
-def format_entry(macro: str, args: list[str]) -> str:
-    """Render an entry line in the repo's dominant style: tab, macro, ``, ``."""
-    return f"{_INDENT}{macro} {', '.join(str(a).strip() for a in args)}"
-
 
 # --------------------------------------------------------------------------- #
 # parsing                                                                     #
@@ -342,7 +211,15 @@ def parse_map(path: Path) -> EventHeader:
     asms are pure script includes) or its header doesn't match the four-list
     shape.
     """
-    text = path.read_text()
+    return parse_text(path.read_text(), path)
+
+
+def parse_text(text: str, path: Path) -> EventHeader:
+    """The same, over text already in hand rather than text on disk — for a caller
+    partway through changing the file. Rewording what an object says grows the
+    block above the event header, and every line number below it slides, so the
+    header must be read from what the file is *becoming*. See `wiring/objedit.py`.
+    """
     # split("\n") is exactly invertible by "\n".join — splitlines() is not,
     # and the round-trip contract depends on that.
     return _parse_lines(None, path, text.split("\n"), "\n")
@@ -469,26 +346,10 @@ def _next_count(path: Path, lines: list[str], i: int, kind: ListKind) -> tuple[i
         args = _split_args(m.group("args"))
         if len(args) != 1:
             continue                      # the `db 0, 0` filler word, not a count
-        n = _try_int(args[0])
+        n = as_int(args[0])
         if n is None:
             raise UnparseableHeader(
                 f"{path}:{j + 1}: {kind.value} count is not a literal: {args[0]!r}"
             )
         return j, n
     raise UnparseableHeader(f"{path}: no {kind.value} count found")
-
-
-def _split_args(rest: str) -> list[str]:
-    return [a.strip() for a in rest.split(",")]
-
-
-def _try_int(s: str) -> int | None:
-    s = s.strip()
-    try:
-        if s.startswith("$"):
-            return int(s[1:], 16)
-        if s.startswith("%"):
-            return int(s[1:], 2)
-        return int(s, 10)
-    except ValueError:
-        return None

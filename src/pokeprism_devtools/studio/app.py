@@ -67,10 +67,6 @@ from .session import MapData, Session, SessionError, TextRef
 from .status import Banner, Centre, Diagnostics, Where
 from .tabs import ADD, MapTabs
 
-#: What `e` can do, given what is selected. Editing an object in place is P3; for
-#: now `e` reaches the one thing that is already writable — the words it says.
-_NO_EDIT_YET = ("trainer", "warp", "trigger", "connection", "pickup")
-
 #: How often to ask whether the repo moved. A sweep is ~22ms of `stat` on a thread,
 #: so this is a fraction of a percent of one core — and the thing it is watching for
 #: is a `git pull` in another window, which you want to hear about in seconds rather
@@ -333,33 +329,29 @@ class Studio(Flow, App):
         self._act_on(self._ref)
 
     def _act_on(self, ref: Ref) -> None:
-        """`e`, or enter: edit what is selected — or add, on the "Add new…" row."""
+        """`e`, or enter: edit what is selected — or add, on the "Add new…" row.
+
+        The form that opens is the one you *added* this kind with, filled in with
+        what is actually in the file — including its words, which is why `e` on an
+        NPC still reaches its dialogue, and now reaches the rest of it too.
+        """
         if self._const is None or self._wanted is None or not self._may_write():
             self.bell()
             return
-
         if ref.what == ADD:
             self._add(ref.key)
             return
-        if ref.what == "map":
-            self.notify("editing a map's header is not wired up yet", timeout=6)
-            return
 
-        # For now `e` reaches the one thing already writable: what the object says.
-        # Editing the object itself — its sprite, its tile, its flag — is the next
-        # phase, and saying so beats a key that silently does nothing.
         try:
-            text = self.session.dialogue_of(self._wanted, ref)
+            action, values, boxes = self.session.editor(
+                self._wanted, self._const, ref)
         except SessionError as exc:
-            self.notify(str(exc), severity="error", timeout=10)
+            self.notify(str(exc), severity="warning", timeout=10)
             return
-
-        if text is None:
-            what = "this" if ref.what in _NO_EDIT_YET else ref.what
-            self.notify(f"{what} has no dialogue to edit, and editing the object "
-                        f"itself is not wired up yet", timeout=6)
-            return
-        self._reword(text)
+        self.push_screen(
+            Form(action, self.session, self._const, values=values, boxes=boxes,
+                 target=ref),
+            self._filled)
 
     def _add(self, kind: str) -> None:
         """The dim row at the foot of a tab. What it opens is the session's call."""
