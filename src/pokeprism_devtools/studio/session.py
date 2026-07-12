@@ -43,9 +43,9 @@ from .. import maplint
 from ..dev_server import playtest as devplay
 from ..maplint.context import LintContext
 from ..maplint.diagnostics import Diagnostic, Severity
-from ..shared import caches, eventheader, swatches, textbox
+from ..shared import caches, eventheader, textbox, world
 from ..shared.edits import StaleEdit, apply_edits
-from . import actions, content, offers, panels, play, reader
+from . import actions, content, offers, panels, play, reader, undo
 from .actions import Action
 # The shapes of the answers — see `model.py`. Re-exported, because whatever wants
 # a `MapData` wants it *from the session*: the session is the only thing that can
@@ -54,12 +54,30 @@ from .model import (Applied, Finding, MapData, MapGeometry, MapRef, Measured,
                     Mutation, Preview, TextPreview, TextRef)  # noqa: F401
 
 __all__ = ["Applied", "Finding", "MapData", "MapGeometry", "MapRef", "Measured",
-           "Mutation", "Preview", "Session", "SessionError", "TextPreview",
-           "TextRef"]
+           "Mutation", "Preview", "Session", "SessionError", "StaleWorld",
+           "TextPreview", "TextRef"]
 
 
 class SessionError(RuntimeError):
     pass
+
+
+class StaleWorld(SessionError):
+    """The repo changed under us, so everything we believe about it is suspect.
+
+    Not an error in the sense of a bug — it is the studio noticing that you (or
+    git, or another tool) moved the ground it was standing on. It carries the
+    files, because "something changed" is not actionable and
+    `constants/trainer_constants.asm changed` is.
+    """
+
+    def __init__(self, paths: list[str]) -> None:
+        self.paths = paths
+        rest = f" and {len(paths) - 3} more" if len(paths) > 3 else ""
+        super().__init__(
+            f"{len(paths)} file(s) changed on disk since the studio last read the "
+            f"repo ({', '.join(paths[:3])}{rest}). Everything it would check this "
+            f"against is out of date, so it will not write. Press r to re-read.")
 
 
 #: What each tab's "Add new…" row opens. See :meth:`Session.adders`.
@@ -107,9 +125,33 @@ class Session:
         self.ctx = LintContext(root)
         self.history: list[Applied] = []
         self._found: list[Diagnostic] | None = None
+        # The repo as it was when we read it. Everything this object believes was
+        # derived from exactly these bytes — see :mod:`..shared.world`.
+        self.world = world.World.stamp(root)
         # Held across playtests, so booting again replaces the window you are
         # already looking at instead of opening a second one behind it.
         self._emulator = devplay.Emulator()
+
+    # -- has the ground moved? ------------------------------------------------ #
+    def drifted(self) -> list[str]:
+        """Which source files have changed since we read them. ~22ms.
+
+        The app sweeps on a timer and puts a banner up. Cheap enough to ask often;
+        see :meth:`..shared.world.World.drift` for why it is only that cheap.
+        """
+        return self.world.drift(self.root)
+
+    def _fresh(self) -> None:
+        """Refuse to reason about a repo we have not read.
+
+        The gate in front of every write. It is not that the *model* is merely out
+        of date — it is that `scaffold.require()` and every validator like it are
+        about to check your sprite, your item and your trainer class against a
+        cache, and pass something the repo no longer contains. The validation is
+        already there and already good; all it needs is to be aimed at the truth.
+        """
+        if moved := self.drifted():
+            raise StaleWorld(moved)
 
     # -- maps ---------------------------------------------------------------- #
     @property
@@ -134,24 +176,10 @@ class Session:
         return reader.read_map(self.root, self.ctx, label, self._boxes)
 
     def sketch(self, action: Action) -> MapGeometry | None:
-        """A picture of what an action would put on the grid, before it exists.
-
-        Only the new-map action has anything to show — see :meth:`Action.sketch`.
-        The form calls this on every keystroke and either draws the result or
-        prints why it can't, which is how a `.blk` of the wrong size stops being
-        an arithmetic complaint and becomes a map of the wrong shape.
-
-        Raises :class:`~.actions.ActionError` for a form that isn't ready yet.
-        That is the normal state of a form you are typing into, not a failure.
-        """
-        bd = action.sketch(self.root)
-        if bd is None:
-            return None
-        return MapGeometry(
-            label=bd.name, blocks=bd.blocks, height=bd.height, width=bd.width,
-            swatches=swatches.for_map(self.root, bd.tileset_id, bd.permission),
-            marks={},                    # nothing stands on it yet
-        )
+        """A picture of what an action would put on the grid, before it exists —
+        see :func:`.reader.sketch`. Not gated on :meth:`_fresh`: the form calls this
+        on every keystroke, and it draws rather than writes."""
+        return reader.sketch(self.root, action)
 
     # -- what a form may offer ------------------------------------------------ #
     def choices(self, kind: str, values: dict[str, str] | None = None) -> list[str]:
@@ -279,6 +307,16 @@ class Session:
         live there rather than in the map."""
         return [d for d in self.lint() if maplint.mentions(d, self.ctx, const)]
 
+    def findings_for(self, const: str) -> list[Finding]:
+        """The findings about one map, flattened for the side panel.
+
+        The panel is handed `Finding`s rather than `Diagnostic`s for the same
+        reason the lint window is: a `Diagnostic` carries a `Severity` enum and a
+        path, and a view that could read either of those would be a view that knew
+        where a map lives. See :meth:`findings`.
+        """
+        return [self._finding(d) for d in self.diagnostics(const)]
+
     def findings(self) -> list[Finding]:
         """Every finding in the repo, flattened for the view, worst first.
 
@@ -290,64 +328,47 @@ class Session:
         which is the truth rather than a guess at which map you meant.
         """
         rank = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
-        known = set(self.ctx.label_to_const)
-        out = []
-        for d in sorted(self.lint(), key=lambda d: (rank[d.severity], d.code, d.path)):
-            stem = Path(d.path).stem
-            out.append(Finding(
-                severity=d.severity.value, code=d.code, message=d.message,
-                location=d.location, line=d.line,
-                map_label=stem if d.path.startswith("maps/") and stem in known else "",
-            ))
-        return out
+        worst_first = sorted(self.lint(),
+                             key=lambda d: (rank[d.severity], d.code, d.path))
+        return [self._finding(d) for d in worst_first]
+
+    def _finding(self, d: Diagnostic) -> Finding:
+        stem = Path(d.path).stem
+        known = d.path.startswith("maps/") and stem in set(self.ctx.label_to_const)
+        return Finding(
+            severity=d.severity.value, code=d.code, message=d.message,
+            location=d.location, line=d.line, map_label=stem if known else "",
+        )
 
     # -- the history, as something you can look at ---------------------------- #
     def mutations(self) -> list[Mutation]:
-        """Everything written this session, oldest first, and whether each can
-        still be taken back.
-
-        Two things can stop an undo, and both are worth stating rather than
-        greying out a button. A **later mutation touched the same file**, so
-        putting this one's text back would wipe that one out — the fix is to undo
-        the later one first, and this says which. Or the **file has changed since
-        we wrote it**, which means somebody else did it, in their editor or in
-        another tool, and restoring our idea of "before" would throw their work
-        away. Neither is an error. Both are reasons.
-        """
-        out = []
-        for i, applied in enumerate(self.history):
-            later = {p for a in self.history[i + 1:] for p in a.paths}
-            clash = sorted(set(applied.paths) & later)
-            moved = [rel for rel, written in applied.wrote.items()
-                     if _read(self.root / rel, isinstance(written, bytes)) != written]
-
-            if clash:
-                blocked = (f"{clash[0]} was written again by a later change — "
-                           f"undo that one first")
-            elif moved:
-                blocked = (f"{moved[0]} has changed since this was applied, so "
-                           f"undoing would discard whatever changed it")
-            else:
-                blocked = ""
-
-            out.append(Mutation(index=i, summary=applied.summary,
-                                files=applied.touched(), notes=applied.notes,
-                                blocked=blocked))
-        return out
+        """Everything written this session, oldest first, and whether each can still
+        be taken back — see :func:`.undo.mutations`."""
+        return undo.mutations(self.root, self.history)
 
     # -- changing things ----------------------------------------------------- #
     def preview(self, action: Action) -> Preview:
-        """Build the edits without writing them. Raises ActionError if the action
-        can't be built at all — which is a clean no-op, not a partial failure."""
+        """Build the edits without writing them.
+
+        Raises :class:`StaleWorld` if the repo moved since we read it — because an
+        action validates itself against the model, and a model that is out of date
+        will wave through a sprite the repo no longer has. Raises `ActionError` if
+        the action can't be built at all, which is a clean no-op, not a partial
+        failure.
+        """
+        self._fresh()
         return Preview(action, action.run(self.root))
 
     def apply(self, preview: Preview) -> Applied:
         """Write the previewed edits, then bring the linter back in step.
 
-        Applies exactly the edits that were shown. `apply_edits` refuses any whose
-        file has changed since they were computed, so a stale preview raises
-        rather than quietly discarding somebody else's work.
+        Applies exactly the edits that were shown. Checked twice, against two
+        different things: :meth:`_fresh` says the *repo* has not moved since we
+        read it, and `apply_edits` says each *file we are about to write* is still
+        the file the edit was computed from. Minutes can pass between opening a
+        form and confirming it, and both of those can go stale in that time.
         """
+        self._fresh()
         changed = [e for e in preview.edits if e.changed and (e.new_text or e.binary)]
         if not changed:
             raise SessionError(f"{preview.summary}: nothing to change")
@@ -357,8 +378,12 @@ class Session:
                           select=preview.action.selects())
         for e in changed:
             path = self.root / e.path
-            applied.undo_to[e.path] = _read(path, e.binary)
+            applied.undo_to[e.path] = undo.read(path, e.binary)
             applied.wrote[e.path] = e.data if e.binary else e.new_text  # type: ignore[assignment]
+
+        # The findings as they stood *before* — already computed and cached, so
+        # this costs nothing, and it has to be taken before the write.
+        before = {d.key() for d in self.lint()}
 
         try:
             apply_edits(self.root, changed, dry_run=False)
@@ -367,6 +392,11 @@ class Session:
 
         self._invalidate(applied.paths)
         self.history.append(applied)
+        # What it broke. Keyed without the line number (`Diagnostic.key`), so
+        # inserting an NPC does not report every finding below it as newly
+        # introduced by you.
+        applied.introduced = [self._finding(d) for d in self.lint()
+                              if d.key() not in before]
         return applied
 
     def act(self, action: Action) -> Applied:
@@ -387,16 +417,16 @@ class Session:
     def undo_at(self, index: int) -> Applied:
         """Put back what *one* action replaced, wherever it sits in the history.
 
-        Undone **whole or not at all**. Every file the mutation wrote is checked
-        against exactly what we wrote there, and the checking finishes before any
-        restoring begins — so a mutation that wrote `A.asm` and `B.asm`, with
-        `B.asm` since edited by hand, leaves `A.asm` alone too. One file that
-        moved guards the whole change. There is no half-undo, because half a
-        paired warp is worse than either warp.
+        Undone **whole or not at all**, and refused for reasons rather than rules —
+        see :mod:`.undo`, which is where both of those live.
 
-        A mutation a *later* one has written over is refused for a different
-        reason and :meth:`mutations` explains it: restoring this one's text would
-        wipe out the later one, so the later one has to go first.
+        Deliberately **not** gated on :meth:`_fresh`. A write is refused against a
+        repo that moved because a write is *reasoned* from the repo, and reasoning
+        from a stale one gets it wrong. An undo reasons about nothing: it restores
+        bytes it can prove are still its own, and it checks that file by file. A
+        change elsewhere in the repo is no argument against putting our own file
+        back, and refusing on one would mean a `git pull` could strand you with a
+        mutation you could no longer take back.
         """
         found = next((m for m in self.mutations() if m.index == index), None)
         if found is None:
@@ -405,15 +435,7 @@ class Session:
             raise SessionError(f"{found.summary}: {found.blocked}. Left alone.")
 
         applied = self.history[index]
-        for rel, before in applied.undo_to.items():
-            path = self.root / rel
-            if before is None:
-                path.unlink(missing_ok=True)
-            elif isinstance(before, bytes):
-                path.write_bytes(before)
-            else:
-                path.write_text(before)
-
+        undo.restore(self.root, applied)
         del self.history[index]
         self._invalidate(applied.paths)
         return applied
@@ -438,17 +460,21 @@ class Session:
         # A new map is a new entry in every list of maps, and a new NPC's flag is
         # a new entry in the list the forms offer.
         offers.forget()
+        # And the files we just wrote are not "the repo moving under us" — they
+        # are us. Without this the very next sweep would report our own edit as
+        # drift, and the studio would spend its life telling you that you had just
+        # done something.
+        self.world = self.world.restamp(self.root, paths)
 
     def reload(self) -> None:
         """Forget everything and read the repo again.
 
         `_invalidate` drops the caches for the files *we* wrote, which is right
-        and fast — but it can only know about our own writes. The repo is not
-        ours alone: you add a trainer class in an editor, pull a branch, run
-        `prism-mapfit`, and the studio goes on offering the autocomplete it read
-        at startup. There is no way to notice that cheaply (watching every `.asm`
-        in the tree for a change is a lot of machinery to keep one dropdown
-        honest), so this is the key you press when you know you changed something.
+        and fast — but it can only know about our own writes. The repo is not ours
+        alone: you add a trainer class in an editor, pull a branch, run
+        `prism-mapfit`. This is what puts the studio back in step, and
+        :meth:`drifted` is what knows when it needs to be — the app sweeps for it
+        on a timer, and every write refuses until it has been done.
 
         Everything cached goes — and "everything" is the load-bearing word.
         Dropping this object's caches is not enough: half the `shared` modules
@@ -466,11 +492,8 @@ class Session:
         self.ctx = LintContext(self.root)
         self._found = None
         self.__dict__.pop("_boxes", None)
-
-
-def _read(path: Path, binary: bool) -> str | bytes | None:
-    """What is in a file, in the units the edit that wrote it speaks. None if it
-    isn't there — which is a state undo has to be able to restore."""
-    if not path.exists():
-        return None
-    return path.read_bytes() if binary else path.read_text()
+        # The stamp is taken now and the repo is re-read lazily, on the next
+        # question anybody asks. So the stamp is always *older* than the reads it
+        # vouches for, and a file that changes in the gap is reported as drift
+        # again rather than missed. Erring that way round is the whole point.
+        self.world = world.World.stamp(self.root)

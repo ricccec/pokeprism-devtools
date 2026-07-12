@@ -253,6 +253,27 @@ def measure(root: Path, ctx: LintContext, text: str,
     ])
 
 
+def sketch(root: Path, action) -> MapGeometry | None:
+    """A picture of what an action would put on the grid, before it exists.
+
+    Only the new-map action has anything to show — see `Action.sketch`. The form
+    calls this on every keystroke and either draws the result or prints why it
+    can't, which is how a `.blk` of the wrong size stops being an arithmetic
+    complaint and becomes a map of the wrong shape.
+
+    Raises `ActionError` for a form that isn't ready yet. That is the normal state
+    of a form you are typing into, not a failure.
+    """
+    bd = action.sketch(root)
+    if bd is None:
+        return None
+    return MapGeometry(
+        label=bd.name, blocks=bd.blocks, height=bd.height, width=bd.width,
+        swatches=swatches.for_map(root, bd.tileset_id, bd.permission),
+        marks={},                        # nothing stands on it yet
+    )
+
+
 def _measured(root: Path, ctx: LintContext, line: str, cols: int) -> Measured:
     det, bnd, unb, unknown = ctx.textbox_metrics.tiles(root, line)
     return Measured(text=line, tiles=det, bounded=bnd, unbounded=unb,

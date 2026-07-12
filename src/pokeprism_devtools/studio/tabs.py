@@ -155,6 +155,25 @@ class Tabs(Vertical):
         row = pane.query_one(DataTable).cursor_row
         return refs[row] if 0 <= row < len(refs) else None
 
+    def select(self, ref: Ref) -> bool:
+        """Stand on the row that carries this Ref, wherever it is. False if no row
+        does, which is the normal answer for a Ref that isn't on this map.
+
+        What makes the grid a way to *navigate*: put the cursor on an NPC and the
+        NPCs tab comes up with that NPC highlighted, ready for `e` and `d`. The
+        widget still knows nothing about NPCs — it is handed a Ref it cannot read
+        and finds the row holding an equal one.
+        """
+        for name, refs in self._refs.items():
+            if ref not in refs:
+                continue
+            panes = self.query_one(TabbedContent)
+            panes.active = _pane(name)
+            table = self.query_one(f"#table-{_slug(name)}", DataTable)
+            table.move_cursor(row=refs.index(ref))
+            return True
+        return False
+
     @on(DataTable.RowHighlighted)
     @on(TabbedContent.TabActivated)
     def _moved(self) -> None:

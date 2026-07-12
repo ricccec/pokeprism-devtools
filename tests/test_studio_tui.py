@@ -34,9 +34,11 @@ from pokeprism_devtools.studio.content import (HIDDEN, ITEMBALL, TMHM, TREE,
 from pokeprism_devtools.studio.app import Studio
 from pokeprism_devtools.studio.combo import Combo
 from pokeprism_devtools.studio.grid import MapGrid
+from pokeprism_devtools.studio.maplist import MapList
 from pokeprism_devtools.studio.newmap import NewMap
 from pokeprism_devtools.studio.screens import Confirm, Findings, Form, History, Picker
 from pokeprism_devtools.studio.screens.speech import Dialogue
+from pokeprism_devtools.studio.status import Banner, Where
 from pokeprism_devtools.studio.tabs import ADD, Tabs
 
 ROOT = paths.repo_root(Path.home() / "code/ricccec/pokeprism")
@@ -201,8 +203,10 @@ class TestShell(_Driven):
                 # Every map in the repo is offered, including the ones that don't
                 # parse — hiding a broken map from the person looking for the
                 # break is the worst thing this list could do.
-                self.assertGreater(len(app._maps), 400)
-                self.assertIn(BROKEN, [m.label for m in app._maps])
+                maps = app.session.maps
+                self.assertGreater(len(maps), 400)
+                self.assertIn(BROKEN, [m.label for m in maps])
+                self.assertGreater(len(app.query_one(MapList)._shown), 400)
                 await app.action_quit()
 
         drive(go())
@@ -212,8 +216,9 @@ class TestShell(_Driven):
             app = Studio(ROOT)
             async with app.run_test() as pilot:
                 grid = await self.ready(app, pilot)
-                self.assertEqual(app._shown[0], MAP)
-                self.assertTrue(all(MAP in label for label in app._shown))
+                shown = app.query_one(MapList)._shown
+                self.assertEqual(shown[0], MAP)
+                self.assertTrue(all(MAP in label for label in shown))
 
                 bd = blocksrc.load(ROOT, MAP)
                 self.assertEqual(grid.view.blocks, bd.blocks)
@@ -411,10 +416,145 @@ class TestTheCursorAndTheMouse(_Driven):
                                   offset=(where[1] * z, where[0] * z // 2))
                 await pilot.pause(0.2)
 
-                self.assertIsNotNone(app._mouse_at, "the mouse reported nothing")
-                self.assertEqual((app._mouse_at.y, app._mouse_at.x), where)
-                self.assertEqual(app._mouse_at.glyph, grid.view.marks[where])
+                at = app.query_one(Where)._mouse
+                self.assertIsNotNone(at, "the mouse reported nothing")
+                self.assertEqual((at.y, at.x), where)
+                self.assertEqual(at.glyph, grid.view.marks[where])
                 self.assertEqual(grid.cursor, (0, 0), "hovering moved the cursor")
+                await app.action_quit()
+
+        drive(go())
+
+
+class TestTheGridIsAWayIn(_Driven):
+    """Point at a thing on the map, and you are pointing at its row.
+
+    The grid used to be a picture beside the tables: you could see an NPC on it and
+    then had to find that same NPC again by eye in a list below. Now the two are one
+    selection, so the map is a way of *reaching* a row — which is the only reason to
+    draw the objects on it at all.
+    """
+
+    def test_moving_onto_an_object_selects_it(self) -> None:
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test() as pilot:
+                grid = await self.ready(app, pilot)
+                data = app._data
+
+                # A tile with exactly one thing on it, so there is one right answer.
+                tile = next(t for t in sorted(grid.view.marks)
+                            if len(data.at(t)) == 1)
+                want = data.at(tile)[0]
+
+                grid.cursor = tile
+                await pilot.pause(0.2)
+
+                self.assertEqual(app._ref, want,
+                                 "the cursor landed on it and the tables did not follow")
+                # And the *tab* came up, not just the row: pointing at a warp when
+                # you are looking at NPCs has to change which table you are reading.
+                tabs = app.query_one(Tabs)
+                self.assertEqual(tabs.ref, want)
+                await app.action_quit()
+
+        drive(go())
+
+    def test_clicking_is_the_same_gesture(self) -> None:
+        """A click already moves the cursor, so there is one code path and not two.
+        This is the test that would notice if that stopped being true.
+
+        Run in a wide terminal on purpose. At the default 80 columns the sidebar and
+        the diagnostics panel leave the grid four cells across, and a click aimed at
+        anything past the fourth column lands outside the widget and is never
+        delivered — the test would pass or fail on where the map happens to keep its
+        first object rather than on anything this code does.
+        """
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(200, 60)) as pilot:
+                grid = await self.ready(app, pilot)
+                grid.zoom = 2
+                await pilot.pause(0.2)
+
+                tile = next(t for t in sorted(grid.view.marks)
+                            if len(app._data.at(t)) == 1)
+                want = app._data.at(tile)[0]
+
+                z = grid.zoom
+                await pilot.click(MapGrid, offset=(tile[1] * z, tile[0] * z // 2))
+                await pilot.pause(0.2)
+
+                self.assertEqual(grid.cursor, tile, "the click did not land on the tile")
+                self.assertEqual(app._ref, want, "it landed, and the tables did not follow")
+                await app.action_quit()
+
+        drive(go())
+
+    def test_bare_ground_leaves_the_tables_alone(self) -> None:
+        """The rule that makes the whole thing usable. A cursor that reset the
+        selection every time it crossed a patch of grass would be a cursor you could
+        not think next to — you would lose your place on the way to everywhere."""
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test() as pilot:
+                grid = await self.ready(app, pilot)
+                data = app._data
+
+                tile = next(t for t in sorted(grid.view.marks) if len(data.at(t)) == 1)
+                grid.cursor = tile
+                await pilot.pause(0.2)
+                was = app._ref
+                self.assertIsNotNone(was)
+
+                empty = next((y, x)
+                             for y in range(grid.view.size[0])
+                             for x in range(grid.view.size[1])
+                             if not data.at((y, x)))
+                grid.cursor = empty
+                await pilot.pause(0.2)
+
+                self.assertEqual(app._ref, was,
+                                 "crossing empty ground moved the selection")
+                await app.action_quit()
+
+        drive(go())
+
+    def test_the_tables_move_the_cursor_back(self) -> None:
+        """The mirror. Walk down the warps and the cursor walks the doors."""
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test() as pilot:
+                grid = await self.ready(app, pilot)
+                tabs = app.query_one(Tabs)
+
+                warps = [r for r in app._data.tab("Warps").table[1] if r.tile]
+                self.assertTrue(warps, f"{MAP} has no warps to walk")
+
+                for row in warps:
+                    tabs.select(row.ref)
+                    await pilot.pause(0.15)
+                    self.assertEqual(grid.cursor, row.tile,
+                                     f"selecting {row.ref} left the cursor elsewhere")
+                await app.action_quit()
+
+        drive(go())
+
+    def test_the_two_do_not_chase_each_other(self) -> None:
+        """Each move announces itself, and each announcement moves the other. Without
+        a guard they would take turns forever, and the symptom is not a hang — it is
+        the selection sliding away from you while you hold an arrow key."""
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test() as pilot:
+                grid = await self.ready(app, pilot)
+                tile = next(t for t in sorted(grid.view.marks)
+                            if len(app._data.at(t)) == 1)
+
+                grid.cursor = tile
+                await pilot.pause(0.3)
+                self.assertEqual(grid.cursor, tile, "the cursor did not settle")
+                self.assertFalse(app._syncing, "the sync guard was left latched")
                 await app.action_quit()
 
         drive(go())
@@ -423,11 +563,16 @@ class TestTheCursorAndTheMouse(_Driven):
 class TestRefresh(unittest.TestCase):
     """The repo is not the studio's alone.
 
-    `_invalidate` drops the caches for the files the studio *wrote*, which it can
-    do precisely because it knows what it wrote. It cannot know what you did in
-    an editor, or what a `git pull` did. There is no cheap way to notice, so the
-    honest design is a key you press when you know you changed something — and a
-    cache that is genuinely dropped when you press it.
+    `_invalidate` drops the caches for the files the studio *wrote*, which it can do
+    precisely because it knows what it wrote. It cannot know what you did in an
+    editor, or what a `git pull` did — it can only *notice*, and then refuse to
+    write until it has read the repo again. `r` is what does the reading; these
+    tests are about what it has to drop, and the answer is "more than you think".
+
+    (This class used to open by asserting there was no cheap way to notice. There
+    is: a `stat` of every source file in pokeprism is 22ms. `shared/world.py` is
+    what came of measuring instead of assuming, and `TestTheWorldMoved` below is
+    where the noticing is tested.)
     """
 
     @classmethod
@@ -496,6 +641,75 @@ class TestRefresh(unittest.TestCase):
         session.reload()
         self.assertIsNot(session.ctx, was, "the same context came back")
         self.assertIsNone(session._found, "the findings survived a reload")
+
+    def test_reload_re_stamps_the_world(self) -> None:
+        """Otherwise `r` would clear the caches and leave the banner up forever,
+        which is the one way to make a warning worse: make it un-actionable."""
+        session = Session(self.root)
+        items = self.root / "constants/item_constants.asm"
+        items.write_text(items.read_text() + "\n\t; a hand edit\n")
+        self.assertTrue(session.drifted())
+
+        session.reload()
+        self.assertEqual(session.drifted(), [],
+                         "re-reading the repo left it still looking moved")
+
+
+class TestTheWorldMoved(_Driven):
+    """The studio notices that the repo changed, and stops writing until it is read.
+
+    The failure this prevents does not look like a failure. Rename a trainer class
+    in your editor, and the studio's `scaffold.require()` goes on checking your class
+    against the classes of an hour ago — and passes, and writes a `person_event`
+    citing a class that no longer exists. Nothing raises. The first you hear of it is
+    the assembler, or worse, nobody.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name) / "pokeprism"
+        shutil.copytree(ROOT, self.root, symlinks=True, ignore=shutil.ignore_patterns(
+            ".git", "*.o", "*.gbc", "*.sym", "*.map"))
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_the_banner_comes_up_and_the_form_will_not_open(self) -> None:
+        async def go():
+            app = Studio(self.root)
+            async with app.run_test() as pilot:
+                await self.ready(app, pilot)
+                banner = app.query_one(Banner)
+                self.assertFalse(banner.display, "the banner is up on a quiet repo")
+
+                # What a `git pull` looks like from in here.
+                items = self.root / "constants/item_constants.asm"
+                items.write_text(items.read_text().replace(
+                    "\tconst MASTER_BALL", "\tconst TEST_WIDGET\n\tconst MASTER_BALL", 1))
+
+                app._sweep()
+                for _ in range(100):
+                    await pilot.pause(0.05)
+                    if banner.display:
+                        break
+
+                self.assertTrue(banner.display, "the repo moved and nothing said so")
+                self.assertEqual(app._moved, ["constants/item_constants.asm"])
+
+                # And it will not write against it. Not "it warns"; it refuses.
+                self.assertFalse(app._may_write())
+
+                app.action_refresh()
+                await pilot.pause(0.3)
+                self.assertFalse(banner.display, "r did not put the banner away")
+                self.assertTrue(app._may_write(), "r did not let writing resume")
+
+                # And the item that arrived while we weren't looking is offered — the
+                # file that moved is the file whose new contents we now hold.
+                self.assertIn("TEST_WIDGET", app.session.choices("items"))
+                await app.action_quit()
+
+        drive(go())
 
 
 class TestEditing(_Driven):
@@ -1018,7 +1232,7 @@ class TestNewMap(unittest.TestCase):
                     self.assertFalse((self.root / rel).exists(), f"{rel} survived undo")
                 for rel, text in before.items():
                     self.assertEqual((self.root / rel).read_text(), text, rel)
-                self.assertNotIn("TestIsland", app._shown)
+                self.assertNotIn("TestIsland", app.query_one(MapList)._shown)
 
                 await app.action_quit()
 
@@ -1480,16 +1694,25 @@ class TestTheSeam(unittest.TestCase):
     #: The view layer. `screens/` is a directory precisely so that this list is
     #: a fact about the tree rather than a list somebody has to remember to add
     #: to — every screen is in it by construction.
-    VIEW = ("app.py", "tabs.py", "grid.py", "combo.py")
+    VIEW = ("app.py", "tabs.py", "grid.py", "combo.py", "maplist.py",
+            "status.py", "flow.py")
 
     #: Modules that open the source tree. `coords` and `swatches` are not here:
     #: `coords.glyph_cells` and `swatches.tile_color` are the *renderer* — plain
     #: data in, colours out — and the grid is right to use them. (Both modules do
     #: also carry readers, `swatches.for_map` above all. A split would separate
     #: them; today the honest guard is at module granularity.)
+    #:
+    #: `world` is here for a subtler reason than the rest. It does not parse
+    #: anything — it only stats and hashes — so it is no threat to the seam's
+    #: original purpose. But it is the thing that decides *whether the model can
+    #: be trusted*, and a view that could ask the disk that question directly is a
+    #: view that could answer it differently from the session that does the
+    #: writing. There must be exactly one opinion about whether the repo has moved,
+    #: and it belongs to the side that refuses the write.
     READERS = ("blocksrc", "eventheader", "wilddata", "mapsource", "blockdata",
                "metatiles", "render", "dialogue", "trainerparty", "wiring",
-               "roofs", "reader")
+               "roofs", "reader", "world")
 
     def _files(self) -> list[Path]:
         studio = Path(__file__).resolve().parents[1] / "src/pokeprism_devtools/studio"

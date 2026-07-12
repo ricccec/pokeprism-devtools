@@ -1,30 +1,42 @@
 """prism-studio — the shell.
 
-You pick a map, you see its shape, you see what has been placed on it and what
-the linter thinks of it. Then you point at one of those things and act on it: `e`
-edits what is highlighted, `d` deletes it, and enter on the dim row at the foot of
-a tab adds another. The keys on offer are a function of what you have selected —
-there is no `e` on a wild encounter, because a wild encounter cannot be edited and
-a key you cannot use should not be advertised.
+You pick a map, you see its shape, you see what has been placed on it and what the
+linter thinks of it. Then you point at one of those things and act on it: `e` edits
+what is highlighted, `d` deletes it, and enter on the dim row at the foot of a tab
+adds another. The keys on offer are a function of what you have selected — there is
+no `e` on a wild encounter, because a wild encounter cannot be edited and a key you
+cannot use should not be advertised.
 
 **This file opens no files.** Everything it draws arrives from `Session` as plain
 data — colours, marker positions, tables already reduced to rows — and everything
 it changes goes out through an `Action` whose fields `screens/forms.py` renders
-without knowing what they mean. A selected row hands back an opaque `Ref` that
-this file never looks inside. That rule is what keeps `person_event`'s argument
-order, and the `+4` its macro adds behind your back, on one side of one line.
+without knowing what they mean. A selected row hands back an opaque `Ref` that this
+file never looks inside. That rule is what keeps `person_event`'s argument order,
+and the `+4` its macro adds behind your back, on one side of one line.
 
-Three things are worth knowing about how it behaves.
+Four things are worth knowing about how it behaves.
 
-The linter is **not** on the path to the first map. A cold `LintContext` plus a
-full run is 1.7 seconds, and blocking on it would mean staring at an empty screen
-before you can look at anything. So the grid comes up immediately from source,
-and the diagnostics arrive when they arrive, in a thread.
+**The grid and the tables are one selection.** Put the cursor on an NPC — with the
+arrow keys or by clicking it — and the NPCs tab comes up with that NPC highlighted,
+so the map is a way of *reaching* a row and not a picture beside it. It mirrors:
+walk down the warps table and the cursor walks the doors. Crossing bare ground
+changes nothing, because a cursor that reshuffled the tabs every time it passed
+over grass would be a cursor you could not think next to.
+
+**The repo is watched.** Every few seconds the studio checks whether the source has
+changed underneath it, and says so. This is not about a stale dropdown: the studio
+checks your sprite, your item and your trainer class against what it read at
+startup, so a repo that has moved is a repo we would validate a write against and
+get wrong. While it has moved, writing is refused — see `shared/world.py`, and `r`.
+
+The linter is **not** on the path to the first map. A cold `LintContext` plus a full
+run is 1.7 seconds, and blocking on it would mean staring at an empty screen before
+you can look at anything. So the grid comes up immediately from source, and the
+diagnostics arrive when they arrive, in a thread.
 
 Maps that don't parse are still **in the list**. A map with a broken event header
 has a perfectly good shape, and the one thing you must not do to somebody looking
-for a bug is hide the map the bug is in. It gets its grid, and the parse error
-where its objects would have been.
+for a bug is hide the map the bug is in.
 
 And the command palette is on **`p`**, not `ctrl+p`, because this is mostly run
 inside VSCode's terminal and VSCode eats `ctrl+p`. Which is why `b` builds.
@@ -37,51 +49,47 @@ import sys
 from pathlib import Path
 
 from rich.text import Text
-from textual import on, work
+from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Footer, Header, Input, OptionList, Static
+from textual.containers import Horizontal
+from textual.widgets import Footer, Header
 
-from ..shared import coords, paths
-from .actions import Action
+from ..shared import paths
 from .content import EditText
+from .flow import Flow
 from .grid import MapGrid
+from .maplist import MapList
 from .newmap import NewMap
 from .panels import Ref
-from .screens import Build, Confirm, Findings, Form, History, Picker
-from .session import MapData, Preview, Session, SessionError, TextRef
+from .screens import Build, Form, Picker
+from .session import MapData, Session, SessionError, TextRef
+from .status import Banner, Centre, Diagnostics, Where
 from .tabs import ADD, Tabs
-
-_SEVERITY_STYLE = {"error": "bold red", "warning": "yellow", "info": "dim cyan"}
 
 #: What `e` can do, given what is selected. Editing an object in place is P3; for
 #: now `e` reaches the one thing that is already writable — the words it says.
 _NO_EDIT_YET = ("trainer", "warp", "trigger", "connection", "pickup")
 
+#: How often to ask whether the repo moved. A sweep is ~22ms of `stat` on a thread,
+#: so this is a fraction of a percent of one core — and the thing it is watching for
+#: is a `git pull` in another window, which you want to hear about in seconds rather
+#: than at the moment you press enter on a form.
+WATCH_SECONDS = 5.0
 
-def _marker_style(glyph: str) -> str:
-    return (f"bold {coords.hex_color(coords.MARKER_INK[glyph])} "
-            f"on {coords.hex_color(coords.MARKER_BG[glyph])}")
 
+class Studio(Flow, App):
+    """The shell. `Flow` is the other half of it — see :mod:`.flow`: everything
+    from agreeing to a preview to putting the map back on screen."""
 
-class Studio(App):
     TITLE = "prism-studio"
 
-    #: Textual puts its command palette on ctrl+p. VSCode's terminal takes that
-    #: key before we ever see it, and this is mostly run inside VSCode.
+    #: Textual puts its command palette on ctrl+p. VSCode's terminal takes that key
+    #: before we ever see it, and this is mostly run inside VSCode.
     COMMAND_PALETTE_BINDING = "p"
 
     CSS = """
     #body { height: 1fr; }
-    #sidebar { width: 30; border-right: solid $panel; }
-    #filter { border: none; height: 3; }
-    #maps { height: 1fr; border: none; }
-    #centre { width: 1fr; }
-    #grid { height: 1fr; }
-    #status { height: 1; padding: 0 1; background: $panel; color: $text-muted; }
-    #legend { height: 1; padding: 0 1; }
-    #findings { width: 46; border-left: solid $panel; padding: 0 1; }
     #tabs-pane { height: 18; border-top: solid $panel; }
     """
 
@@ -104,13 +112,14 @@ class Studio(App):
     def __init__(self, root: Path) -> None:
         super().__init__()
         self.session = Session(root)
-        self._maps = self.session.maps
-        self._shown: list[str] = []
         #: The map the user last asked for. A slower load that lands after it has
-        #: moved on is dropped — otherwise arrowing down the list leaves you
-        #: looking at whichever map happened to finish last.
+        #: moved on is dropped — otherwise arrowing down the list leaves you looking
+        #: at whichever map happened to finish last.
         self._wanted: str | None = None
         self._const: str | None = None
+        #: The map on screen, as the session handed it over. What turns a tile into
+        #: the row that owns it, and back — see :meth:`_moved`.
+        self._data: MapData | None = None
         #: Where to put the cursor back after a reload, and on which map. Re-reading
         #: the map is how a new NPC appears on the grid, but it would also send the
         #: cursor home — off the tile you were working on, the moment you worked on
@@ -120,95 +129,91 @@ class Studio(App):
         self._linted = False
         #: What is highlighted in the tabs. The footer is a function of this.
         self._ref: Ref | None = None
-        #: The two places on the map that are worth reporting: where the cursor
-        #: is, and where the pointer is. See :meth:`_say_where`.
-        self._cursor_at: MapGrid.Moved | None = None
-        self._mouse_at: MapGrid.Hovered | None = None
+        #: The grid and the tables move each other, and each move announces itself.
+        #: Without this they would take turns announcing forever.
+        self._syncing = False
+        #: The files that have changed on disk since we read them. While this is
+        #: non-empty the studio will not write, because everything it would check a
+        #: write against is out of date.
+        self._moved: list[str] = []
 
     # -- layout ---------------------------------------------------------------- #
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="body"):
-            with Vertical(id="sidebar"):
-                yield Input(placeholder="filter maps", id="filter")
-                yield OptionList(id="maps")
-            with Vertical(id="centre"):
-                yield MapGrid(id="grid")
-                yield Static(id="status")
-                yield Static(self._legend(), id="legend")
-            yield VerticalScroll(Static(id="diagnostics"), id="findings")
+            yield MapList(id="sidebar")
+            yield Centre()
+            yield Diagnostics(id="findings")
         yield Tabs(id="tabs-pane")
+        yield Banner(id="banner")
         yield Footer()
 
     def on_mount(self) -> None:
-        self._fill_list("")
-        self.query_one("#diagnostics", Static).update(Text("linting…", style="dim"))
+        self.query_one(MapList).fill(self.session.maps)
+        self.query_one(Diagnostics).waiting()
         self._lint()
         self._warm()
-        self.query_one("#maps", OptionList).focus()
+        self.set_interval(WATCH_SECONDS, self._sweep)
+        self.query_one(MapList).focus_list()
 
     @work(thread=True, group="warm")
     def _warm(self) -> None:
         """Read the constants a form autocompletes from, before a form asks.
 
-        Every sprite, movement, item, trainer class, tileset, landmark and piece
-        of music in the repo, plus what each trainer class usually wears — two
-        seconds of parsing, cached on the session for the rest of the run. Left to
-        happen lazily it happens on the keystroke that opens the first form, and a
-        form that takes two seconds to appear is a form you pressed the key for
-        twice.
+        Every sprite, movement, item, trainer class, tileset, landmark and piece of
+        music in the repo, plus what each trainer class usually wears — two seconds
+        of parsing, cached on the session for the rest of the run. Left to happen
+        lazily it happens on the keystroke that opens the first form, and a form
+        that takes two seconds to appear is a form you pressed the key for twice.
         """
         self.session.warm()
 
-    def _legend(self) -> Text:
-        out = Text()
-        for glyph, name in (("W", "warp"), ("S", "signpost"), ("N", "npc"),
-                            ("T", "trainer"), ("I", "item")):
-            out.append(f" {glyph} ", style=_marker_style(glyph))
-            out.append(f" {name}   ", style="dim")
-        return out
+    # -- watching the repo ------------------------------------------------------ #
+    @work(thread=True, exclusive=True, group="watch")
+    def _sweep(self) -> None:
+        """Has the source changed under us? ~22ms of `stat`, on a thread.
+
+        On a timer *and* on regaining focus. The timer is the one that matters:
+        alt-tabbing back from an editor is only one of the ways the repo moves, and
+        `git pull` in a tmux pane next door is not a focus change at all.
+        """
+        self.call_from_thread(self._swept, self.session.drifted())
+
+    @on(events.AppFocus)
+    def _refocused(self) -> None:
+        self._sweep()
+
+    def _swept(self, moved: list[str]) -> None:
+        if moved == self._moved:
+            return
+        self._moved = moved
+        self.query_one(Banner).show(moved)
+
+    def _may_write(self) -> bool:
+        """Refuse to open a form, or to write, against a repo we have not read.
+
+        Asked *again* here rather than trusting the banner, because the banner is
+        only as fresh as the last sweep and a form is opened by a keystroke. The
+        session checks a third time inside `preview` and `apply` — which is the one
+        that actually guarantees anything, since this is the view and the view is
+        not what keeps the promise.
+        """
+        if moved := self.session.drifted():
+            self._swept(moved)
+            self.notify(
+                f"{len(moved)} file(s) changed on disk ({moved[0]}…). The studio "
+                f"would be checking this against a repo that no longer exists. "
+                f"Press r to re-read, then try again.",
+                severity="warning", timeout=12)
+            return False
+        return True
 
     # -- the map list ----------------------------------------------------------- #
-    def _fill_list(self, needle: str, select: str | None = None) -> None:
-        needle = needle.strip().lower()
-        self._shown = [m.label for m in self._maps
-                       if needle in m.label.lower() or needle in m.const.lower()]
-        options = self.query_one("#maps", OptionList)
-        options.clear_options()
-        options.add_options(self._shown)
-        if self._shown:
-            # Highlighting is what loads a map, so it is set once, to what we
-            # actually want — highlighting the first map and then correcting it
-            # would load two maps and show you the wrong one on the way.
-            options.highlighted = (self._shown.index(select)
-                                   if select in self._shown else 0)
+    @on(MapList.Chosen)
+    def _chose_map(self, event: MapList.Chosen) -> None:
+        self._wanted = event.label
+        self._load(event.label)
 
-    @on(Input.Changed, "#filter")
-    def _filtered(self, event: Input.Changed) -> None:
-        self._fill_list(event.value)
-
-    @on(Input.Submitted, "#filter")
-    def _submitted(self) -> None:
-        self.query_one("#maps", OptionList).focus()
-
-    @on(OptionList.OptionHighlighted, "#maps")
-    def _highlighted(self, event: OptionList.OptionHighlighted) -> None:
-        if event.option_index < len(self._shown):
-            label = self._shown[event.option_index]
-            self._wanted = label
-            self._load(label)
-
-    def _go_to(self, label: str) -> None:
-        """Select a map from somewhere other than the list — the findings window
-        jumps here. Clearing the filter first, because a map you were sent to is
-        one you probably could not have found under whatever you had typed."""
-        if label not in [m.label for m in self._maps]:
-            return
-        self.query_one("#filter", Input).value = ""
-        self._wanted = label
-        self._fill_list("", select=label)
-
-    # -- loading, off the UI thread ---------------------------------------------- #
     @work(thread=True, exclusive=True, group="map")
     def _load(self, label: str) -> None:
         self.call_from_thread(self._loaded, self.session.load(label))
@@ -217,12 +222,12 @@ class Studio(App):
         if data.label != self._wanted:
             return
         self._const = data.const
+        self._data = data
 
         grid = self.query_one("#grid", MapGrid)
-        status = self.query_one("#status", Static)
         if data.geometry is None:
             grid.display = False
-            status.update(Text(data.error or "", style="bold red"))
+            self.query_one(Where).error(data.error or "")
         else:
             grid.display = True
             grid.show(data.geometry)
@@ -245,40 +250,62 @@ class Studio(App):
                 self.session.ctx.label_to_const.get(self._wanted, self._wanted))
 
     def _show_diagnostics(self, const: str) -> None:
-        panel = self.query_one("#diagnostics", Static)
-        if not self._linted:
-            panel.update(Text("linting…", style="dim"))
-            return
+        panel = self.query_one(Diagnostics)
+        if self._linted:
+            panel.show(self.session.findings_for(const))
+        else:
+            panel.waiting()
 
-        rank = {"error": 0, "warning": 1, "info": 2}
-        found = sorted(self.session.diagnostics(const),
-                       key=lambda d: (rank[d.severity.value], d.line))
-        if not found:
-            panel.update(Text("clean", style="bold green"))
-            return
+    # -- the grid and the tables are one selection -------------------------------- #
+    @on(MapGrid.Moved)
+    def _moved(self, event: MapGrid.Moved) -> None:
+        """The cursor is on a tile. If anything is standing there, select it.
 
-        out = Text()
-        for d in found:
-            style = _SEVERITY_STYLE[d.severity.value]
-            out.append(f"{d.severity.value:>7}  ", style=style)
-            out.append(f"{d.code}\n", style="bold")
-            out.append(f"         {d.message}\n", style="none")
-            out.append(f"         {d.location}\n\n", style="dim")
-        panel.update(out)
+        Clicking a tile already moves the cursor (`grid.on_click`), so the mouse and
+        the arrow keys arrive here together and there is one path, not two.
 
-    # -- what is selected, and therefore what the keys mean ----------------------- #
+        **An empty tile selects nothing.** Crossing bare ground must leave the tabs
+        exactly as they were: a cursor that reset the selection every time it passed
+        over grass would make the tables useless to think next to.
+        """
+        refs = self._data.at((event.y, event.x)) if self._data else ()
+        self.query_one(Where).cursor(event, stacked=len(refs))
+        if refs and not self._syncing:
+            self._syncing = True
+            try:
+                self.query_one(Tabs).select(refs[0])
+            finally:
+                self._syncing = False
+
+    @on(MapGrid.Hovered)
+    def _hovered(self, event: MapGrid.Hovered) -> None:
+        self.query_one(Where).mouse(event if event.inside else None)
+
     @on(Tabs.Selected)
     def _selected(self, event: Tabs.Selected) -> None:
         self._ref = event.ref
-        # The footer is a function of the selection, so it has to be recomputed
-        # when the selection moves. Textual will call check_action() again.
+        # The footer is a function of the selection, so it has to be recomputed when
+        # the selection moves. Textual will call check_action() again.
         self.refresh_bindings()
+
+        # The mirror: walking down the warps table walks the cursor along the doors.
+        grid = self.query_one("#grid", MapGrid)
+        if self._syncing or event.ref is None or self._data is None or grid.view is None:
+            return
+        tile = self._data.tile_of(event.ref)
+        if tile is None or tile == grid.cursor:
+            return
+        self._syncing = True
+        try:
+            grid.cursor = tile
+        finally:
+            self._syncing = False
 
     def check_action(self, action: str, parameters: tuple) -> bool | None:
         """Which keys exist right now. None hides one from the footer entirely.
 
-        Hidden rather than greyed: a disabled key still reads as an offer, and
-        the footer is the only place the studio ever tells you what you can do.
+        Hidden rather than greyed: a disabled key still reads as an offer, and the
+        footer is the only place the studio ever tells you what you can do.
         """
         ref = self._ref
         if action == "edit":
@@ -291,11 +318,12 @@ class Studio(App):
             return True if self.session.can_undo else None
         return True
 
+    # -- acting on what is selected ------------------------------------------------ #
     @on(Tabs.Chosen)
     def _chosen(self, event: Tabs.Chosen) -> None:
-        # Enter on a row. The DataTable eats the key before our bindings see it,
-        # so it arrives as a message — and has to land exactly where `e` lands,
-        # because they are the same gesture.
+        # Enter on a row. The DataTable eats the key before our bindings see it, so
+        # it arrives as a message — and has to land exactly where `e` lands, because
+        # they are the same gesture.
         self._act_on(event.ref)
 
     def action_edit(self) -> None:
@@ -306,7 +334,7 @@ class Studio(App):
 
     def _act_on(self, ref: Ref) -> None:
         """`e`, or enter: edit what is selected — or add, on the "Add new…" row."""
-        if self._const is None or self._wanted is None:
+        if self._const is None or self._wanted is None or not self._may_write():
             self.bell()
             return
 
@@ -317,9 +345,9 @@ class Studio(App):
             self.notify("editing a map's header is not wired up yet", timeout=6)
             return
 
-        # For now `e` reaches the one thing already writable: what the object
-        # says. Editing the object itself — its sprite, its tile, its flag — is
-        # the next phase, and saying so beats a key that silently does nothing.
+        # For now `e` reaches the one thing already writable: what the object says.
+        # Editing the object itself — its sprite, its tile, its flag — is the next
+        # phase, and saying so beats a key that silently does nothing.
         try:
             text = self.session.dialogue_of(self._wanted, ref)
         except SessionError as exc:
@@ -342,24 +370,18 @@ class Studio(App):
         if len(adders) == 1:
             self._open(adders[0])
             return
-        # More than one thing wears this coat — a pickup is an item ball or a
-        # hidden item, and until they share one form the honest thing is to ask.
+        # More than one thing wears this coat. Until they share one form the honest
+        # thing is to ask.
         self.push_screen(
             Picker(f"What kind of {kind}?", [a.title for a in adders]),
             lambda i: None if i is None else self._open(adders[i]),
         )
 
-    def _open(self, action: type[Action], **values: str) -> None:
-        grid = self.query_one("#grid", MapGrid)
-        cursor = grid.cursor if grid.view is not None else None
-        self.push_screen(
-            Form(action, self.session, self._const or "", cursor, values=values or None),
-            self._filled)
-
-    # -- adding a map ------------------------------------------------------------- #
     def action_add_map(self) -> None:
-        """The one thing that isn't reached by pointing at a row, because the map
-        it makes is the one map you cannot point at yet."""
+        """The one thing that isn't reached by pointing at a row, because the map it
+        makes is the one map you cannot point at yet."""
+        if not self._may_write():
+            return
         self.push_screen(Form(NewMap, self.session, self._const or ""), self._filled)
 
     # -- rewording ---------------------------------------------------------------- #
@@ -393,12 +415,12 @@ class Studio(App):
     def action_delete(self) -> None:
         """Take the selected thing out of the map.
 
-        The confirmation is not a formality. `removal` decides what a deletion
-        drags with it — a private event flag goes back to `const skip`, a shared
-        one is left alone, and a trainer's *party* is deliberately not touched
-        because deleting it would renumber every party below it in the group and
-        re-team every trainer citing them by position. All of that arrives as
-        notes on the preview, and the preview is what you are agreeing to.
+        The confirmation is not a formality. `removal` decides what a deletion drags
+        with it — a private event flag goes back to `const skip`, a shared one is
+        left alone, and a trainer's *party* is deliberately not touched because
+        deleting it would renumber every party below it in the group and re-team
+        every trainer citing them by position. All of that arrives as notes on the
+        preview, and the preview is what you are agreeing to.
         """
         if self._ref is None or self._const is None or self._wanted is None:
             self.bell()
@@ -407,42 +429,20 @@ class Studio(App):
             action = self.session.deletion(self._wanted, self._const, self._ref)
             preview = self.session.preview(action)
         except SessionError as exc:
-            self.notify(str(exc), severity="warning", timeout=10)
+            self.notify(str(exc), severity="warning", timeout=12)
             return
         except Exception as exc:                       # ActionError, and its kin
             self.notify(str(exc), severity="error", timeout=10)
             return
         self._filled(preview)
 
-    # -- the two windows ------------------------------------------------------------ #
-    def action_findings(self) -> None:
-        if not self._linted:
-            self.notify("still linting…")
-            return
-        self.push_screen(Findings(self.session.findings()),
-                         lambda label: label and self._go_to(label))
-
-    def action_history(self) -> None:
-        self.push_screen(History(self.session.mutations()), self._undo_at)
-
-    def _undo_at(self, index: int | None) -> None:
-        if index is None:
-            return
-        try:
-            last = self.session.undo_at(index)
-        except SessionError as exc:
-            self.notify(str(exc), severity="error", timeout=12)
-            return
-        self.notify(f"undone: {last.summary}")
-        self._after_write()
-
     # -- playing it ------------------------------------------------------------------ #
     def action_build(self) -> None:
         """Build the game and stand on the tile the cursor is on.
 
         The cursor is the point. Everywhere else you'd have to know the map's
-        coordinates and type them into a launcher; here you have already moved to
-        the spot you want to look at, so that spot is where you spawn.
+        coordinates and type them into a launcher; here you have already moved to the
+        spot you want to look at, so that spot is where you spawn.
         """
         grid = self.query_one("#grid", MapGrid)
         if self._const is None or self._wanted is None or grid.view is None:
@@ -450,136 +450,33 @@ class Studio(App):
             return
         self.push_screen(Build(self.session, self._const, self._wanted, grid.cursor))
 
-    # -- applying ---------------------------------------------------------------------- #
-    def _filled(self, preview: Preview | None) -> None:
-        if preview is None:
-            return
-        if not preview.edits:
-            self.notify(f"{preview.summary}: nothing to change")
-            return
-        self.push_screen(Confirm(preview), lambda ok: self._confirmed(preview, ok))
-
-    def _confirmed(self, preview: Preview, ok: bool | None) -> None:
-        if not ok:
-            return
-        try:
-            applied = self.session.apply(preview)
-        except SessionError as exc:
-            self.notify(str(exc), severity="error", timeout=10)
-            return
-        self.notify("\n".join([applied.summary, *applied.notes]),
-                    timeout=10 if applied.notes else 5)
-        self._after_write(applied.select)
-
-    def action_undo(self) -> None:
-        try:
-            last = self.session.undo()
-        except SessionError as exc:
-            self.notify(str(exc), severity="error", timeout=12)
-            return
-        self.notify(f"undone: {last.summary}")
-        # Deliberately not `last.select`: undoing the map you just made unmakes
-        # it, and the one thing you must not be left looking at is that.
-        self._after_write()
-
-    def _after_write(self, select: str | None = None) -> None:
-        """Bring the screen back in step with the repo.
-
-        The session has already dropped the caches for the files that moved, so
-        the re-lint is the cheap incremental one rather than the 1.7-second cold
-        start — but it is still a hundred milliseconds and it is still not going
-        on the UI thread. The grid, on the other hand, is re-read immediately:
-        the NPC you just placed should be on the map before you have let go of
-        the key.
-
-        The list of maps is re-read too, and that is not decoration. Adding a map
-        puts one in it; undoing that takes it back out, and the map you were
-        looking at can be the one that has just stopped existing.
-        """
-        self._linted = False
-        grid = self.query_one("#grid", MapGrid)
-        if self._wanted and grid.view is not None:
-            self._keep_cursor = (self._wanted, grid.cursor)
-
-        self._maps = self.session.maps
-        known = [m.label for m in self._maps]
-        want = select if select in known else self._wanted
-        if want not in known:
-            want = known[0] if known else None
-        self._wanted = want
-
-        self._fill_list(self.query_one("#filter", Input).value, select=want)
-        if want:
-            self._load(want)
-        self._lint()
-
     # -- keys --------------------------------------------------------------------- #
     def action_focus_filter(self) -> None:
-        self.query_one("#filter", Input).focus()
+        self.query_one(MapList).focus_filter()
 
     def action_zoom(self, delta: int) -> None:
         self.query_one("#grid", MapGrid).action_zoom(delta)
 
-    @on(MapGrid.Moved)
-    def _moved(self, event: MapGrid.Moved) -> None:
-        self._cursor_at = event
-        self._say_where()
-
-    @on(MapGrid.Hovered)
-    def _hovered(self, event: MapGrid.Hovered) -> None:
-        self._mouse_at = event if event.inside else None
-        self._say_where()
-
-    def _say_where(self) -> None:
-        """The status bar: where the cursor is, and where the mouse is.
-
-        Both, because they answer different questions. The cursor is where the
-        next thing you add will land. The mouse is how you look something up —
-        the linter says "warp 2", the table says warp 2 is at (2, 17), and the
-        way to find out *which door that is* is to put the pointer on 2, 17 and
-        read the marker off. Walking the cursor there would work too, and would
-        move the coordinates every form is about to be prefilled with.
-        """
-        line = Text()
-        if (at := self._cursor_at) is not None:
-            block = coords.block_of(at.y, at.x)
-            quadrant = coords.quadrant_of(at.y, at.x)
-            line.append(f"y {at.y}  x {at.x}", style="bold")
-            line.append(f"   block {block[0]},{block[1]} "
-                        f"q{quadrant[0]}{quadrant[1]}", style="dim")
-            if at.glyph:
-                line.append("   ")
-                line.append(f" {at.glyph} ", style=_marker_style(at.glyph))
-
-        if (mouse := self._mouse_at) is not None:
-            line.append("        mouse ", style="dim")
-            line.append(f"y {mouse.y}  x {mouse.x}", style="bold")
-            if mouse.glyph:
-                line.append("  ")
-                line.append(f" {mouse.glyph} ", style=_marker_style(mouse.glyph))
-
-        self.query_one("#status", Static).update(line)
-
-    # -- reading the repo again ---------------------------------------------------- #
     def action_refresh(self) -> None:
         """Read the repo again, because you changed it from outside.
 
         The studio drops its caches for the files *it* writes, which it can do
-        precisely because it knows what it wrote. It cannot know what you did in
-        an editor, or what a `git pull` did, and until this key exists it will
-        keep offering the trainer classes and map groups it read at startup. So:
-        the linter's context, the constants the forms autocomplete from, the map
-        list, the map on screen. All of it, again.
+        precisely because it knows what it wrote. It cannot know what you did in an
+        editor, or what a `git pull` did — it can only *notice*, which is what the
+        banner is. This is the key that acts on the noticing: the linter's context,
+        the constants the forms autocomplete from, the map list, the map on screen.
+        All of it, again. And with that, writing is allowed once more.
         """
         self.notify("re-reading the repo…")
         self.session.reload()
+        self._swept([])
         self._linted = False
-        self._maps = self.session.maps
 
-        known = [m.label for m in self._maps]
+        maps = self.session.maps
+        known = [m.label for m in maps]
         want = self._wanted if self._wanted in known else (known[0] if known else None)
         self._wanted = want
-        self._fill_list(self.query_one("#filter", Input).value, select=want)
+        self.query_one(MapList).fill(maps, select=want)
         if want:
             self._load(want)
         self._lint()

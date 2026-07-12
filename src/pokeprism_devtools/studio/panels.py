@@ -75,6 +75,19 @@ class Row:
     #: None for a row that names nothing you can act on — a wild encounter, a
     #: roof colour. The footer reads this to decide whether `e` and `d` exist.
     ref: Ref | None = None
+    #: Where this row's object stands, in coordinate tiles — which is what makes
+    #: the grid a way to *navigate* rather than a picture beside the table: point
+    #: at a tile, and the row that owns it is the row that says so here.
+    #:
+    #: The number written in the source, like every other coordinate on this side
+    #: of the seam, and that is not a coincidence — a coordinate tile *is* the
+    #: source number. The `+4` the `person_event` macro adds exists only in the
+    #: assembled struct, which is why `play.boot` can hand the grid's cursor
+    #: straight to `wYCoord` and be right.
+    #:
+    #: None for a row that is not on the map at all: a connection is a property of
+    #: the whole edge, a wild encounter is not a place.
+    tile: tuple[int, int] | None = None
 
 
 Table = tuple[list[str], list[Row]]
@@ -110,6 +123,17 @@ ROOF_IS_READ_ONLY = (
 def _yx(entry: eh.Entry) -> tuple[str, str]:
     y, x = entry.coords
     return (_NONE if y is None else str(y), _NONE if x is None else str(x))
+
+
+def _tile(entry: eh.Entry) -> tuple[int, int] | None:
+    """The tile it stands on, or None when the coordinates aren't literal numbers.
+
+    An object whose `y` is a constant expression rather than a number still gets a
+    row — you can see it and delete it — but nothing can point at it on the grid,
+    and pretending otherwise would put it at (0, 0).
+    """
+    y, x = entry.coords
+    return None if y is None or x is None else (y, x)
 
 
 def _block(header: eh.EventHeader, label: str | None) -> list[str]:
@@ -172,7 +196,7 @@ def npcs(header: eh.EventHeader, says: dict[str, str]) -> Table:
         rows.append(Row(
             [str(i), y, x, e.sprite, e.movement.replace("SPRITEMOVEDATA_", ""),
              says.get(pointer, pointer or _NONE), e.event_flag],
-            Ref("npc", eh.ListKind.OBJECT_EVENTS.value, i),
+            Ref("npc", eh.ListKind.OBJECT_EVENTS.value, i), _tile(e),
         ))
     return cols, rows
 
@@ -186,7 +210,7 @@ def trainers(header: eh.EventHeader) -> Table:
         sight = e.arg(10) if len(e.args) > 10 else _NONE
         rows.append(Row(
             [str(i), y, x, e.sprite, cls, party, sight, flag],
-            Ref("trainer", eh.ListKind.OBJECT_EVENTS.value, i),
+            Ref("trainer", eh.ListKind.OBJECT_EVENTS.value, i), _tile(e),
         ))
     return cols, rows
 
@@ -209,7 +233,7 @@ def pickups(header: eh.EventHeader) -> Table:
         rows.append(Row(
             [str(i), y, x, kind, what or _NONE,
              e.arg(10) if ball else _NONE, e.event_flag],
-            Ref("pickup", eh.ListKind.OBJECT_EVENTS.value, i),
+            Ref("pickup", eh.ListKind.OBJECT_EVENTS.value, i), _tile(e),
         ))
 
     for i, e in enumerate(header.bg_events):
@@ -223,7 +247,7 @@ def pickups(header: eh.EventHeader) -> Table:
         item = next((ln.split()[-1] for ln in record if ln.strip().startswith("db ")), _NONE)
         rows.append(Row(
             [str(i), y, x, "hidden", item, _NONE, flag],
-            Ref("pickup", eh.ListKind.BG_EVENTS.value, i),
+            Ref("pickup", eh.ListKind.BG_EVENTS.value, i), _tile(e),
         ))
     return cols, rows
 
@@ -239,7 +263,7 @@ def signposts(header: eh.EventHeader) -> Table:
         y, x = _yx(e)
         rows.append(Row(
             [str(i), y, x, kind.replace("SIGNPOST_", ""), e.pointer or _NONE],
-            Ref("signpost", eh.ListKind.BG_EVENTS.value, i),
+            Ref("signpost", eh.ListKind.BG_EVENTS.value, i), _tile(e),
         ))
     return cols, rows
 
@@ -254,7 +278,7 @@ def warps(header: eh.EventHeader) -> Table:
         dest = e.arg(3) if len(e.args) > 3 else _NONE
         which = e.arg(2) if len(e.args) > 2 else _NONE
         rows.append(Row([str(i + 1), y, x, dest, which],
-                        Ref("warp", eh.ListKind.WARPS.value, i)))
+                        Ref("warp", eh.ListKind.WARPS.value, i), _tile(e)))
     return cols, rows
 
 
@@ -264,7 +288,7 @@ def triggers(header: eh.EventHeader) -> Table:
     for i, e in enumerate(header.coord_events):
         y, x = _yx(e)
         rows.append(Row([str(i), e.arg(0), y, x, e.pointer or _NONE],
-                        Ref("trigger", eh.ListKind.COORD_EVENTS.value, i)))
+                        Ref("trigger", eh.ListKind.COORD_EVENTS.value, i), _tile(e)))
     return cols, rows
 
 

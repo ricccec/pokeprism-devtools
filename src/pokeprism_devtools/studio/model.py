@@ -68,6 +68,35 @@ class MapData:
     def tab(self, name: str) -> panels.Tab | None:
         return next((t for t in self.tabs if t.name == name), None)
 
+    # -- the grid and the tables are one selection ----------------------------- #
+    #
+    # Both of these read the *rows*, and only the rows. A map's objects are laid
+    # out twice — once as glyphs on the grid (`MapGeometry.marks`) and once as
+    # table rows — and the temptation is to build this index from the glyphs,
+    # since they are already keyed by tile. That would be a second enumeration of
+    # the same event header, and a second enumeration is a chance to disagree with
+    # the first: point at the third NPC, highlight the fourth. Deriving it from
+    # the rows that carry the Refs means the index and the row cannot diverge,
+    # because they are the same list.
+
+    def at(self, tile: tuple[int, int]) -> tuple[panels.Ref, ...]:
+        """Everything standing on this tile, in tab order.
+
+        A tuple, not one Ref: two objects can share a tile — a signpost on the
+        same square as the NPC in front of it — and `marks` cannot say so, because
+        it is a dict keyed by tile and the second one silently overwrites the
+        first. Here they both survive.
+        """
+        return tuple(row.ref for tab in self.tabs for row in tab.table[1]
+                     if row.tile == tile and row.ref is not None)
+
+    def tile_of(self, ref: panels.Ref) -> tuple[int, int] | None:
+        """Where this row's object stands, if it stands anywhere. A connection is
+        a property of the whole map edge and a wild encounter is not on the map at
+        all, so for those the answer is None and the cursor stays where it is."""
+        return next((row.tile for tab in self.tabs for row in tab.table[1]
+                     if row.ref == ref), None)
+
 
 @dataclass(frozen=True)
 class TextRef:
@@ -187,6 +216,13 @@ class Applied:
     notes: list[str] = field(default_factory=list)
     #: The map to be looking at now, if this action made one.
     select: str | None = None
+    #: Findings that were not there before this landed — i.e. **what this change
+    #: broke**. The backstop for the one thing a fresh model cannot catch: a
+    #: mutation that read the repo correctly and reasoned about it wrongly. The
+    #: linter already runs after every write, so knowing this costs a set
+    #: difference, and it turns "it applied" into "it applied, and here is what it
+    #: cost you".
+    introduced: list[Finding] = field(default_factory=list)
 
     def touched(self) -> list[tuple[str, str]]:
         """`(path, which lines)` for every file this wrote.
@@ -266,6 +302,10 @@ class Mutation:
     #: Empty when this can be undone. Otherwise, why it can't — the file that
     #: moved under it, or the later mutation holding it down.
     blocked: str = ""
+    #: What this change broke: findings that were not there before it landed. The
+    #: history panel is the only place you can still see them attributed to the
+    #: change that caused them, which is what makes it worth carrying here.
+    introduced: list[Finding] = field(default_factory=list)
 
     @property
     def undoable(self) -> bool:

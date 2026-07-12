@@ -88,7 +88,7 @@ def source_to_person(y: int, x: int) -> tuple[int, int]:
 
 #: What each kind of thing is drawn as on the grid. Deliberately one character:
 #: a coordinate tile is at most a few cells wide, and there is no room to be clever.
-WARP, SIGN, PERSON, TRAINER, ITEM = "W", "S", "N", "T", "I"
+WARP, SIGN, PERSON, TRAINER, ITEM, TRIGGER = "W", "S", "N", "T", "I", "X"
 
 #: ...and the colour it's drawn *on*. The letter alone means reading the grid one
 #: marker at a time; a solid fill means seeing at a glance that the trainers are
@@ -101,6 +101,7 @@ MARKER_BG: dict[str, tuple[int, int, int]] = {
     PERSON:  (  0, 176, 216),   # cyan
     TRAINER: (224,  32,  32),   # red
     ITEM:    (240, 128,   0),   # orange
+    TRIGGER: (128,  96, 224),   # violet
 }
 
 #: Black ink or white, whichever survives on the fill. Perceptual weights, because
@@ -132,11 +133,17 @@ def markers(header) -> dict[tuple[int, int], str]:
 
     Later entries win, because that is what the engine does with two objects on
     one tile — and seeing only one of them is a fair picture of the result.
+
+    Coord events are in here, and they were not always: a trigger is a thing that
+    stands on a tile and fires when you walk onto it, and it used to be drawn as
+    nothing at all. An invisible object on a map you are reading by eye is worse
+    than a wrong one, because you will not go looking for it.
     """
     from .eventheader import ListKind
 
     out: dict[tuple[int, int], str] = {}
-    for kind, glyph in ((ListKind.WARPS, WARP), (ListKind.BG_EVENTS, SIGN)):
+    for kind, glyph in ((ListKind.WARPS, WARP), (ListKind.COORD_EVENTS, TRIGGER),
+                        (ListKind.BG_EVENTS, SIGN)):
         for entry in header.list_of(kind).entries:
             y, x = entry.coords
             if y is not None and x is not None:
