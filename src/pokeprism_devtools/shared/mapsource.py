@@ -183,6 +183,31 @@ def blk_path(root: Path, label: str) -> str | None:
     return None
 
 
+_ROMX_BANK_RE = re.compile(r"^ROMX\s+\$([0-9A-Fa-f]+)")
+_ROMX_SECTION_RE = re.compile(r'^\s+"([^"]+)"')
+
+
+def section_banks(root: Path) -> dict[str, int]:
+    """`section name -> bank` for every section pinned in contents/romx.link.
+
+    A section that isn't in here is not pinned: rgblink places it wherever it
+    fits, which is a perfectly good answer and the one a new map gets until
+    `prism-mapfit` has measured it. So "absent" means *floating*, not "missing" —
+    callers must not read a KeyError as an error.
+    """
+    path = root / "contents/romx.link"
+    if not path.exists():
+        return {}
+    out: dict[str, int] = {}
+    bank = -1
+    for line in path.read_text().split("\n"):
+        if m := _ROMX_BANK_RE.match(line):
+            bank = int(m.group(1), 16)
+        elif (m := _ROMX_SECTION_RE.match(line)) and bank >= 0:
+            out[m.group(1)] = bank
+    return out
+
+
 def script_path(root: Path, label: str) -> str | None:
     """The script include path for `label` — the `INCLUDE "maps/<stem>.asm"` in
     maps/map_scripts.asm whose filename stem equals the label."""

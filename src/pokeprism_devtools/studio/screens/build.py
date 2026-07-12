@@ -23,23 +23,23 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label, RichLog, Static
 
-from .session import Session, SessionError
+from ..session import Session, SessionError
 
 
-class Playtest(ModalScreen[None]):
+class Build(ModalScreen[None]):
     """Build, patch, launch. Dismisses when you close it, not when it finishes."""
 
     BINDINGS = [Binding("escape", "close", "Close")]
 
     CSS = """
-    Playtest { align: center middle; }
-    #playtest { width: 90%; height: 80%; border: round $accent;
+    Build { align: center middle; }
+    #build { width: 90%; height: 80%; border: round $accent;
                 background: $surface; }
-    #playtest-title { padding: 0 1; background: $accent; color: $text; }
-    #playtest-log { height: 1fr; margin: 0 1; background: $surface;
+    #build-title { padding: 0 1; background: $accent; color: $text; }
+    #build-log { height: 1fr; margin: 0 1; background: $surface;
                     border: solid $panel; }
-    #playtest-status { padding: 0 1; height: auto; }
-    #playtest-buttons { height: auto; padding: 1; align-horizontal: right; }
+    #build-status { padding: 0 1; height: auto; }
+    #build-buttons { height: auto; padding: 1; align-horizontal: right; }
     """
 
     def __init__(self, session: Session, const: str, label: str,
@@ -52,11 +52,11 @@ class Playtest(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         y, x = self._cursor
-        with Vertical(id="playtest"):
-            yield Label(f" Playtest {self._label} at ({y}, {x})", id="playtest-title")
-            yield RichLog(id="playtest-log", wrap=False, markup=False, auto_scroll=True)
-            yield Static("Building…", id="playtest-status")
-            with Vertical(id="playtest-buttons"):
+        with Vertical(id="build"):
+            yield Label(f" Build {self._label} at ({y}, {x})", id="build-title")
+            yield RichLog(id="build-log", wrap=False, markup=False, auto_scroll=True)
+            yield Static("Building…", id="build-status")
+            with Vertical(id="build-buttons"):
                 yield Button("Close", id="close")
 
     def on_mount(self) -> None:
@@ -66,8 +66,8 @@ class Playtest(ModalScreen[None]):
     @work(thread=True, exclusive=True)
     def _run(self) -> None:
         """Off the event loop: `make` owns this thread for as long as it takes."""
-        log = self.query_one("#playtest-log", RichLog)
-        status = self.query_one("#playtest-status", Static)
+        log = self.query_one("#build-log", RichLog)
+        status = self.query_one("#build-status", Static)
 
         def line(text: str) -> None:
             self.app.call_from_thread(log.write, text)

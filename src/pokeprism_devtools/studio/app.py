@@ -1,19 +1,20 @@
 """prism-studio — the shell.
 
 You pick a map, you see its shape, you see what has been placed on it and what
-the linter thinks of it, and you put something new on it: `a` opens the palette,
-the form comes up prefilled with the tile the cursor is standing on, and what you
-approve is a diff of the exact bytes that land.
+the linter thinks of it. Then you point at one of those things and act on it: `e`
+edits what is highlighted, `d` deletes it, and enter on the dim row at the foot of
+a tab adds another. The keys on offer are a function of what you have selected —
+there is no `e` on a wild encounter, because a wild encounter cannot be edited and
+a key you cannot use should not be advertised.
 
-**This file opens no files.** Everything it draws arrives from `Session.load` as
-plain data — colours, marker positions, tables already reduced to columns and
-rows — and everything it changes goes out through an `Action` whose fields
-:mod:`.forms` renders without knowing what they mean. The only path from here to
-the repo is `main()`, finding the root to hand to the `Session`. That rule is what
-keeps `person_event`'s argument order, and the `+4` its macro adds behind your
-back, on one side of one line. See `docs/adapter-plan.md`.
+**This file opens no files.** Everything it draws arrives from `Session` as plain
+data — colours, marker positions, tables already reduced to rows — and everything
+it changes goes out through an `Action` whose fields `screens/forms.py` renders
+without knowing what they mean. A selected row hands back an opaque `Ref` that
+this file never looks inside. That rule is what keeps `person_event`'s argument
+order, and the `+4` its macro adds behind your back, on one side of one line.
 
-Two things are worth knowing about how it loads.
+Three things are worth knowing about how it behaves.
 
 The linter is **not** on the path to the first map. A cold `LintContext` plus a
 full run is 1.7 seconds, and blocking on it would mean staring at an empty screen
@@ -24,6 +25,9 @@ Maps that don't parse are still **in the list**. A map with a broken event heade
 has a perfectly good shape, and the one thing you must not do to somebody looking
 for a bug is hide the map the bug is in. It gets its grid, and the parse error
 where its objects would have been.
+
+And the command palette is on **`p`**, not `ctrl+p`, because this is mostly run
+inside VSCode's terminal and VSCode eats `ctrl+p`. Which is why `b` builds.
 """
 
 from __future__ import annotations
@@ -35,35 +39,24 @@ from pathlib import Path
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import (DataTable, Footer, Header, Input, OptionList, Static,
-                             TabbedContent, TabPane)
+from textual.widgets import Footer, Header, Input, OptionList, Static
 
-from ..maplint.diagnostics import Diagnostic, Severity
 from ..shared import coords, paths
 from .actions import Action, EditText
-from .catalog import CATALOG
-from .forms import Confirm, Form, Palette, Picker
 from .grid import MapGrid
-from .playtest import Playtest
+from .newmap import NewMap
+from .panels import Ref
+from .screens import Build, Confirm, Findings, Form, History, Picker
 from .session import MapData, Preview, Session, SessionError, TextRef
+from .tabs import ADD, Tabs
 
-_SEVERITY_STYLE = {
-    Severity.ERROR: "bold red",
-    Severity.WARNING: "yellow",
-    Severity.INFO: "dim cyan",
-}
+_SEVERITY_STYLE = {"error": "bold red", "warning": "yellow", "info": "dim cyan"}
 
-_TABS = ("Objects", "Warps", "Signposts", "Triggers", "Connections", "Wild")
-
-#: The studio shows wild encounters and will not edit them, and that had better
-#: be on screen rather than in a design document: a wild record is a fixed-size
-#: slot in a table the engine indexes by *position*, so writing a short one
-#: silently shifts every map below it onto somebody else's Pokémon.
-_WILD_IS_READ_ONLY = (
-    "read-only — wild records are fixed-size and read by position; "
-    "a short one shifts every map below it. Edit data/wild/*.asm by hand."
-)
+#: What `e` can do, given what is selected. Editing an object in place is P3; for
+#: now `e` reaches the one thing that is already writable — the words it says.
+_NO_EDIT_YET = ("trainer", "warp", "trigger", "connection", "pickup")
 
 
 def _marker_style(glyph: str) -> str:
@@ -73,6 +66,10 @@ def _marker_style(glyph: str) -> str:
 
 class Studio(App):
     TITLE = "prism-studio"
+
+    #: Textual puts its command palette on ctrl+p. VSCode's terminal takes that
+    #: key before we ever see it, and this is mostly run inside VSCode.
+    COMMAND_PALETTE_BINDING = "p"
 
     CSS = """
     #body { height: 1fr; }
@@ -84,20 +81,22 @@ class Studio(App):
     #status { height: 1; padding: 0 1; background: $panel; color: $text-muted; }
     #legend { height: 1; padding: 0 1; }
     #findings { width: 46; border-left: solid $panel; padding: 0 1; }
-    #tabs { height: 16; border-top: solid $panel; }
-    #wild-note { height: 1; padding: 0 1; color: $text-disabled; }
-    DataTable { height: 1fr; }
+    #tabs-pane { height: 18; border-top: solid $panel; }
     """
 
     BINDINGS = [
-        ("q", "quit", "Quit"),
-        ("a", "act", "Add…"),
-        ("e", "edit_text", "Edit text"),
-        ("u", "undo", "Undo"),
-        ("p", "playtest", "Playtest"),
-        ("slash", "focus_filter", "Filter"),
-        ("plus", "zoom(1)", "Zoom in"),
-        ("minus", "zoom(-1)", "Zoom out"),
+        Binding("e", "edit", "Edit"),
+        Binding("d", "delete", "Delete"),
+        Binding("a", "add_map", "Add map"),
+        Binding("b", "build", "Build & run"),
+        Binding("t", "texts", "All text"),
+        Binding("u", "undo", "Undo"),
+        Binding("L", "findings", "Findings"),
+        Binding("H", "history", "History"),
+        Binding("slash", "focus_filter", "Filter", show=False),
+        Binding("plus", "zoom(1)", "Zoom in", show=False),
+        Binding("minus", "zoom(-1)", "Zoom out", show=False),
+        Binding("q", "quit", "Quit", show=False),
     ]
 
     def __init__(self, root: Path) -> None:
@@ -113,12 +112,12 @@ class Studio(App):
         #: Where to put the cursor back after a reload, and on which map. Re-reading
         #: the map is how a new NPC appears on the grid, but it would also send the
         #: cursor home — off the tile you were working on, the moment you worked on
-        #: it. Keyed by label because a write can bring a *different* map with it:
-        #: adding one selects it, and (9, 11) on the map you left is not (9, 11) on
-        #: the one you arrived at.
+        #: it. Keyed by label because a write can bring a *different* map with it.
         self._keep_cursor: tuple[str, tuple[int, int]] | None = None
         self._texts: list[TextRef] = []
         self._linted = False
+        #: What is highlighted in the tabs. The footer is a function of this.
+        self._ref: Ref | None = None
 
     # -- layout ---------------------------------------------------------------- #
     def compose(self) -> ComposeResult:
@@ -132,20 +131,27 @@ class Studio(App):
                 yield Static(id="status")
                 yield Static(self._legend(), id="legend")
             yield VerticalScroll(Static(id="diagnostics"), id="findings")
-        with TabbedContent(id="tabs"):
-            for name in _TABS:
-                with TabPane(name, id=f"tab-{name.lower()}"):
-                    if name == "Wild":
-                        yield Static(_WILD_IS_READ_ONLY, id="wild-note")
-                    yield DataTable(id=f"table-{name.lower()}", cursor_type="row",
-                                    zebra_stripes=True)
+        yield Tabs(id="tabs-pane")
         yield Footer()
 
     def on_mount(self) -> None:
         self._fill_list("")
         self.query_one("#diagnostics", Static).update(Text("linting…", style="dim"))
         self._lint()
+        self._warm()
         self.query_one("#maps", OptionList).focus()
+
+    @work(thread=True, group="warm")
+    def _warm(self) -> None:
+        """Read the constants a form autocompletes from, before a form asks.
+
+        Every sprite, movement, item, trainer class, tileset, landmark and piece
+        of music in the repo — two seconds of parsing, cached on the session for
+        the rest of the run. Left to happen lazily it happens on the keystroke
+        that opens the first form, and a form that takes two seconds to appear is
+        a form you pressed the key for twice.
+        """
+        self.session.choices("maps")
 
     def _legend(self) -> Text:
         out = Text()
@@ -185,6 +191,16 @@ class Studio(App):
             self._wanted = label
             self._load(label)
 
+    def _go_to(self, label: str) -> None:
+        """Select a map from somewhere other than the list — the findings window
+        jumps here. Clearing the filter first, because a map you were sent to is
+        one you probably could not have found under whatever you had typed."""
+        if label not in [m.label for m in self._maps]:
+            return
+        self.query_one("#filter", Input).value = ""
+        self._wanted = label
+        self._fill_list("", select=label)
+
     # -- loading, off the UI thread ---------------------------------------------- #
     @work(thread=True, exclusive=True, group="map")
     def _load(self, label: str) -> None:
@@ -206,20 +222,7 @@ class Studio(App):
             if self._keep_cursor and self._keep_cursor[0] == data.label:
                 grid.cursor = self._keep_cursor[1]
 
-        for name in _TABS:
-            table = self.query_one(f"#table-{name.lower()}", DataTable)
-            table.clear(columns=True)
-            if name in data.tables:
-                cols, rows = data.tables[name]
-                table.add_columns(*cols)
-                table.add_rows(rows)
-            elif "error" in data.tables:
-                # The map has a shape but its header doesn't parse. Say so where
-                # the objects would have been, rather than showing an empty table
-                # that reads as "this map has no NPCs".
-                table.add_columns("unreadable")
-                table.add_row(data.tables["error"][0][0])
-
+        self.query_one(Tabs).show(data.tabs)
         self._show_diagnostics(data.const)
 
     # -- diagnostics ------------------------------------------------------------- #
@@ -240,66 +243,125 @@ class Studio(App):
             panel.update(Text("linting…", style="dim"))
             return
 
-        rank = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
+        rank = {"error": 0, "warning": 1, "info": 2}
         found = sorted(self.session.diagnostics(const),
-                       key=lambda d: (rank[d.severity], d.line))
+                       key=lambda d: (rank[d.severity.value], d.line))
         if not found:
             panel.update(Text("clean", style="bold green"))
             return
-        panel.update(self._as_text(found))
 
-    def _as_text(self, found: list[Diagnostic]) -> Text:
         out = Text()
         for d in found:
-            out.append(f"{d.severity.value:>7}  ", style=_SEVERITY_STYLE[d.severity])
+            style = _SEVERITY_STYLE[d.severity.value]
+            out.append(f"{d.severity.value:>7}  ", style=style)
             out.append(f"{d.code}\n", style="bold")
             out.append(f"         {d.message}\n", style="none")
             out.append(f"         {d.location}\n\n", style="dim")
-        return out
+        panel.update(out)
 
-    # -- changing the map ---------------------------------------------------------- #
-    def action_act(self) -> None:
-        """Pick an action, fill it in, look at the diff, apply it. One at a time.
+    # -- what is selected, and therefore what the keys mean ----------------------- #
+    @on(Tabs.Selected)
+    def _selected(self, event: Tabs.Selected) -> None:
+        self._ref = event.ref
+        # The footer is a function of the selection, so it has to be recomputed
+        # when the selection moves. Textual will call check_action() again.
+        self.refresh_bindings()
 
-        Deliberately one at a time, and `session.py` says why at length: two
-        actions built against the same starting file and applied one after the
-        other do not merge — the second silently overwrites the first, and both
-        NPCs get handed the same event-flag slot. So there is no queue here and
-        no Save key. Applying *is* saving.
+    def check_action(self, action: str, parameters: tuple) -> bool | None:
+        """Which keys exist right now. None hides one from the footer entirely.
+
+        Hidden rather than greyed: a disabled key still reads as an offer, and
+        the footer is the only place the studio ever tells you what you can do.
         """
-        if self._const is None:
+        ref = self._ref
+        if action == "edit":
+            return True if ref is not None else None
+        if action == "delete":
+            return True if ref is not None and ref.what not in (ADD, "map") else None
+        if action in ("build", "texts"):
+            return True if self._const is not None else None
+        if action == "undo":
+            return True if self.session.can_undo else None
+        return True
+
+    @on(Tabs.Chosen)
+    def _chosen(self, event: Tabs.Chosen) -> None:
+        # Enter on a row. The DataTable eats the key before our bindings see it,
+        # so it arrives as a message — and has to land exactly where `e` lands,
+        # because they are the same gesture.
+        self._act_on(event.ref)
+
+    def action_edit(self) -> None:
+        if self._ref is None:
             self.bell()
             return
-        self.push_screen(Palette(CATALOG), self._picked)
+        self._act_on(self._ref)
 
-    def _picked(self, index: int | None) -> None:
-        if index is None or self._const is None:
+    def _act_on(self, ref: Ref) -> None:
+        """`e`, or enter: edit what is selected — or add, on the "Add new…" row."""
+        if self._const is None or self._wanted is None:
+            self.bell()
             return
-        chosen: type[Action] = CATALOG[index]
+
+        if ref.what == ADD:
+            self._add(ref.key)
+            return
+        if ref.what == "map":
+            self.notify("editing a map's header is not wired up yet", timeout=6)
+            return
+
+        # For now `e` reaches the one thing already writable: what the object
+        # says. Editing the object itself — its sprite, its tile, its flag — is
+        # the next phase, and saying so beats a key that silently does nothing.
+        try:
+            text = self.session.dialogue_of(self._wanted, ref)
+        except SessionError as exc:
+            self.notify(str(exc), severity="error", timeout=10)
+            return
+
+        if text is None:
+            what = "this" if ref.what in _NO_EDIT_YET else ref.what
+            self.notify(f"{what} has no dialogue to edit, and editing the object "
+                        f"itself is not wired up yet", timeout=6)
+            return
+        self._reword(text)
+
+    def _add(self, kind: str) -> None:
+        """The dim row at the foot of a tab. What it opens is the session's call."""
+        adders = self.session.adders(kind)
+        if not adders:
+            self.notify(f"adding a {kind} is not wired up yet", timeout=6)
+            return
+        if len(adders) == 1:
+            self._open(adders[0])
+            return
+        # More than one thing wears this coat — a pickup is an item ball or a
+        # hidden item, and until they share one form the honest thing is to ask.
+        self.push_screen(
+            Picker(f"What kind of {kind}?", [a.title for a in adders]),
+            lambda i: None if i is None else self._open(adders[i]),
+        )
+
+    def _open(self, action: type[Action], **values: str) -> None:
         grid = self.query_one("#grid", MapGrid)
         cursor = grid.cursor if grid.view is not None else None
-        self.push_screen(Form(chosen, self.session, self._const, cursor), self._filled)
+        self.push_screen(
+            Form(action, self.session, self._const or "", cursor, values=values or None),
+            self._filled)
 
-    def action_playtest(self) -> None:
-        """Build the game and stand on the tile the cursor is on.
+    # -- adding a map ------------------------------------------------------------- #
+    def action_add_map(self) -> None:
+        """The one thing that isn't reached by pointing at a row, because the map
+        it makes is the one map you cannot point at yet."""
+        self.push_screen(Form(NewMap, self.session, self._const or ""), self._filled)
 
-        The cursor is the point. Everywhere else you'd have to know the map's
-        coordinates and type them into a launcher; here you have already moved to
-        the spot you want to look at, so that spot is where you spawn.
-        """
-        grid = self.query_one("#grid", MapGrid)
-        if self._const is None or self._wanted is None or grid.view is None:
-            self.bell()
-            return
-        self.push_screen(Playtest(self.session, self._const, self._wanted, grid.cursor))
+    # -- rewording ---------------------------------------------------------------- #
+    def action_texts(self) -> None:
+        """Every text block in this map, whether or not anything points at it.
 
-    def action_edit_text(self) -> None:
-        """Reword something the map already says.
-
-        The map's text blocks, as prose. Pick one and you get the same form as
-        anything else — with the same tile counter under it, measured against the
-        box that block is really drawn in, which is not always the one you'd
-        guess.
+        `e` on an NPC gets you *its* words. This gets you the ones nothing is
+        standing next to — a sign's, a script's, the ones you would otherwise have
+        to go and find.
         """
         if self._const is None or self._wanted is None:
             self.bell()
@@ -310,19 +372,78 @@ class Studio(App):
             return
         rows = [Text.assemble((t.label, "bold"), ("  " + t.opening, " dim"))
                 for t in self._texts]
-        self.push_screen(Picker("Which text?", rows), self._picked_text)
+        self.push_screen(Picker("Which text?", rows, filterable=True),
+                         lambda i: None if i is None else self._reword(self._texts[i]))
 
-    def _picked_text(self, index: int | None) -> None:
-        if index is None or self._const is None:
-            return
-        chosen = self._texts[index]
+    def _reword(self, text: TextRef) -> None:
         self.push_screen(
-            Form(EditText, self.session, self._const,
-                 values={"label": chosen.label, "text": chosen.prose},
-                 boxes={"text": chosen.box}),
-            self._filled,
-        )
+            Form(EditText, self.session, self._const or "",
+                 values={"label": text.label, "text": text.prose},
+                 boxes={"text": text.box}),
+            self._filled)
 
+    # -- deleting ------------------------------------------------------------------ #
+    def action_delete(self) -> None:
+        """Take the selected thing out of the map.
+
+        The confirmation is not a formality. `removal` decides what a deletion
+        drags with it — a private event flag goes back to `const skip`, a shared
+        one is left alone, and a trainer's *party* is deliberately not touched
+        because deleting it would renumber every party below it in the group and
+        re-team every trainer citing them by position. All of that arrives as
+        notes on the preview, and the preview is what you are agreeing to.
+        """
+        if self._ref is None or self._const is None or self._wanted is None:
+            self.bell()
+            return
+        try:
+            action = self.session.deletion(self._wanted, self._const, self._ref)
+            preview = self.session.preview(action)
+        except SessionError as exc:
+            self.notify(str(exc), severity="warning", timeout=10)
+            return
+        except Exception as exc:                       # ActionError, and its kin
+            self.notify(str(exc), severity="error", timeout=10)
+            return
+        self._filled(preview)
+
+    # -- the two windows ------------------------------------------------------------ #
+    def action_findings(self) -> None:
+        if not self._linted:
+            self.notify("still linting…")
+            return
+        self.push_screen(Findings(self.session.findings()),
+                         lambda label: label and self._go_to(label))
+
+    def action_history(self) -> None:
+        self.push_screen(History(self.session.mutations()), self._undo_at)
+
+    def _undo_at(self, index: int | None) -> None:
+        if index is None:
+            return
+        try:
+            last = self.session.undo_at(index)
+        except SessionError as exc:
+            self.notify(str(exc), severity="error", timeout=12)
+            return
+        self.notify(f"undone: {last.summary}")
+        self._after_write()
+
+    # -- playing it ------------------------------------------------------------------ #
+    def action_build(self) -> None:
+        """Build the game and stand on the tile the cursor is on.
+
+        The cursor is the point. Everywhere else you'd have to know the map's
+        coordinates and type them into a launcher; here you have already moved to
+        the spot you want to look at, so that spot is where you spawn.
+        """
+        grid = self.query_one("#grid", MapGrid)
+        if self._const is None or self._wanted is None or grid.view is None:
+            self.bell()
+            return
+        self.push_screen(Build(self.session, self._const, self._wanted, grid.cursor))
+
+    # -- applying ---------------------------------------------------------------------- #
     def _filled(self, preview: Preview | None) -> None:
         if preview is None:
             return
@@ -347,7 +468,7 @@ class Studio(App):
         try:
             last = self.session.undo()
         except SessionError as exc:
-            self.notify(str(exc), severity="error", timeout=10)
+            self.notify(str(exc), severity="error", timeout=12)
             return
         self.notify(f"undone: {last.summary}")
         # Deliberately not `last.select`: undoing the map you just made unmakes

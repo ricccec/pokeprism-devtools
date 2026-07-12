@@ -45,25 +45,59 @@ from .. import maplint
 from ..dev_server import apply as devapply
 from ..dev_server import inventory, playtest as devplay
 from ..maplint.context import LintContext
-from ..maplint.diagnostics import Diagnostic
-from ..shared import (blocksrc, consts, coords, dialogue, eventheader, paths,
-                      spritesets, swatches, textbox, trainerparty, wilddata)
+from ..maplint.diagnostics import Diagnostic, Severity
+from ..shared import (consts, dialogue, eventheader, paths, spritesets, swatches,
+                      textbox, trainerparty)
 from ..shared.edits import StaleEdit, apply_edits
 from ..wiring import connections, scaffold
-from . import actions, newmap, panels
+from . import actions, newmap, panels, reader
 from .actions import Action
 # The shapes of the answers — see `model.py`. Re-exported, because whatever wants
 # a `MapData` wants it *from the session*: the session is the only thing that can
 # hand it one, and the split between the two files is a size, not a boundary.
-from .model import (Applied, MapData, MapGeometry, MapRef, Measured, Preview,
-                    TextPreview, TextRef)
+from .model import (Applied, Finding, MapData, MapGeometry, MapRef, Measured,
+                    Mutation, Preview, TextPreview, TextRef)
 
-__all__ = ["Applied", "MapData", "MapGeometry", "MapRef", "Measured", "Preview",
-           "Session", "SessionError", "TextPreview", "TextRef"]
+__all__ = ["Applied", "Finding", "MapData", "MapGeometry", "MapRef", "Measured",
+           "Mutation", "Preview", "Session", "SessionError", "TextPreview",
+           "TextRef"]
 
 
 class SessionError(RuntimeError):
     pass
+
+
+#: What each tab's "Add new…" row opens. See :meth:`Session.adders`.
+ADDERS: dict[str, tuple[type[Action], ...]] = {
+    "NPC": (actions.AddNpc,),
+    "trainer": (actions.AddTrainer,),
+    "pickup": (actions.AddItemball, actions.AddHiddenItem),
+    "warp": (actions.AddWarp,),
+    "signpost": (actions.AddSignpost,),
+    "connection": (actions.Connect,),
+}
+
+#: The rows `d` cannot act on yet, and the reason — which is the useful part, and
+#: is why these are messages rather than a missing key.
+_NOT_YET = {
+    "warp": ("deleting a warp renumbers every warp in the repo that points at "
+             "this map, because `warp_to` is a position in this map's list. "
+             "Not wired up yet."),
+    "trigger": "deleting a trigger isn't wired up yet.",
+    "connection": ("deleting a connection has to rewrite the neighbour's side "
+                   "and both flag nibbles. Not wired up yet."),
+    "map": "deleting a whole map is not something this does.",
+}
+
+
+def _entry_of(header: eventheader.EventHeader, label: str,
+              ref: panels.Ref) -> eventheader.Entry:
+    entries = header.list_of(eventheader.ListKind(ref.kind)).entries
+    if not 0 <= ref.index < len(entries):
+        raise SessionError(
+            f"{label} no longer has a {ref.what} at position {ref.index} — the "
+            f"map changed under the table. Select it again.")
+    return entries[ref.index]
 
 
 class Session:
@@ -93,58 +127,12 @@ class Session:
         return self.ctx.header(const) is not None
 
     def load(self, label: str) -> MapData:
-        """Everything about one map, from source. Slow enough to want a thread —
-        four files — so it takes no locks and touches no state.
+        """Everything about one map, from source — see :mod:`.reader`.
 
-        A map whose event header doesn't parse still comes back **with its
-        geometry**, and the parse error in `tables["error"]`. Hiding a broken map
-        from the person looking for the break is the worst thing this could do.
+        Slow enough to want a thread (five files), so it takes no locks and
+        touches no state.
         """
-        root = self.root
-        const = self.ctx.label_to_const.get(label, label)
-        tables: dict[str, panels.Table] = {}
-
-        header = None
-        try:
-            header = eventheader.parse_map(root / f"maps/{label}.asm")
-        except (eventheader.UnparseableHeader, FileNotFoundError) as exc:
-            tables["error"] = ([str(exc)], [])
-
-        try:
-            bd = blocksrc.load(root, label)
-        except blocksrc.BlockSourceError as exc:
-            return MapData(label, const, None, str(exc), tables)
-
-        geometry = MapGeometry(
-            label=label, blocks=bd.blocks, height=bd.height, width=bd.width,
-            swatches=swatches.for_map(root, bd.tileset_id, bd.permission),
-            marks=coords.markers(header) if header else {},
-        )
-
-        if header is not None:
-            tables["Objects"] = panels.objects(header)
-            tables["Warps"] = panels.warps(header)
-            tables["Signposts"] = panels.bg_events(header)
-            tables["Triggers"] = panels.coord_events(header)
-        tables["Connections"] = panels.connections(
-            self.ctx.connections_by_map.get(const, []))
-        tables["Wild"] = panels.wild(self._wild(const))
-
-        return MapData(label, const, geometry, None, tables)
-
-    def _wild(self, const: str) -> dict[str, wilddata.WildBlock]:
-        """The map's encounters. A map with none is the common case, not an error
-        — most maps are indoors."""
-        found: dict[str, wilddata.WildBlock] = {}
-        for kind in (wilddata.GRASS, wilddata.WATER):
-            try:
-                table = wilddata.table_for(self.root, const, kind)
-            except wilddata.WildDataError:
-                continue
-            for block in table.blocks:
-                if block.map_const == const:
-                    found[kind] = block
-        return found
+        return reader.read_map(self.root, self.ctx, label, self._boxes)
 
     def sketch(self, action: Action) -> MapGeometry | None:
         """A picture of what an action would put on the grid, before it exists.
@@ -210,6 +198,75 @@ class Session:
                )},
         }
 
+    # -- what a selected row can do ------------------------------------------- #
+    def adders(self, kind: str) -> tuple[type[Action], ...]:
+        """What the dim "Add new…" row at the foot of a tab opens.
+
+        Keyed by the word the tab carries in `Tab.adds`, so the view knows that a
+        tab can be added to and never learns what it would be adding. More than
+        one means the view asks which — a pickup is four different things wearing
+        the same coat, and until they share one form the honest thing is to ask.
+        """
+        return ADDERS.get(kind, ())
+
+    def _header(self, label: str) -> eventheader.EventHeader:
+        try:
+            return eventheader.parse_map(self.root / f"maps/{label}.asm")
+        except (eventheader.UnparseableHeader, FileNotFoundError) as exc:
+            raise SessionError(str(exc)) from exc
+
+    def entry(self, label: str, ref: panels.Ref) -> eventheader.Entry:
+        """The event-header entry a Ref names, re-read from the file.
+
+        Re-read rather than remembered: a Ref is only as good as the file it came
+        from, and between drawing the table and pressing `d` the map may have been
+        written to. Reading it again is one file and costs nothing on a keypress —
+        and if the entry has moved, saying so beats deleting whatever is standing
+        in its place now.
+        """
+        return _entry_of(self._header(label), label, ref)
+
+    def deletion(self, label: str, const: str, ref: panels.Ref) -> Action:
+        """The action `d` would run on this row.
+
+        Raises :class:`SessionError` for the things that cannot yet be deleted
+        safely, and says *why* — which beats an absent key, because the reason is
+        the interesting part.
+        """
+        if ref.what in _NOT_YET:
+            raise SessionError(_NOT_YET[ref.what])
+
+        header = self._header(label)
+        entry = _entry_of(header, label, ref)
+
+        # Name it by its script label when it has one, and by its position when
+        # it hasn't. Two item balls of the same item are told apart by where they
+        # are; two objects on one tile are told apart by what they point at.
+        # Between them that covers everything, and `removal` refuses an ambiguous
+        # name rather than guessing — which is the behaviour we want to reach.
+        pointer = entry.pointer
+        if pointer and any(ln.startswith(f"{pointer}:") for ln in header.lines):
+            return actions.Remove(const, label=pointer, y="", x="")
+
+        y, x = entry.coords
+        if y is None or x is None:
+            raise SessionError(
+                f"this {ref.what} has neither a script label nor readable "
+                f"coordinates, so there is no unambiguous way to name it.")
+        return actions.Remove(const, label="", y=str(y), x=str(x))
+
+    def dialogue_of(self, label: str, ref: panels.Ref) -> TextRef | None:
+        """The text block this row's object points at, if it points at one.
+
+        What `e` opens for now. An item ball points at an item const and a trainer
+        at a script, so this is None for them and the key stays quiet — until the
+        edit forms land and `e` can mean what it should.
+        """
+        entry = self.entry(label, ref)
+        if not entry.pointer:
+            return None
+        return next((t for t in self.texts(label) if t.label == entry.pointer), None)
+
     # -- text already in the game --------------------------------------------- #
     def texts(self, label: str) -> list[TextRef]:
         """Every text block in one map, as prose you could hand to a person.
@@ -272,6 +329,62 @@ class Session:
         live there rather than in the map."""
         return [d for d in self.lint() if maplint.mentions(d, self.ctx, const)]
 
+    def findings(self) -> list[Finding]:
+        """Every finding in the repo, flattened for the view, worst first.
+
+        The map is resolved *here* because the view cannot: a `Diagnostic` names
+        a file, and turning `maps/CastroForest.asm` into the entry the map list
+        is keyed by needs the set of labels that are really maps. A finding in a
+        shared file — `second_map_headers.asm` holds every map's connections —
+        belongs to no one map, so it gets no label and enter does nothing on it,
+        which is the truth rather than a guess at which map you meant.
+        """
+        rank = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
+        known = set(self.ctx.label_to_const)
+        out = []
+        for d in sorted(self.lint(), key=lambda d: (rank[d.severity], d.code, d.path)):
+            stem = Path(d.path).stem
+            out.append(Finding(
+                severity=d.severity.value, code=d.code, message=d.message,
+                location=d.location, line=d.line,
+                map_label=stem if d.path.startswith("maps/") and stem in known else "",
+            ))
+        return out
+
+    # -- the history, as something you can look at ---------------------------- #
+    def mutations(self) -> list[Mutation]:
+        """Everything written this session, oldest first, and whether each can
+        still be taken back.
+
+        Two things can stop an undo, and both are worth stating rather than
+        greying out a button. A **later mutation touched the same file**, so
+        putting this one's text back would wipe that one out — the fix is to undo
+        the later one first, and this says which. Or the **file has changed since
+        we wrote it**, which means somebody else did it, in their editor or in
+        another tool, and restoring our idea of "before" would throw their work
+        away. Neither is an error. Both are reasons.
+        """
+        out = []
+        for i, applied in enumerate(self.history):
+            later = {p for a in self.history[i + 1:] for p in a.paths}
+            clash = sorted(set(applied.paths) & later)
+            moved = [rel for rel, written in applied.wrote.items()
+                     if _read(self.root / rel, isinstance(written, bytes)) != written]
+
+            if clash:
+                blocked = (f"{clash[0]} was written again by a later change — "
+                           f"undo that one first")
+            elif moved:
+                blocked = (f"{moved[0]} has changed since this was applied, so "
+                           f"undoing would discard whatever changed it")
+            else:
+                blocked = ""
+
+            out.append(Mutation(index=i, summary=applied.summary,
+                                files=applied.touched(), notes=applied.notes,
+                                blocked=blocked))
+        return out
+
     # -- changing things ----------------------------------------------------- #
     def preview(self, action: Action) -> Preview:
         """Build the edits without writing them. Raises ActionError if the action
@@ -316,25 +429,33 @@ class Session:
         return bool(self.history)
 
     def undo(self) -> Applied:
-        """Put back what the last action replaced.
-
-        Refuses if any file it would restore no longer holds what we wrote. That
-        means somebody edited it in the meantime — in their editor, in another
-        tool — and restoring our idea of "before" would throw their work away.
-        """
+        """Put back what the last action replaced."""
         if not self.history:
             raise SessionError("nothing to undo")
-        last = self.history[-1]
+        return self.undo_at(len(self.history) - 1)
 
-        for rel, written in last.wrote.items():
-            path = self.root / rel
-            if _read(path, isinstance(written, bytes)) != written:
-                raise SessionError(
-                    f"{rel} has changed since '{last.summary}' was applied, so "
-                    f"undoing it would discard whatever changed it. Left alone."
-                )
+    def undo_at(self, index: int) -> Applied:
+        """Put back what *one* action replaced, wherever it sits in the history.
 
-        for rel, before in last.undo_to.items():
+        Undone **whole or not at all**. Every file the mutation wrote is checked
+        against exactly what we wrote there, and the checking finishes before any
+        restoring begins — so a mutation that wrote `A.asm` and `B.asm`, with
+        `B.asm` since edited by hand, leaves `A.asm` alone too. One file that
+        moved guards the whole change. There is no half-undo, because half a
+        paired warp is worse than either warp.
+
+        A mutation a *later* one has written over is refused for a different
+        reason and :meth:`mutations` explains it: restoring this one's text would
+        wipe out the later one, so the later one has to go first.
+        """
+        found = next((m for m in self.mutations() if m.index == index), None)
+        if found is None:
+            raise SessionError("no such change")
+        if found.blocked:
+            raise SessionError(f"{found.summary}: {found.blocked}. Left alone.")
+
+        applied = self.history[index]
+        for rel, before in applied.undo_to.items():
             path = self.root / rel
             if before is None:
                 path.unlink(missing_ok=True)
@@ -343,9 +464,9 @@ class Session:
             else:
                 path.write_text(before)
 
-        self.history.pop()
-        self._invalidate(last.paths)
-        return last
+        del self.history[index]
+        self._invalidate(applied.paths)
+        return applied
 
     # -- playing it ----------------------------------------------------------- #
     def build(self, log: Callable[[str], None]) -> bool:

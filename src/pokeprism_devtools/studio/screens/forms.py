@@ -1,4 +1,4 @@
-"""The three screens that stand between you and a write: pick, fill in, confirm.
+"""Picking one of a list, and filling one in. The confirmation is next door.
 
 Nothing in here knows what an NPC is. A form is built by walking an action's
 `FIELDS` and putting a box on screen for each one; a box that names a `choices`
@@ -37,9 +37,9 @@ from textual.screen import ModalScreen
 from textual.suggester import SuggestFromList
 from textual.widgets import Button, Input, Label, OptionList, Static, TextArea
 
-from .actions import Action, ActionError, Field
-from .grid import ZOOMS, MapGrid
-from .session import Preview, Session, TextPreview
+from ..actions import Action, ActionError, Field
+from ..grid import ZOOMS, MapGrid
+from ..session import Preview, Session, TextPreview
 
 #: Fields the grid can answer for you. The cursor is *on* the tile; making you
 #: read its coordinates off the status bar and type them back in would be a way
@@ -48,43 +48,71 @@ CURSOR_FIELDS = {"y": 0, "x": 1}
 
 
 class Picker(ModalScreen[int | None]):
-    """A list of things, one of which you want. Dismisses with its index."""
+    """A list of things, one of which you want. Dismisses with its index.
+
+    It filters, because the list it most often shows is every text block in a
+    map, and a talkative town has forty of them. Typing narrows; the index it
+    dismisses with is always the caller's, never the filtered list's — get that
+    backwards and picking the third line of a filtered list rewords whatever
+    happened to be third before you typed.
+    """
 
     BINDINGS = [Binding("escape", "dismiss_none", "Cancel")]
 
     CSS = """
     Picker { align: center middle; }
-    #picker { width: 72; height: auto; max-height: 80%;
+    #picker { width: 82; height: auto; max-height: 80%;
               border: round $accent; background: $surface; }
     #picker-title { padding: 0 1; background: $accent; color: $text; }
+    #picker-filter { border: none; height: 3; background: $surface; }
+    #picker-list { height: auto; max-height: 24; border: none; }
     """
 
-    def __init__(self, title: str, rows: list[str] | list[Text]) -> None:
+    def __init__(self, title: str, rows: list[str] | list[Text],
+                 *, filterable: bool = False) -> None:
         super().__init__()
         self._title = title
         self._rows = rows
+        self._filterable = filterable
+        #: The caller's index for each row currently on screen.
+        self._shown = list(range(len(rows)))
 
     def compose(self) -> ComposeResult:
         with Vertical(id="picker"):
             yield Static(self._title, id="picker-title")
+            if self._filterable:
+                yield Input(placeholder="filter", id="picker-filter")
             yield OptionList(*self._rows, id="picker-list")
 
     def on_mount(self) -> None:
         self.query_one("#picker-list", OptionList).focus()
 
+    @on(Input.Changed, "#picker-filter")
+    def _filtered(self, event: Input.Changed) -> None:
+        needle = event.value.strip().lower()
+        options = self.query_one("#picker-list", OptionList)
+        options.clear_options()
+
+        self._shown = [i for i, row in enumerate(self._rows)
+                       if needle in _plain(row).lower()]
+        options.add_options([self._rows[i] for i in self._shown])
+        if self._shown:
+            options.highlighted = 0
+
+    @on(Input.Submitted, "#picker-filter")
+    def _to_the_list(self) -> None:
+        self.query_one("#picker-list", OptionList).focus()
+
     @on(OptionList.OptionSelected, "#picker-list")
     def _chose(self, event: OptionList.OptionSelected) -> None:
-        self.dismiss(event.option_index)
+        self.dismiss(self._shown[event.option_index])
 
     def action_dismiss_none(self) -> None:
         self.dismiss(None)
 
 
-class Palette(Picker):
-    """Everything the studio can do, in one list."""
-
-    def __init__(self, catalog: tuple[type[Action], ...]) -> None:
-        super().__init__("What would you like to do?", [a.title for a in catalog])
+def _plain(row: str | Text) -> str:
+    return row if isinstance(row, str) else row.plain
 
 
 class Form(ModalScreen["Preview | None"]):
@@ -363,64 +391,3 @@ def _tiles(measured: TextPreview) -> Text:
     return out
 
 
-class Confirm(ModalScreen[bool]):
-    """The diff, and a yes.
-
-    What is shown here is not a rendering of what *would* happen — it is the
-    diff of the very `Edit` objects that will be written, against the very text
-    they were computed from. There is no second code path to disagree with.
-    """
-
-    BINDINGS = [
-        Binding("escape", "no", "Cancel"),
-        Binding("enter", "yes", "Apply"),
-    ]
-
-    CSS = """
-    Confirm { align: center middle; }
-    #confirm { width: 92; height: auto; max-height: 90%;
-               border: round $success; background: $surface; }
-    #confirm-title { padding: 0 1; background: $success; color: $text; }
-    #confirm-notes { padding: 0 1; color: $warning; height: auto; }
-    #confirm-diff { height: auto; max-height: 28; padding: 1; }
-    #confirm-buttons { height: 3; align: right middle; padding: 0 1; }
-    """
-
-    def __init__(self, preview: Preview) -> None:
-        super().__init__()
-        self._preview = preview
-
-    def compose(self) -> ComposeResult:
-        p = self._preview
-        with Vertical(id="confirm"):
-            yield Static(f"{p.summary}  —  {', '.join(p.touches)}", id="confirm-title")
-            yield Static(self._notes(), id="confirm-notes")
-            yield VerticalScroll(Static(_diff(p.diff())), id="confirm-diff")
-            with Horizontal(id="confirm-buttons"):
-                yield Button("Cancel", id="no")
-                yield Button("Apply", variant="success", id="yes")
-
-    def _notes(self) -> Text:
-        return Text("\n".join(self._preview.notes))
-
-    def on_mount(self) -> None:
-        self.query_one("#yes", Button).focus()
-
-    @on(Button.Pressed, "#yes")
-    def action_yes(self) -> None:
-        self.dismiss(True)
-
-    @on(Button.Pressed, "#no")
-    def action_no(self) -> None:
-        self.dismiss(False)
-
-
-_DIFF_STYLE = {"+": "green", "-": "red", "@": "cyan"}
-
-
-def _diff(text: str) -> Text:
-    out = Text()
-    for line in text.split("\n"):
-        style = "bold" if line[:3] in ("+++", "---") else _DIFF_STYLE.get(line[:1], "dim")
-        out.append(line + "\n", style=style)
-    return out

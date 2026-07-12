@@ -55,11 +55,18 @@ class MapData:
     label: str
     const: str
     #: None only when the blocks themselves can't be read. A map whose *header*
-    #: is broken still has geometry — see `tables["error"]`.
+    #: is broken still has geometry, and an "Objects" tab saying why.
     geometry: MapGeometry | None
-    #: Why there is no geometry, when there isn't.
+    #: Why the header didn't parse, or the blocks couldn't be read. A map can
+    #: have this *and* a geometry: the two failures are independent.
     error: str | None
-    tables: dict[str, panels.Table]
+    #: In tab order. A tab knows its own name, its table, whether it can be
+    #: added to, and why it is read-only if it is — so the view iterates rather
+    #: than consulting a list of tab names it would have to keep in step.
+    tabs: list[panels.Tab]
+
+    def tab(self, name: str) -> panels.Tab | None:
+        return next((t for t in self.tabs if t.name == name), None)
 
 
 @dataclass(frozen=True)
@@ -180,3 +187,86 @@ class Applied:
     notes: list[str] = field(default_factory=list)
     #: The map to be looking at now, if this action made one.
     select: str | None = None
+
+    def touched(self) -> list[tuple[str, str]]:
+        """`(path, which lines)` for every file this wrote.
+
+        The line numbers are of the file *as it now stands*, which is the file
+        you would open to look at them. A created file says so; a binary one says
+        how big it is, because a diff of a `.blk` is one byte per block and could
+        tell you nothing the grid didn't already show you in colour.
+        """
+        out = []
+        for rel in self.paths:
+            before, after = self.undo_to.get(rel), self.wrote.get(rel)
+            if before is None:
+                out.append((rel, "created"))
+            elif isinstance(after, bytes) or isinstance(before, bytes):
+                out.append((rel, f"{len(after or b'')} bytes"))
+            else:
+                out.append((rel, _ranges(before, after or "")))
+        return out
+
+
+def _ranges(before: str, after: str) -> str:
+    """Which lines of `after` differ from `before`, as "12-18, 40"."""
+    lines = [
+        (i + 1)
+        for group in difflib.SequenceMatcher(
+            None, before.split("\n"), after.split("\n"), autojunk=False
+        ).get_opcodes()
+        if group[0] != "equal"
+        for i in range(group[3], max(group[4], group[3] + 1))
+    ]
+    if not lines:
+        return "no change"
+
+    spans, start, last = [], lines[0], lines[0]
+    for n in lines[1:]:
+        if n == last + 1:
+            last = n
+            continue
+        spans.append((start, last))
+        start = last = n
+    spans.append((start, last))
+    return ", ".join(str(a) if a == b else f"{a}-{b}" for a, b in spans)
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One diagnostic, flattened for the view.
+
+    The view is not handed a `Diagnostic`: it would have to know a `Severity`
+    enum and, worse, would have to turn a map *const* into the *label* the map
+    list is keyed by — and the only thing that can do that is the linter's
+    context. So the session resolves it here and the view renders strings.
+    """
+    severity: str               # "error" | "warning" | "info"
+    code: str
+    message: str
+    location: str
+    map_label: str              # "" for a finding about no map in particular
+    line: int
+
+    @property
+    def haystack(self) -> str:
+        """Everything one filter box should match against, lowercased once."""
+        return " ".join((self.severity, self.code, self.message,
+                         self.location, self.map_label)).lower()
+
+
+@dataclass(frozen=True)
+class Mutation:
+    """One entry in the history panel: what was done, and whether it can be
+    taken back. See `Session.mutations` for why `blocked` is a sentence."""
+    index: int                  # its position in the history, 0 = oldest
+    summary: str
+    files: list[tuple[str, str]]
+    notes: list[str]
+    #: Empty when this can be undone. Otherwise, why it can't — the file that
+    #: moved under it, or the later mutation holding it down.
+    blocked: str = ""
+
+    @property
+    def undoable(self) -> bool:
+        return not self.blocked

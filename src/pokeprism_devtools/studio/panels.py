@@ -1,23 +1,110 @@
-"""What goes in the tables under the grid.
+"""What goes in the tables under the grid — and what a selected row *is*.
 
-Pure functions: each returns `(columns, rows)` of plain strings, so the contents
-of every tab can be tested without starting a terminal, and the widgets stay
-dumb. Nothing here reads a file — the caller hands in what it already parsed.
+Pure functions: each returns `(columns, rows)`, so the contents of every tab can
+be tested without starting a terminal and the widgets stay dumb. Nothing here
+opens a file. An :class:`~..shared.eventheader.EventHeader` carries the whole map
+asm in `.lines`, so reading a trainer's class off the script block it points at is
+a walk over data we were already handed — not a second read of the repo.
 
 Every coordinate shown is the number **written in the source**, because that is
 the number you would type to change it. The `+4` the `person_event` macro adds
 belongs to the assembled bytes and appears nowhere in this file.
+
+The tabs are a *person's* carve-up of a map, not the engine's. The engine keeps
+two lists — object events and bg events — and puts item balls in the first and
+hidden items in the second, which is an implementation detail of how they are
+found, not a difference in what they are. Both are things you pick up, so both are
+Pickups. Likewise a trainer is a `person_event` like any other and the thing that
+makes him a trainer is his persontype. So:
+
+    NPCs        person_events that are SCRIPT / TEXT / TEXTFP / JUMPSTD / MART
+    Trainers    person_events that are TRAINER / GENERICTRAINER
+    Pickups     person_events that are ITEMBALL / TMHMBALL / FRUITTREE,
+                *plus* the SIGNPOST_ITEM bg_events
+    Signposts   every other bg_event
 """
 
 from __future__ import annotations
 
+import re
+from dataclasses import dataclass, field
+
 from ..maplint.context import Connection
 from ..shared import eventheader as eh
-from ..shared import wilddata
-
-Table = tuple[list[str], list[list[str]]]
+from ..shared import roofs, wilddata
 
 _NONE = "—"
+
+#: The trainer macro, which is where a trainer keeps the two things his
+#: `person_event` does not: the flag that remembers you beat him, and the party
+#: he battles with. `trainer FLAG, CLASS, PARTY, seen, defeated`.
+_TRAINER_RE = re.compile(r"^\s*trainer\s+(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,")
+
+TRAINER_TYPES = ("PERSONTYPE_TRAINER", "PERSONTYPE_GENERICTRAINER")
+PICKUP_TYPES = ("PERSONTYPE_ITEMBALL", "PERSONTYPE_TMHMBALL", "PERSONTYPE_FRUITTREE")
+HIDDEN_ITEM = "SIGNPOST_ITEM"
+
+
+# --------------------------------------------------------------------------- #
+# what a row is                                                               #
+# --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class Ref:
+    """What `e` and `d` act on: enough to name one thing on one map.
+
+    **Opaque to the view.** `tabs.py` reads a Ref off the highlighted row and
+    hands it straight back to the session, which is the only side of the seam
+    allowed to know a `person_event` from a `signpost`. The view's whole share of
+    the knowledge is "this row names something, and that one doesn't".
+    """
+    #: npc | trainer | pickup | signpost | warp | trigger | connection | map
+    what: str
+    #: The `ListKind` it lives in, when it is an event-header entry. A pickup can
+    #: be in either list, which is exactly why this is not implied by `what`.
+    kind: str = ""
+    #: Its position in that list.
+    index: int = -1
+    #: A connection's direction. Nothing else needs it.
+    key: str = ""
+
+
+@dataclass(frozen=True)
+class Row:
+    cells: list[str]
+    #: None for a row that names nothing you can act on — a wild encounter, a
+    #: roof colour. The footer reads this to decide whether `e` and `d` exist.
+    ref: Ref | None = None
+
+
+Table = tuple[list[str], list[Row]]
+
+
+@dataclass(frozen=True)
+class Tab:
+    """One tab: its table, and what "Add new…" would mean on it."""
+    name: str
+    table: Table
+    #: What the dim last row offers, e.g. "NPC". Empty = no adding here (Wild,
+    #: Roof, Attributes), and the row is not drawn at all.
+    adds: str = ""
+    #: Why this tab is read-only, when it is. Shown above the table.
+    note: str = ""
+
+
+#: The studio shows wild encounters and will not edit them, and that had better
+#: be on screen rather than in a design document: a wild record is a fixed-size
+#: slot in a table the engine indexes by *position*, so writing a short one
+#: silently shifts every map below it onto somebody else's Pokémon.
+WILD_IS_READ_ONLY = (
+    "read-only — wild records are fixed-size and read by position; "
+    "a short one shifts every map below it. Edit data/wild/*.asm by hand."
+)
+
+ROOF_IS_READ_ONLY = (
+    "read-only — a roof belongs to the whole map group, not to this map. "
+    "Editing it here would repaint every town in the group."
+)
 
 
 def _yx(entry: eh.Entry) -> tuple[str, str]:
@@ -25,14 +112,135 @@ def _yx(entry: eh.Entry) -> tuple[str, str]:
     return (_NONE if y is None else str(y), _NONE if x is None else str(x))
 
 
-def objects(header: eh.EventHeader) -> Table:
-    cols = ["#", "y", "x", "sprite", "type", "movement", "points at", "event flag"]
+def _block(header: eh.EventHeader, label: str | None) -> list[str]:
+    """The lines of the script block `label` names, if this map defines it.
+
+    From the header's own copy of the file. An item ball's "pointer" is an item
+    const rather than a label, so this correctly finds nothing for one.
+    """
+    if not label:
+        return []
+    lines = header.lines
+    start = next((i for i, ln in enumerate(lines) if ln.startswith(f"{label}:")), None)
+    if start is None:
+        return []
+    end = start + 1
+    while end < len(lines):
+        ln = lines[end]
+        if ln[:1].isalnum() or ln[:1] == "_":
+            if re.match(r"^\w+:", ln):
+                break                     # the next top-level label
+        end += 1
+    return lines[start:end]
+
+
+def _trainer_macro(header: eh.EventHeader, entry: eh.Entry) -> tuple[str, str, str]:
+    """`(flag, class, party)` off the `trainer` macro in this entry's block.
+
+    A trainer's `person_event` carries `-1` where every other object keeps its
+    event flag, because the flag that remembers you beat him lives in the macro
+    instead. Showing the `-1` would be showing a column that is always the same
+    lie, so the table reads the macro.
+    """
+    for line in _block(header, entry.pointer):
+        if m := _TRAINER_RE.match(line):
+            return m.group(1), m.group(2), m.group(3)
+    return _NONE, _NONE, _NONE
+
+
+# --------------------------------------------------------------------------- #
+# the object tabs                                                             #
+# --------------------------------------------------------------------------- #
+
+def _people(header: eh.EventHeader, wanted) -> list[tuple[int, eh.Entry]]:
+    """Object events whose persontype `wanted` accepts, with their *real* index.
+
+    The index is the entry's position in the engine's object_events list, not its
+    position on this tab. Three tabs are cut out of one list, and an edit that
+    used the row number would rewrite whichever NPC happened to be third.
+    """
+    return [(i, e) for i, e in enumerate(header.object_events)
+            if len(e.args) > 9 and wanted(e.persontype)]
+
+
+def npcs(header: eh.EventHeader, says: dict[str, str]) -> Table:
+    cols = ["#", "y", "x", "sprite", "movement", "says", "event flag"]
     rows = []
-    for i, e in enumerate(header.object_events):
+    for i, e in _people(header, lambda t: t not in TRAINER_TYPES + PICKUP_TYPES):
         y, x = _yx(e)
-        rows.append([str(i), y, x, e.sprite, e.persontype.replace("PERSONTYPE_", ""),
-                     e.movement.replace("SPRITEMOVEDATA_", ""),
-                     e.pointer or _NONE, e.event_flag])
+        pointer = e.pointer or ""
+        rows.append(Row(
+            [str(i), y, x, e.sprite, e.movement.replace("SPRITEMOVEDATA_", ""),
+             says.get(pointer, pointer or _NONE), e.event_flag],
+            Ref("npc", eh.ListKind.OBJECT_EVENTS.value, i),
+        ))
+    return cols, rows
+
+
+def trainers(header: eh.EventHeader) -> Table:
+    cols = ["#", "y", "x", "sprite", "class", "party", "sight", "event flag"]
+    rows = []
+    for i, e in _people(header, lambda t: t in TRAINER_TYPES):
+        y, x = _yx(e)
+        flag, cls, party = _trainer_macro(header, e)
+        sight = e.arg(10) if len(e.args) > 10 else _NONE
+        rows.append(Row(
+            [str(i), y, x, e.sprite, cls, party, sight, flag],
+            Ref("trainer", eh.ListKind.OBJECT_EVENTS.value, i),
+        ))
+    return cols, rows
+
+
+def pickups(header: eh.EventHeader) -> Table:
+    """Item balls, TM balls, fruit trees — and the hidden items, which the engine
+    keeps in the other list entirely. See the module docstring: they are all
+    things you pick up, and that is what the tab is for."""
+    cols = ["#", "y", "x", "kind", "what", "qty", "event flag"]
+    rows = []
+    for i, e in _people(header, lambda t: t in PICKUP_TYPES):
+        y, x = _yx(e)
+        kind = e.persontype.replace("PERSONTYPE_", "").lower()
+        # The item ball is the only one that carries a quantity: `\11` is the
+        # count and `\12` the item. A TM ball spends `\11` on the item itself and
+        # a fruit tree keeps its tree id in the pointer slot, so for both of those
+        # the count column is meaningless rather than 1.
+        ball = e.persontype == "PERSONTYPE_ITEMBALL"
+        what = e.pointer if e.persontype != "PERSONTYPE_TMHMBALL" else e.arg(10)
+        rows.append(Row(
+            [str(i), y, x, kind, what or _NONE,
+             e.arg(10) if ball else _NONE, e.event_flag],
+            Ref("pickup", eh.ListKind.OBJECT_EVENTS.value, i),
+        ))
+
+    for i, e in enumerate(header.bg_events):
+        if len(e.args) < 3 or e.arg(2) != HIDDEN_ITEM:
+            continue
+        y, x = _yx(e)
+        # A hidden item's item and flag are in the record it points at, not in
+        # the bg_event: `dw EVENT_… / db ITEM`.
+        record = _block(header, e.pointer)
+        flag = next((ln.split()[-1] for ln in record if ln.strip().startswith("dw ")), _NONE)
+        item = next((ln.split()[-1] for ln in record if ln.strip().startswith("db ")), _NONE)
+        rows.append(Row(
+            [str(i), y, x, "hidden", item, _NONE, flag],
+            Ref("pickup", eh.ListKind.BG_EVENTS.value, i),
+        ))
+    return cols, rows
+
+
+def signposts(header: eh.EventHeader) -> Table:
+    """Every bg_event that isn't a hidden item — the ones you read."""
+    cols = ["#", "y", "x", "kind", "points at"]
+    rows = []
+    for i, e in enumerate(header.bg_events):
+        kind = e.arg(2) if len(e.args) > 2 else _NONE
+        if kind == HIDDEN_ITEM:
+            continue                                   # it's a pickup, not a sign
+        y, x = _yx(e)
+        rows.append(Row(
+            [str(i), y, x, kind.replace("SIGNPOST_", ""), e.pointer or _NONE],
+            Ref("signpost", eh.ListKind.BG_EVENTS.value, i),
+        ))
     return cols, rows
 
 
@@ -45,26 +253,18 @@ def warps(header: eh.EventHeader) -> Table:
         y, x = _yx(e)
         dest = e.arg(3) if len(e.args) > 3 else _NONE
         which = e.arg(2) if len(e.args) > 2 else _NONE
-        rows.append([str(i), y, x, dest, which])
+        rows.append(Row([str(i + 1), y, x, dest, which],
+                        Ref("warp", eh.ListKind.WARPS.value, i)))
     return cols, rows
 
 
-def bg_events(header: eh.EventHeader) -> Table:
-    cols = ["#", "y", "x", "kind", "points at"]
-    rows = []
-    for i, e in enumerate(header.bg_events):
-        y, x = _yx(e)
-        kind = e.arg(2) if len(e.args) > 2 else _NONE
-        rows.append([str(i), y, x, kind.replace("SIGNPOST_", ""), e.pointer or _NONE])
-    return cols, rows
-
-
-def coord_events(header: eh.EventHeader) -> Table:
-    cols = ["#", "y", "x", "scene", "points at"]
+def triggers(header: eh.EventHeader) -> Table:
+    cols = ["#", "scene", "y", "x", "runs"]
     rows = []
     for i, e in enumerate(header.coord_events):
         y, x = _yx(e)
-        rows.append([str(i), y, x, e.arg(0), e.pointer or _NONE])
+        rows.append(Row([str(i), e.arg(0), y, x, e.pointer or _NONE],
+                        Ref("trigger", eh.ListKind.COORD_EVENTS.value, i)))
     return cols, rows
 
 
@@ -73,25 +273,111 @@ def connections(conns: list[Connection]) -> Table:
     map on the other side must carry exactly its negation, or the seam tears —
     which is why it's a column and not a detail."""
     cols = ["direction", "to map", "coord", "offset", "strip", "delta"]
-    rows = [[c.direction, c.target, str(c.coord), str(c.offset),
-             str(c.strip), f"{c.delta:+d}"]
+    rows = [Row([c.direction, c.target, str(c.coord), str(c.offset),
+                 str(c.strip), f"{c.delta:+d}"],
+                Ref("connection", key=c.direction))
             for c in sorted(conns, key=lambda c: c.direction)]
     return cols, rows
 
 
-def wild(blocks: dict[str, wilddata.WildBlock]) -> Table:
-    """The map's encounters, keyed by which table they came from (GRASS, WATER).
+# --------------------------------------------------------------------------- #
+# the read-only tabs                                                          #
+# --------------------------------------------------------------------------- #
 
-    Read-only, and it stays that way: wild records are fixed-size and read
-    positionally, so writing a short one doesn't error — it silently shifts every
-    map below it in the table onto the wrong encounters.
+@dataclass(frozen=True)
+class Attributes:
+    """A map's header, as it is written down. Assembled by the session, which is
+    the side that knows which five files these eight facts are spread across."""
+    label: str
+    const: str
+    group: int
+    map_id: int
+    height: int
+    width: int
+    tileset: str = _NONE
+    permission: str = _NONE
+    landmark: str = _NONE
+    music: str = _NONE
+    palette: str = _NONE
+    fishgroup: str = _NONE
+    phone: str = "0"
+    border_block: str = _NONE
+    blk: str = _NONE
+    #: section name -> the bank it is pinned to in contents/romx.link, or "" for
+    #: a section that floats. Three of them: blockdata, script, secondary.
+    banks: dict[str, str] = field(default_factory=dict)
+
+
+def attributes(attrs: Attributes) -> Table:
+    """The map itself, as a field/value table. Every row carries the same Ref, so
+    `e` opens the map form wherever the cursor happens to be sitting."""
+    ref = Ref("map")
+    pairs = [
+        ("Label", attrs.label),
+        ("Map id", attrs.const),
+        ("Group", f"{attrs.group}  (map {attrs.map_id} within it)"),
+        ("Size", f"{attrs.height} × {attrs.width} blocks"),
+        ("Blocks", attrs.blk),
+        ("Tileset", attrs.tileset),
+        ("Permission", attrs.permission),
+        ("Landmark", attrs.landmark),
+        ("Music", attrs.music),
+        ("Palette", attrs.palette),
+        ("Fish group", attrs.fishgroup),
+        ("Phone service", attrs.phone),
+        ("Border block", attrs.border_block),
+    ]
+    pairs += [(f"Section: {name}", bank or "floating — not pinned to a bank")
+              for name, bank in attrs.banks.items()]
+    return ["field", "value"], [Row([k, v], ref) for k, v in pairs]
+
+
+def roof(r: roofs.Roof) -> Table:
+    """The roof the engine loads for this map's group — and the two ways the
+    source disagrees with itself about it.
+
+    Both are worth a row rather than a footnote. `MapGroupRoofs` is indexed by
+    the group number with no adjustment, but every byte in it is commented with
+    the group *after* the one that reads it; and the table has 28 entries while
+    the game has 96 map groups, so most groups index past its end and pick up
+    whatever assembles next as a roof. Neither is this tool's to fix. Both are
+    things you would want to know before wondering why your town has no roof.
     """
+    cols = ["field", "value"]
+    rows = [Row(["Group", str(r.group)])]
+
+    if r.past_end:
+        rows.append(Row([
+            "Roof", f"group {r.group} is past the end of MapGroupRoofs, which "
+                    f"has {r.entries} entries. The engine still indexes it, so "
+                    f"it reads whatever assembles after the table."]))
+    elif r.tiles is None:
+        rows.append(Row(["Roof", "none — MapGroupRoofs says -1 for this group"]))
+    else:
+        rows.append(Row(["Roof tiles", r.tile_file or
+                         f"roof {r.tiles}, which has no file behind it"]))
+
+    if r.colors:
+        morn, day, nite1, nite2 = r.colors
+        rows.append(Row(["Morn / day", f"{morn}   {day}"]))
+        rows.append(Row(["Nite", f"{nite1}   {nite2}"]))
+
+    if r.mislabelled is not None:
+        rows.append(Row([
+            "⚠ source", f"roofs.asm comments this byte '; group {r.mislabelled}', "
+                        f"but the engine reads it for group {r.group} "
+                        f"(LoadMapGroupRoof indexes by wMapGroup, no offset)."]))
+    return cols, rows
+
+
+def wild(blocks: dict[str, wilddata.WildBlock]) -> Table:
+    """The map's encounters, keyed by which table they came from (GRASS, WATER)."""
     cols = ["table", "time", "#", "level", "species"]
-    rows = []
+    rows: list[Row] = []
     for kind, block in blocks.items():
         for time, encounters in block.mons.items():
             for i, e in enumerate(encounters):
-                rows.append([kind if not rows or rows[-1][0] != kind else "",
-                             time if i == 0 else "",
-                             str(i + 1), str(e.level), e.species])
+                first = not rows or rows[-1].cells[0] != kind
+                rows.append(Row([kind if first else "", time if i == 0 else "",
+                                 str(i + 1), str(e.level), e.species]))
     return cols, rows
