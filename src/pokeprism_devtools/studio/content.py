@@ -18,7 +18,9 @@ import re
 from pathlib import Path
 
 from ..shared import trainerstats
-from ..wiring import pickups, removal, scaffold
+from ..shared.eventflags import FlagError
+from ..shared.eventheader import ListKind
+from ..wiring import connections, pickups, removal, scaffold, warpdel
 # By name, not by module: `Action.text()` is a method, and `text.reword(...)`
 # sitting next to `self.text("label")` in the same three lines is a trap.
 from ..wiring.text import TextError, reword
@@ -286,28 +288,107 @@ class EditText(_Placed):
 
 
 class Remove(_Placed):
+    """Take one object out of a map.
+
+    `index` + `kind` say **which** object, and `label`/`y`/`x` only say what to
+    *call* it on the confirm screen. That split matters: Owsauri's game corner has
+    sixteen slot machines running the identical script, so the name is not an
+    identity and never was. You did not describe the thing you want gone — you
+    pointed at it, and the row you pointed at knows its own position.
+    """
     name = "remove"
     title = "Remove an object"
     FIELDS = (
+        Field("index", "Entry", kind="fixed", default="",
+              help="its position in the list — which is what identifies it"),
+        Field("kind", "List", kind="fixed", default="",
+              help="which event list it lives in"),
         Field("label", "Label", help="the script label it points at"),
         Field("y", "Y", kind="int", default="", help="or its position, if it has no label"),
         Field("x", "X", kind="int", default=""),
     )
 
     def describe(self) -> str:
-        what = self.text("label") or f"({self.text('y')}, {self.text('x')})"
+        what = (self.text("label") or f"({self.text('y')}, {self.text('x')})"
+                if self.text("label") or self.text("y")
+                else f"entry #{self.integer('index') + 1}")
         return f"remove {what} from {self.map}"
 
     def run(self, root: Path) -> Result:
-        label = self.text("label") or None
-        at = self.coords() if (self.text("y") and self.text("x")) else None
-        if (label is None) == (at is None):
-            raise ActionError("name the object by its label or by its position, not both")
         try:
-            r = removal.remove(root, self.map, label=label, at=at)
-        except removal.RemovalError as e:
+            r = removal.remove(root, self.map, kind=self._kind(), **self._named())
+        except (removal.RemovalError, FlagError) as e:
+            # A FlagError is a refusal too. It reached the app as a crash until a
+            # sweep of every deletable row in the repo found the two people whose
+            # flag is written `EVENT_X | $8000` — a name the allocator has never
+            # heard of, because it is an expression and not a name.
             raise ActionError(str(e)) from e
         notes = list(r.warnings)
         if r.freed_flag:
             notes.append(f"freed {r.freed_flag}")
         return Result(r.summary, r.changes, notes)
+
+    def _named(self) -> dict:
+        """How to find it. The index wins when there is one, because it is the only
+        one of these that cannot be ambiguous."""
+        if self.text("index"):
+            return {"index": self.integer("index")}
+        label = self.text("label") or None
+        at = self.coords() if (self.text("y") and self.text("x")) else None
+        if (label is None) == (at is None):
+            raise ActionError("name the object by its label or by its position, not both")
+        return {"label": label} if label else {"at": at}
+
+    def _kind(self) -> ListKind | None:
+        """Which list to look in. A name is only unique *within* one — CaperRidge
+        runs the same script from a trigger and from an NPC — so the row you
+        pointed at says which, and without it neither could be deleted."""
+        raw = self.text("kind")
+        try:
+            return ListKind(raw) if raw else None
+        except ValueError:
+            raise ActionError(f"{raw!r} is not an event list") from None
+
+
+class RemoveWarp(_Placed):
+    """A warp is the one thing whose deletion is not local to its map.
+
+    `warp_to` is a *position* in this map's warp list, so every door in the repo
+    that counted its way past this one has to be pulled back a step. The preview
+    shows every file that touches, which for a busy map is a dozen — and that is
+    not the preview being noisy, it is the true cost of the operation.
+    """
+    name = "remove warp"
+    title = "Remove a warp"
+    FIELDS = (Field("index", "Warp", kind="fixed"),)
+
+    def describe(self) -> str:
+        return f"remove warp #{self.integer('index') + 1} from {self.map}"
+
+    def run(self, root: Path) -> Result:
+        try:
+            d = warpdel.delete_warp(root, self.map, self.integer("index"))
+        except warpdel.WarpDelError as e:
+            raise ActionError(str(e)) from e
+        return Result(d.summary, d.changes, d.warnings)
+
+
+class Disconnect(_Placed):
+    """The mirror of `Connect`, and safe for the same reason adding one is: a
+    connection is named by its direction, not by a position, so nothing in the
+    repo counts its way to it and removing one renumbers nothing."""
+    name = "disconnect"
+    title = "Remove a connection"
+    FIELDS = (Field("direction", "Direction", kind="fixed"),)
+
+    def describe(self) -> str:
+        return f"remove {self.map}'s {self.text('direction')} connection"
+
+    def run(self, root: Path) -> Result:
+        try:
+            edit, notes = connections.disconnect(root, self.map,
+                                                 self.text("direction"))
+        except connections.WiringError as e:
+            raise ActionError(str(e)) from e
+        return Result(edit.detail, [edit] if edit.changed else [],
+                      notes or ([] if edit.changed else ["unchanged"]))

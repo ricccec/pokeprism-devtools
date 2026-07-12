@@ -1284,11 +1284,14 @@ class TestEditing(_Driven):
 
         drive(go())
 
-    def test_d_on_a_warp_refuses_and_says_why(self) -> None:
-        """A refusal with a reason beats a key that isn't there. `warp_to` is a
-        position in this map's warp list, so deleting one renumbers every warp in
-        the repo that points at this map — and until that is written, saying so is
-        the honest answer."""
+    def test_d_on_a_warp_shows_the_whole_blast_radius(self) -> None:
+        """Deleting a warp is the one mutation whose cost is not local to this map.
+
+        `warp_to` is a *position* in this map's warp list, so every door in the repo
+        that counted its way past this one has to be pulled back a step. The confirm
+        screen has to show all of it — and if that is a dozen files, then a dozen
+        files is what the operation actually costs, and hiding it would be the bug.
+        """
         async def go():
             app = Studio(self.root)
             async with app.run_test() as pilot:
@@ -1297,13 +1300,19 @@ class TestEditing(_Driven):
                 await self.go_to_row(app, pilot, table, 0)
                 self.assertEqual(app._ref.what, "warp")
 
-                with _Captured(app) as said:
-                    await pilot.press("d")
-                    await pilot.pause(0.3)
+                await pilot.press("d")
+                await pilot.pause(0.3)
 
-                self.assertNotIsInstance(app.screen, Confirm,
-                                         "it offered to delete a warp")
-                self.assertIn("renumber", " ".join(said.messages))
+                self.assertIsInstance(app.screen, Confirm,
+                                      "it would not offer to delete a warp")
+                shown = app.screen._preview
+                self.assertIn("warp #1", shown.summary)
+                # Its own map, and at least one other that counted its way to it —
+                # this map is warped to from elsewhere, which is the point of it.
+                paths = {e.path for e in shown.edits}
+                self.assertIn(f"maps/{MAP}.asm", paths)
+                self.assertGreater(len(paths), 1,
+                                   f"only touched its own map: {paths}")
                 await app.action_quit()
 
         drive(go())
@@ -2098,7 +2107,8 @@ class TestTheSeam(unittest.TestCase):
     #: prefill a form from a file the session has not agreed to trust.
     READERS = ("blocksrc", "eventheader", "wilddata", "mapsource", "blockdata",
                "metatiles", "render", "dialogue", "trainerparty", "wiring",
-               "roofs", "reader", "world", "edits", "objedit", "mapedit")
+               "roofs", "reader", "world", "edits", "objedit", "mapedit",
+               "warpdel", "removal", "connections")
 
     def _files(self) -> list[Path]:
         studio = Path(__file__).resolve().parents[1] / "src/pokeprism_devtools/studio"

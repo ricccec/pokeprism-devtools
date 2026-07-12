@@ -81,19 +81,6 @@ class StaleWorld(SessionError):
             f"against is out of date, so it will not write. Press r to re-read.")
 
 
-#: The rows `d` cannot act on yet, and the reason — which is the useful part, and
-#: is why these are messages rather than a missing key.
-_NOT_YET = {
-    "warp": ("deleting a warp renumbers every warp in the repo that points at "
-             "this map, because `warp_to` is a position in this map's list. "
-             "Not wired up yet."),
-    "trigger": "deleting a trigger isn't wired up yet.",
-    "connection": ("deleting a connection has to rewrite the neighbour's side "
-                   "and both flag nibbles. Not wired up yet."),
-    "map": "deleting a whole map is not something this does.",
-}
-
-
 def _entry_of(header: eventheader.EventHeader, label: str,
               ref: panels.Ref) -> eventheader.Entry:
     entries = header.list_of(eventheader.ListKind(ref.kind)).entries
@@ -224,31 +211,38 @@ class Session:
     def deletion(self, label: str, const: str, ref: panels.Ref) -> Action:
         """The action `d` would run on this row.
 
-        Raises :class:`SessionError` for the things that cannot yet be deleted
-        safely, and says *why* — which beats an absent key, because the reason is
-        the interesting part.
+        Raises :class:`SessionError` for the things that cannot be deleted, and
+        says *why* — which beats an absent key, because the reason is the
+        interesting part.
         """
-        if ref.what in _NOT_YET:
-            raise SessionError(_NOT_YET[ref.what])
+        if ref.what == "map":
+            raise SessionError("deleting a whole map is not something this does.")
 
-        header = self._header(label)
-        entry = _entry_of(header, label, ref)
+        # Neither of these is an entry in an event list, so neither is named the
+        # way the objects below are. A warp is named by its *position*, because
+        # that is what the rest of the repo counts to; a connection by its
+        # direction, because a map has at most one each way.
+        if ref.what == "warp":
+            return content.RemoveWarp(const, index=str(ref.index))
+        if ref.what == "connection":
+            return content.Disconnect(const, direction=ref.key)
 
-        # Name it by its script label when it has one, and by its position when
-        # it hasn't. Two item balls of the same item are told apart by where they
-        # are; two objects on one tile are told apart by what they point at.
-        # Between them that covers everything, and `removal` refuses an ambiguous
-        # name rather than guessing — which is the behaviour we want to reach.
-        pointer = entry.pointer
-        if pointer and any(ln.startswith(f"{pointer}:") for ln in header.lines):
-            return content.Remove(const, label=pointer, y="", x="")
-
+        # `entry` is not how the object is found — `kind` and `index` are, and they
+        # came off the row. It is read to *name* the thing on the confirm screen,
+        # and re-read from the file rather than remembered, so a Ref that has gone
+        # stale says so instead of describing whatever is standing in its place.
+        #
+        # This is the difference between a description and an identity. Owsauri's
+        # game corner runs sixteen slot machines off one script and Saffron Gates
+        # has eight guards with one name between them; asking `removal` to find
+        # "the one called X" would refuse all twenty-four. You did not describe the
+        # thing you want gone — you pointed at it.
+        entry = _entry_of(self._header(label), label, ref)
         y, x = entry.coords
-        if y is None or x is None:
-            raise SessionError(
-                f"this {ref.what} has neither a script label nor readable "
-                f"coordinates, so there is no unambiguous way to name it.")
-        return content.Remove(const, label="", y=str(y), x=str(x))
+        return content.Remove(
+            const, index=str(ref.index), kind=ref.kind,
+            label=entry.pointer or "",
+            y="" if y is None else str(y), x="" if x is None else str(x))
 
     def editor(self, label: str, const: str,
                ref: panels.Ref) -> tuple[type[Action], dict[str, str], dict[str, str]]:

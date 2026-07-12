@@ -201,23 +201,78 @@ def connect(root: Path, a: str, direction: str, b: str, k: int) -> tuple[Edit, l
     return Edit(_REL, True, detail, text, base=original), [left, right]
 
 
+def disconnect(root: Path, a: str, direction: str) -> tuple[Edit, list[str]]:
+    """Unwire A's `direction` connection, and the neighbour's side of it.
+
+    The exact mirror of :func:`connect`, and safe for the same reason it is safe
+    to add one: a connection is named by its *direction*, not by a position, so
+    nothing counts its way to it and removing one renumbers nothing. That is what
+    makes this the easy half of P4 and the warp the hard half.
+
+    Both sides go. A connection the neighbour still mirrors is a wall you can walk
+    through one way — the same asymmetry `connect` exists to prevent, arrived at
+    from the other end. If the neighbour never mirrored it, that is said rather
+    than fixed: this removes connections, it does not go looking for other ones to
+    repair.
+    """
+    if direction not in OPPOSITE:
+        raise WiringError(f"{direction!r} is not a direction")
+
+    path = root / _REL
+    original = path.read_text()
+    lines = original.split("\n")
+
+    at = _find(lines, _header_line(lines, a), direction)
+    if at is None:
+        raise WiringError(f"{a} has no {direction} connection to remove")
+    b = _CONNECTION_RE.match(lines[at]).group(2)
+
+    notes: list[str] = []
+    lines = _unsplice(lines, a, direction)
+    try:
+        lines = _unsplice(lines, b, OPPOSITE[direction], target=a)
+    except WiringError:
+        notes.append(f"{b} had no {OPPOSITE[direction]} connection back to {a} — "
+                     f"it was already one-way, and only {a}'s side was removed.")
+
+    text = "\n".join(lines)
+    detail = f"{a} no longer connects {direction} to {b}"
+    return Edit(_REL, text != original, detail, text, base=original), notes
+
+
+def _unsplice(lines: list[str], owner: str, direction: str,
+              target: str | None = None) -> list[str]:
+    """Drop `owner`'s connection line in `direction`, and recompute its nibble."""
+    start = _header_line(lines, owner)
+    at = _find(lines, start, direction, target)
+    if at is None:
+        raise WiringError(f"{owner} has no {direction} connection"
+                          + (f" to {target}" if target else ""))
+    del lines[at]
+    return _set_flag(lines, start)
+
+
+def _find(lines: list[str], start: int, direction: str,
+          target: str | None = None) -> int | None:
+    """Where `start`'s connection in `direction` is written, if it is."""
+    for i in range(start + 1, _block_end(lines, start)):
+        m = _CONNECTION_RE.match(lines[i])
+        if m and m.group(1).lower() == direction and (target is None
+                                                      or m.group(2) == target):
+            return i
+    return None
+
+
 def _splice(lines: list[str], conn: Connection) -> list[str]:
     """Put `conn` into its map's header block, and make sure the flag nibble
     admits its direction."""
     start = _header_line(lines, conn.owner)
-    end = _block_end(lines, start)
-
-    existing = None
-    for i in range(start + 1, end):
-        m = _CONNECTION_RE.match(lines[i])
-        if m and m.group(1).lower() == conn.direction:
-            existing = i
-            break
+    existing = _find(lines, start, conn.direction)
 
     if existing is not None:
         lines[existing] = conn.render()
     else:
-        lines.insert(end, conn.render())
+        lines.insert(_block_end(lines, start), conn.render())
 
     return _set_flag(lines, start, conn.direction)
 
@@ -238,13 +293,16 @@ def _block_end(lines: list[str], start: int) -> int:
     return i
 
 
-def _set_flag(lines: list[str], header: int, direction: str) -> list[str]:
+def _set_flag(lines: list[str], header: int, direction: str | None = None) -> list[str]:
     """Rewrite the header's connection-flag nibble to name every direction the
     map now actually has a connection line for.
 
     The engine reads the nibble to decide which connections to load, so it has
     to agree with the lines — a direction set with no line behind it loads
-    garbage, and a line the nibble omits is never used.
+    garbage, and a line the nibble omits is never used. So the nibble is always
+    *recomputed from the lines that are there*, never edited: `connect` calls this
+    with the direction it just added, and `disconnect` with none at all, having
+    already taken the line out.
     """
     m = _MAP_HEADER_2_RE.match(lines[header])
     if not m:                                       # pragma: no cover - located by regex
@@ -253,7 +311,8 @@ def _set_flag(lines: list[str], header: int, direction: str) -> list[str]:
     end = _block_end(lines, header)
     present = {c.group(1).lower() for i in range(header + 1, end)
                if (c := _CONNECTION_RE.match(lines[i]))}
-    present.add(direction)
+    if direction:
+        present.add(direction)
 
     # Written in the source's own order, so the nibble reads the way the rest of
     # the file does.
