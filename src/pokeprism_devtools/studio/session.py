@@ -46,8 +46,8 @@ from ..dev_server import apply as devapply
 from ..dev_server import inventory, playtest as devplay
 from ..maplint.context import LintContext
 from ..maplint.diagnostics import Diagnostic, Severity
-from ..shared import (consts, dialogue, eventheader, paths, spritesets, swatches,
-                      textbox, trainerparty)
+from ..shared import (caches, consts, dialogue, eventheader, paths, spritesets,
+                      swatches, textbox, trainerparty)
 from ..shared.edits import StaleEdit, apply_edits
 from ..wiring import connections, scaffold
 from . import actions, newmap, panels, reader
@@ -534,6 +534,35 @@ class Session:
         # A new map is a new entry in every list of maps, including the one the
         # forms autocomplete from.
         self.__dict__.pop("_choices", None)
+
+    def reload(self) -> None:
+        """Forget everything and read the repo again.
+
+        `_invalidate` drops the caches for the files *we* wrote, which is right
+        and fast — but it can only know about our own writes. The repo is not
+        ours alone: you add a trainer class in an editor, pull a branch, run
+        `prism-mapfit`, and the studio goes on offering the autocomplete it read
+        at startup. There is no way to notice that cheaply (watching every `.asm`
+        in the tree for a change is a lot of machinery to keep one dropdown
+        honest), so this is the key you press when you know you changed something.
+
+        Everything cached goes — and "everything" is the load-bearing word.
+        Dropping this object's caches is not enough: half the `shared` modules
+        memoise their reads with an `@lru_cache`, which lives on the *function*
+        and therefore outlives any session that thought it owned it. Clear only
+        what is on `self` and `consts.names` will go on serving the items it read
+        an hour ago, with total confidence. See :mod:`..shared.caches`.
+
+        The **history stays**, deliberately. An undo checks each file against
+        exactly what it wrote, so a mutation whose file you have since edited by
+        hand refuses of its own accord and says so. Dropping the history would
+        silently give up that guard instead of exercising it.
+        """
+        caches.clear()
+        self.ctx = LintContext(self.root)
+        self._found = None
+        self.__dict__.pop("_choices", None)
+        self.__dict__.pop("_boxes", None)
 
 
 def _read(path: Path, binary: bool) -> str | bytes | None:

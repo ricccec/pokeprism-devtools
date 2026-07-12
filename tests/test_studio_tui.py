@@ -33,6 +33,7 @@ from pokeprism_devtools.studio.app import Studio
 from pokeprism_devtools.studio.grid import MapGrid
 from pokeprism_devtools.studio.newmap import NewMap
 from pokeprism_devtools.studio.screens import Confirm, Findings, Form, History, Picker
+from pokeprism_devtools.studio.screens.speech import Dialogue
 from pokeprism_devtools.studio.tabs import ADD, Tabs
 
 ROOT = paths.repo_root(Path.home() / "code/ricccec/pokeprism")
@@ -349,6 +350,149 @@ class TestTheFooterIsTheSelection(_Driven):
                 await app.action_quit()
 
         drive(go())
+
+
+class TestTheCursorAndTheMouse(_Driven):
+    """Two places on the map, answering two different questions."""
+
+    def test_the_cursor_fills_in_the_coordinates(self) -> None:
+        """The one pair of numbers in the app you should never have to type.
+
+        Three units are in play — an 8px graphics tile, a 16px coordinate tile,
+        a 32px block — and the person_event macro adds 4 to y and x behind your
+        back at assembly. A form asking for a bare y and x is a trap. A cursor on
+        a tile you can see is not.
+        """
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test() as pilot:
+                grid = await self.ready(app, pilot)
+                grid.cursor = (12, 7)
+                await pilot.pause()
+
+                for action in (AddNpc, AddSignpost, AddItemball):
+                    form = Form(action, app.session, app._const, grid.cursor)
+                    await app.push_screen(form)
+                    await pilot.pause(0.2)
+                    self.assertEqual(form.query_one("#field-y", Input).value, "12",
+                                     action.name)
+                    self.assertEqual(form.query_one("#field-x", Input).value, "7",
+                                     action.name)
+                    app.pop_screen()
+                    await pilot.pause(0.1)
+                await app.action_quit()
+
+        drive(go())
+
+    def test_the_mouse_reports_a_tile_without_moving_the_cursor(self) -> None:
+        """How you answer "the linter says warp 2, and all I know is it is at
+        (2, 17)": put the pointer on 2, 17 and read the marker off.
+
+        Walking the *cursor* there would work too — and would move the
+        coordinates that every form is about to be prefilled with, which is
+        exactly what you did not want to do while looking something up.
+        """
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                grid = await self.ready(app, pilot)
+                grid.cursor = (0, 0)
+                grid.zoom = 2
+                await pilot.pause(0.2)
+
+                # A tile with something standing on it, so the glyph is worth
+                # reading — that is the whole point of hovering it.
+                where = min(grid.view.marks)
+                z = grid.zoom
+                await pilot.hover(MapGrid,
+                                  offset=(where[1] * z, where[0] * z // 2))
+                await pilot.pause(0.2)
+
+                self.assertIsNotNone(app._mouse_at, "the mouse reported nothing")
+                self.assertEqual((app._mouse_at.y, app._mouse_at.x), where)
+                self.assertEqual(app._mouse_at.glyph, grid.view.marks[where])
+                self.assertEqual(grid.cursor, (0, 0), "hovering moved the cursor")
+                await app.action_quit()
+
+        drive(go())
+
+
+class TestRefresh(unittest.TestCase):
+    """The repo is not the studio's alone.
+
+    `_invalidate` drops the caches for the files the studio *wrote*, which it can
+    do precisely because it knows what it wrote. It cannot know what you did in
+    an editor, or what a `git pull` did. There is no cheap way to notice, so the
+    honest design is a key you press when you know you changed something — and a
+    cache that is genuinely dropped when you press it.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls._tmp.name) / "pokeprism"
+        shutil.copytree(ROOT, cls.root, symlinks=True, ignore=shutil.ignore_patterns(
+            ".git", "*.o", "*.gbc", "*.sym", "*.map"))
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    def test_a_constant_added_by_hand_is_invisible_until_you_ask(self) -> None:
+        """A form's autocomplete is read once and cached for the run.
+
+        (The edit here renumbers the item enum, which would be a terrible thing
+        to do to a real repo and is a perfectly good thing to do to a temporary
+        copy that will never be assembled. What is under test is the cache, not
+        the item.)
+        """
+        session = Session(self.root)
+        self.assertNotIn("TEST_WIDGET", session.choices("items"))
+
+        items = self.root / "constants/item_constants.asm"
+        items.write_text(items.read_text().replace(
+            "\tconst MASTER_BALL", "\tconst TEST_WIDGET\n\tconst MASTER_BALL", 1))
+
+        self.assertNotIn("TEST_WIDGET", session.choices("items"),
+                         "the cache is not a cache")
+
+        session.reload()
+        self.assertIn("TEST_WIDGET", session.choices("items"),
+                      "reload() did not re-read the constants")
+
+    def test_the_module_level_caches_are_cleared_too(self) -> None:
+        """The bug the test above caught, named so it stays caught.
+
+        Half the `shared` modules memoise their reads with an `@lru_cache`, which
+        lives on the *function* — so it outlives any Session that thought it owned
+        it. Clearing only what is on `self` leaves `consts.names` serving the
+        items it read an hour ago, with total confidence. `reload()` looked right
+        and was wrong, and only a test that actually edited a file found it.
+        """
+        from pokeprism_devtools.shared import caches, consts
+
+        consts.names(self.root, consts.ITEMS)
+        self.assertTrue(consts.names.cache_info().currsize,
+                        "consts.names is not actually cached; this test is moot")
+
+        cleared = caches.clear()
+        self.assertEqual(consts.names.cache_info().currsize, 0)
+        self.assertGreater(cleared, 5,
+                           "cache discovery found almost nothing — it has broken, "
+                           "and a cache-clearer that clears nothing is worse than "
+                           "none, because it looks like it worked")
+
+    def test_reload_rebuilds_the_linter_too(self) -> None:
+        """The lint context is the other thing read once at startup — it is where
+        the map list comes from, so a map somebody else added is invisible until
+        it is rebuilt."""
+        session = Session(self.root)
+        was = session.ctx
+        session.lint()
+
+        session.reload()
+        self.assertIsNot(session.ctx, was, "the same context came back")
+        self.assertIsNone(session._found, "the findings survived a reload")
 
 
 class TestEditing(_Driven):
@@ -945,6 +1089,91 @@ class TestTextPreview(unittest.TestCase):
         self.assertEqual(text.box, "speech")
         self.assertNotEqual(self.session.measure("x", "speech").cols,
                             self.session.measure("x", "sign").cols)
+
+
+class TestTheDialogueGutter(_Driven):
+    """What a line costs, on the line — not in a second copy of it underneath.
+
+    The form used to print the speech twice: once in the box you typed into, and
+    again below with a count beside each line, leaving you to match them up by
+    counting rows. The count now lives in the box's right margin, drawn per
+    *visible* line by `render_line`, which is what keeps it aligned with the text
+    when the box scrolls: there is no second scroll position to keep in step.
+    """
+
+    async def _box(self, app, pilot, text: str):
+        form = Form(AddNpc, app.session, app._const, (3, 4))
+        await app.push_screen(form)
+        await pilot.pause(0.3)
+        box = form.query_one("#field-text", Dialogue)
+        box.text = text
+        await pilot.pause(0.4)
+        return box
+
+    def _lines(self, box, count: int) -> list[str]:
+        return [box.render_line(y).text.rstrip() for y in range(count)]
+
+    def test_the_count_is_in_tiles_and_lands_on_its_own_line(self) -> None:
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(100, 40)) as pilot:
+                for _ in range(300):
+                    await pilot.pause(0.02)
+                    if app._const is not None:
+                        break
+                box = await self._box(
+                    app, pilot,
+                    "#mon Center near\nHi there.\n\n<PLAYER> is here right")
+                rows = self._lines(box, 4)
+
+                # `#` is four tiles, not one character: 16 characters, 19 tiles,
+                # against an 18-column box. You find that out here, not from the
+                # linter after you have saved.
+                self.assertIn("#mon Center near", rows[0])
+                self.assertIn("19/18", rows[0])
+                self.assertIn("1 over", rows[0])
+
+                self.assertIn("9/18", rows[1])
+                self.assertNotIn("over", rows[1])
+
+                # A blank line is a page break — the engine opens a fresh box —
+                # and nothing about an empty line says so. Now it does.
+                self.assertIn("new box", rows[2])
+
+                # The worst kind of overflow: right in your game, broken in the
+                # game of someone with a long name.
+                self.assertIn("over at worst", rows[3])
+                await app.action_quit()
+
+        drive(go())
+
+    def test_the_gutter_follows_the_text_when_the_box_scrolls(self) -> None:
+        """The bug this design exists not to have. A panel below the box has its
+        own scroll position; a gutter drawn by `render_line` cannot, because it
+        is handed the line it is drawing."""
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(100, 40)) as pilot:
+                for _ in range(300):
+                    await pilot.pause(0.02)
+                    if app._const is not None:
+                        break
+                # One long line per row, each a different length, so every row's
+                # count is distinguishable from every other row's.
+                text = "\n".join("a" * (n + 1) for n in range(30))
+                box = await self._box(app, pilot, text)
+
+                box.scroll_to(y=10, animate=False)
+                await pilot.pause(0.3)
+                self.assertEqual(box.scroll_offset.y, 10, "the box did not scroll")
+
+                # The top visible row is document line 10, which is 11 a's.
+                top = box.render_line(0).text
+                self.assertIn("a" * 11 + " ", top)
+                self.assertIn("11/18", top)
+                await app.action_quit()
+
+        drive(go())
 
 
 class TestTheSeam(unittest.TestCase):

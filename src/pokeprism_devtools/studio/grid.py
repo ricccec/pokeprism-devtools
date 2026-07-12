@@ -77,6 +77,25 @@ class MapGrid(ScrollView):
             self.x = x
             self.glyph = glyph
 
+    class Hovered(Message):
+        """The mouse is over a coordinate tile — or has left the map.
+
+        Not the same thing as the cursor, and worth its own message. The linter
+        talks in coordinates ("warp 2 is broken"; the only thing you know about
+        warp 2 is that its row says 2, 17), and the fastest way to find out what
+        is standing at 2, 17 is to put the mouse on 2, 17 and read it off. Doing
+        that with the keyboard cursor would mean walking there, which moves the
+        coordinates every form is about to be prefilled with.
+        """
+
+        def __init__(self, y: int, x: int, glyph: str | None,
+                     inside: bool = True) -> None:
+            super().__init__()
+            self.y = y
+            self.x = x
+            self.glyph = glyph
+            self.inside = inside
+
     def show(self, view: MapGeometry) -> None:
         self.view = view
         self.cursor = (0, 0)
@@ -129,6 +148,49 @@ class MapGrid(ScrollView):
         i = ZOOMS.index(self.zoom) + delta
         if 0 <= i < len(ZOOMS):
             self.zoom = ZOOMS[i]
+
+    # -- the mouse ------------------------------------------------------------- #
+    def _tile_at(self, offset) -> tuple[int, int] | None:
+        """The coordinate tile under a point in the widget, or None if past the
+        edge of the map. Scroll has to be added back in: `offset` is where the
+        pointer is on *screen*, and the map may have been scrolled under it."""
+        if self.view is None:
+            return None
+        scroll_x, scroll_y = self.scroll_offset
+        z = self.zoom
+        # A cell is one tile wide and half a tile tall — see `_HALF` — so the
+        # column divides by the zoom and the row divides by half of it.
+        tx = (offset.x + scroll_x) // z
+        ty = (2 * (offset.y + scroll_y)) // z
+        rows, cols = self.view.size
+        if not (0 <= ty < rows and 0 <= tx < cols):
+            return None
+        return ty, tx
+
+    def on_mouse_move(self, event) -> None:
+        at = self._tile_at(event.offset)
+        if at is None:
+            self.post_message(self.Hovered(0, 0, None, inside=False))
+            return
+        assert self.view is not None
+        self.post_message(self.Hovered(*at, self.view.marks.get(at)))
+
+    def on_leave(self) -> None:
+        self.post_message(self.Hovered(0, 0, None, inside=False))
+
+    def on_click(self, event) -> None:
+        """Click to put the cursor there.
+
+        The cursor is what fills a form's coordinates in, so this is the short
+        way round: point at the tile you mean, click, and the next thing you add
+        lands on it. Focus follows the click too, or the arrow keys would still
+        be driving the map list.
+        """
+        at = self._tile_at(event.offset)
+        if at is None:
+            return
+        self.focus()
+        self.cursor = at
 
     # -- drawing ---------------------------------------------------------------- #
     def render_line(self, y: int) -> Strip:

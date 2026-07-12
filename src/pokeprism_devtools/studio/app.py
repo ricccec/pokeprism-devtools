@@ -91,6 +91,7 @@ class Studio(App):
         Binding("b", "build", "Build & run"),
         Binding("t", "texts", "All text"),
         Binding("u", "undo", "Undo"),
+        Binding("r", "refresh", "Re-read"),
         Binding("L", "findings", "Findings"),
         Binding("H", "history", "History"),
         Binding("slash", "focus_filter", "Filter", show=False),
@@ -118,6 +119,10 @@ class Studio(App):
         self._linted = False
         #: What is highlighted in the tabs. The footer is a function of this.
         self._ref: Ref | None = None
+        #: The two places on the map that are worth reporting: where the cursor
+        #: is, and where the pointer is. See :meth:`_say_where`.
+        self._cursor_at: MapGrid.Moved | None = None
+        self._mouse_at: MapGrid.Hovered | None = None
 
     # -- layout ---------------------------------------------------------------- #
     def compose(self) -> ComposeResult:
@@ -515,16 +520,68 @@ class Studio(App):
 
     @on(MapGrid.Moved)
     def _moved(self, event: MapGrid.Moved) -> None:
-        block = coords.block_of(event.y, event.x)
-        quadrant = coords.quadrant_of(event.y, event.x)
-        here = Text()
-        here.append(f"y {event.y}  x {event.x}", style="bold")
-        here.append(f"   block {block[0]},{block[1]} q{quadrant[0]}{quadrant[1]}",
-                    style="dim")
-        if event.glyph:
-            here.append("   ")
-            here.append(f" {event.glyph} ", style=_marker_style(event.glyph))
-        self.query_one("#status", Static).update(here)
+        self._cursor_at = event
+        self._say_where()
+
+    @on(MapGrid.Hovered)
+    def _hovered(self, event: MapGrid.Hovered) -> None:
+        self._mouse_at = event if event.inside else None
+        self._say_where()
+
+    def _say_where(self) -> None:
+        """The status bar: where the cursor is, and where the mouse is.
+
+        Both, because they answer different questions. The cursor is where the
+        next thing you add will land. The mouse is how you look something up —
+        the linter says "warp 2", the table says warp 2 is at (2, 17), and the
+        way to find out *which door that is* is to put the pointer on 2, 17 and
+        read the marker off. Walking the cursor there would work too, and would
+        move the coordinates every form is about to be prefilled with.
+        """
+        line = Text()
+        if (at := self._cursor_at) is not None:
+            block = coords.block_of(at.y, at.x)
+            quadrant = coords.quadrant_of(at.y, at.x)
+            line.append(f"y {at.y}  x {at.x}", style="bold")
+            line.append(f"   block {block[0]},{block[1]} "
+                        f"q{quadrant[0]}{quadrant[1]}", style="dim")
+            if at.glyph:
+                line.append("   ")
+                line.append(f" {at.glyph} ", style=_marker_style(at.glyph))
+
+        if (mouse := self._mouse_at) is not None:
+            line.append("        mouse ", style="dim")
+            line.append(f"y {mouse.y}  x {mouse.x}", style="bold")
+            if mouse.glyph:
+                line.append("  ")
+                line.append(f" {mouse.glyph} ", style=_marker_style(mouse.glyph))
+
+        self.query_one("#status", Static).update(line)
+
+    # -- reading the repo again ---------------------------------------------------- #
+    def action_refresh(self) -> None:
+        """Read the repo again, because you changed it from outside.
+
+        The studio drops its caches for the files *it* writes, which it can do
+        precisely because it knows what it wrote. It cannot know what you did in
+        an editor, or what a `git pull` did, and until this key exists it will
+        keep offering the trainer classes and map groups it read at startup. So:
+        the linter's context, the constants the forms autocomplete from, the map
+        list, the map on screen. All of it, again.
+        """
+        self.notify("re-reading the repo…")
+        self.session.reload()
+        self._linted = False
+        self._maps = self.session.maps
+
+        known = [m.label for m in self._maps]
+        want = self._wanted if self._wanted in known else (known[0] if known else None)
+        self._wanted = want
+        self._fill_list(self.query_one("#filter", Input).value, select=want)
+        if want:
+            self._load(want)
+        self._lint()
+        self._warm()
 
 
 def main(argv: list[str] | None = None) -> int:

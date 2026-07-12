@@ -37,9 +37,11 @@ from textual.screen import ModalScreen
 from textual.suggester import SuggestFromList
 from textual.widgets import Button, Input, Label, OptionList, Static, TextArea
 
+from .speech import Dialogue
+
 from ..actions import Action, ActionError, Field
 from ..grid import ZOOMS, MapGrid
-from ..session import Preview, Session, TextPreview
+from ..session import Preview, Session
 
 #: Fields the grid can answer for you. The cursor is *on* the tile; making you
 #: read its coordinates off the status bar and type them back in would be a way
@@ -150,8 +152,7 @@ class Form(ModalScreen["Preview | None"]):
     .field-label { color: $text-muted; }
     .field-help { color: $text-disabled; }
     .field-fixed { color: $accent; text-style: bold; }
-    TextArea { height: 8; border: solid $panel; }
-    #tiles { height: auto; max-height: 10; padding: 0 1 1 1; }
+    Dialogue { height: 10; border: solid $panel; }
     #sketch { height: 10; margin: 0 1; border: solid $panel; }
     #sketch-why { padding: 0 1; color: $warning; height: auto; }
     """
@@ -186,7 +187,6 @@ class Form(ModalScreen["Preview | None"]):
             if self._action.sketches:
                 yield MapGrid(id="sketch")
                 yield Static(id="sketch-why")
-            yield Static(id="tiles")
             yield Static(id="form-error")
             with Horizontal(id="form-buttons"):
                 yield Button("Cancel", id="cancel")
@@ -204,9 +204,9 @@ class Form(ModalScreen["Preview | None"]):
         if f.help:
             yield Label(f.help, classes="field-help")
         if f.kind == "lines":
-            area = TextArea(self._prefill(f), id=f"field-{f.name}", soft_wrap=False)
-            area.tab_behavior = "focus"     # or you can never leave the box
-            yield area
+            # Not a bare TextArea: a Dialogue draws what each line costs in tiles
+            # in its own right margin, so the count is on the line it is about.
+            yield Dialogue(self._prefill(f), id=f"field-{f.name}")
         else:
             yield Input(
                 value=self._prefill(f), id=f"field-{f.name}",
@@ -290,24 +290,17 @@ class Form(ModalScreen["Preview | None"]):
 
         Cheap enough to do it this way: the metrics are cached on the session and
         measuring a line is a walk over its tokens. What it buys is the whole
-        reason the text rules exist — you see `#mon Center` cost 14 tiles while
-        you are still able to shorten it.
+        reason the text rules exist — you see `#mon Center` cost 19 tiles against
+        an 18-column box while you are still able to shorten it.
+
+        The answer goes back into the box it came from, not into a panel that
+        repeats the words underneath. See `screens/speech.py`.
         """
-        panel = self.query_one("#tiles", Static)
-        out = Text()
         for f in self._action.FIELDS:
             if f.kind != "lines":
                 continue
-            body = self.query_one(f"#field-{f.name}", TextArea).text
-            if not body.strip():
-                continue
-            if len(self._text_fields()) > 1:
-                out.append(f"{f.label}\n", style="bold")
-            out.append(_tiles(self._session.measure(body, self._box(f))))
-        panel.update(out)
-
-    def _text_fields(self) -> list[Field]:
-        return [f for f in self._action.FIELDS if f.kind == "lines"]
+            box = self.query_one(f"#field-{f.name}", Dialogue)
+            box.measured(self._session.measure(box.text, self._box(f)))
 
     # -- leaving ----------------------------------------------------------------- #
     @on(Button.Pressed, "#ok")
@@ -338,7 +331,7 @@ class Form(ModalScreen["Preview | None"]):
             if f.kind == "fixed":
                 out[f.name] = self._prefill(f)
             elif f.kind == "lines":
-                out[f.name] = self.query_one(f"#field-{f.name}", TextArea).text
+                out[f.name] = self.query_one(f"#field-{f.name}", Dialogue).text
             else:
                 out[f.name] = self.query_one(f"#field-{f.name}", Input).value
         return out
@@ -360,34 +353,5 @@ def _fit(size: tuple[int, int], panel: Size) -> int:
     return next((z for z in reversed(ZOOMS)
                  if cols * z <= panel.width and rows * z // 2 <= panel.height),
                 ZOOMS[0])
-
-
-def _tiles(measured: TextPreview) -> Text:
-    """The speech, line by line, with what it costs in tiles.
-
-    A line is red when it certainly overflows and yellow when it only overflows
-    once a name buffer is at its longest — because that one is a bug in somebody
-    else's game, not in yours, which is the hardest kind to be told about.
-    """
-    out = Text()
-    for m in measured.lines:
-        if m.over:
-            style, note = "bold red", f"{m.over} over"
-        elif m.over_at_worst:
-            style, note = "yellow", f"{m.over_at_worst} over at worst"
-        elif m.unbounded:
-            style, note = "yellow", f"unbounded: {' '.join(m.unbounded)}"
-        else:
-            style, note = "dim", ""
-
-        out.append(f"{m.tiles:>3}/{measured.cols}  ", style=style)
-        out.append(m.text or "·", style="none" if m.text else "dim")
-        if note:
-            out.append(f"   {note}", style=style)
-        if m.unknown:
-            out.append(f"   not in the charmap: {' '.join(m.unknown)}",
-                       style="bold red")
-        out.append("\n")
-    return out
 
 
