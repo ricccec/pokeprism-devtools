@@ -47,6 +47,7 @@ _DECLARATIONS = {"constants/event_flags.asm"}
 _LABEL_RE = re.compile(r"^(\w+):")
 _HIDDEN_FLAG_RE = re.compile(r"^\s*dw\s+(EVENT_\w+)")
 _TRAINER_RE = re.compile(r"^\s*trainer\s+(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,")
+_EVENT_RE = re.compile(r"\bEVENT_\w+")
 
 
 class RemovalError(RuntimeError):
@@ -55,11 +56,21 @@ class RemovalError(RuntimeError):
 
 def _own_flag(entry: eh.Entry) -> str | None:
     """The flag an entry carries itself. Only a person_event does — a signpost's
-    last argument is its pointer, not a flag."""
+    last argument is its pointer, not a flag.
+
+    Three people in this repo write it as an *expression* — `EVENT_X | $8000`,
+    the engine's visibility bit — so what comes back is the flag's **name**, not
+    the whole argument. The allocator has to find the thing in `event_flags.asm`,
+    and there is no `const EVENT_X | $8000` in there to find. (The argument itself
+    is not rewritten: the line it sits on is the line being deleted.)
+    """
     if entry.macro != "person_event":
         return None
-    flag = entry.event_flag
-    return flag if flag not in _NO_FLAG else None
+    flag = entry.event_flag.strip()
+    if flag in _NO_FLAG:
+        return None
+    m = _EVENT_RE.search(flag)
+    return m.group(0) if m else flag
 
 
 @dataclass
@@ -77,14 +88,28 @@ class Removal:
 
 
 def remove(root: Path, map_const: str, *, label: str | None = None,
-           flag: str | None = None, at: tuple[int, int] | None = None) -> Removal:
+           flag: str | None = None, at: tuple[int, int] | None = None,
+           index: int | None = None, kind: eh.ListKind | None = None) -> Removal:
     """Take one object out of a map, named however you can name it.
 
-    Identify it by the script `label` it points at, by its event `flag`, or by
-    its position `at` (y, x) — whichever you have. Exactly one object must match;
-    two is an error rather than a guess.
+    Identify it by its `index` in the list `kind` — which is exact — or, when
+    that is not what you have, by the script `label` it points at, by its event
+    `flag`, or by its position `at` (y, x). Exactly one object must match; two is
+    an error rather than a guess.
+
+    **Prefer `index`.** The other three are *descriptions*, and a description need
+    not be unique: Owsauri's game corner has sixteen slot machines running the one
+    script, Saffron Gates has eight guards, and none of them can be named apart.
+    The studio never has to guess, because you did not describe the thing you want
+    gone — you pointed at it, and a `Ref` carries the list and the position.
+
+    `kind` alone narrows the other three to one list, and the caller should pass it
+    whenever it knows: a name is only unique *within* a list. CaperRidge has a
+    trigger and an NPC that run the same script, so without it, naming either by
+    its label matches both and neither can be deleted.
     """
-    ctx = _Target(root, map_const, label=label, flag=flag, at=at)
+    ctx = _Target(root, map_const, label=label, flag=flag, at=at,
+                  index=index, kind=kind)
     edits: list[Edit] = []
     warnings: list[str] = []
 
@@ -108,9 +133,17 @@ def remove(root: Path, map_const: str, *, label: str | None = None,
     freed = None
     if ctx.flag and ctx.flag_private:
         flags = eventflags.load(root)
-        slot = flags.free(ctx.flag)
-        edits.append(flags.to_edit(root, f"{ctx.flag} -> const skip (slot {slot.value})"))
-        freed = ctx.flag
+        if ctx.flag in flags.by_name:
+            slot = flags.free(ctx.flag)
+            edits.append(flags.to_edit(
+                root, f"{ctx.flag} -> const skip (slot {slot.value})"))
+            freed = ctx.flag
+        else:
+            # An object can name a flag that was never allocated — `EVENT_0` is
+            # spelled like one and isn't one. There is no slot to give back, and
+            # the deletion is not the moment to argue about it.
+            warnings.append(f"{ctx.flag} is not allocated in constants/event_flags.asm, "
+                            f"so there is no slot to give back — left alone.")
     elif ctx.flag:
         warnings.append(f"{ctx.flag} still gates something else — left allocated.")
 
@@ -123,10 +156,15 @@ class _Target:
     """The one object being removed, and everything hanging off it."""
 
     def __init__(self, root: Path, map_const: str, *, label: str | None,
-                 flag: str | None, at: tuple[int, int] | None) -> None:
-        if sum(x is not None for x in (label, flag, at)) != 1:
-            raise RemovalError("name the object by exactly one of label=, flag= or at=")
+                 flag: str | None, at: tuple[int, int] | None,
+                 index: int | None = None, kind: eh.ListKind | None = None) -> None:
+        if sum(x is not None for x in (label, flag, at, index)) != 1:
+            raise RemovalError(
+                "name the object by exactly one of index=, label=, flag= or at=")
+        if index is not None and kind is None:
+            raise RemovalError("index= is a position in a list, so it needs kind= too")
 
+        self.want = kind
         self.root = root
         self.const = map_const
         self.dropped_block = False
@@ -140,7 +178,7 @@ class _Target:
         self._original = self.path.read_text()
         self.header = eh.parse_map(self.path)
 
-        self.kind, self.index, self.entry = self._locate(label, flag, at)
+        self.kind, self.index, self.entry = self._locate(label, flag, at, index)
         self.block_label = self._block_label()
         self.flag = self._flag()
 
@@ -150,9 +188,28 @@ class _Target:
         self.flag_private = not self._referenced_elsewhere(self.flag)
 
     # -- finding it --------------------------------------------------------- #
-    def _locate(self, label, flag, at):
+    #: The lists this module will take an entry out of. Warps are not among them:
+    #: a warp is a *position* other maps count to, so removing one renumbers the
+    #: repo — see :mod:`.warpdel`, which is a different operation with a different
+    #: blast radius, not a special case of this one.
+    _LISTS = (eh.ListKind.OBJECT_EVENTS, eh.ListKind.BG_EVENTS,
+              eh.ListKind.COORD_EVENTS)
+
+    def _locate(self, label, flag, at, index):
+        if index is not None:
+            if self.want not in self._LISTS:
+                raise RemovalError(f"{self.want.value} is not a list this removes from")
+            entries = self.header.list_of(self.want).entries
+            if not 0 <= index < len(entries):
+                raise RemovalError(
+                    f"{self.const}'s {self.want.value} has {len(entries)} entries, "
+                    f"so there is no #{index + 1} to remove")
+            return self.want, index, entries[index]
+
         hits = []
-        for kind in (eh.ListKind.OBJECT_EVENTS, eh.ListKind.BG_EVENTS):
+        for kind in self._LISTS:
+            if self.want is not None and kind is not self.want:
+                continue
             for i, entry in enumerate(self.header.list_of(kind).entries):
                 if self._matches(entry, label, flag, at):
                     hits.append((kind, i, entry))
