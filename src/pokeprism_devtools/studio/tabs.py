@@ -183,11 +183,32 @@ class MapTabs(Vertical):
             if ref not in refs:
                 continue
             panes = self.query_one(TabbedContent)
-            panes.active = _pane(name)
+            pane = _pane(name)
+            switching = panes.active != pane
+            panes.active = pane
             table = self.query_one(f"#table-{_slug(name)}", DataTable)
             table.move_cursor(row=refs.index(ref))
+            if switching:
+                self._repaint_when_shown(table)
             return True
         return False
+
+    def _repaint_when_shown(self, table: DataTable) -> None:
+        """Ask a table that is about to be revealed to draw itself again.
+
+        The pane we have just switched to is **still hidden at this moment** — the
+        switch lands a frame later. So the repaint `move_cursor` has just asked for,
+        of the row it left and the row it moved to, goes nowhere; and when the pane
+        is finally shown it is shown from what was last painted, which still has the
+        highlight on whichever row you were standing on the last time this tab was
+        up.
+
+        The result is a table whose state is right and whose picture is a lie: click
+        a warp, click an NPC, click a *different* warp, and the Warps tab comes back
+        with the *first* warp lit up. `e` and `d` would act on the right one, which
+        is the worst possible version of the bug.
+        """
+        self.call_after_refresh(table.refresh)
 
     @on(DataTable.RowHighlighted)
     @on(TabbedContent.TabActivated)

@@ -587,6 +587,83 @@ class TestTheGridIsAWayIn(_Driven):
 
         drive(go())
 
+    def test_coming_back_to_a_tab_lights_the_row_you_came_back_to(self) -> None:
+        """Select a warp, select an NPC, select a *different* warp. The Warps tab
+        used to come back with the **first** warp still lit up.
+
+        Nothing about the state was wrong — `cursor_row` was right, `tabs.ref` was
+        right, and `e` and `d` would have acted on the warp you actually chose. It
+        was the *picture* that lied, which is the worst possible version of it: the
+        table said one thing and the keys did another.
+
+        `select()` switches the pane and then moves the table's cursor, and at that
+        moment the pane is still hidden — the switch lands a frame later. So the
+        repaint the move asks for is thrown away, and the pane is then revealed from
+        what was last painted: the highlight where it was the last time this tab was
+        up. Hence the assertion is on the rendered cells and not on `cursor_row`,
+        which was never the thing that broke.
+        """
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(150, 60)) as pilot:
+                grid = await self.ready(app, pilot)
+                assert app._data is not None
+                data = app._data
+
+                def one_of(what: str) -> list:
+                    return [t for t in sorted(grid.view.marks)
+                            if len(data.at(t)) == 1 and data.at(t)[0].what == what]
+
+                warps = one_of("warp")
+                others = [t for t in sorted(grid.view.marks)
+                          if len(data.at(t)) == 1 and data.at(t)[0].what != "warp"]
+                if len(warps) < 2 or not others:
+                    self.skipTest(f"{MAP} has no two warps and something else")
+
+                for tile in (warps[0], others[0], warps[1]):
+                    grid.cursor = tile
+                    await pilot.pause(0.3)
+
+                want = data.at(warps[1])[0]
+                tabs = app.query_one(MapTabs)
+                table = tabs.query_one(TabbedContent).active_pane.query_one(DataTable)
+                self.assertEqual(tabs.ref, want, "the state was already wrong")
+
+                # Now the picture. No colour is named here: the selected row is
+                # simply the one wearing a background no other row is wearing. The
+                # rest are zebra-striped, in two colours they share — so a highlight
+                # that failed to move is a cursor row painted in a colour some other
+                # row also has, which is exactly what this catches.
+                strips = list(app.screen._compositor.render_strips())
+                region = table.region
+
+                def background_of(row: int) -> str | None:
+                    y = region.y + 1 + row          # row 0 sits below the header
+                    if y >= len(strips):
+                        return None
+                    seen: dict[str, int] = {}
+                    x = 0
+                    for seg in strips[y]:
+                        if region.x <= x < region.right and seg.style and seg.style.bgcolor:
+                            hex6 = seg.style.bgcolor.get_truecolor().hex
+                            seen[hex6] = seen.get(hex6, 0) + len(seg.text)
+                        x += len(seg.text)
+                    return max(seen, key=seen.__getitem__) if seen else None
+
+                rows = range(min(table.row_count, region.height - 1))
+                lit = background_of(table.cursor_row)
+                self.assertIsNotNone(lit, "the selected row was not drawn at all")
+                shared = [r for r in rows
+                          if r != table.cursor_row and background_of(r) == lit]
+                self.assertEqual(
+                    shared, [],
+                    f"row {table.cursor_row} is the selected warp, but it is drawn "
+                    f"in the same colour as row(s) {shared} — so the highlight is "
+                    f"still sitting on the warp you looked at first")
+                await app.action_quit()
+
+        drive(go())
+
     def test_clicking_is_the_same_gesture(self) -> None:
         """A click already moves the cursor, so there is one code path and not two.
         This is the test that would notice if that stopped being true.
