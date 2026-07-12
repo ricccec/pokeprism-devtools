@@ -54,13 +54,28 @@ ALL = ("Attributes", "NPCs", "Trainers", "Pickups", "Warps", "Signposts",
        "Triggers", "Connections", "Unreadable", "Roof", "Wild")
 
 
-class Tabs(Vertical):
-    """Every tab of one map, and the row you are standing on."""
+class MapTabs(Vertical):
+    """Every tab of one map, and the row you are standing on.
+
+    **Not `Tabs`.** Textual has a widget of that name, and `ContentTabs` — the strip
+    of tab *labels* along the top of a `TabbedContent` — is a subclass of it. So a
+    type selector `Tabs` in this widget's own stylesheet silently also matches the
+    strip inside it, and `Tabs { height: 100% }` gave the strip the whole panel and
+    left one row for the tables. Which is what an empty tab looks like.
+
+    The height chain below is then load-bearing on its own account: `TabbedContent`
+    and `TabPane` are both `height: auto` by default, and `1fr` of an auto-height
+    parent resolves to nothing. Height has to be handed down explicitly, every step
+    from the pane to the table.
+    """
 
     DEFAULT_CSS = """
-    Tabs { height: 100%; }
-    Tabs .tab-note { height: auto; padding: 0 1; color: $text-disabled; }
-    Tabs DataTable { height: 1fr; }
+    MapTabs { height: 100%; }
+    MapTabs TabbedContent { height: 1fr; }
+    MapTabs ContentSwitcher { height: 1fr; }
+    MapTabs TabPane { height: 1fr; }
+    MapTabs .tab-note { height: auto; padding: 0 1; color: $text-disabled; }
+    MapTabs DataTable { height: 1fr; }
     """
 
     class Selected(Message):

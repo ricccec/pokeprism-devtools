@@ -64,6 +64,10 @@ class MapGrid(ScrollView):
 
     can_focus = True
 
+    #: Did the mouse move while its button was down? If so the click that ends the
+    #: drag is a pan's full stop, not an instruction to move the cursor.
+    _panned = False
+
     view: reactive[MapGeometry | None] = reactive(None, always_update=True)
     zoom: reactive[int] = reactive(2)
     cursor: reactive[tuple[int, int]] = reactive((0, 0))
@@ -168,6 +172,9 @@ class MapGrid(ScrollView):
         return ty, tx
 
     def on_mouse_move(self, event) -> None:
+        if event.button:
+            self._pan(event)
+            return
         at = self._tile_at(event.offset)
         if at is None:
             self.post_message(self.Hovered(0, 0, None, inside=False))
@@ -178,6 +185,34 @@ class MapGrid(ScrollView):
     def on_leave(self) -> None:
         self.post_message(self.Hovered(0, 0, None, inside=False))
 
+    # -- dragging the map about ------------------------------------------------- #
+    def on_mouse_down(self, event) -> None:
+        """Take the mouse, so a drag that runs off the edge of the widget keeps
+        panning instead of stopping at the border — which is exactly where you are
+        when you are trying to see what is past the border."""
+        self._panned = False
+        self.capture_mouse()
+
+    def on_mouse_up(self, event) -> None:
+        self.release_mouse()
+
+    def _pan(self, event) -> None:
+        """Grab the map and pull it. The content follows the finger, so dragging
+        left brings the east of the map into view.
+
+        This exists because **the horizontal wheel is not reported by every
+        terminal**. VSCode's built-in terminal is xterm.js, which sends the mouse
+        buttons for a vertical wheel and nothing at all for a horizontal one — so
+        `MouseScrollLeft`/`Right` (which `ScrollView` handles perfectly well, and
+        which do arrive under iTerm2, kitty, WezTerm and Ghostty) simply never
+        happen there. A drag is reported by everything, and on a map — where the
+        thing you want is usually "show me what is just off to the right" — it is
+        the better gesture anyway.
+        """
+        self._panned = True
+        self.scroll_to(self.scroll_x - event.delta_x, self.scroll_y - event.delta_y,
+                       animate=False)
+
     def on_click(self, event) -> None:
         """Click to put the cursor there.
 
@@ -185,11 +220,18 @@ class MapGrid(ScrollView):
         way round: point at the tile you mean, click, and the next thing you add
         lands on it. Focus follows the click too, or the arrow keys would still
         be driving the map list.
+
+        A drag ends in a click too, as far as Textual is concerned. Honouring that
+        one would fling the cursor to wherever you happened to let go — so a click
+        that moved is a pan, and only a click that stayed put is a click.
         """
+        self.focus()
+        if self._panned:
+            self._panned = False
+            return
         at = self._tile_at(event.offset)
         if at is None:
             return
-        self.focus()
         self.cursor = at
 
     # -- drawing ---------------------------------------------------------------- #

@@ -23,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from textual import events
 from textual.widgets import DataTable, Input, OptionList, TabbedContent, TextArea
 
 from pokeprism_devtools.shared import blocksrc, coords, eventheader, paths, swatches
@@ -39,7 +40,7 @@ from pokeprism_devtools.studio.newmap import NewMap
 from pokeprism_devtools.studio.screens import Confirm, Findings, Form, History, Picker
 from pokeprism_devtools.studio.screens.speech import Dialogue
 from pokeprism_devtools.studio.status import Banner, Where
-from pokeprism_devtools.studio.tabs import ADD, Tabs
+from pokeprism_devtools.studio.tabs import ADD, MapTabs
 
 ROOT = paths.repo_root(Path.home() / "code/ricccec/pokeprism")
 
@@ -177,7 +178,7 @@ class _Driven(unittest.TestCase):
         self.fail(f"{label} never loaded")
 
     async def open_tab(self, app, pilot, name: str) -> DataTable:
-        tabs = app.query_one(Tabs)
+        tabs = app.query_one(MapTabs)
         panes = tabs.query_one(TabbedContent)
         panes.active = f"pane-{name}"
         await pilot.pause(0.2)
@@ -261,13 +262,43 @@ class TestShell(_Driven):
             app = Studio(ROOT)
             async with app.run_test() as pilot:
                 await self.ready(app, pilot)
-                panes = app.query_one(Tabs).query_one(TabbedContent)
+                panes = app.query_one(MapTabs).query_one(TabbedContent)
                 names = [str(p.id) for p in panes.query("TabPane")]
                 for wanted in ("pane-attributes", "pane-npcs", "pane-trainers",
                                "pane-pickups", "pane-warps", "pane-signposts",
                                "pane-triggers", "pane-connections", "pane-roof",
                                "pane-wild"):
                     self.assertIn(wanted, names)
+                await app.action_quit()
+
+        drive(go())
+
+    def test_a_tab_is_tall_enough_to_show_its_rows(self) -> None:
+        """The tables had the rows and drew none of them.
+
+        Two things collapse a DataTable to a single line, and both did. Textual
+        gives `TabbedContent` and `TabPane` `height: auto`, and `1fr` of an auto
+        parent is nothing. And this widget used to be called `Tabs` — the name of a
+        Textual widget that `ContentTabs`, the strip of tab *labels*, inherits from
+        — so `Tabs { height: 100% }` in its own stylesheet handed the whole panel to
+        the strip and left one row underneath.
+
+        Neither shows up in the data: `MapData` was perfect throughout. It only
+        shows up in the geometry, which is why the assertion is on the geometry.
+        """
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 40)) as pilot:
+                await self.ready(app, pilot)
+                tabs = app.query_one(MapTabs)
+                pane = tabs.query_one(TabbedContent).active_pane
+                table = pane.query_one(DataTable)
+                self.assertGreater(
+                    table.row_count, 1, "the fixture map's first tab has no rows")
+                self.assertGreater(
+                    table.size.height, 1,
+                    f"the table is {table.size.height} row(s) tall and has "
+                    f"{table.row_count} rows in it — the tab will look empty")
                 await app.action_quit()
 
         drive(go())
@@ -425,6 +456,50 @@ class TestTheCursorAndTheMouse(_Driven):
 
         drive(go())
 
+    def test_dragging_pans_the_map_and_does_not_move_the_cursor(self) -> None:
+        """The way to see what is off to the right, in a terminal that will not
+        tell you the wheel went sideways.
+
+        VSCode's terminal is xterm.js, which reports the mouse buttons for a
+        vertical wheel and nothing at all for a horizontal one — so the
+        `MouseScrollLeft`/`Right` that `ScrollView` handles perfectly well simply
+        never arrive there. A drag is reported by every terminal.
+
+        The half of this that is easy to get wrong is the end of it: Textual turns
+        the mouse-up that finishes a drag into a `Click`, and an unguarded click
+        handler would fling the cursor to wherever you happened to let go.
+        """
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(100, 40)) as pilot:
+                grid = await self.ready(app, pilot)
+                grid.zoom = 4                      # wider than the pane it sits in
+                grid.cursor = (0, 0)
+                await pilot.pause(0.2)
+                self.assertGreater(grid.virtual_size.width, grid.size.width,
+                                   "the map fits, so there is nothing to pan")
+
+                grid.post_message(events.MouseDown(
+                    grid, 40, 9, 0, 0, 1, False, False, False))
+                for _ in range(4):
+                    grid.post_message(events.MouseMove(
+                        grid, 34, 9, -3, 0, 1, False, False, False))
+                grid.post_message(events.MouseUp(
+                    grid, 28, 9, 0, 0, 1, False, False, False))
+                await pilot.pause(0.2)
+
+                self.assertGreater(grid.scroll_x, 0, "the drag panned nothing")
+                self.assertEqual(grid.cursor, (0, 0), "the drag moved the cursor")
+
+                # ...and a click that did not drag is still a click.
+                await pilot.click(MapGrid, offset=(8, 3))
+                await pilot.pause(0.2)
+                self.assertNotEqual(grid.cursor, (0, 0),
+                                    "a plain click stopped moving the cursor")
+                await app.action_quit()
+
+        drive(go())
+
 
 class TestTheGridIsAWayIn(_Driven):
     """Point at a thing on the map, and you are pointing at its row.
@@ -454,7 +529,7 @@ class TestTheGridIsAWayIn(_Driven):
                                  "the cursor landed on it and the tables did not follow")
                 # And the *tab* came up, not just the row: pointing at a warp when
                 # you are looking at NPCs has to change which table you are reading.
-                tabs = app.query_one(Tabs)
+                tabs = app.query_one(MapTabs)
                 self.assertEqual(tabs.ref, want)
                 await app.action_quit()
 
@@ -526,7 +601,7 @@ class TestTheGridIsAWayIn(_Driven):
             app = Studio(ROOT)
             async with app.run_test() as pilot:
                 grid = await self.ready(app, pilot)
-                tabs = app.query_one(Tabs)
+                tabs = app.query_one(MapTabs)
 
                 warps = [r for r in app._data.tab("Warps").table[1] if r.tile]
                 self.assertTrue(warps, f"{MAP} has no warps to walk")

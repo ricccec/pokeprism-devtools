@@ -65,7 +65,7 @@ from .panels import Ref
 from .screens import Build, Form, Picker
 from .session import MapData, Session, SessionError, TextRef
 from .status import Banner, Centre, Diagnostics, Where
-from .tabs import ADD, Tabs
+from .tabs import ADD, MapTabs
 
 #: What `e` can do, given what is selected. Editing an object in place is P3; for
 #: now `e` reaches the one thing that is already writable — the words it says.
@@ -144,7 +144,7 @@ class Studio(Flow, App):
             yield MapList(id="sidebar")
             yield Centre()
             yield Diagnostics(id="findings")
-        yield Tabs(id="tabs-pane")
+        yield MapTabs(id="tabs-pane")
         yield Banner(id="banner")
         yield Footer()
 
@@ -234,7 +234,7 @@ class Studio(Flow, App):
             if self._keep_cursor and self._keep_cursor[0] == data.label:
                 grid.cursor = self._keep_cursor[1]
 
-        self.query_one(Tabs).show(data.tabs)
+        self.query_one(MapTabs).show(data.tabs)
         self._show_diagnostics(data.const)
 
     # -- diagnostics ------------------------------------------------------------- #
@@ -273,7 +273,7 @@ class Studio(Flow, App):
         if refs and not self._syncing:
             self._syncing = True
             try:
-                self.query_one(Tabs).select(refs[0])
+                self.query_one(MapTabs).select(refs[0])
             finally:
                 self._syncing = False
 
@@ -281,8 +281,8 @@ class Studio(Flow, App):
     def _hovered(self, event: MapGrid.Hovered) -> None:
         self.query_one(Where).mouse(event if event.inside else None)
 
-    @on(Tabs.Selected)
-    def _selected(self, event: Tabs.Selected) -> None:
+    @on(MapTabs.Selected)
+    def _selected(self, event: MapTabs.Selected) -> None:
         self._ref = event.ref
         # The footer is a function of the selection, so it has to be recomputed when
         # the selection moves. Textual will call check_action() again.
@@ -319,8 +319,8 @@ class Studio(Flow, App):
         return True
 
     # -- acting on what is selected ------------------------------------------------ #
-    @on(Tabs.Chosen)
-    def _chosen(self, event: Tabs.Chosen) -> None:
+    @on(MapTabs.Chosen)
+    def _chosen(self, event: MapTabs.Chosen) -> None:
         # Enter on a row. The DataTable eats the key before our bindings see it, so
         # it arrives as a message — and has to land exactly where `e` lands, because
         # they are the same gesture.
