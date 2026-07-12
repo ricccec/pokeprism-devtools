@@ -17,7 +17,7 @@ from __future__ import annotations
 from rich.segment import Segment
 from rich.style import Style
 from textual.binding import Binding
-from textual.geometry import Region, Size
+from textual.geometry import Offset, Region, Size
 from textual.message import Message
 from textual.reactive import reactive
 from textual.scroll_view import ScrollView
@@ -36,6 +36,22 @@ from .session import MapGeometry
 _HALF = "▀"
 
 ZOOMS = (1, 2, 3, 4)
+
+#: How far the pointer may travel, in cells, while the button is down and still count
+#: as a click rather than as a drag.
+#:
+#: Not zero, and this is the whole point of it. **A touchpad click is not a still
+#: gesture**: the finger rolls a cell or two across the pad as it presses down, so the
+#: terminal reports a mouse-move with the button held — and a pan that begins on the
+#: first cell of movement therefore begins on an ordinary click, nudges the map, and
+#: then eats the click as the end of a drag. Which is a click that does nothing, on
+#: roughly half the attempts, and worse: the map has shifted a cell under the finger,
+#: so the retry can land on the tile next door. On a map where two warps stand side by
+#: side, that reads as "it selected the wrong warp".
+#:
+#: Two cells is below the size of a tile at every zoom but the smallest, so a pan the
+#: hand meant still starts on the first tile it crosses.
+PAN_SLOP = 2
 
 
 def _cursor_tint(rgb: tuple[int, int, int]) -> tuple[int, int, int]:
@@ -64,9 +80,15 @@ class MapGrid(ScrollView):
 
     can_focus = True
 
-    #: Did the mouse move while its button was down? If so the click that ends the
-    #: drag is a pan's full stop, not an instruction to move the cursor.
+    #: Has the finger travelled far enough to have meant it? If so the click that ends
+    #: the drag is a pan's full stop, not an instruction to move the cursor.
     _panned = False
+
+    #: Where the button went down, and what the scroll was there. A drag pans to an
+    #: *absolute* offset measured from these — never by accumulating the deltas of the
+    #: moves, which drifts against the map as soon as a scroll clamps at an edge.
+    _press: Offset | None = None
+    _press_scroll: Offset = Offset(0, 0)
 
     view: reactive[MapGeometry | None] = reactive(None, always_update=True)
     zoom: reactive[int] = reactive(2)
@@ -191,9 +213,13 @@ class MapGrid(ScrollView):
         panning instead of stopping at the border — which is exactly where you are
         when you are trying to see what is past the border."""
         self._panned = False
+        self._press = event.offset
+        self._press_scroll = self.scroll_offset
         self.capture_mouse()
 
     def on_mouse_up(self, event) -> None:
+        # `_press` is deliberately left alone: the Click that Textual synthesises out
+        # of this mouse-up is still to come, and it is the press it should act on.
         self.release_mouse()
 
     def _pan(self, event) -> None:
@@ -208,9 +234,24 @@ class MapGrid(ScrollView):
         happen there. A drag is reported by everything, and on a map — where the
         thing you want is usually "show me what is just off to the right" — it is
         the better gesture anyway.
+
+        Nothing happens until the finger has gone :data:`PAN_SLOP` cells, because
+        the alternative is that an ordinary touchpad click — which slides a cell as
+        it presses — pans the map and is then swallowed as the end of a drag.
+
+        Past that, the map is pulled to where the *press* was, plus however far the
+        finger has gone since. Absolute, not cumulative: drag off the edge of the
+        map and the scroll clamps, and a pan that added up its deltas would come
+        back from the edge out of step with the hand by however much it had clamped.
         """
-        self._panned = True
-        self.scroll_to(self.scroll_x - event.delta_x, self.scroll_y - event.delta_y,
+        if self._press is None:
+            return
+        slid = event.offset - self._press
+        if not self._panned:
+            if max(abs(slid.x), abs(slid.y)) < PAN_SLOP:
+                return                      # still a click, as far as anyone can tell
+            self._panned = True
+        self.scroll_to(self._press_scroll.x - slid.x, self._press_scroll.y - slid.y,
                        animate=False)
 
     def on_click(self, event) -> None:
@@ -222,14 +263,20 @@ class MapGrid(ScrollView):
         be driving the map list.
 
         A drag ends in a click too, as far as Textual is concerned. Honouring that
-        one would fling the cursor to wherever you happened to let go — so a click
-        that moved is a pan, and only a click that stayed put is a click.
+        one would fling the cursor to wherever you happened to let go — so a press
+        that travelled (see :data:`PAN_SLOP`) is a pan, and only one that stayed
+        roughly put is a click.
+
+        And the tile is the one the button went **down** on, not the one it came up
+        on — as in every other pointer interface there has ever been. Within the
+        slop the two can differ, and at zoom 1 a cell *is* a tile, so honouring the
+        release would put the cursor one tile east of the thing you pressed on.
         """
         self.focus()
         if self._panned:
             self._panned = False
             return
-        at = self._tile_at(event.offset)
+        at = self._tile_at(self._press if self._press is not None else event.offset)
         if at is None:
             return
         self.cursor = at

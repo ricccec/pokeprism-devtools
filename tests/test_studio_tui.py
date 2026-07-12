@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from textual import events
+from textual.geometry import Offset
 from textual.widgets import DataTable, Input, OptionList, TabbedContent, TextArea
 
 from pokeprism_devtools.shared import blocksrc, coords, eventheader, paths, swatches
@@ -496,6 +497,57 @@ class TestTheCursorAndTheMouse(_Driven):
                 await pilot.pause(0.2)
                 self.assertNotEqual(grid.cursor, (0, 0),
                                     "a plain click stopped moving the cursor")
+                await app.action_quit()
+
+        drive(go())
+
+    def test_a_touchpad_click_is_a_click_and_not_a_one_cell_pan(self) -> None:
+        """The finger rolls a cell across the pad as it presses. That is a click.
+
+        Drag-to-pan arrived with no slop, so *any* movement with the button down
+        began a pan — which an ordinary touchpad click has. So the click nudged the
+        map a cell and was then swallowed as a drag's full stop: a click that does
+        nothing, on something like half the attempts. And because the map had moved
+        under the hand, the retry could land on the tile next door, which on a map
+        where two warps stand side by side reads as "it selected the wrong warp".
+
+        Both halves are asserted, because fixing only the swallowing would leave a
+        click that still shifts the map a cell before it lands. The tile is the one
+        the button went *down* on: within the slop the press and the release can be
+        different tiles, and at zoom 1 a cell simply *is* a tile.
+        """
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(150, 60)) as pilot:
+                grid = await self.ready(app, pilot)
+                assert app._data is not None
+                ref, tile = next((r.ref, r.tile) for tab in app._data.tabs
+                                 for r in tab.table[1] if r.tile)
+                grid.cursor = (0, 0)
+                await pilot.pause(0.2)
+
+                z, (sx, sy) = grid.zoom, grid.scroll_offset
+                at = Offset(tile[1] * z - int(sx), tile[0] * z // 2 - int(sy))
+                self.assertEqual(grid._tile_at(at), tile,
+                                 "the fixture's object is not where the test presses")
+                was = grid.scroll_offset
+
+                # Press on it — and let the finger slide a cell before it lifts.
+                await pilot._post_mouse_events(
+                    [events.MouseDown], MapGrid, offset=at, button=1)
+                await pilot._post_mouse_events(
+                    [events.MouseMove], MapGrid, offset=at + Offset(1, 0), button=1)
+                await pilot._post_mouse_events(
+                    [events.MouseUp, events.Click], MapGrid,
+                    offset=at + Offset(1, 0), button=1)
+                await pilot.pause(0.3)
+
+                self.assertEqual(grid.scroll_offset, was,
+                                 "a touchpad click panned the map out from under itself")
+                self.assertEqual(grid.cursor, tile,
+                                 "a touchpad click did not reach the tile it pressed on")
+                self.assertEqual(app._ref, ref,
+                                 "a touchpad click did not select what it landed on")
                 await app.action_quit()
 
         drive(go())
