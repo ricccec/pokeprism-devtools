@@ -26,7 +26,8 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from ..shared import consts, eventflags, spritesets, trainerparty, trainerstats
+from ..shared import (consts, eventflags, maps as maps_mod, spritesets,
+                      trainerparty, trainerstats)
 from ..wiring import connections, pickups, scaffold
 from . import actions, newmap
 from .actions import Action
@@ -44,7 +45,39 @@ def for_kind(root: Path, kind: str, maps: tuple[str, ...],
         return trainerstats.rosters(root, cls) if cls else []
     if kind == actions.MAPS:
         return list(maps)
+    if kind == actions.BLOCKS:
+        return blocks(root)
     return list(_index(root).get(kind, ()))
+
+
+def blocks(root: Path) -> list[str]:
+    """Every `.blk` and `.ablk` within reach, **newest first**.
+
+    Deliberately outside the cached index, and deliberately not sorted by name.
+    The file you are looking for is the one you drew in polished-map ninety seconds
+    ago — it is the newest thing here by definition, and a list cached at startup
+    would be a list with exactly that file missing from it. So this is re-read each
+    time the field is built, which is a few directory reads and is once per form.
+
+    Where it looks is where the files actually are: `../polished-map`, which is
+    where polished-map saves by default; `maps/blk/`, which is where they end up
+    once they are in the game (you can start a new map from an old one's blocks);
+    and the directory you started the studio from. Anything else you can still
+    type — the list is an offer, and `Combo` never insisted on one.
+    """
+    seen: dict[Path, float] = {}
+    for folder in (root.parent / "polished-map", root / "maps/blk", Path.cwd()):
+        try:
+            entries = list(folder.iterdir())
+        except OSError:            # not there, or not readable. Neither is an error.
+            continue
+        for f in entries:
+            # The same two suffixes the action will *check* the answer against —
+            # a list that offered a file the action then refused would be worse
+            # than no list at all.
+            if f.suffix.lower() in newmap.BLK_SUFFIXES and f.is_file():
+                seen.setdefault(f.resolve(), f.stat().st_mtime)
+    return [str(p) for p in sorted(seen, key=lambda p: -seen[p])]
 
 
 def follows(root: Path, action: type[Action], changed: str,
@@ -80,7 +113,12 @@ def _index(root: Path) -> dict[str, tuple[str, ...]]:
     rest — which is the whole reason that module discovers caches rather than
     naming them."""
     backed = [cls for cls, group in trainerparty.class_groups(root).items() if group]
+    dims = maps_mod.parse_maps(root / "constants/map_dimension_constants.asm")
     return {
+        # The groups that exist. Making a new one is not this tool's job (it
+        # renumbers every map id in the file), so the list is exhaustive: a number
+        # that isn't in it is a group the game does not have.
+        actions.GROUPS: tuple(str(g) for g in sorted({m.group for m in dims})),
         actions.SPRITES: tuple(sorted(spritesets.sprite_ids(root))),
         actions.MOVEMENTS: tuple(sorted(spritesets.movedata_ids(root))),
         actions.PALETTES: tuple(sorted(
