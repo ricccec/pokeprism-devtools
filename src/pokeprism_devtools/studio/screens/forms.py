@@ -10,11 +10,11 @@ that is the whole point of the declaration, and the moment a `if field.name ==
 
 The three things a field can do to the rest of the form are all declared, for the
 same reason. A field with `choices` gets a combo. A field that `reveals` makes the
-form ask for its fields again — that is how one pickup form is four forms, and it
+form ask for its fields again — that is how one object form is six forms, and it
 is why a TM ball has no quantity box to get wrong. A field that changes lets the
 *action* fill in others (a trainer class knows what it wears), and the form
 applies that only where you haven't typed. Not one of those rules mentions a
-pickup, a TM or a trainer.
+an object, a TM or a trainer.
 
 The dialogue box is the exception worth explaining. It is still schema-driven —
 it appears because a field said `kind="lines"` — but it carries a second panel
@@ -145,7 +145,7 @@ class Form(ModalScreen["Preview | Draft | None"]):
     *A field with `choices` becomes a combo* — a box with the known answers under
     it. It asks the session for the list.
 
-    *A field that `reveals` rebuilds the form.* Change a pickup's kind and the
+    *A field that `reveals` rebuilds the form.* Change an object's kind and the
     fields change with it, because the action is asked again what fields it wants
     now. The form learns that the shape moved, not what moved it.
 
@@ -265,7 +265,7 @@ class Form(ModalScreen["Preview | Draft | None"]):
         """The form as it stands.
 
         What is in the boxes — plus what was typed into fields that have since left
-        (a pickup that is now a tree still remembers the item you named before you
+        (an object that is now a tree still remembers the item you named before you
         changed your mind), plus, for a field whose box is not on screen *yet*, what
         it is about to be filled with.
 
@@ -359,7 +359,7 @@ class Form(ModalScreen["Preview | Draft | None"]):
             return
 
         # Everything typed so far is carried across, including into fields that are
-        # about to leave: change a pickup from an item ball to a tree and back, and
+        # about to leave: change an object from an item ball to a tree and back, and
         # the item is still there.
         self._values = was
         self._shown = fields

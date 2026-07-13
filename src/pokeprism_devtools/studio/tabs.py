@@ -50,7 +50,7 @@ ADD = "add"
 #: header gets *instead of* its objects — it still has a shape, and hiding a
 #: broken map from the person looking for the break is the worst thing this could
 #: do, so it comes up with the parse error where its NPCs would have been.
-ALL = ("Attributes", "NPCs", "Trainers", "Pickups", "Warps", "Signposts",
+ALL = ("Attributes", "NPCs", "Trainers", "Objects", "Warps", "Signposts",
        "Triggers", "Connections", "Unreadable", "Roof", "Wild")
 
 

@@ -13,15 +13,22 @@ belongs to the assembled bytes and appears nowhere in this file.
 The tabs are a *person's* carve-up of a map, not the engine's. The engine keeps
 two lists — object events and bg events — and puts item balls in the first and
 hidden items in the second, which is an implementation detail of how they are
-found, not a difference in what they are. Both are things you pick up, so both are
-Pickups. Likewise a trainer is a `person_event` like any other and the thing that
-makes him a trainer is his persontype. So:
+found, not a difference in what they are. Both are things lying about on the
+floor, so both are Objects. Likewise a trainer is a `person_event` like any other
+and the thing that makes him a trainer is his persontype. So:
 
-    NPCs        person_events that are SCRIPT / TEXT / TEXTFP / JUMPSTD / MART
+    NPCs        person_events that are SCRIPT / TEXT / TEXTFP / JUMPSTD / MART,
+                and are *people* — see `Entry.prop`
     Trainers    person_events that are TRAINER / GENERICTRAINER
-    Pickups     person_events that are ITEMBALL / TMHMBALL / FRUITTREE,
-                *plus* the SIGNPOST_ITEM bg_events
+    Objects     person_events that are ITEMBALL / TMHMBALL / FRUITTREE, plus the
+                rocks and boulders, plus the SIGNPOST_ITEM bg_events
     Signposts   every other bg_event
+
+The one that had to be *found* is the rock. A `SPRITE_ROCK` is a JUMPSTD like a
+mart clerk is, so it sat on the NPC tab with a sprite box, a movement box and an
+empty field asking what it says. It is not a person and it has never said
+anything; what makes it not a person is written down in `eventmodel.Entry.prop`,
+and it is not the sprite.
 """
 
 from __future__ import annotations
@@ -58,10 +65,11 @@ class Ref:
     allowed to know a `person_event` from a `signpost`. The view's whole share of
     the knowledge is "this row names something, and that one doesn't".
     """
-    #: npc | trainer | pickup | signpost | warp | trigger | connection | map
+    #: npc | trainer | prop | signpost | warp | trigger | connection | map
     what: str
-    #: The `ListKind` it lives in, when it is an event-header entry. A pickup can
-    #: be in either list, which is exactly why this is not implied by `what`.
+    #: The `ListKind` it lives in, when it is an event-header entry. A prop can be
+    #: in either list — a hidden item is a `signpost` — which is exactly why this
+    #: is not implied by `what`.
     kind: str = ""
     #: Its position in that list.
     index: int = -1
@@ -125,6 +133,26 @@ def _yx(entry: eh.Entry) -> tuple[str, str]:
     return (_NONE if y is None else str(y), _NONE if x is None else str(x))
 
 
+#: Marks a row whose entry is in the file but past its list's count byte. The
+#: engine reads `db N` and stops, so it is written down and not in the game.
+UNDECLARED = "⚠"
+
+
+def _num(header: eh.EventHeader, kind: eh.ListKind, i: int, shown: int) -> str:
+    """The `#` cell — and a mark on it when the engine will never get this far.
+
+    PhloxLab1F says `db 6 ; FIXME` over seven `person_event`s, so its seventh
+    object — a Max Revive on the floor — is in the source and not in the game.
+    The row is here because *the line is in the file*: the way to fix an object
+    that doesn't spawn is to look at it, and a table that hid it left you staring
+    at a map with a ball drawn on it that the studio said did not exist. What it
+    cannot do is pretend the count byte is right, so the row says so, and the
+    linter's `obj-count` says why.
+    """
+    past = i >= header.lists[kind].declared_count
+    return f"{shown} {UNDECLARED}" if past else str(shown)
+
+
 def _tile(entry: eh.Entry) -> tuple[int, int] | None:
     """The tile it stands on, or None when the coordinates aren't literal numbers.
 
@@ -177,24 +205,33 @@ def _trainer_macro(header: eh.EventHeader, entry: eh.Entry) -> tuple[str, str, s
 # --------------------------------------------------------------------------- #
 
 def _people(header: eh.EventHeader, wanted) -> list[tuple[int, eh.Entry]]:
-    """Object events whose persontype `wanted` accepts, with their *real* index.
+    """Object events that `wanted` accepts, with their *real* index.
 
     The index is the entry's position in the engine's object_events list, not its
     position on this tab. Three tabs are cut out of one list, and an edit that
     used the row number would rewrite whichever NPC happened to be third.
     """
     return [(i, e) for i, e in enumerate(header.object_events)
-            if len(e.args) > 9 and wanted(e.persontype)]
+            if len(e.args) > 9 and wanted(e)]
+
+
+def _is_npc(e: eh.Entry) -> bool:
+    return e.persontype not in TRAINER_TYPES + PICKUP_TYPES and e.prop is None
+
+
+def _is_object(e: eh.Entry) -> bool:
+    return e.persontype in PICKUP_TYPES or e.prop is not None
 
 
 def npcs(header: eh.EventHeader, says: dict[str, str]) -> Table:
     cols = ["#", "y", "x", "sprite", "movement", "says", "event flag"]
     rows = []
-    for i, e in _people(header, lambda t: t not in TRAINER_TYPES + PICKUP_TYPES):
+    for i, e in _people(header, _is_npc):
         y, x = _yx(e)
         pointer = e.pointer or ""
         rows.append(Row(
-            [str(i), y, x, e.sprite, e.movement.replace("SPRITEMOVEDATA_", ""),
+            [_num(header, eh.ListKind.OBJECT_EVENTS, i, i), y, x, e.sprite,
+             e.movement.replace("SPRITEMOVEDATA_", ""),
              says.get(pointer, pointer or _NONE), e.event_flag],
             Ref("npc", eh.ListKind.OBJECT_EVENTS.value, i), _tile(e),
         ))
@@ -204,36 +241,42 @@ def npcs(header: eh.EventHeader, says: dict[str, str]) -> Table:
 def trainers(header: eh.EventHeader) -> Table:
     cols = ["#", "y", "x", "sprite", "class", "party", "sight", "event flag"]
     rows = []
-    for i, e in _people(header, lambda t: t in TRAINER_TYPES):
+    for i, e in _people(header, lambda e: e.persontype in TRAINER_TYPES):
         y, x = _yx(e)
         flag, cls, party = _trainer_macro(header, e)
         sight = e.arg(10) if len(e.args) > 10 else _NONE
         rows.append(Row(
-            [str(i), y, x, e.sprite, cls, party, sight, flag],
+            [_num(header, eh.ListKind.OBJECT_EVENTS, i, i), y, x, e.sprite,
+             cls, party, sight, flag],
             Ref("trainer", eh.ListKind.OBJECT_EVENTS.value, i), _tile(e),
         ))
     return cols, rows
 
 
-def pickups(header: eh.EventHeader) -> Table:
-    """Item balls, TM balls, fruit trees — and the hidden items, which the engine
-    keeps in the other list entirely. See the module docstring: they are all
-    things you pick up, and that is what the tab is for."""
+def objects(header: eh.EventHeader) -> Table:
+    """Item balls, TM balls, fruit trees, rocks, boulders — and the hidden items,
+    which the engine keeps in the other list entirely. See the module docstring:
+    none of them is a person, and that is what the tab is for."""
     cols = ["#", "y", "x", "kind", "what", "qty", "event flag"]
     rows = []
-    for i, e in _people(header, lambda t: t in PICKUP_TYPES):
+    for i, e in _people(header, _is_object):
         y, x = _yx(e)
-        kind = e.persontype.replace("PERSONTYPE_", "").lower()
         # The item ball is the only one that carries a quantity: `\11` is the
         # count and `\12` the item. A TM ball spends `\11` on the item itself and
         # a fruit tree keeps its tree id in the pointer slot, so for both of those
         # the count column is meaningless rather than 1.
         ball = e.persontype == "PERSONTYPE_ITEMBALL"
-        what = e.pointer if e.persontype != "PERSONTYPE_TMHMBALL" else e.arg(10)
+        if (prop := e.prop) is not None:
+            # A rock's slot 11 is a std script id, and its "flag" is the -1 that
+            # means "always here" — which is the only thing a rock could ever be.
+            kind, what = prop, e.arg(11)
+        else:
+            kind = e.persontype.replace("PERSONTYPE_", "").lower()
+            what = e.pointer if e.persontype != "PERSONTYPE_TMHMBALL" else e.arg(10)
         rows.append(Row(
-            [str(i), y, x, kind, what or _NONE,
+            [_num(header, eh.ListKind.OBJECT_EVENTS, i, i), y, x, kind, what or _NONE,
              e.arg(10) if ball else _NONE, e.event_flag],
-            Ref("pickup", eh.ListKind.OBJECT_EVENTS.value, i), _tile(e),
+            Ref("prop", eh.ListKind.OBJECT_EVENTS.value, i), _tile(e),
         ))
 
     for i, e in enumerate(header.bg_events):
@@ -246,8 +289,8 @@ def pickups(header: eh.EventHeader) -> Table:
         flag = next((ln.split()[-1] for ln in record if ln.strip().startswith("dw ")), _NONE)
         item = next((ln.split()[-1] for ln in record if ln.strip().startswith("db ")), _NONE)
         rows.append(Row(
-            [str(i), y, x, "hidden", item, _NONE, flag],
-            Ref("pickup", eh.ListKind.BG_EVENTS.value, i), _tile(e),
+            [_num(header, eh.ListKind.BG_EVENTS, i, i), y, x, "hidden", item, _NONE, flag],
+            Ref("prop", eh.ListKind.BG_EVENTS.value, i), _tile(e),
         ))
     return cols, rows
 
@@ -259,10 +302,11 @@ def signposts(header: eh.EventHeader) -> Table:
     for i, e in enumerate(header.bg_events):
         kind = e.arg(2) if len(e.args) > 2 else _NONE
         if kind == HIDDEN_ITEM:
-            continue                                   # it's a pickup, not a sign
+            continue                                   # it's an object, not a sign
         y, x = _yx(e)
         rows.append(Row(
-            [str(i), y, x, kind.replace("SIGNPOST_", ""), e.pointer or _NONE],
+            [_num(header, eh.ListKind.BG_EVENTS, i, i), y, x,
+             kind.replace("SIGNPOST_", ""), e.pointer or _NONE],
             Ref("signpost", eh.ListKind.BG_EVENTS.value, i), _tile(e),
         ))
     return cols, rows
@@ -277,7 +321,7 @@ def warps(header: eh.EventHeader) -> Table:
         y, x = _yx(e)
         dest = e.arg(3) if len(e.args) > 3 else _NONE
         which = e.arg(2) if len(e.args) > 2 else _NONE
-        rows.append(Row([str(i + 1), y, x, dest, which],
+        rows.append(Row([_num(header, eh.ListKind.WARPS, i, i + 1), y, x, dest, which],
                         Ref("warp", eh.ListKind.WARPS.value, i), _tile(e)))
     return cols, rows
 
@@ -287,7 +331,8 @@ def triggers(header: eh.EventHeader) -> Table:
     rows = []
     for i, e in enumerate(header.coord_events):
         y, x = _yx(e)
-        rows.append(Row([str(i), e.arg(0), y, x, e.pointer or _NONE],
+        rows.append(Row([_num(header, eh.ListKind.COORD_EVENTS, i, i),
+                         e.arg(0), y, x, e.pointer or _NONE],
                         Ref("trigger", eh.ListKind.COORD_EVENTS.value, i), _tile(e)))
     return cols, rows
 

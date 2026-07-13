@@ -28,8 +28,8 @@ from test_maplint import _fixture as _lint_fixture  # noqa: E402
 
 from pokeprism_devtools import maplint  # noqa: E402
 from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
-from pokeprism_devtools.shared import world  # noqa: E402
-from pokeprism_devtools.studio import actions, content, offers  # noqa: E402
+from pokeprism_devtools.shared import eventheader, world  # noqa: E402
+from pokeprism_devtools.studio import actions, content, offers, panels  # noqa: E402
 from pokeprism_devtools.studio.session import (Session, SessionError,  # noqa: E402
                                                StaleWorld)
 
@@ -96,8 +96,8 @@ def test_two_items_get_two_flags(root: Path) -> None:
     s = Session(root)
 
     before = (root / "constants/event_flags.asm").read_text().count("const skip")
-    first = s.act(content.AddPickup("TOWN_A", kind=content.HIDDEN, y="5", x="5", item="ULTRA_BALL"))
-    second = s.act(content.AddPickup("TOWN_A", kind=content.HIDDEN, y="6", x="6", item="RARE_CANDY"))
+    first = s.act(content.AddProp("TOWN_A", kind=content.HIDDEN, y="5", x="5", item="ULTRA_BALL"))
+    second = s.act(content.AddProp("TOWN_A", kind=content.HIDDEN, y="6", x="6", item="RARE_CANDY"))
 
     flags = [n.removeprefix("allocated ") for a in (first, second)
              for n in a.notes if n.startswith("allocated ")]
@@ -250,7 +250,10 @@ def test_it_says_what_it_broke(root: Path) -> None:
     only moment you would ever be looking is the one just after you made one."""
     print("\nwhat a change broke")
     s = Session(root)
-    clean = s.act(_npc(5, 5))
+    # An empty tile, and it has to be: TownA's people stand on (3,3) through (8,8),
+    # and dropping another one on top of one of those is a finding all by itself
+    # (event-overlap) — a true one, but not the one this test is about.
+    clean = s.act(_npc(11, 11))
     check("a good change introduces nothing", clean.introduced == [],
           str([f.code for f in clean.introduced]))
 
@@ -258,7 +261,7 @@ def test_it_says_what_it_broke(root: Path) -> None:
     # without a murmur — a line's *width in tiles* is not a fact about the asm, it
     # is a fact about the charmap and the box the engine draws — so this is exactly
     # the class of mistake a fresh repo cannot save you from, and the linter can.
-    broke = s.act(_npc(6, 6, "Mississippi hippopotamus academy graduation ceremony."))
+    broke = s.act(_npc(12, 12, "Mississippi hippopotamus academy graduation ceremony."))
     codes = [f.code for f in broke.introduced]
     check("a change that breaks something says so", codes != [],
           "it introduced nothing — the overflowing line went unremarked")
@@ -270,7 +273,15 @@ def test_it_says_what_it_broke(root: Path) -> None:
     # And undoing it takes the finding away again, which is what makes the offer to
     # undo worth making.
     s.undo()
-    check("undo takes the breakage back", s.act(_npc(7, 7)).introduced == [])
+    check("undo takes the breakage back", s.act(_npc(13, 13)).introduced == [])
+
+    # The other half of the same promise, and the reason the coordinates above had
+    # to be moved: standing an NPC on another NPC is a mistake the assembler is
+    # perfectly happy with, and one you cannot see in a diff of one line.
+    on_top = s.act(_npc(3, 3))
+    check("and standing one on top of another says so",
+          [f.code for f in on_top.introduced] == ["event-overlap"],
+          str([f.code for f in on_top.introduced]))
 
 
 def test_an_npc_is_always_there(root: Path) -> None:
@@ -305,7 +316,7 @@ def test_failure_changes_nothing(root: Path) -> None:
     s.act(_npc(6, 6))
     mid = _snapshot(root)
     try:
-        s.act(content.AddPickup("TOWN_A", kind=content.HIDDEN, y="7", x="7", item="NOT_AN_ITEM"))
+        s.act(content.AddProp("TOWN_A", kind=content.HIDDEN, y="7", x="7", item="NOT_AN_ITEM"))
     except actions.ActionError:
         pass
     check("a failure after two successes changes nothing further",
@@ -321,7 +332,7 @@ def test_undo(root: Path) -> None:
     # A hidden item, because it spans two files — the map and the flag enum — and
     # an undo that only put back one of them would leave a flag allocated to
     # nothing, which is the failure worth catching.
-    s.act(content.AddPickup("TOWN_A", kind=content.HIDDEN, y="5", x="5", item="ULTRA_BALL"))
+    s.act(content.AddProp("TOWN_A", kind=content.HIDDEN, y="5", x="5", item="ULTRA_BALL"))
     check("the item landed", _snapshot(root) != before)
     check("across both files it touches", len(s.history[-1].paths) == 2,
           str(s.history[-1].paths))
@@ -393,6 +404,49 @@ def test_map_list(root: Path) -> None:
     check("every wired map is listed", labels == sorted(labels) and "TownA" in labels,
           str(labels))
     check("a map that parses says so", s.parses("TOWN_A"))
+
+
+def test_an_object_past_the_count_is_still_shown(root: Path) -> None:
+    """The count byte is wrong. The object is still there, and you can still act on it.
+
+    PhloxLab1F says `db 6 ; FIXME` over seven `person_event`s — somebody wrote the
+    seventh and forgot the byte, and the engine reads six and stops. So the Max
+    Revive on its floor is in the source and not in the game, and the studio used to
+    show the map with the ball drawn on it and no row for it anywhere: the one object
+    you would actually be looking for, missing from the only table that could have
+    told you why.
+    """
+    print("\nan object past the count byte is in the file, so it is on the tab")
+    asm = root / "maps/TownA.asm"
+    was = asm.read_text()
+    # Six people, and a `db 5` — the last one never spawns.
+    header = eventheader.parse_map(asm)
+    n = len(header.object_events)
+    asm.write_text(was.replace(f".ObjectEvents\n\tdb {n}", f".ObjectEvents\n\tdb {n - 1}"))
+
+    s = Session(root)
+    data = s.load("TownA")
+    tab = next(t for t in data.tabs if t.name == "NPCs")
+    rows = tab.table[1]
+    check("every object still gets a row, count byte or no count byte",
+          len(rows) == n, f"{len(rows)} rows for {n} people, one of them past the count")
+    check("and the row says so, because the byte does not",
+          rows[-1].cells[0].endswith(panels.UNDECLARED)
+          and not rows[-2].cells[0].endswith(panels.UNDECLARED),
+          str([r.cells[0] for r in rows]))
+    check("the linter says why",
+          any(f.code == "obj-count" for f in s.findings_for("TOWN_A")),
+          str([f.code for f in s.findings_for("TOWN_A")]))
+
+    # And it is not a ghost: it can be pointed at, which is the whole reason to show
+    # it. A row whose Ref you cannot edit would just be a nicer way of hiding it.
+    ref = rows[-1].ref
+    check("it can be selected like any other", ref is not None and ref.index == n - 1)
+    action, values, _ = s.editor("TownA", "TOWN_A", ref)
+    check("and `e` opens it, filled in from the line that is really there",
+          (values["y"], values["x"]) == ("8", "8"), str(values))
+
+    asm.write_text(was)
 
 
 def test_boot_stands_you_where_the_cursor_is(root: Path) -> None:
@@ -721,6 +775,7 @@ def main() -> int:
         for fn in (test_two_items_get_two_flags, test_an_npc_is_always_there,
                    test_failure_changes_nothing, test_undo, test_undo_refuses_to_clobber,
                    test_preview_is_what_lands, test_lint_stays_in_step, test_map_list,
+                   test_an_object_past_the_count_is_still_shown,
                    test_boot_stands_you_where_the_cursor_is,
                    test_it_boots_the_rom_it_built,
                    test_the_blocks_on_offer_are_the_newest_first,

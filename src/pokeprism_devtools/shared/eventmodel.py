@@ -111,6 +111,27 @@ class Entry:
         arities), which is what makes flag analysis shape-independent."""
         return self.args[-1]
 
+    @property
+    def prop(self) -> str | None:
+        """Which kind of :class:`Prop` this is — "rock", "boulder" — or None.
+
+        **Three things have to agree**: the sprite, the persontype, and the std id
+        in the script slot. Not one of them, and specifically not the sprite alone,
+        because SPRITE_ROCK is also worn by five *scripted* rocks in this repo —
+        Acqua's tutorial soil, the exploding rock in Spurge Gym — and those are
+        people in every sense that matters to a form: they run a script somebody
+        wrote. A studio that read the sprite and offered to fix their attributes
+        would be a studio that ate the script.
+        """
+        if self.macro != "person_event" or len(self.args) < 13:
+            return None
+        for name, prop in PROPS.items():
+            if (self.args[0] == prop.sprite
+                    and self.persontype == "PERSONTYPE_JUMPSTD"
+                    and self.args[11] == prop.script):
+                return name
+        return None
+
     # -- any entry ---------------------------------------------------------- #
     # The accessors above read a person_event's layout. The four macros put the
     # same ideas in different places, so anything that walks entries generically
@@ -141,6 +162,32 @@ class Entry:
         return self.args[i]
 
 
+@dataclass(frozen=True)
+class Prop:
+    """A `person_event` that is not a person: scenery the engine drives itself.
+
+    A boulder is written as a person because the engine has one list of things that
+    stand on tiles, not because anybody thinks it is a person. It says nothing, it
+    holds no event flag, and its script is not a script anyone wrote — `smashrock`
+    and `strengthboulder` are *std* ids, supplied by the engine and shared by every
+    rock and every boulder in the game. So all of that is fixed, and what is left
+    to choose is where it stands and what colour it is.
+    """
+    sprite: str
+    movement: str
+    script: str        # the std id in the JUMPSTD slot — not a pointer to anything
+    palette: str       # what almost every one of them in this repo already is
+
+
+#: Keyed by the name the studio calls them. Adding a kind here is most of adding a
+#: kind: the form, the writer and the table all read it.
+PROPS: dict[str, Prop] = {
+    "rock": Prop("SPRITE_ROCK", "SPRITEMOVEDATA_SMASHABLE_ROCK",
+                 "smashrock", "PAL_OW_BROWN"),
+    "boulder": Prop("SPRITE_BOULDER", "SPRITEMOVEDATA_STRENGTH_BOULDER",
+                    "strengthboulder", "PAL_OW_BROWN"),
+}
+
 #: Where (y, x) sit in each entry macro's arguments (macros/map.asm).
 _YX = {
     "person_event": (1, 2),
@@ -159,22 +206,46 @@ _SIGNPOST_NO_POINTER = ("SIGNPOST_JUMPSTD", "SIGNPOST_JUMPSTDNOSFX")
 
 @dataclass
 class EventList:
-    """One counted list: its ``db N`` line plus the entry lines under it."""
+    """One counted list: its ``db N`` line plus **every** entry line under it.
+
+    Every one, and not the first N of them. The count byte is a *claim* about the
+    list, made in a different place from the list, and the two disagree in the
+    repo today — PhloxLab1F says ``db 6 ; FIXME`` over seven ``person_event``s.
+    A parser that read six of them would be agreeing with the byte instead of
+    reading the file, and everything downstream would inherit that: the studio
+    would not show you the item ball that is *right there in the source*, the
+    linter could not say which entry was the one falling off the end, and `d`
+    could not delete it.
+
+    So the entries are what the file says, ``declared_count`` is what the byte
+    says, and :attr:`undeclared` is the gap between them — which is a bug to be
+    reported, not a fact to be hidden.
+    """
     kind: ListKind
     count_lineno: int              # 0-based index of the `db N` line
     declared_count: int            # the N actually written in the source
     entries: list[Entry] = field(default_factory=list)
-    strays: list[int] = field(default_factory=list)   # entry lines past the count
+
+    @property
+    def undeclared(self) -> list[Entry]:
+        """The entries past the count byte: in the file, and not in the game.
+
+        The engine reads ``db N`` and stops, so these never spawn. Empty for an
+        *over*-declared list, which is the opposite and worse bug — there the
+        engine reads past the end of the list and makes an object out of whatever
+        bytes assemble next.
+        """
+        return self.entries[self.declared_count:]
 
     @property
     def count_matches(self) -> bool:
         """False = a real bug, not a parse failure. The count byte is what the
         engine trusts: declaring more entries than exist makes it read the
-        following bytes as a phantom object (three maps in pokeprism do this
-        today); declaring fewer silently drops the tail. Either way the map
-        still parses — the mismatch is a lint finding, so callers can edit and
-        fix it rather than being locked out of the map."""
-        return self.declared_count == len(self.entries) and not self.strays
+        following bytes as a phantom object (two maps in pokeprism do this
+        today); declaring fewer silently drops the tail (two more do that). Either
+        way the map still parses — the mismatch is a lint finding, so callers can
+        edit and fix it rather than being locked out of the map."""
+        return self.declared_count == len(self.entries)
 
 
 def format_entry(macro: str, args: list[str]) -> str:

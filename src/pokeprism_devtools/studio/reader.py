@@ -64,7 +64,7 @@ def read_map(root: Path, ctx: LintContext, label: str,
         tabs += [
             panels.Tab("NPCs", panels.npcs(header, says), adds="NPC"),
             panels.Tab("Trainers", panels.trainers(header), adds="trainer"),
-            panels.Tab("Pickups", panels.pickups(header), adds="pickup"),
+            panels.Tab("Objects", panels.objects(header), adds="object"),
             panels.Tab("Warps", panels.warps(header), adds="warp"),
             panels.Tab("Signposts", panels.signposts(header), adds="signpost"),
             panels.Tab("Triggers", panels.triggers(header), adds="trigger"),

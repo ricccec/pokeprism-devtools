@@ -46,7 +46,8 @@ from ..maplint.diagnostics import Diagnostic, Severity
 from ..shared import caches, eventheader, textbox, world
 from ..shared.edits import StaleEdit, apply_edits
 from ..wiring import objedit
-from . import actions, content, edits, offers, panels, play, reader, undo
+from . import (actions, content, edits, offers, panels, play, prefill as fill,
+               reader, undo)
 from .actions import Action
 # The shapes of the answers — see `model.py`. Re-exported, because whatever wants
 # a `MapData` wants it *from the session*: the session is the only thing that can
@@ -186,7 +187,7 @@ class Session:
 
         Keyed by the word the tab carries in `Tab.adds`, so the view knows that a
         tab can be added to and never learns what it would be adding. More than
-        one means the view asks which — a pickup is four different things wearing
+        one means the view asks which — an object is six different things wearing
         the same coat, and until they share one form the honest thing is to ask.
         """
         return edits.ADDERS.get(kind, ())
@@ -260,7 +261,7 @@ class Session:
             # borrow their neighbour's. So the words are read only for a row that
             # could have any.
             said = [] if ref.what == "map" else self.texts(label)
-            values, boxes = edits.prefill(self.root, label, const, ref, said)
+            values, boxes = fill.prefill(self.root, label, const, ref, said)
         except (objedit.EditError, FileNotFoundError) as exc:
             raise SessionError(str(exc)) from exc
         return action, values, boxes

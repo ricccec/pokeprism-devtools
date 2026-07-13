@@ -23,6 +23,13 @@ detail: a form scrolls, and a list that lived inside it would be clipped by the
 scroll container the moment the field it belongs to was near the bottom — which is
 exactly when you need it. Living on its own layer, positioned from the input's
 on-screen region, it can hang over whatever is below.
+
+Which is also the trap, and it took a bug to see it. A widget on its own layer can
+be positioned *anywhere*, including past the bottom of the terminal, and Textual
+will do exactly that and simply not draw the rows that are off the end. Nothing
+clips, nothing scrolls, nothing complains — the list is just short. So the last
+field of a form got a dropdown showing two of its forty answers. It now opens
+upwards when there is no room below: see :meth:`Combo._place`.
 """
 
 from __future__ import annotations
@@ -36,21 +43,28 @@ from textual.widgets import Input, OptionList
 #: that hides the form.
 LIMIT = 40
 
+#: How tall the list gets, border included — the same number as the `max-height` in
+#: the CSS below, and here as well because :meth:`Combo._place` has to know how tall
+#: the list will be *before* it can decide which way to open it.
+MAX_HEIGHT = 10
+#: The round border costs a row at each end.
+_BORDER = 2
+
 
 class Suggestions(OptionList):
     """The list under a Combo. One per Combo, mounted on the screen."""
 
-    DEFAULT_CSS = """
-    Suggestions {
+    DEFAULT_CSS = f"""
+    Suggestions {{
         layer: dropdown;
         display: none;
-        max-height: 10;
+        max-height: {MAX_HEIGHT};
         border: round $accent;
         background: $surface;
         padding: 0;
         scrollbar-size-vertical: 1;
-    }
-    Suggestions.open { display: block; }
+    }}
+    Suggestions.open {{ display: block; }}
     """
 
     def __init__(self, combo: Combo) -> None:
@@ -110,24 +124,45 @@ class Combo(Input):
         self._list.add_options(rows)
         if rows:
             self._list.highlighted = 0
-        self._show(bool(rows))
+        self._show(bool(rows), len(rows))
 
-    def _show(self, open_: bool) -> None:
+    def _show(self, open_: bool, rows: int = 0) -> None:
         self._list.set_class(open_, "open")
         if open_:
-            self._place()
+            self._place(rows)
 
-    def _place(self) -> None:
-        """Under the input, as wide as the input, in screen coordinates.
+    def _place(self, rows: int) -> None:
+        """Under the input — or over it, when under it is off the screen.
 
         The dropdown is alone on its layer, so its natural position is the screen's
         top-left and the offset *is* the position. `region` is where this input is
         on the screen right now — including any scrolling the form has done — which
         is why this is recomputed on every open rather than remembered.
+
+        And why the *direction* is recomputed too. A form is a modal in the middle
+        of the screen and its last field is a few rows off its bottom edge, so a
+        list that always hung downwards hung off the end of the window: the sprite
+        combo would offer you forty sprites and show you two. Textual will happily
+        position a widget past the viewport and simply not draw the part that
+        isn't there — nothing clips, nothing scrolls, nothing says anything.
+
+        So: below if it fits, above if it doesn't, and whichever way has more room
+        if neither does — with the height cut to that room, because a list that
+        runs off the top is not an improvement on one that runs off the bottom.
         """
         region = self.region
+        wanted = min(rows + _BORDER, MAX_HEIGHT)
+
+        below = self.screen.size.height - (region.y + region.height)
+        above = region.y
+        if wanted <= below or below >= above:
+            top, room = region.y + region.height, below
+        else:
+            top, room = max(0, region.y - wanted), above
+
         self._list.styles.width = region.width
-        self._list.styles.offset = (region.x, region.y + region.height)
+        self._list.styles.max_height = max(_BORDER + 1, min(wanted, room))
+        self._list.styles.offset = (region.x, top)
 
     # -- the keys --------------------------------------------------------------- #
     def on_key(self, event: events.Key) -> None:
@@ -170,7 +205,7 @@ class Combo(Input):
         self.screen.mount(self._list)
 
     def on_unmount(self) -> None:
-        # A form that rebuilds its fields (a pickup changing kind) unmounts this
+        # A form that rebuilds its fields (an object changing kind) unmounts this
         # box. The list lives on the screen, not in the form, so nothing else would
         # ever take it down and it would hang there over the new fields.
         self._list.remove()

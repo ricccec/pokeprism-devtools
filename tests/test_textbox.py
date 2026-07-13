@@ -333,6 +333,67 @@ def test_a_blank_line_is_a_new_box(root: Path) -> None:
           str(out(cont, "A\nZ")))
 
 
+def test_the_third_line_scrolls(root: Path) -> None:
+    """A third `line` does not go below the second one — it goes *on top of* it.
+
+    `<LINE>` is absolute: it always lands on the speech box's second row. So the
+    box holds two rows, and the way to get a third line of dialogue is `cont`,
+    which scrolls the box up and frees the row first. The writer used to give every
+    line it added a `line`, and `maplint`'s own text-clobber rule would then report
+    the block the studio had just written — the reader and the writer disagreeing
+    about the engine, in the same repo.
+    """
+    print("\nthe third line of a box scrolls, it does not overwrite the second")
+
+    def out(src: list[str], prose: str) -> list[str]:
+        block = dialogue.parse_source(root, src)[0]
+        return [ln.strip() for ln in dialogue.rewrite(src, block, prose) if ln.strip()]
+
+    one = ['Foo:', '\ttext "A"', '\tline "B"', '\tdone']
+    check("a third line you add is a `cont`",
+          out(one, "A\nB\nC") == ['Foo:', 'text "A"', 'line "B"', 'cont "C"', 'done'],
+          str(out(one, "A\nB\nC")))
+    check("and so is a fourth, and a fifth",
+          out(one, "A\nB\nC\nD\nE")
+          == ['Foo:', 'text "A"', 'line "B"', 'cont "C"', 'cont "D"', 'cont "E"',
+              'done'],
+          str(out(one, "A\nB\nC\nD\nE")))
+    check("a `para` frees the box again, so the line after it is a `line`",
+          out(one, "A\nB\nC\n\nD\nE")
+          == ['Foo:', 'text "A"', 'line "B"', 'cont "C"', 'para "D"', 'line "E"',
+              'done'],
+          str(out(one, "A\nB\nC\n\nD\nE")))
+
+    # The subtle one, and the reason it is not enough to fix the macro for *new*
+    # lines. This block's third line is a `line` under a `para`, which is correct.
+    # Delete the blank — merge the two boxes — and that same `line`, copied back
+    # positionally, now draws over the second line of the box above it. The macro
+    # is ours; the words are yours.
+    boxes = ['Foo:', '\ttext "A"', '\tline "B"', '', '\tpara "C"', '\tline "D"',
+             '\tdone']
+    check("merging two boxes re-macros the lines that fall into the first",
+          out(boxes, "A\nB\nC\nD")
+          == ['Foo:', 'text "A"', 'line "B"', 'cont "C"', 'cont "D"', 'done'],
+          str(out(boxes, "A\nB\nC\nD")))
+
+    # A signpost is a ten-row window written in `next`, which is *relative* and
+    # cannot collide with itself. `line` would land every added line on row 9, and
+    # `para` — a fresh box — is not a thing a signpost has: it is one window, so a
+    # blank line in one is a blank *row*.
+    sign = ['Board:', '\tstxt "A"', '\tnext "B"', '\tdone', '',
+            'Map_MapEventHeader:: db 0, 0', '.Warps', '\tdb 0',
+            '.CoordEvents', '\tdb 0',
+            '.BGEvents', '\tdb 1', '\tsignpost 1, 1, SIGNPOST_LOAD, Board',
+            '.ObjectEvents', '\tdb 0']
+    block = dialogue.parse_source(root, sign)[0]
+    check("the sign block is measured in the sign box", block.box.kind == "sign",
+          block.box.kind)
+    got = [ln.strip() for ln in dialogue.render(block, "A\nB\nC\n\nD") if ln.strip()]
+    check("a line added to a signpost is a `next`, and a blank is a blank row",
+          got == ['stxt "A"', 'next "B"', 'next "C"', 'nl ""', 'next "D"', 'done'],
+          str(got))
+
+
 def test_a_semicolon_is_not_a_comment() -> None:
     """`line "gift as well;"` is a line of dialogue, not an empty one.
 
@@ -372,6 +433,7 @@ def main() -> int:
         test_terminator(root)
         test_sign_context(tmp, root)
         test_a_blank_line_is_a_new_box(root)
+        test_the_third_line_scrolls(root)
     test_real_repo()
     test_a_semicolon_is_not_a_comment()
     test_the_writer()

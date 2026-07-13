@@ -31,11 +31,11 @@ from pokeprism_devtools.shared import blocksrc, coords, eventheader, paths, swat
 from pokeprism_devtools.studio import Session, panels
 from pokeprism_devtools.studio.actions import ActionError
 from pokeprism_devtools.studio.content import (HIDDEN, ITEMBALL, TMHM, TREE,
-                                               AddNpc, AddPickup, AddSignpost,
+                                               AddNpc, AddProp, AddSignpost,
                                                AddTrainer)
 from pokeprism_devtools.studio.app import Studio
 from pokeprism_devtools.studio.combo import Combo
-from pokeprism_devtools.studio.edits import (EditMap, EditNpc, EditPickup,
+from pokeprism_devtools.studio.edits import (EditMap, EditNpc, EditProp,
                                              EditWarp)
 from pokeprism_devtools.studio.grid import MapGrid
 from pokeprism_devtools.studio.maplist import MapList
@@ -84,7 +84,7 @@ class TestPanels(unittest.TestCase):
         """
         tabs = [panels.npcs(self.header, {})[1],
                 panels.trainers(self.header)[1],
-                panels.pickups(self.header)[1]]
+                panels.objects(self.header)[1]]
         found: list[int] = []
         for rows in tabs:
             found += [r.ref.index for r in rows
@@ -108,7 +108,7 @@ class TestPanels(unittest.TestCase):
         are the same thing to a person, so they share a tab — and each row has to
         remember which of the engine's two lists it really came from."""
         header = eventheader.parse_map(ROOT / "maps/BotanCity.asm")
-        rows = panels.pickups(header)[1]
+        rows = panels.objects(header)[1]
         kinds = {r.ref.kind for r in rows}
         self.assertIn(eventheader.ListKind.BG_EVENTS.value, kinds,
                       "BotanCity has a hidden item; it isn't on the Pickups tab")
@@ -268,7 +268,7 @@ class TestShell(_Driven):
                 panes = app.query_one(MapTabs).query_one(TabbedContent)
                 names = [str(p.id) for p in panes.query("TabPane")]
                 for wanted in ("pane-attributes", "pane-npcs", "pane-trainers",
-                               "pane-pickups", "pane-warps", "pane-signposts",
+                               "pane-objects", "pane-warps", "pane-signposts",
                                "pane-triggers", "pane-connections", "pane-roof",
                                "pane-wild"):
                     self.assertIn(wanted, names)
@@ -412,7 +412,7 @@ class TestTheCursorAndTheMouse(_Driven):
                 grid.cursor = (12, 7)
                 await pilot.pause()
 
-                for action in (AddNpc, AddSignpost, AddPickup):
+                for action in (AddNpc, AddSignpost, AddProp):
                     form = Form(action, app.session, app._const, grid.cursor)
                     await app.push_screen(form)
                     await pilot.pause(0.2)
@@ -1144,13 +1144,13 @@ class TestEditing(_Driven):
             app = Studio(self.root)
             async with app.run_test() as pilot:
                 await self.ready(app, pilot)
-                await self.open_tab(app, pilot, "pickups")
+                await self.open_tab(app, pilot, "objects")
                 await pilot.press("e")
                 await pilot.pause(0.2)
 
                 form = app.screen
                 self.assertIsInstance(form, Form)
-                self.assertIs(form._action, EditPickup)
+                self.assertIs(form._action, EditProp)
                 kind = next(f for f in form._shown if f.name == "kind")
                 self.assertEqual(kind.kind, "fixed")
                 self.assertFalse(form.query("#field-kind"),
@@ -1370,7 +1370,7 @@ class TestHistory(_Driven):
         # An item ball, not an NPC: it always allocates an event flag, so it
         # writes the map *and* constants/event_flags.asm — and a mutation that
         # spans two files is the only kind this rule has anything to say about.
-        session.act(AddPickup("CASTRO_FOREST", kind=ITEMBALL, y="4", x="4", item="POTION"))
+        session.act(AddProp("CASTRO_FOREST", kind=ITEMBALL, y="4", x="4", item="POTION"))
 
         applied = session.history[-1]
         self.assertIn("constants/event_flags.asm", applied.paths)
@@ -1394,8 +1394,8 @@ class TestHistory(_Driven):
 
     def test_a_change_a_later_one_wrote_over_says_which(self) -> None:
         session = Session(self.root)
-        session.act(AddPickup("OXALIS_CITY", kind=ITEMBALL, y="4", x="4", item="POTION"))
-        session.act(AddPickup("OXALIS_CITY", kind=ITEMBALL, y="5", x="4", item="ANTIDOTE"))
+        session.act(AddProp("OXALIS_CITY", kind=ITEMBALL, y="4", x="4", item="POTION"))
+        session.act(AddProp("OXALIS_CITY", kind=ITEMBALL, y="5", x="4", item="ANTIDOTE"))
 
         first, second = session.mutations()
         self.assertFalse(first.undoable)
@@ -1407,7 +1407,7 @@ class TestHistory(_Driven):
             app = Studio(self.root)
             async with app.run_test() as pilot:
                 await self.ready(app, pilot)
-                app.session.act(AddPickup("CASTRO_FOREST", kind=ITEMBALL, y="6", x="6",
+                app.session.act(AddProp("CASTRO_FOREST", kind=ITEMBALL, y="6", x="6",
                                             item="POTION"))
 
                 await pilot.press("H")
@@ -1713,7 +1713,7 @@ class TestChoices(unittest.TestCase):
         every = ({a for group in ADDERS.values() for a in group}
                  | set(EDITORS.values()) | {NewMap})
         for action in every:
-            pickupish = issubclass(action, AddPickup)
+            pickupish = issubclass(action, AddProp)
             shapes = [{"kind": k} for k in (ITEMBALL, TMHM, TREE, HIDDEN)] \
                 if pickupish else [{}]
             for shape in shapes:
@@ -1968,6 +1968,46 @@ class TestTheCombo(_Driven):
 
         drive(go())
 
+    def test_the_list_stays_on_the_screen(self) -> None:
+        """A dropdown below the bottom of the terminal is a dropdown you cannot read.
+
+        The list lives on its own layer, which is what lets it hang over the form
+        rather than being clipped inside it — and is also what let it hang over the
+        *edge of the window*. Textual will position a widget past the viewport and
+        simply not draw the part that is not there: no clip, no scroll, no warning,
+        just a forty-row list showing you two of its rows. So the last field of a
+        long form is the one to check, and the fix is to open upwards.
+        """
+        async def go():
+            app = Studio(ROOT)
+            # Short, so the form's later fields are genuinely near the bottom.
+            async with app.run_test(size=(120, 26)) as pilot:
+                await self.ready(app, pilot)
+                form = await self._form(app, pilot, AddTrainer)
+
+                for name in ("cls", "sprite", "movement", "palette", "flag"):
+                    box = form.query_one(f"#field-{name}", Combo)
+                    box.focus()
+                    await pilot.pause()
+                    await pilot.press("down")            # opens the list
+                    await pilot.pause()
+
+                    rows = box._list                     # noqa: SLF001 — the thing under test
+                    self.assertTrue(rows.has_class("open"), name)
+                    top = rows.styles.offset.y.value
+                    height = rows.outer_size.height
+                    self.assertGreaterEqual(top, 0, f"{name}: the list starts above row 0")
+                    self.assertLessEqual(
+                        top + height, app.screen.size.height,
+                        f"{name}: the list runs {top + height - app.screen.size.height} "
+                        f"rows off the bottom of a {app.screen.size.height}-row screen")
+                    self.assertGreater(height, 2, f"{name}: nothing but border is visible")
+                    await pilot.press("escape")
+                    await pilot.pause()
+                await app.action_quit()
+
+        drive(go())
+
 
 class TestAFormThatChangesShape(_Driven):
     """A pickup is four different things wearing the same coat.
@@ -1979,7 +2019,7 @@ class TestAFormThatChangesShape(_Driven):
     """
 
     async def _pickup(self, app, pilot, kind: str):
-        form = Form(AddPickup, app.session, app._const, (3, 4))
+        form = Form(AddProp, app.session, app._const, (3, 4))
         await app.push_screen(form)
         await pilot.pause(0.3)
         form.query_one("#field-kind", Input).value = kind
@@ -2052,7 +2092,7 @@ class TestAFormThatChangesShape(_Driven):
             app = Studio(ROOT)
             async with app.run_test(size=(120, 45)) as pilot:
                 await self.ready(app, pilot)
-                preview = app.session.preview(AddPickup(
+                preview = app.session.preview(AddProp(
                     app._const, kind=TMHM, y="6", x="6", item="TM_HAIL"))
                 written = next(e.new_text for e in preview.edits
                                if e.path.endswith(f"{MAP}.asm"))
@@ -2164,16 +2204,16 @@ class TestTheSeam(unittest.TestCase):
     #: view that could answer it differently from the session that does the
     #: writing. There must be exactly one opinion about whether the repo has moved,
     #: and it belongs to the side that refuses the write.
-    #: `edits` is here for the same reason `reader` is. It is where the edit forms
-    #: live, and the temptation is real: `e` opens a form, forms are the view's
-    #: business, so why not let the view reach for `EditNpc` itself? Because
-    #: choosing *which* form a row opens means reading that row out of the source
-    #: first — `edits.prefill` opens the map — and a view that could do that could
-    #: prefill a form from a file the session has not agreed to trust.
+    #: `edits` and `prefill` are here for the same reason `reader` is. They are
+    #: where the edit forms live, and the temptation is real: `e` opens a form,
+    #: forms are the view's business, so why not let the view reach for `EditNpc`
+    #: itself? Because choosing *which* form a row opens means reading that row out
+    #: of the source first — `prefill.prefill` opens the map — and a view that could
+    #: do that could fill a form from a file the session has not agreed to trust.
     READERS = ("blocksrc", "eventheader", "wilddata", "mapsource", "blockdata",
                "metatiles", "render", "dialogue", "trainerparty", "wiring",
-               "roofs", "reader", "world", "edits", "objedit", "mapedit",
-               "warpdel", "removal", "connections")
+               "roofs", "reader", "world", "edits", "prefill", "objedit",
+               "mapedit", "warpdel", "removal", "connections")
 
     def _files(self) -> list[Path]:
         studio = Path(__file__).resolve().parents[1] / "src/pokeprism_devtools/studio"

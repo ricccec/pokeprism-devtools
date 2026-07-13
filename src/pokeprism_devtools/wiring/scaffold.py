@@ -1,8 +1,8 @@
 """Adding *content* to a map: NPCs, trainers, signs — the things that talk.
 
-The things you *pick up* are next door in :mod:`.pickups`. They build on the
+The things that are not people are next door in :mod:`.props`. They build on the
 machinery here (:class:`MapCtx`, :func:`allocate_flag`), and they are a separate
-module because what makes a pickup hard is not the wiring: it is that the engine
+module because what makes a prop hard is not the wiring: it is that the engine
 reads the same two macro arguments four different ways.
 
 Each of these is one conceptual thing — "put a Sage here who battles you" — that

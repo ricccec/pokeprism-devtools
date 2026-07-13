@@ -98,7 +98,7 @@ class Field:
     #: against the right width. A sign is a different shape from a speech bubble
     #: and the same sentence fits one and not the other.
     box: str = "speech"
-    #: This field decides which *other* fields the form has — a pickup's kind. The
+    #: This field decides which *other* fields the form has — an object's kind. The
     #: form re-asks :meth:`Action.fields_for` when it changes. Nothing here says
     #: what it reveals; that is the action's business.
     reveals: bool = False
@@ -153,14 +153,14 @@ class Action:
         """The fields this action wants, *given what has been filled in so far*.
 
         Static for almost everything, which is why the default just hands back
-        `FIELDS`. It is not static for a pickup: a hidden item has no sprite, an
+        `FIELDS`. It is not static for an object: a hidden item has no sprite, an
         item ball has a quantity and a TM ball must not, a fruit tree has neither
         and has no event flag either. One form with every field on it would be a
         form on which most of the fields are a mistake — and the engine reads those
         slots differently per kind, so the mistake assembles.
 
         The form re-asks this whenever a `reveals` field changes. It learns nothing
-        about pickups by doing so: it learns that the shape moved.
+        about objects by doing so: it learns that the shape moved.
         """
         return cls.FIELDS
 
