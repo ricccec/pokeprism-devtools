@@ -49,6 +49,28 @@ class MapGeometry:
 
 
 @dataclass(frozen=True)
+class Draft:
+    """A map that does not exist yet, and the form it would be made from.
+
+    What comes back from the new-map form when you ask to *see* it rather than to
+    make it. The picture goes on the main grid — full size, zoomable, scrollable —
+    which is the whole reason the form gives it up rather than keeping a ten-row
+    panel of its own: a route is forty blocks across, and a picture you can only
+    see the top-left corner of cannot tell you the one thing you opened it to find
+    out, which is whether the shape is right.
+
+    The values ride along so the form can be handed back exactly as you left it.
+    Nothing has been written; nothing is going to be until you say so.
+    """
+    values: dict[str, str]
+    view: MapGeometry
+
+    @property
+    def label(self) -> str:
+        return self.values.get("label", "").strip() or "the new map"
+
+
+@dataclass(frozen=True)
 class MapData:
     """One map, read off disk once, in a form the view can render without
     knowing what any of it means."""

@@ -13,6 +13,7 @@ game assembles, ships, and the two NPCs vanish together.
 
 from __future__ import annotations
 
+import io
 import os
 import shutil
 import sys
@@ -28,7 +29,7 @@ from test_maplint import _fixture as _lint_fixture  # noqa: E402
 from pokeprism_devtools import maplint  # noqa: E402
 from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
 from pokeprism_devtools.shared import world  # noqa: E402
-from pokeprism_devtools.studio import actions, content  # noqa: E402
+from pokeprism_devtools.studio import actions, content, offers  # noqa: E402
 from pokeprism_devtools.studio.session import (Session, SessionError,  # noqa: E402
                                                StaleWorld)
 
@@ -450,6 +451,95 @@ def test_boot_stands_you_where_the_cursor_is(root: Path) -> None:
         check("without a built ROM it refuses", False)
 
 
+def test_it_boots_the_rom_it_built(root: Path) -> None:
+    """The two ROMs sit side by side, and picking between them by which file exists
+    is how the studio came to build one and boot the other.
+
+    `make` with no target is `all`, which builds *both* — so the state this is
+    guarding against is not exotic, it is the state the studio left the repo in
+    every single time. Then `rom_path` preferred `pokeprism_nodebug.gbc`, and you
+    would spend four minutes building the debug ROM, patch a save against the other
+    one, and go looking for your new map in a game that had never heard of it.
+    """
+    print("\nthe target, on both sides")
+    from unittest import mock
+
+    from pokeprism_devtools.dev_server import playtest as devplay
+    from pokeprism_devtools.studio import play as play_mod
+
+    ran: list[list[str]] = []
+
+    class FakeProc:
+        stdout = io.StringIO("")
+        def wait(self): return 0
+
+    def fake_popen(cmd, **kw):
+        ran.append(cmd)
+        return FakeProc()
+
+    s = Session(root)
+    with mock.patch.object(play_mod.subprocess, "Popen", fake_popen):
+        s.build(lambda _: None, target="prism", jobs=4)
+    check("it names the target and the jobs", ran[-1] == ["make", "-j4", "prism"],
+          " ".join(ran[-1]))
+
+    # Both ROMs on disk, which is exactly what `make all` used to leave behind.
+    for name in ("pokeprism.gbc", "pokeprism_nodebug.gbc"):
+        (root / name).write_bytes(b"\x00")
+        (root / name).with_suffix(".sym").write_text("")
+
+    seen: dict = {}
+
+    def fake_patch(rom_path, **kw):
+        seen["rom"] = rom_path
+        return devplay.PatchReport(target=rom_path.with_suffix(".sav"),
+                                   backup=None, changes=[])
+
+    with mock.patch.object(devplay, "patch_save", fake_patch), \
+         mock.patch.object(play_mod.inventory, "load_or_build", lambda *a, **k: {}), \
+         mock.patch.object(play_mod.devapply, "load_state", lambda *a: {}), \
+         mock.patch.object(devplay.Emulator, "launch",
+                           lambda self, rom, **k: devplay.LaunchReport(launched=True)):
+        s.boot("TOWN_A", 9, 4, target="prism")
+    check("having built prism, it boots pokeprism.gbc and not the other one",
+          seen["rom"].name == "pokeprism.gbc", seen["rom"].name)
+
+    # And with only the debug ROM built, asking for nodebug must *refuse* rather
+    # than fall back to the one that happens to be lying there.
+    (root / "pokeprism_nodebug.gbc").unlink()
+    try:
+        s.boot("TOWN_A", 9, 4, target="nodebug")
+    except SessionError as e:
+        check("and asking for a ROM that wasn't built refuses, rather than "
+              "booting whatever else is on disk", "make nodebug" in str(e), str(e))
+    else:
+        check("asking for a ROM that wasn't built refuses", False)
+
+
+def test_the_blocks_on_offer_are_the_newest_first(root: Path) -> None:
+    """The `.blk` you are looking for is the one you drew ninety seconds ago.
+
+    Which is why this list is not sorted by name and is not cached: it is *made* of
+    the answer to "what have I just been working on", and a list built at startup
+    would be a list with exactly the file you want missing from it.
+    """
+    print("\nthe blocks on offer")
+    (root / "maps/blk").mkdir(parents=True, exist_ok=True)
+    old = root / "maps/blk/Older.ablk"
+    old.write_bytes(b"\x00")
+    os.utime(old, (1, 1))
+    (root / "maps/blk/JustDrawn.ablk").write_bytes(b"\x00")
+    (root / "maps/blk/notes.txt").write_text("not blocks")
+
+    rows = offers.blocks(root)
+    check("the one you just drew is at the top", rows[0].endswith("JustDrawn.ablk"),
+          rows[0])
+    check("and the older one is still on offer",
+          any(r.endswith("Older.ablk") for r in rows))
+    check("and nothing that isn't blocks",
+          not any(r.endswith(".txt") for r in rows))
+
+
 def _check_every_tile_points_at_its_own_row(s: Session) -> None:
     """The grid and the tables must agree about where everything is.
 
@@ -632,6 +722,8 @@ def main() -> int:
                    test_failure_changes_nothing, test_undo, test_undo_refuses_to_clobber,
                    test_preview_is_what_lands, test_lint_stays_in_step, test_map_list,
                    test_boot_stands_you_where_the_cursor_is,
+                   test_it_boots_the_rom_it_built,
+                   test_the_blocks_on_offer_are_the_newest_first,
                    test_the_world_notices, test_a_stale_model_will_not_write,
                    test_our_own_writes_are_not_drift, test_it_says_what_it_broke,
                    test_undo_does_not_care_that_the_world_moved):

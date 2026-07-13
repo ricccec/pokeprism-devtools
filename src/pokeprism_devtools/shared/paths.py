@@ -21,25 +21,38 @@ def repo_root(start: Path | None = None) -> Path:
     )
 
 
-def rom_path(root: Path | None = None, *, debug: bool = False) -> Path:
-    """Return the path to the built ROM. Prefers the requested build but falls
-    back to the other if the requested one is missing."""
+def rom_path(root: Path | None = None, *, debug: bool = False,
+             fallback: bool = True) -> Path:
+    """Return the path to the built ROM. Prefers the requested build and, by
+    default, falls back to the other if the requested one is missing.
+
+    **`fallback=False` if you just built one of them.** The fallback exists for a
+    reader — `prism-usage` wants whichever ROM is lying around and either will do.
+    It is wrong for anybody who *chose* a target: build `prism` while an old
+    `pokeprism_nodebug.gbc` is still on disk and a falling-back caller will hand
+    back the nodebug ROM, so you would patch a save against one game and play the
+    other, with your new map missing from it and nothing on screen to say why.
+    """
     root = root or repo_root()
-    preferred = root / ("pokeprism.gbc" if debug else "pokeprism_nodebug.gbc")
-    fallback = root / ("pokeprism_nodebug.gbc" if debug else "pokeprism.gbc")
-    if preferred.exists():
-        return preferred
-    if fallback.exists():
-        return fallback
+    wanted = root / ("pokeprism.gbc" if debug else "pokeprism_nodebug.gbc")
+    other = root / ("pokeprism_nodebug.gbc" if debug else "pokeprism.gbc")
+    if wanted.exists():
+        return wanted
+    if fallback and other.exists():
+        return other
+    target = "prism" if debug else "nodebug"
     raise FileNotFoundError(
-        f"No ROM found. Expected {preferred} or {fallback}. Run `make nodebug` "
+        f"No ROM at {wanted}. Run `make {target}` first."
+        if not fallback else
+        f"No ROM found. Expected {wanted} or {other}. Run `make nodebug` "
         "or `make prism` first."
     )
 
 
-def sym_path(root: Path | None = None, *, debug: bool = False) -> Path:
+def sym_path(root: Path | None = None, *, debug: bool = False,
+             fallback: bool = True) -> Path:
     """Return the path to the .sym file matching the available ROM."""
-    return _sibling_artifact(rom_path(root, debug=debug), ".sym")
+    return _sibling_artifact(rom_path(root, debug=debug, fallback=fallback), ".sym")
 
 
 def map_path(root: Path | None = None, *, debug: bool = False) -> Path:

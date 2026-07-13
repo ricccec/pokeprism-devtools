@@ -1,14 +1,32 @@
 """The screen you watch while the map you just made becomes a game you can walk in.
 
-`make` takes minutes and can fail, and when it fails the reason is in its output
-— usually naming your map, because your map is what changed. So this screen shows
+It asks three questions first, and each of them was a wrong answer given silently
+before it was a question.
+
+**Which ROM.** `make` with no target is `all` — both ROMs, the GBS and the images
+— and then the thing that goes looking for "the ROM" finds two of them and takes
+whichever it prefers, which was not the one you were thinking of. Now the target is
+named on the way in and named again on the way out, so the game you boot is the
+game you built. See `studio/play.py`.
+
+**How many jobs.** `make` is serial unless told otherwise, and this build is a few
+hundred files. Nothing about that was a choice anybody made; it was just what
+happens when you don't pass `-j`.
+
+**Where you come out.** Prefilled from the grid cursor, because you have already
+moved to the spot you want to look at — but a spawn tile is worth being able to
+correct without going back to the map, and a `.blk` you have only just drawn has
+tiles you cannot stand on.
+
+Then `make` takes minutes and can fail, and when it fails the reason is in its
+output — usually naming your map, because your map is what changed. So this shows
 that output as it arrives rather than a spinner that cannot tell you anything. If
 the build fails you are left looking at the error, with the log still on screen.
 
-If it succeeds, the save is patched to stand you on the tile the cursor was on,
-and SameBoy comes up. That is the whole loop closed: a `.blk` drawn in
-polished-map, added to the game, wired, populated, and now walked through, from
-the same screen, without a shell.
+If it succeeds, the save is patched to stand you on the tile you named, and SameBoy
+comes up. That is the whole loop closed: a `.blk` drawn in polished-map, added to
+the game, wired, populated, and now walked through, from the same screen, without a
+shell.
 
 The build runs in a thread — a Textual app that blocks its event loop for four
 minutes is an app that has hung, and it looks exactly like one too.
@@ -16,26 +34,38 @@ minutes is an app that has hung, and it looks exactly like one too.
 
 from __future__ import annotations
 
+import os
+
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label, RichLog, Static
+from textual.widgets import Button, Input, Label, RichLog, Static
 
+from ..combo import Combo
+from ..play import DEFAULT_TARGET, TARGETS
 from ..session import Session, SessionError
 
 
 class Build(ModalScreen[None]):
-    """Build, patch, launch. Dismisses when you close it, not when it finishes."""
+    """Choose, build, patch, launch. Dismisses when you close it, not when it
+    finishes — the emulator is the session's, and closing the log does not close
+    the game you are playing."""
 
     BINDINGS = [Binding("escape", "close", "Close")]
 
     CSS = """
-    Build { align: center middle; }
+    /* The target combo's dropdown lives on its own layer, over everything else —
+       see `studio/combo.py`, which mounts it on the screen for exactly that. */
+    Build { align: center middle; layers: base dropdown; }
     #build { width: 90%; height: 80%; border: round $accent;
                 background: $surface; }
     #build-title { padding: 0 1; background: $accent; color: $text; }
+    #build-config { height: 3; padding: 0 1; }
+    #build-config Label { padding: 1 1 0 1; color: $text-muted; }
+    #build-config Input { width: 14; }
+    #build-config .narrow { width: 8; }
     #build-log { height: 1fr; margin: 0 1; background: $surface;
                     border: solid $panel; }
     #build-status { padding: 0 1; height: auto; }
@@ -49,22 +79,66 @@ class Build(ModalScreen[None]):
         self._const = const
         self._label = label
         self._cursor = cursor
+        #: Once, and then never again while this screen is up. `make` is minutes and
+        #: a second one started underneath the first would be two compilers writing
+        #: the same object files.
+        self._started = False
 
     def compose(self) -> ComposeResult:
         y, x = self._cursor
         with Vertical(id="build"):
-            yield Label(f" Build {self._label} at ({y}, {x})", id="build-title")
+            yield Label(f" Build, and stand on {self._label}", id="build-title")
+            with Horizontal(id="build-config"):
+                yield Label("Target")
+                yield Combo(list(TARGETS), value=DEFAULT_TARGET, id="build-target")
+                yield Label("Jobs")
+                yield Input(value=str(os.cpu_count() or 1), id="build-jobs",
+                            classes="narrow")
+                yield Label("Y")
+                yield Input(value=str(y), id="build-y", classes="narrow")
+                yield Label("X")
+                yield Input(value=str(x), id="build-x", classes="narrow")
             yield RichLog(id="build-log", wrap=False, markup=False, auto_scroll=True)
-            yield Static("Building…", id="build-status")
-            with Vertical(id="build-buttons"):
-                yield Button("Close", id="close")
+            yield Static("", id="build-status")
+            with Horizontal(id="build-buttons"):
+                yield Button("Cancel", id="close")
+                yield Button("Build & run", variant="primary", id="go")
 
     def on_mount(self) -> None:
-        self._run()
+        self.query_one("#go", Button).focus()
 
-    # -- the work -------------------------------------------------------------- #
+    # -- what was asked for ------------------------------------------------------ #
+    def _field(self, name: str) -> str:
+        return self.query_one(f"#build-{name}", Input).value.strip()
+
+    def _number(self, name: str) -> int:
+        raw = self._field(name)
+        try:
+            return int(raw, 0)
+        except ValueError:
+            raise SessionError(f"{name} must be a number, not {raw!r}") from None
+
+    # -- the work ---------------------------------------------------------------- #
+    @on(Button.Pressed, "#go")
+    def _go(self) -> None:
+        if self._started:
+            return
+        status = self.query_one("#build-status", Static)
+        try:
+            target = self._field("target")
+            jobs, y, x = self._number("jobs"), self._number("y"), self._number("x")
+        except SessionError as e:
+            status.update(f"[b]{e}[/b]")
+            return
+
+        self._started = True
+        for widget in self.query("#build-config Input"):
+            widget.disabled = True
+        self.query_one("#go", Button).disabled = True
+        self._run(target, jobs, (y, x))
+
     @work(thread=True, exclusive=True)
-    def _run(self) -> None:
+    def _run(self, target: str, jobs: int, spawn: tuple[int, int]) -> None:
         """Off the event loop: `make` owns this thread for as long as it takes."""
         log = self.query_one("#build-log", RichLog)
         status = self.query_one("#build-status", Static)
@@ -75,9 +149,10 @@ class Build(ModalScreen[None]):
         def say(text: str) -> None:
             self.app.call_from_thread(status.update, text)
 
+        say(f"Building {target} with {jobs} job(s)…")
         try:
-            built = self._session.build(line)
-        except OSError as e:
+            built = self._session.build(line, target=target, jobs=jobs)
+        except (OSError, SessionError) as e:
             say(f"[b]could not run make:[/b] {e}")
             return
 
@@ -88,9 +163,9 @@ class Build(ModalScreen[None]):
             return
 
         say("Built. Patching the save…")
-        y, x = self._cursor
+        y, x = spawn
         try:
-            changes = self._session.boot(self._const, y, x)
+            changes = self._session.boot(self._const, y, x, target=target)
         except SessionError as e:
             say(f"[b]{e}[/b]")
             return
@@ -99,12 +174,10 @@ class Build(ModalScreen[None]):
             line(c)
         say(f"Launched. You are standing on {self._label} at ({y}, {x}).")
 
-    # -- getting out of the way ------------------------------------------------ #
+    # -- getting out of the way -------------------------------------------------- #
     @on(Button.Pressed, "#close")
     def _close(self) -> None:
         self.action_close()
 
     def action_close(self) -> None:
-        # The emulator is the session's, not this screen's — closing the log does
-        # not close the game you are playing.
         self.dismiss(None)

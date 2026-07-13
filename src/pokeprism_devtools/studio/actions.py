@@ -68,6 +68,14 @@ TREES = "trees"
 #: The parties of a trainer class — the one kind whose answers depend on another
 #: field. See :meth:`Field.depends`.
 PARTIES = "parties"
+#: The map groups that exist. A bare number, and the only reason to offer a list of
+#: numbers is that nothing else on the form tells you how many there are.
+GROUPS = "groups"
+#: The `.blk` and `.ablk` files lying about — in `../polished-map`, in `maps/blk/`,
+#: in the directory you started from. The only field whose answers are *paths* and
+#: not constants, and the only one whose list is read fresh every time it is asked:
+#: the file you want is nearly always the one you drew a minute ago.
+BLOCKS = "blocks"
 
 
 class ActionError(RuntimeError):

@@ -83,8 +83,17 @@ class Where(Static):
         self._draw()
 
     def error(self, message: str) -> None:
+        self._say(message, "bold red")
+
+    def note(self, message: str) -> None:
+        """Something true about what is on the grid that no coordinate can say —
+        that it is a map which does not exist yet, for instance."""
+        self._say(message, "bold")
+
+    def _say(self, message: str, style: str) -> None:
+        # Whatever is on the grid is not the map these coordinates were about.
         self._cursor = self._mouse = None
-        self.update(Text(message, style="bold red"))
+        self.update(Text(message, style=style))
 
     def _draw(self) -> None:
         line = Text()

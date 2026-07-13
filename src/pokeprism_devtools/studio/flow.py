@@ -21,11 +21,16 @@ file do not merge — the second silently overwrites the first. There is therefo
 
 from __future__ import annotations
 
+from rich.text import Text
+
 from .actions import Action
+from .content import EditText
 from .grid import MapGrid
 from .maplist import MapList
-from .screens import Confirm, Findings, Form, History
-from .session import Preview, SessionError
+from .screens import Confirm, Findings, Form, History, Picker
+from .session import Draft, Preview, SessionError, TextRef
+from .status import Where
+from .tabs import MapTabs
 
 
 class Flow:
@@ -38,13 +43,56 @@ class Flow:
             Form(action, self.session, self._const or "", cursor, values=values or None),
             self._filled)
 
-    def _filled(self, preview: Preview | None) -> None:
-        if preview is None:
+    def _filled(self, result: Preview | Draft | None) -> None:
+        if isinstance(result, Draft):
+            self._drafted(result)
             return
-        if not preview.edits:
-            self.notify(f"{preview.summary}: nothing to change")
+        if result is None:
+            # Backing out of the form. If a draft was on the grid it was that form's
+            # draft — nothing else can be opened while one is up — so this is the
+            # gesture that abandons it, and the real map comes back.
+            self._undraft()
             return
-        self.push_screen(Confirm(preview), lambda ok: self._confirmed(preview, ok))
+        if not result.edits:
+            self.notify(f"{result.summary}: nothing to change")
+            return
+        self.push_screen(Confirm(result), lambda ok: self._confirmed(result, ok))
+
+    # -- the map that doesn't exist yet ------------------------------------------- #
+    def _drafted(self, draft: Draft) -> None:
+        """Put the map you have described on the grid, and hold on to the form.
+
+        Everything the grid derives from a *real* map goes blank while it is up —
+        the tables, the diagnostics, the selection. That is the point: those rows
+        belong to some other map, the one you were looking at when you pressed `a`,
+        and a grid where clicking a tile highlighted a warp in a different map
+        would be worse than a grid with nothing under it. `b` and `e` and `d` go
+        away for the same reason. There is nothing here to build or edit yet.
+
+        The map list keeps its selection, so wandering off to look at the neighbour
+        you are drawing this next to leaves the draft alone. `a` brings it back.
+        """
+        self._draft = draft
+        self._const = None
+        self._data = None
+        self._ref = None
+        self.refresh_bindings()
+
+        grid = self.query_one("#grid", MapGrid)
+        grid.display = True
+        grid.show(draft.view)
+        self.query_one(MapTabs).show([])
+        self.query_one(Where).note(
+            f"{draft.label} — a draft, not in the game. "
+            f"Press a to go back to the form, or pick a map to put it away.")
+
+    def _undraft(self) -> None:
+        """Forget the draft and put the real map back. A no-op if there wasn't one."""
+        if self._draft is None:
+            return
+        self._draft = None
+        if self._wanted:
+            self._load(self._wanted)
 
     def _confirmed(self, preview: Preview, ok: bool | None) -> None:
         """You said yes. Write it — and then say what it cost.
@@ -64,6 +112,11 @@ class Flow:
             self._sweep()                 # a StaleWorld puts the banner up at once
             return
 
+        # It exists now. A draft is a map that doesn't, so whatever we were holding
+        # is either this one — in which case `_after_write` is about to put the real
+        # thing on screen — or nothing at all.
+        self._draft = None
+
         lines = [applied.summary, *applied.notes]
         severity = "information"
         if applied.introduced:
@@ -80,6 +133,33 @@ class Flow:
         self.notify("\n".join(lines), severity=severity,
                     timeout=15 if applied.introduced else 5)
         self._after_write(applied.select)
+
+    # -- rewording ---------------------------------------------------------------- #
+    def action_texts(self) -> None:
+        """Every text block in this map, whether or not anything points at it.
+
+        `e` on an NPC gets you *its* words. This gets you the ones nothing is
+        standing next to — a sign's, a script's, the ones you would otherwise have
+        to go and find.
+        """
+        if self._const is None or self._wanted is None:
+            self.bell()
+            return
+        self._texts = self.session.texts(self._wanted)
+        if not self._texts:
+            self.notify(f"{self._wanted} says nothing yet")
+            return
+        rows = [Text.assemble((t.label, "bold"), ("  " + t.opening, " dim"))
+                for t in self._texts]
+        self.push_screen(Picker("Which text?", rows, filterable=True),
+                         lambda i: None if i is None else self._reword(self._texts[i]))
+
+    def _reword(self, text: TextRef) -> None:
+        self.push_screen(
+            Form(EditText, self.session, self._const or "",
+                 values={"label": text.label, "text": text.prose},
+                 boxes={"text": text.box}),
+            self._filled)
 
     # -- taking it back --------------------------------------------------------- #
     def action_undo(self) -> None:

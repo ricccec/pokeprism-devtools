@@ -29,6 +29,12 @@ checks your sprite, your item and your trainer class against what it read at
 startup, so a repo that has moved is a repo we would validate a write against and
 get wrong. While it has moved, writing is refused — see `shared/world.py`, and `r`.
 
+**A map you have not made yet can still be on the grid.** The new-map form draws
+what you have described on the real grid, full size, and gets out of the way while
+you look at it — see `Flow._drafted`. While a draft is up, everything that belongs
+to a *real* map goes quiet: the tables, the diagnostics, `b`, `e`, `d`. There is
+nothing there to build or edit. `a` hands the form back with your answers in it.
+
 The linter is **not** on the path to the first map. A cold `LintContext` plus a full
 run is 1.7 seconds, and blocking on it would mean staring at an empty screen before
 you can look at anything. So the grid comes up immediately from source, and the
@@ -48,7 +54,6 @@ import argparse
 import sys
 from pathlib import Path
 
-from rich.text import Text
 from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -56,14 +61,13 @@ from textual.containers import Horizontal
 from textual.widgets import Footer, Header
 
 from ..shared import paths
-from .content import EditText
 from .flow import Flow
 from .grid import MapGrid
 from .maplist import MapList
 from .newmap import NewMap
 from .panels import Ref
 from .screens import Build, Form, Picker
-from .session import MapData, Session, SessionError, TextRef
+from .session import Draft, MapData, Session, SessionError, TextRef
 from .status import Banner, Centre, Diagnostics, Where
 from .tabs import ADD, MapTabs
 
@@ -132,6 +136,11 @@ class Studio(Flow, App):
         #: non-empty the studio will not write, because everything it would check a
         #: write against is out of date.
         self._moved: list[str] = []
+        #: The map you are in the middle of describing, if you asked to look at it.
+        #: The form went away to let you see it full size; this is what brings the
+        #: form back with your answers still in it. Nothing of it is on disk — see
+        #: :meth:`Flow._drafted`.
+        self._draft: Draft | None = None
 
     # -- layout ---------------------------------------------------------------- #
     def compose(self) -> ComposeResult:
@@ -371,36 +380,17 @@ class Studio(Flow, App):
 
     def action_add_map(self) -> None:
         """The one thing that isn't reached by pointing at a row, because the map it
-        makes is the one map you cannot point at yet."""
+        makes is the one map you cannot point at yet.
+
+        And the one thing you can come *back* to: if you asked to see the map you
+        were describing, the form went away so you could look at it, and this is the
+        key that returns you to it — with every answer where you left it.
+        """
         if not self._may_write():
             return
-        self.push_screen(Form(NewMap, self.session, self._const or ""), self._filled)
-
-    # -- rewording ---------------------------------------------------------------- #
-    def action_texts(self) -> None:
-        """Every text block in this map, whether or not anything points at it.
-
-        `e` on an NPC gets you *its* words. This gets you the ones nothing is
-        standing next to — a sign's, a script's, the ones you would otherwise have
-        to go and find.
-        """
-        if self._const is None or self._wanted is None:
-            self.bell()
-            return
-        self._texts = self.session.texts(self._wanted)
-        if not self._texts:
-            self.notify(f"{self._wanted} says nothing yet")
-            return
-        rows = [Text.assemble((t.label, "bold"), ("  " + t.opening, " dim"))
-                for t in self._texts]
-        self.push_screen(Picker("Which text?", rows, filterable=True),
-                         lambda i: None if i is None else self._reword(self._texts[i]))
-
-    def _reword(self, text: TextRef) -> None:
         self.push_screen(
-            Form(EditText, self.session, self._const or "",
-                 values={"label": text.label, "text": text.prose},
-                 boxes={"text": text.box}),
+            Form(NewMap, self.session, self._const or "",
+                 values=self._draft.values if self._draft else None),
             self._filled)
 
     # -- deleting ------------------------------------------------------------------ #

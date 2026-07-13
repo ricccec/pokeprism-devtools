@@ -51,12 +51,12 @@ from .actions import Action
 # The shapes of the answers — see `model.py`. Re-exported, because whatever wants
 # a `MapData` wants it *from the session*: the session is the only thing that can
 # hand it one, and the split between the two files is a size, not a boundary.
-from .model import (Applied, Finding, MapData, MapGeometry, MapRef, Measured,
-                    Mutation, Preview, TextPreview, TextRef)  # noqa: F401
+from .model import (Applied, Draft, Finding, MapData, MapGeometry, MapRef,
+                    Measured, Mutation, Preview, TextPreview, TextRef)  # noqa: F401
 
-__all__ = ["Applied", "Finding", "MapData", "MapGeometry", "MapRef", "Measured",
-           "Mutation", "Preview", "Session", "SessionError", "StaleWorld",
-           "TextPreview", "TextRef"]
+__all__ = ["Applied", "Draft", "Finding", "MapData", "MapGeometry", "MapRef",
+           "Measured", "Mutation", "Preview", "Session", "SessionError",
+           "StaleWorld", "TextPreview", "TextRef"]
 
 
 class SessionError(RuntimeError):
@@ -431,15 +431,23 @@ class Session:
         return applied
 
     # -- playing it ----------------------------------------------------------- #
-    def build(self, log: Callable[[str], None]) -> bool:
-        """`make`, streamed a line at a time. True if the ROM built."""
-        return play.build(self.root, log)
+    def build(self, log: Callable[[str], None], *,
+              target: str = play.DEFAULT_TARGET, jobs: int | None = None) -> bool:
+        """`make -j<n> <target>`, streamed a line at a time. True if it built."""
+        try:
+            return play.build(self.root, log, target=target, jobs=jobs)
+        except play.PlayError as e:
+            raise SessionError(str(e)) from e
 
-    def boot(self, const: str, y: int, x: int, *, keep_people: bool = False) -> list[str]:
-        """Stand at (y, x) on this map, in the game, now — see :mod:`.play`."""
+    def boot(self, const: str, y: int, x: int, *,
+             target: str = play.DEFAULT_TARGET, keep_people: bool = False) -> list[str]:
+        """Stand at (y, x) on this map, in the game, now — see :mod:`.play`, which
+        is where the target is argued: the two ROMs sit side by side in the repo,
+        and choosing between them by which file happens to exist is how the studio
+        came to build one and boot the other."""
         try:
             return play.boot(self.root, self._emulator, const, y, x,
-                             keep_people=keep_people)
+                             target=target, keep_people=keep_people)
         except play.PlayError as e:
             raise SessionError(str(e)) from e
 

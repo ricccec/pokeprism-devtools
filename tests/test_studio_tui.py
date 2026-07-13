@@ -1566,11 +1566,29 @@ class TestNewMap(unittest.TestCase):
                     form.query_one(f"#field-{name}", Input).value = value
                 await pilot.pause()
 
-                # The map is on screen, in colour, at the size you typed — and not
-                # one byte of it is in the repo yet.
-                sketch = form.query_one("#sketch", MapGrid)
-                self.assertIsNotNone(sketch.view, form.unsketchable)
-                self.assertEqual(sketch.view.blocks, self.BLOCKS)
+                # "Preview map" puts what you described on the *real* grid, full
+                # size, and gets the form out of the way while you look at it. Not
+                # one byte of it is in the repo.
+                form.action_draw()
+                await pilot.pause()
+                grid = app.query_one("#grid", MapGrid)
+                self.assertIsNotNone(app._draft, "the draft was not held")
+                self.assertEqual(grid.view.blocks, self.BLOCKS)
+
+                # Nothing that belongs to a *real* map is on offer while a draft is
+                # up: the rows below the grid are some other map's, and building or
+                # editing a map that does not exist is not a thing to be offered.
+                self.assertIsNone(app._const)
+                self.assertIsNone(app.check_action("build", ()))
+                self.assertIsNone(app.check_action("edit", ()))
+
+                # And `a` hands the form back with every answer where you left it.
+                await pilot.press("a")
+                await pilot.pause(0.2)
+                form = app.screen
+                self.assertIsInstance(form, Form, "`a` did not reopen the map form")
+                self.assertEqual(form.query_one("#field-label", Input).value,
+                                 "TestIsland")
 
                 form.action_submit()
                 await pilot.pause()
@@ -1604,6 +1622,8 @@ class TestNewMap(unittest.TestCase):
                         break
                 self.assertEqual(app._wanted, "TestIsland")
                 self.assertEqual(grid.view.blocks, self.BLOCKS)
+                # It exists now, so it is not a draft any more.
+                self.assertIsNone(app._draft)
 
                 # Undo unmakes it — including the files it created, and including
                 # the map you are standing on.
@@ -1614,6 +1634,51 @@ class TestNewMap(unittest.TestCase):
                 for rel, text in before.items():
                     self.assertEqual((self.root / rel).read_text(), text, rel)
                 self.assertNotIn("TestIsland", app.query_one(MapList)._shown)
+
+                await app.action_quit()
+
+        drive(go())
+
+    def test_backing_out_of_the_draft_puts_the_real_map_back(self) -> None:
+        """A draft is a map that does not exist, drawn where a map that does used
+        to be. Cancelling the form is how you say you did not mean it — and what
+        must come back is the map you were looking at, not an empty grid and a set
+        of tables belonging to something you can no longer see.
+        """
+        async def go():
+            app = Studio(self.root)
+            async with app.run_test() as pilot:
+                for _ in range(300):
+                    await pilot.pause(0.02)
+                    if app._const is not None:
+                        break
+                was, const = app._wanted, app._const
+
+                await pilot.press("a")
+                await pilot.pause(0.2)
+                form = app.screen
+                for name, value in self.form().items():
+                    form.query_one(f"#field-{name}", Input).value = value
+                await pilot.pause()
+                form.action_draw()
+                await pilot.pause()
+                self.assertIsNotNone(app._draft)
+
+                # Escape out of the form it hands back.
+                await pilot.press("a")
+                await pilot.pause(0.2)
+                app.screen.action_cancel()
+                for _ in range(300):
+                    await pilot.pause(0.02)
+                    if app._const is not None:
+                        break
+
+                self.assertIsNone(app._draft, "the draft outlived the form")
+                self.assertEqual((app._wanted, app._const), (was, const))
+                grid = app.query_one("#grid", MapGrid)
+                self.assertEqual(grid.view.label, was)
+                # And nothing was written on the way through.
+                self.assertFalse((self.root / "maps/TestIsland.asm").exists())
 
                 await app.action_quit()
 

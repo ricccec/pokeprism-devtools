@@ -11,6 +11,7 @@ else, so playtesting a map does not cost you the character you play it as.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -19,21 +20,50 @@ from ..dev_server import apply as devapply
 from ..dev_server import inventory, playtest as devplay
 from ..shared import paths
 
+#: The two ROMs this repo builds, and whether each one is the *debug* build — which
+#: is the word `shared/paths.py` uses for the same distinction, so this table is
+#: also the translation between them.
+#:
+#: `make` on its own is the `all` target: both ROMs, plus the GBS and the images.
+#: That is minutes you did not ask for, and worse, it leaves *both* ROMs on disk
+#: and freshly dated, which is precisely the state in which "whichever ROM is
+#: lying around" stops being a safe way to choose one. So the target is named, and
+#: named again on the way back out — see :func:`boot`.
+TARGETS: dict[str, bool] = {"prism": True, "nodebug": False}
+
+#: The debug build. It is the one the dev server's tooling is written against, and
+#: the one you want when the map you are standing in is a map you made ten seconds
+#: ago and may have got wrong.
+DEFAULT_TARGET = "prism"
+
 
 class PlayError(RuntimeError):
     """Nothing built, or the save could not be patched. Carries a message for a
     human, because every one of these is something you can do something about."""
 
 
-def build(root: Path, log: Callable[[str], None]) -> bool:
-    """`make`, streamed a line at a time. True if the ROM built.
+def _debug(target: str) -> bool:
+    if target not in TARGETS:
+        raise PlayError(f"{target!r} is not a target — {' or '.join(TARGETS)}")
+    return TARGETS[target]
+
+
+def build(root: Path, log: Callable[[str], None], *,
+          target: str = DEFAULT_TARGET, jobs: int | None = None) -> bool:
+    """`make -j<n> <target>`, streamed a line at a time. True if the ROM built.
 
     Streamed rather than captured because it takes minutes, and a progress bar
     that cannot fail is worse than the compiler's own output: when the map you
     just added doesn't link, the reason is in these lines, and it names your map.
     """
+    _debug(target)
+    jobs = jobs if jobs is not None else (os.cpu_count() or 1)
+    if jobs < 1:
+        raise PlayError("you cannot run fewer than one job")
+    cmd = ["make", f"-j{jobs}", target]
+    log(f"$ {' '.join(cmd)}")
     proc = subprocess.Popen(
-        ["make"], cwd=root,
+        cmd, cwd=root,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1,
     )
@@ -45,15 +75,23 @@ def build(root: Path, log: Callable[[str], None]) -> bool:
 
 
 def boot(root: Path, emulator: devplay.Emulator, const: str, y: int, x: int, *,
-         keep_people: bool = False) -> list[str]:
+         target: str = DEFAULT_TARGET, keep_people: bool = False) -> list[str]:
     """Stand at (y, x) on this map, in the game, now.
 
     `y` and `x` are coordinate tiles, which is what the grid cursor reports and
     what `wYCoord`/`wXCoord` hold. No `+4` here: that offset lives inside the
     object structs, and `shared/people.py` is the one that knows about it.
+
+    **The ROM is the one named, or none.** No falling back to the other build: you
+    said which target, the build wrote that one, and handing back the *other* one
+    because it happens to exist is how you end up patching a save against a game
+    you are not about to play. If it isn't there, the build did not produce it, and
+    that is worth being told rather than papered over.
     """
+    debug = _debug(target)
     try:
-        rom = paths.rom_path(root)
+        rom = paths.rom_path(root, debug=debug, fallback=False)
+        sym = paths.sym_path(root, debug=debug, fallback=False)
     except FileNotFoundError as e:
         # Nothing built. Patching a save against a ROM that isn't there would read
         # map headers out of whatever *is* there, which is nothing.
@@ -61,7 +99,6 @@ def boot(root: Path, emulator: devplay.Emulator, const: str, y: int, x: int, *,
 
     layout = devplay.Layout.under(root)
     layout.inventory.parent.mkdir(parents=True, exist_ok=True)
-    sym = paths.sym_path(root)
     inv = inventory.load_or_build(root, sym, layout.inventory, log=lambda _: None)
 
     state = devapply.load_state(layout.state, layout.presets)
