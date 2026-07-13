@@ -27,7 +27,7 @@ from pokeprism_devtools.shared import (  # noqa: E402
 )
 from pokeprism_devtools.shared.edits import StaleEdit, apply_edits  # noqa: E402
 from pokeprism_devtools.wiring import (  # noqa: E402
-    pickups as pk, removal as rm, scaffold as sc)
+    props as pk, removal as rm, scaffold as sc)
 
 _failures = 0
 
@@ -93,14 +93,16 @@ def _fixture(tmp: Path) -> Path:
     (root / "constants/sprite_constants.asm").write_text(
         "\tconst_def\n"
         "\tconst SPRITE_SAGE\n\tconst SPRITE_YOUNGSTER\n\tconst SPRITE_POKE_BALL\n"
-        "\tconst SPRITE_FRUIT_TREE\n"
+        "\tconst SPRITE_FRUIT_TREE\n\tconst SPRITE_ROCK\n\tconst SPRITE_BOULDER\n"
         "SPRITE_POKEMON EQU const_value\nSPRITE_VARS EQU const_value + 10\n"
         "\n\tconst_def\n\tconst SPRITE_ANIM_FRAMESET_DECOY\n"
         "\n\tconst_def\n"
         "\tconst SPRITEMOVEDATA_STANDING_DOWN\n\tconst SPRITEMOVEDATA_ITEM_TREE\n"
         "\tconst SPRITEMOVEDATA_WALK_UP_DOWN\n"
+        "\tconst SPRITEMOVEDATA_SMASHABLE_ROCK\n"
+        "\tconst SPRITEMOVEDATA_STRENGTH_BOULDER\n"
         "\n\tconst_def\n\tconst PAL_OW_RED\n\tconst PAL_OW_BLUE\n"
-        "\tconst PAL_OW_YELLOW\n\tconst PAL_OW_SILVER\n"
+        "\tconst PAL_OW_YELLOW\n\tconst PAL_OW_SILVER\n\tconst PAL_OW_BROWN\n"
     )
     (root / "maps/map_headers.asm").write_text(
         "\tmap_header TownA, TS, TOWN, LM_A, MU, 0, PAL, F0\n"
@@ -351,6 +353,69 @@ def test_the_other_two_pickups(root: Path) -> None:
           in (root / "maps/TownA.asm").read_text())
     check("which is why nothing was written to the flag enum",
           f.flag is None and len(f.edits) == 1)
+
+    _reset(root, saved)
+
+
+def test_a_rock_is_not_a_person(root: Path) -> None:
+    """A boulder has no dialogue, no flag, no script and no movement to choose.
+
+    It is a `person_event` because the engine has one list of things that stand on
+    tiles — not because it is a person. Everything on the line but the position and
+    the colour was decided by whoever wrote `strengthboulder`, and the studio used
+    to offer all of it: a sprite box, a movement box, an event flag, and an empty
+    field asking what the boulder says.
+    """
+    print("\na rock and a boulder are objects, not people")
+    saved = _snapshot(root)
+
+    b = pk.add_prop(root, "TOWN_A", 3, 4, "boulder")
+    apply_edits(root, b.edits, dry_run=False)
+    check("a boulder is the one line every boulder in the repo is",
+          "person_event SPRITE_BOULDER, 3, 4, SPRITEMOVEDATA_STRENGTH_BOULDER, "
+          "0, 0, -1, -1, PAL_OW_BROWN, PERSONTYPE_JUMPSTD, 0, strengthboulder, -1"
+          in (root / "maps/TownA.asm").read_text())
+    check("and it allocates no flag: a rock you had smashed would not come back",
+          b.flag is None and len(b.edits) == 1)
+
+    r = pk.add_prop(root, "TOWN_A", 5, 6, "rock", palette="PAL_OW_BLUE")
+    apply_edits(root, r.edits, dry_run=False)
+    check("a rock is the same line with the other std script",
+          "person_event SPRITE_ROCK, 5, 6, SPRITEMOVEDATA_SMASHABLE_ROCK, "
+          "0, 0, -1, -1, PAL_OW_BLUE, PERSONTYPE_JUMPSTD, 0, smashrock, -1"
+          in (root / "maps/TownA.asm").read_text())
+
+    hdr = eh.parse_map(root / "maps/TownA.asm")
+    rock = hdr.object_events[-1]
+    boulder = hdr.object_events[-2]
+    check("and the pair of them are recognisable as props afterwards",
+          (boulder.prop, rock.prop) == ("boulder", "rock"),
+          f"{boulder.prop}, {rock.prop}")
+
+    # The three-way test, and the reason it is not the sprite alone: five rocks in
+    # pokeprism are PERSONTYPE_SCRIPT and run a script somebody wrote. A studio
+    # that read the sprite would offer to overwrite it with `smashrock`.
+    scripted = eh.Entry(
+        macro="person_event", lineno=0, raw="",
+        args=["SPRITE_ROCK", "1", "1", "SPRITEMOVEDATA_ITEM_TREE", "0", "0",
+              "-1", "-1", "PAL_OW_BLUE", "PERSONTYPE_SCRIPT", "0",
+              "ExplodingRock", "-1"])
+    check("a SPRITE_ROCK with a script of its own is NOT a prop — it is a person",
+          scripted.prop is None)
+
+    # Moving one rewrites the two arguments that are yours, and not one byte more.
+    was = (root / "maps/TownA.asm").read_text()
+    c = pk.edit_prop(root, "TOWN_A", len(hdr.object_events) - 1, 9, 9, "rock",
+                     palette="PAL_OW_BLUE")
+    apply_edits(root, c.changes, dry_run=False)
+    now = (root / "maps/TownA.asm").read_text()
+    check("moving a rock moves the rock and nothing else",
+          now == was.replace("SPRITE_ROCK, 5, 6,", "SPRITE_ROCK, 9, 9,"),
+          "something other than the coordinates changed")
+
+    check("and editing a thing that is not a rock is refused",
+          _raises(lambda: pk.edit_prop(root, "TOWN_A", 0, 1, 1, "rock",
+                                       palette="PAL_OW_RED"), pk.EditError))
 
     _reset(root, saved)
 
@@ -751,6 +816,7 @@ def main() -> int:
         test_trainer(root)
         test_items(root)
         test_the_other_two_pickups(root)
+        test_a_rock_is_not_a_person(root)
         test_signpost(root)
         test_rejects_unknown_consts(root)
         test_stale_edit(root)

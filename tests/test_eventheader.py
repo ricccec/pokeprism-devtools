@@ -191,14 +191,23 @@ def test_miscounts_are_findings_not_failures(tmp: Path) -> None:
 
     h = eh.parse_map(_write(tmp, "Under.asm", UNDERDECLARED))
     objs = h.lists[ListKind.OBJECT_EVENTS]
-    check("under-declared: entry past the count is recorded as a stray",
-          len(objs.strays) == 1 and objs.declared_count == 0, f"strays={objs.strays}")
+    # The entry past the count is *in the file*, so it is in `entries`. Believing
+    # the count byte over the lines would hide it from the studio, from `d`, and
+    # from every rule that walks the objects — which is precisely the entry you
+    # most want to be looking at.
+    check("under-declared: the entry past the count is still an entry",
+          len(objs.entries) == 1 and objs.declared_count == 0,
+          f"entries={len(objs.entries)} declared={objs.declared_count}")
+    check("under-declared: and it is knowable as the one that won't spawn",
+          [e.lineno for e in objs.undeclared] == [objs.entries[0].lineno])
     check("under-declared: count_matches is False", not objs.count_matches)
 
     h.fix_count(ListKind.OBJECT_EVENTS)
-    check("fix_count absorbs the stray and makes the list consistent",
+    check("fix_count makes the byte agree with the lines",
           h.lists[ListKind.OBJECT_EVENTS].count_matches
           and h.lists[ListKind.OBJECT_EVENTS].declared_count == 1)
+    check("and there is nothing undeclared left",
+          h.lists[ListKind.OBJECT_EVENTS].undeclared == [])
 
 
 def test_unparseable(tmp: Path) -> None:
@@ -301,7 +310,8 @@ def test_real_repo() -> None:
             if not lst.count_matches:
                 miscounts.append(f"{p.name} {kind.value}: db {lst.declared_count} vs "
                                  f"{len(lst.entries)} entries"
-                                 + (f" +{len(lst.strays)} past the count" if lst.strays else ""))
+                                 + (f", {len(lst.undeclared)} of them past the count"
+                                    if lst.undeclared else ""))
 
     check(f"parsed {len(parsed)}/{len(maps)} map files", len(parsed) >= 450, f"{len(parsed)}")
     check("EVERY parsed map re-emits byte-identically",

@@ -1,10 +1,15 @@
-"""The four things you pick up off the floor — and the four ways the engine reads
-the same two bytes.
+"""The things on a map that are not people: balls, trees, rocks, boulders.
 
-An item ball, a TM ball, a fruit tree and a hidden item look like one idea, and on
-the Pickups tab they are one. Underneath they are not. Three of them are
-`person_event`s and the fourth is a `signpost`; and of the three, each reads the
-macro's 11th and 12th arguments as something different:
+They are all written as `person_event`s (bar one), because the engine has one list
+of things that stand on tiles — not because anybody thinks a boulder is a person.
+Calling them people is what the studio used to do, and it is why a boulder came
+with a box asking what it says.
+
+Two ideas, then, and they are the same idea. **A prop is a `person_event` with no
+words**: a rock has no dialogue, no event flag and no script anybody wrote —
+`smashrock` is a *std* id the engine supplies, shared by every rock in the game —
+so its whole form is where it stands and what colour it is. And **a pickup is a
+`person_event` whose last two arguments are read four different ways**:
 
     person_event …, PERSONTYPE_ITEMBALL,  6,       POTION,               EVENT_…
                                           ^quantity ^item
@@ -21,11 +26,14 @@ The assembler cannot see any of this: every one of those slots takes a number, a
 a TM written into an item ball's item slot assembles perfectly and hands the player
 `0` of it, because `.itemball` reads the *quantity* out of the slot the TM is in.
 That is the class of bug this module exists to make unwriteable — the form asks
-what kind of pickup you want and the shape follows from the answer, rather than
-the other way round.
+what kind of prop you want and the shape follows from the answer, rather than the
+other way round. Six kinds now, and the sixth was not a new mechanism: it was the
+five-kind mechanism finally being pointed at the boulder.
 
 `engine/events.asm`: `.itemball` at 513, `.tmhm` at 529, the fruit tree at 598, and
-the hidden item's three-byte record at 682.
+the hidden item's three-byte record at 682. The std scripts a rock and a boulder
+run are `smashrock` and `strengthboulder` (`engine/std_scripts.asm`), and what
+makes them props rather than people is written down in `shared/eventmodel.Prop`.
 """
 
 from __future__ import annotations
@@ -34,8 +42,8 @@ import re
 from pathlib import Path
 
 from ..shared import consts, eventheader as eh
-from .objedit import (FLAG, PARAM, POINTER, S_FACING, X, Y, Change, EditError,
-                      MapEdit, spliced)
+from .objedit import (FLAG, PALETTE, PARAM, POINTER, S_FACING, X, Y, Change,
+                      EditError, MapEdit, palette_of, repainted, spliced)
 from .scaffold import (ALWAYS, INDENT, MapCtx, Object, Scaffold, ScaffoldError,
                        allocate_flag, camel, require)
 
@@ -131,6 +139,42 @@ def add_fruit_tree(root: Path, map_const: str, y: int, x: int, tree: str, *,
     )
 
 
+def add_prop(root: Path, map_const: str, y: int, x: int, kind: str, *,
+             palette: str | None = None) -> Scaffold:
+    """A rock or a boulder: the two objects whose every argument but two is fixed.
+
+    Everything a form could ask about one of these is already decided, and decided
+    by the engine rather than by taste. The movement is what makes a boulder pushable
+    (`SPRITEMOVEDATA_STRENGTH_BOULDER`) and a rock smashable; the script is a std id
+    the engine supplies and every one of them in the game shares; the event flag is
+    `-1`, because a rock that remembered you had smashed it would be a rock that
+    never came back after a reload. The repo agrees, and it did not have to: 23 of
+    the 26 boulders and 23 of the 31 rocks are already exactly this line.
+
+    So the form asks the two questions that are left. The other three are not
+    *defaults* — they are not offered, because a boulder that walks like an NPC is
+    not a boulder, and if you want one you want the map file, not this.
+    """
+    prop = eh.PROPS.get(kind)
+    if prop is None:
+        raise ScaffoldError(f"{kind!r} is not a prop — those are "
+                            f"{', '.join(eh.PROPS)}")
+
+    obj = Object(sprite=prop.sprite, y=y, x=x, movement=prop.movement,
+                 palette=palette or prop.palette)
+    obj.check(root)
+
+    ctx = MapCtx(root, map_const)
+    # `PERSONTYPE_JUMPSTD, 0, <std>, -1` — the 0 is the unused param slot and the
+    # std goes where a person keeps the pointer to what they say. It is not a
+    # pointer: the macro emits a `db`, and the engine looks the id up in its own
+    # table. Which is the whole reason a rock cannot be given words.
+    ctx.add_object(obj, "PERSONTYPE_JUMPSTD", 0, prop.script, ALWAYS)
+
+    return Scaffold(f"{kind} at ({y}, {x}) in {map_const}",
+                    [ctx.to_edit(f"{kind} at ({y}, {x})")])
+
+
 def add_hidden_item(root: Path, map_const: str, y: int, x: int, item: str, *,
                     flag: str | None = None, label: str | None = None) -> Scaffold:
     """An item hidden in the scenery, found with the Itemfinder.
@@ -221,6 +265,36 @@ def edit_tmhm_ball(root: Path, map_const: str, index: int, y: int, x: int, item:
     # exactly the edit this module exists not to make.
     return _edit_ball(root, map_const, index, y, x, {PARAM: item}, flag,
                       f"{item} ball", f"{item} ball at ({y}, {x})")
+
+
+def edit_prop(root: Path, map_const: str, index: int, y: int, x: int, kind: str,
+              *, palette: str) -> Change:
+    """Move a rock, or repaint it. Nothing else about one is editable.
+
+    Not even the movement — and *especially* not the movement, because eleven of
+    the rocks in this repo carry `SPRITEMOVEDATA_00` or `..._ITEM_TREE` instead of
+    `..._SMASHABLE_ROCK` and still run `smashrock`. Whatever those eleven are, they
+    are what somebody wrote, and an edit form that "corrected" them on the way past
+    would be changing the behaviour of a rock you opened in order to move it one
+    tile to the left. New ones get the canonical line (:func:`add_prop`); old ones
+    get moved.
+    """
+    if kind not in eh.PROPS:
+        raise EditError(f"{kind!r} is not a prop — those are {', '.join(eh.PROPS)}")
+    ctx = MapEdit(root, map_const)
+    entry = ctx.entry(eh.ListKind.OBJECT_EVENTS, index)
+    if entry.prop != kind:
+        raise EditError(f"the object at #{index} is not a {kind} — a prop is named by "
+                        f"its sprite, its persontype and the std script it runs, and "
+                        f"this one does not have all three")
+    # Only if it moved — you are not required to fix what you did not touch, and
+    # a few of these carry a bare number where a palette name should be.
+    if palette != palette_of(entry.args[PALETTE]):
+        require(root, "palette", palette,
+                consts.with_prefix(root, consts.SPRITES, "PAL_OW_"))
+    ctx.replace_entry(eh.ListKind.OBJECT_EVENTS, index, spliced(entry, {
+        Y: y, X: x, PALETTE: repainted(entry.args[PALETTE], palette)}))
+    return ctx.done(f"{kind} at ({y}, {x}) in {map_const}", f"{kind} at ({y}, {x})")
 
 
 def edit_fruit_tree(root: Path, map_const: str, index: int, y: int, x: int,

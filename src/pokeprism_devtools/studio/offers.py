@@ -9,7 +9,7 @@ Three of these lists are not what you would guess, and each is a bug avoided:
 
 **The TMs are not in the item list.** `TM_HAIL` is pasted together by a macro at
 assembly time and appears nowhere in the source — scan the item constants for
-`TM_` and you find `TM_CASE`, which is the bag. See `wiring/pickups.tmhms`.
+`TM_` and you find `TM_CASE`, which is the bag. See `wiring/props.tmhms`.
 
 **The event flags do not bound what you may type.** Every other list here is a set
 of names the wiring layer will check you against. That one is a *suggestion*: a
@@ -28,7 +28,7 @@ from pathlib import Path
 
 from ..shared import (consts, eventflags, maps as maps_mod, spritesets,
                       trainerparty, trainerstats)
-from ..wiring import connections, pickups, scaffold
+from ..wiring import connections, props, scaffold
 from . import actions, newmap
 from .actions import Action
 
@@ -124,8 +124,8 @@ def _index(root: Path) -> dict[str, tuple[str, ...]]:
         actions.PALETTES: tuple(sorted(
             consts.with_prefix(root, consts.SPRITES, "PAL_OW_"))),
         actions.ITEMS: tuple(sorted(consts.names(root, consts.ITEMS))),
-        actions.TMHMS: tuple(sorted(pickups.tmhms(root))),
-        actions.TREES: tuple(sorted(pickups.trees(root))),
+        actions.TMHMS: tuple(sorted(props.tmhms(root))),
+        actions.TREES: tuple(sorted(props.trees(root))),
         actions.FLAGS: tuple(eventflags.load(root).by_name),
         actions.CLASSES: tuple(sorted(backed)),
         actions.DIRECTIONS: tuple(sorted(connections.OPPOSITE)),

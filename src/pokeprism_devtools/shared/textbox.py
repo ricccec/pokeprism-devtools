@@ -97,6 +97,12 @@ class Box:
     first_row: int       # where `text`/`ctxt`/`para` start
     last_row: int        # the last row inside the border
     second_row: int      # where <LINE> lands, absolutely
+    #: "speech" or "sign" — which is not decoration and not the same as `name`.
+    #: The two boxes are *written in different macros*, and the split is total:
+    #: `line`/`para`/`cont` appear only in speech text and `next`/`nl` only in
+    #: sign text, across 453 maps. So anything generating a line of dialogue has
+    #: to know which box it is generating for, and this is how it asks.
+    kind: str = "speech"
 
     def rows_for(self, action: str, row: int) -> int:
         if action == LINE_ABS:
@@ -108,6 +114,48 @@ class Box:
         if action == NEW_BOX:
             return self.first_row
         return row
+
+
+class Cursor:
+    """Where the next line of a block lands, and which rows are already drawn on.
+
+    The engine's own bookkeeping, and the thing you cannot do by looking at the
+    source: `<LINE>` is *absolute*, so whether a `line` is the next line of a box or
+    a line drawn straight over the last one is not a property of the macro — it is a
+    property of everything above it.
+
+    Two callers, and they must not disagree. `maplint.rules_text.text_clobber` walks
+    a block this way to *find* two lines on one row; `dialogue.render` walks it to
+    avoid *writing* them. A writer that did not run the reader's rule is a writer
+    that emits its findings, which is exactly the bug this class was extracted for.
+    """
+
+    def __init__(self, box: Box) -> None:
+        self.box = box
+        self.row = box.first_row
+        self.taken: set[int] = set()
+
+    def lands(self, action: str) -> int:
+        return self.box.rows_for(action, self.row)
+
+    def clobbers(self, action: str) -> bool:
+        """Whether a line with this action draws over one that is already there.
+
+        `<CONT>` scrolls its row off the top before it writes and `<PARA>` wipes the
+        box, so neither ever can — which is exactly why they are the way out when
+        `<LINE>` has nowhere left to go.
+        """
+        if action in (SCROLL, NEW_BOX):
+            return False
+        return self.lands(action) in self.taken
+
+    def move(self, action: str) -> None:
+        if action == NEW_BOX:
+            self.taken.clear()             # the box is wiped; every row is free
+        elif action == SCROLL:
+            self.taken.discard(self.row)   # this row scrolled off the top
+        self.row = self.lands(action)
+        self.taken.add(self.row)
 
 
 @dataclass(frozen=True)
@@ -175,12 +223,12 @@ def boxes(root: Path) -> dict[str, Box]:
     inner_w = syms["TEXTBOX_INNERW"]
     inner_y = syms["TEXTBOX_INNERY"]
     speech = Box("speech textbox", cols=inner_w, first_row=inner_y,
-                 last_row=inner_y + 2, second_row=inner_y + 2)
+                 last_row=inner_y + 2, second_row=inner_y + 2, kind="speech")
 
     x, y = _signpost_origin(root)
     screen_w, screen_h = syms["SCREEN_WIDTH"], syms["SCREEN_HEIGHT"]
     sign = Box("signpost", cols=(screen_w - 1) - x, first_row=y,
-               last_row=(screen_h - 1) - 1, second_row=y + 2)
+               last_row=(screen_h - 1) - 1, second_row=y + 2, kind="sign")
 
     return {"speech": speech, "sign": sign}
 
