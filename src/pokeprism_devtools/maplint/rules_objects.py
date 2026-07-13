@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from ..shared.eventheader import ListKind
+from ..shared.eventheader import LIST_ORDER, ListKind
 from .context import LintContext
 from .diagnostics import Diagnostic, Severity
 
@@ -42,7 +42,7 @@ def obj_count(ctx: LintContext) -> list[Diagnostic]:
             lst = header.lists[kind]
             if lst.count_matches:
                 continue
-            present = len(lst.entries) + len(lst.strays)
+            present = len(lst.entries)
             if lst.declared_count > present:
                 msg = (f"{_LIST_NAMES[kind]} count is {lst.declared_count} but only "
                        f"{present} entr{'y' if present == 1 else 'ies'} follow — the "
@@ -55,6 +55,173 @@ def obj_count(ctx: LintContext) -> list[Diagnostic]:
             out.append(Diagnostic("obj-count", Severity.ERROR, path,
                                   lst.count_lineno + 1, msg))
     return out
+
+
+def event_overlap(ctx: LintContext) -> list[Diagnostic]:
+    """Two entries of the *same* list standing on one tile. The second is dead.
+
+    Each list is scanned linearly and the first hit wins. `GetDestinationWarpNumber`
+    (home/map.asm:99) walks the warps comparing coordinates and returns on the first
+    match; the signpost scan (home/map.asm:1556) does the same, and so does
+    `RunCurrentMapXYTriggers`. So a second warp on a tile is not a second way out —
+    it is a line nobody will ever reach. Two *objects* on a tile both spawn, which
+    is worse rather than better: one is drawn over the other, and the one you can
+    talk to is whichever the facing check finds first.
+
+    Three refinements, all of them things the repo taught rather than things the
+    rule assumed:
+
+    **A shadowed warp is still a destination.** `warp_to` counts its way to a
+    warp by *index*, so MoundB2F's three warps on (40, 8) — the author marked
+    them ``; FIXME`` — are two dead exits and three live arrivals. Deleting one
+    renumbers the repo. That is why this is a warning and not an error, and why
+    it says so.
+
+    **Coord events are keyed by the scene as well as the tile.**
+    `RunCurrentMapXYTriggers` (home/map.asm:1592) compares the trigger's first
+    byte with the active scene id and skips it if it differs — and a five-argument
+    ``xy_trigger`` also carries an event flag it is gated on. LaurelForestPokemonOnly
+    stacks three triggers on one tile, each gated on which Pokémon is in your
+    party, and every one of them is reachable. So a coord event only shadows the
+    one below it if it is *unconditional*: no event gate, and a scene that matches
+    everything the later one matches.
+
+    **Different lists on one tile are a note, not a fault** — see
+    :func:`event_stack`.
+    """
+    out = []
+    for const, info in sorted(ctx.map_infos.items()):
+        header = ctx.header(const)
+        if header is None:
+            continue
+        path = ctx.rel(info.path)
+        for kind in ListKind:
+            for tile, group in _by_tile(header.lists[kind].entries).items():
+                for pos, (i, entry) in enumerate(group):
+                    hidden = _shadowed_by(kind, group[:pos], entry)
+                    if hidden is None:
+                        continue
+                    out.append(Diagnostic(
+                        "event-overlap", Severity.WARNING, path, entry.lineno + 1,
+                        f"{_ONE[kind]} #{_shown(kind, i)} is on ({tile[0]}, {tile[1]}), "
+                        f"where {_ONE[kind]} #{_shown(kind, hidden)} already is — the "
+                        f"engine scans the {_LIST_NAMES[kind]} in order and takes the "
+                        f"first one on the tile, so this one never {_NEVER[kind]}"
+                        f"{_STILL.get(kind, '')}",
+                    ))
+    return out
+
+
+def event_stack(ctx: LintContext) -> list[Diagnostic]:
+    """Entries of *different* lists on one tile.
+
+    Not a bug, and reported anyway. Nothing shadows anything here — the lists are
+    scanned by different code at different moments, so an NPC standing in a
+    doorway and the warp under his feet both work exactly as written, and seven
+    maps do that on purpose (he is what stops you using the door until he moves).
+    But the same picture is also what a mis-typed coordinate looks like, and the
+    tile knows which of the two it is no better than this rule does. So: info.
+    """
+    out = []
+    for const, info in sorted(ctx.map_infos.items()):
+        header = ctx.header(const)
+        if header is None:
+            continue
+        path = ctx.rel(info.path)
+        everything: dict[tuple[int, int], list[tuple[ListKind, int, object]]] = {}
+        for kind in ListKind:
+            for i, entry in enumerate(header.lists[kind].entries):
+                y, x = entry.coords
+                if y is not None and x is not None:
+                    everything.setdefault((y, x), []).append((kind, i, entry))
+
+        for tile, here in sorted(everything.items()):
+            kinds = {k for k, _, _ in here}
+            if len(kinds) < 2:
+                continue
+            what = ", ".join(f"{_ONE[k]} #{_shown(k, i)}"
+                             for k, i, _ in sorted(here, key=lambda t: LIST_ORDER.index(t[0])))
+            first = min(here, key=lambda t: t[2].lineno)     # report it once, up top
+            out.append(Diagnostic(
+                "event-stack", Severity.INFO, path, first[2].lineno + 1,
+                f"({tile[0]}, {tile[1]}) holds {what} — different lists, so none of "
+                f"them shadows the others and all of them work. Said here because a "
+                f"mistyped coordinate looks exactly like this",
+            ))
+    return out
+
+
+#: What one entry of each list is called, in the singular, when a message has to
+#: point at one.
+_ONE = {
+    ListKind.WARPS: "warp",
+    ListKind.COORD_EVENTS: "coord event",
+    ListKind.BG_EVENTS: "BG event",
+    ListKind.OBJECT_EVENTS: "object",
+}
+
+#: What the shadowed one no longer does. Each list is *used* for a different thing,
+#: and "never fires" would be nonsense about a signpost.
+_NEVER = {
+    ListKind.WARPS: "takes you anywhere",
+    ListKind.COORD_EVENTS: "fires",
+    ListKind.BG_EVENTS: "can be read",
+    ListKind.OBJECT_EVENTS: "can be talked to (and is drawn under the other)",
+}
+
+#: …and the one case where the dead entry is still doing a job.
+_STILL = {
+    ListKind.WARPS: ". It is still a valid *arrival*, though — another map's "
+                    "`warp_to` counts its way here by index — so deleting it "
+                    "renumbers every warp below it",
+}
+
+
+def _shown(kind: ListKind, i: int) -> int:
+    """Warps are numbered from 1 by `warp_to`, and by everything that talks about
+    them. The other three lists are 0-based everywhere they are indexed."""
+    return i + 1 if kind == ListKind.WARPS else i
+
+
+def _by_tile(entries: list) -> dict[tuple[int, int], list[tuple[int, object]]]:
+    """The entries of one list, grouped by the tile they stand on, in source order.
+
+    An entry whose coordinates are an expression rather than a number is left out
+    entirely: it is on some tile, and nothing here can say which.
+    """
+    out: dict[tuple[int, int], list[tuple[int, object]]] = {}
+    for i, entry in enumerate(entries):
+        y, x = entry.coords
+        if y is None or x is None:
+            continue
+        out.setdefault((y, x), []).append((i, entry))
+    return {tile: group for tile, group in out.items() if len(group) > 1}
+
+
+def _shadowed_by(kind: ListKind, above: list[tuple[int, object]], entry) -> int | None:
+    """The index of the earlier entry on this tile that hides `entry`, if one does.
+
+    For three of the lists that is simply the first one there. Coord events have
+    to earn it: see :func:`event_overlap`.
+    """
+    for i, other in above:
+        if kind != ListKind.COORD_EVENTS or _unconditional(other, entry):
+            return i
+    return None
+
+
+def _unconditional(earlier, later) -> bool:
+    """Whether `earlier` fires on every scene `later` would, with nothing to stop it.
+
+    `xy_trigger scene, y, x, script[, event]`. The engine takes the trigger if its
+    scene is the active one *or* is -1, and — in the five-argument form — only if
+    the event flag it names is set. So an earlier trigger shadows a later one only
+    when it is ungated and its scene is the same one, or the wildcard.
+    """
+    if len(earlier.args) > 4:
+        return False                       # gated on an event flag; it may not fire
+    scene, theirs = earlier.int_arg(0), later.int_arg(0)
+    return scene == -1 or (scene is not None and scene == theirs)
 
 
 def sprite_outdoor(ctx: LintContext) -> list[Diagnostic]:
@@ -126,4 +293,4 @@ def sprite_static_walker(ctx: LintContext) -> list[Diagnostic]:
     return out
 
 
-ALL = (obj_count, sprite_outdoor, sprite_static_walker)
+ALL = (obj_count, event_overlap, event_stack, sprite_outdoor, sprite_static_walker)

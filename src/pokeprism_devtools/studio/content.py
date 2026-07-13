@@ -1,14 +1,21 @@
-"""The actions that put something *in* a map: people, pickups, signs, words.
+"""The actions that put something *in* a map: people, props, signs, words.
 
 Split from :mod:`.actions`, which keeps the base class and the two actions that
 wire maps to each other. The line between them is the one the tabs already draw:
 a connection or a warp is about two maps, and everything here is about one.
 
-The interesting one is :class:`AddPickup`. An item ball, a TM ball, a fruit tree
-and a hidden item are one thing to a person and four things to the engine — see
-`wiring/pickups.py` for the two bytes it reads four different ways — so this is
-one form whose *shape* follows from the kind you pick. That is what `fields_for`
-is for, and it is the reason a TM ball has no quantity box to get wrong.
+The interesting one is :class:`AddProp`. An item ball, a TM ball, a fruit tree, a
+hidden item, a rock and a boulder are one thing to a person and six things to the
+engine — see `wiring/props.py` — so this is one form whose *shape* follows from
+the kind you pick. That is what `fields_for` is for, and it is the reason a TM ball
+has no quantity box to get wrong and a boulder has no dialogue box at all.
+
+The kinds are a *closed list*, on purpose. The studio does not offer to place "an
+object" and then ask you thirteen questions about it; it offers the half-dozen
+objects it knows how to place correctly, each with everything the engine has
+already decided filled in. A seventh kind is a `Prop` in `shared/eventmodel.py`
+plus a branch here — which is a change to make deliberately, rather than a form
+that lets you assemble a broken one out of dropdowns.
 """
 
 from __future__ import annotations
@@ -17,10 +24,10 @@ import re
 
 from pathlib import Path
 
-from ..shared import trainerstats
+from ..shared import eventmodel, trainerstats
 from ..shared.eventflags import FlagError
 from ..shared.eventheader import ListKind
-from ..wiring import connections, pickups, removal, scaffold, warpdel
+from ..wiring import connections, props, removal, scaffold, warpdel
 # By name, not by module: `Action.text()` is a method, and `text.reword(...)`
 # sitting next to `self.text("label")` in the same three lines is a trap.
 from ..wiring.text import TextError, reword
@@ -28,11 +35,14 @@ from .actions import (CLASSES, FACINGS, FLAGS, ITEMS, MOVEMENTS, PALETTES,
                       PARTIES, SPRITES, TMHMS, TREES, Action, ActionError,
                       Field, Result)
 
-#: The four kinds of pickup, as the form names them. The value is the whole
-#: discriminator: `fields_for` reads it, `run` dispatches on it, and it is the one
-#: string in the studio that decides how the engine will read two bytes.
+#: The kinds of prop, as the form names them. The value is the whole discriminator:
+#: `fields_for` reads it, `run` dispatches on it, and it is the one string in the
+#: studio that decides how the engine will read two bytes.
 ITEMBALL, TMHM, TREE, HIDDEN = "item ball", "TM/HM ball", "fruit tree", "hidden item"
-PICKUP_KINDS = (ITEMBALL, TMHM, TREE, HIDDEN)
+#: The two that are not people and never were. Their names are the keys of
+#: `eventmodel.PROPS`, which is where everything about them is written down.
+ROCK, BOULDER = "rock", "boulder"
+PROP_KINDS = (ITEMBALL, TMHM, TREE, HIDDEN, ROCK, BOULDER)
 
 
 class _Placed(Action):
@@ -150,20 +160,27 @@ class AddTrainer(_Placed):
         )
 
 
-class AddPickup(_Placed):
-    """The one form for everything you pick up off the floor.
+class AddProp(_Placed):
+    """The one form for everything on a map that is not a person.
 
-    Four kinds, four shapes. The kind is the first field and it `reveals` the
-    rest — because the fields a kind doesn't have are exactly the fields that are
-    a bug if you fill them in: a quantity on a TM ball is read by the engine as the
-    *item*, and an item ball with a TM in its item slot hands you zero of it.
+    Six kinds, six shapes. The kind is the first field and it `reveals` the rest —
+    because the fields a kind doesn't have are exactly the fields that are a bug if
+    you fill them in: a quantity on a TM ball is read by the engine as the *item*,
+    and an item ball with a TM in its item slot hands you zero of it.
+
+    A rock and a boulder are the extreme case of that, and the reason they are
+    here rather than under NPCs. They *are* `person_event`s — the engine has one
+    list of things that stand on tiles — so the studio offered them a sprite, a
+    movement, an event flag and a box to type their dialogue into, all four of
+    which are wrong. What a boulder actually has is a position and a colour. The
+    rest was decided by whoever wrote `strengthboulder`.
     """
 
-    name = "pickup"
-    title = "Add a pickup"
+    name = "prop"
+    title = "Add an object"
 
     _KIND = Field("kind", "Kind", choices="", default=ITEMBALL, reveals=True,
-                  help=" / ".join(PICKUP_KINDS))
+                  help=" / ".join(PROP_KINDS))
     _WHERE = (Field("y", "Y", kind="int"), Field("x", "X", kind="int"))
     _FLAG = Field("flag", "Event flag", choices=FLAGS,
                   help="blank and one is generated. It is what remembers you took it.")
@@ -194,11 +211,20 @@ class AddPickup(_Placed):
             return (cls._KIND, *cls._WHERE,
                     Field("item", "Item", choices=ITEMS, default="NUGGET"),
                     cls._FLAG)
+        if kind in (ROCK, BOULDER):
+            # No flag, no script, no dialogue, and no movement. All four are the
+            # engine's, and every one of them the form offered was a way to write a
+            # boulder that is not a boulder. See `wiring/props.add_prop`.
+            return (cls._KIND, *cls._WHERE,
+                    Field("palette", "Palette", choices=PALETTES,
+                          default=eventmodel.PROPS[kind].palette,
+                          help="the only thing about one of these that is yours"))
         return cls.FIELDS
 
     def describe(self) -> str:
         what = self.text("tree") or self.text("item")
-        return f"{self._kind} {what} at ({self.text('y')}, {self.text('x')})"
+        where = f"({self.text('y')}, {self.text('x')})"
+        return f"{self._kind} {what} at {where}".replace("  ", " ")
 
     @property
     def _kind(self) -> str:
@@ -209,21 +235,24 @@ class AddPickup(_Placed):
         flag = self.text("flag") or None
         try:
             if self._kind == TMHM:
-                s = pickups.add_tmhm_ball(root, self.map, y, x, self.text("item"),
-                                          flag=flag)
+                s = props.add_tmhm_ball(root, self.map, y, x, self.text("item"),
+                                        flag=flag)
             elif self._kind == TREE:
-                s = pickups.add_fruit_tree(root, self.map, y, x, self.text("tree"))
+                s = props.add_fruit_tree(root, self.map, y, x, self.text("tree"))
             elif self._kind == HIDDEN:
-                s = pickups.add_hidden_item(root, self.map, y, x, self.text("item"),
-                                            flag=flag)
+                s = props.add_hidden_item(root, self.map, y, x, self.text("item"),
+                                          flag=flag)
             elif self._kind == ITEMBALL:
-                s = pickups.add_itemball(root, self.map, y, x, self.text("item"),
-                                         quantity=self.integer("quantity", 1),
-                                         flag=flag)
+                s = props.add_itemball(root, self.map, y, x, self.text("item"),
+                                       quantity=self.integer("quantity", 1),
+                                       flag=flag)
+            elif self._kind in (ROCK, BOULDER):
+                s = props.add_prop(root, self.map, y, x, self._kind,
+                                   palette=self.text("palette") or None)
             else:
                 raise ActionError(
-                    f"{self._kind!r} is not a kind of pickup — "
-                    f"it is one of: {', '.join(PICKUP_KINDS)}")
+                    f"{self._kind!r} is not a kind of object — "
+                    f"it is one of: {', '.join(PROP_KINDS)}")
         except scaffold.ScaffoldError as e:
             raise ActionError(str(e)) from e
         return self._scaffolded(s)

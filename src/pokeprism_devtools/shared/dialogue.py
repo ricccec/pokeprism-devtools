@@ -273,14 +273,60 @@ def _terminates(root: Path, rest: str) -> bool:
 #
 # The studio's promise is that you write the words and the macros are somebody
 # else's problem. That only holds if the macros survive being somebody else's
-# problem, which is what the two functions below are careful about.
+# problem, which is what the functions below are careful about.
 
 _ESCAPE = str.maketrans({'"': '\\"'})
 
-#: The macro for a line you have just written, when there is no old one to copy.
-_NEW_LINE = "line"
-#: …and for the first line after a blank, which starts a fresh box.
+#: The macros a line you have just written may get, per box, in the order they are
+#: tried — the last being the fallback that always works.
+#:
+#: `<LINE>` is **absolute**: it goes to the speech box's second row, wherever the
+#: cursor was. So a *third* line written as `line` does not move down, it draws over
+#: the second — and the way to a third line is `cont`, which scrolls the box up and
+#: frees the row first. Which is why this cannot be one constant: the right macro
+#: depends on where the cursor already is.
+#:
+#: A signpost is a different set of macros entirely, because it is not a two-row box
+#: you scroll: `next` is *relative* and walks down a ten-row window. The repo is
+#: unanimous about the split (`line`/`para`/`cont` only in speech text, `next`/`nl`
+#: only in sign text, 453 maps), and a `line` in a signpost would land every added
+#: line on row 9, on top of the last one.
+_WRITE = {
+    "speech": ("line", "cont"),
+    "sign": ("next",),
+}
+
+#: What the macros above do to the cursor. :func:`render` is handed a block and some
+#: prose — it has no `root` to read the engine with, as `textbox.metrics` does — so
+#: the handful of macros it may *emit* are named here. Every macro it *copies back*
+#: arrives with its action already measured, on the `Line` it came from.
+_ACTS = {"line": textbox.LINE_ABS, "cont": textbox.SCROLL, "para": textbox.NEW_BOX,
+         "next": textbox.DOWN_2, "nl": textbox.DOWN_1}
+
+#: The first line after a blank, which in a speech box starts a fresh one. A
+#: signpost has no fresh box to start — it is one window — so a blank line there is
+#: a blank *row*, which is what `nl` is. See :func:`render`.
 _NEW_BOX = "para"
+_BLANK_ROW = "nl"
+
+
+def _clobbering(block: Block) -> set[int]:
+    """The lines of this block that *already* draw over one another.
+
+    Almost always empty — one block in pokeprism does it — and they are left
+    exactly as they are. A macro is only ever rewritten here because the lines
+    above it moved and it no longer means what it meant; a block that was written
+    wrong in the first place is a bug somebody has to have *seen* to have written,
+    and `maplint`'s text-clobber is what says so. Silently repairing it would put a
+    diff in a form you opened to change one word.
+    """
+    cursor = textbox.Cursor(block.box)
+    out: set[int] = set()
+    for i, line in enumerate(block.lines):
+        if cursor.clobbers(line.action):
+            out.add(i)
+        cursor.move(line.action)
+    return out
 
 
 def _words(block: Block) -> list[str]:
@@ -324,8 +370,14 @@ def render(block: Block, text: str, source: list[str] | None = None,
     above them and 1412 don't. A rewrite that picked one would churn a thousand
     blocks nobody asked it to touch, so it copies what was there instead.
 
-    Lines you *add* get `line`, or `para` after a blank. If that overruns the box
-    the preview will say so — which is what the preview is for.
+    *A line you add gets the macro that leaves it where you put it*, which is not
+    always `line`. `<LINE>` is absolute — it goes to the speech box's second row —
+    so a third line written as a third `line` draws straight over the second, and
+    the linter says `text-clobber` about a block this function wrote. The cursor is
+    therefore simulated as the lines are emitted, exactly as `maplint.rules_text`
+    simulates it when reading them: `line` while its row is free, `cont` once it is
+    not, because `cont` scrolls the box up and frees it again. A signpost is written
+    in `next`, which walks down its ten rows and cannot collide with itself.
 
     *The blank lines, though, are yours.* A blank is the only way `plain` has of
     saying "a fresh box starts here", so where the prose and the old line disagree
@@ -343,9 +395,24 @@ def render(block: Block, text: str, source: list[str] | None = None,
     """
     old = block.lines
     was = _words(block)
+    box = block.box
     out: list[str] = []
     i = 0                     # index into the old rendered lines, in lockstep
     fresh_box = False         # a blank line was seen; the next line starts a box
+
+    cursor = textbox.Cursor(box)
+    already = _clobbering(block)     # lines that drew over each other before we came
+
+    def written() -> str:
+        """The macro for a line that has no old one to copy — the first one whose
+        row is still free, and failing that the one that *makes* room."""
+        if not out:
+            return old[0].macro if old else _OPENERS[0]      # the block's opener
+        choices = _WRITE[box.kind]
+        for macro in choices[:-1]:
+            if not cursor.clobbers(_ACTS[macro]):
+                return macro
+        return choices[-1]
 
     def emit(prose: str, at: int, blank: bool, macro: str, kept: bool = True) -> None:
         # `bool(out)` — never a blank line above the first: the span starts at the
@@ -357,6 +424,9 @@ def render(block: Block, text: str, source: list[str] | None = None,
         else:
             line = f'{indent}{macro} "{prose.translate(_ESCAPE)}"'
         out.append(f"\n{line}" if blank else line)
+        # A copied-back line still moves the cursor, and by its *own* action, which
+        # it brought with it. Only a line we invent has to be told.
+        cursor.move(old[at].action if kept and at < len(old) else _ACTS.get(macro, ""))
 
     # Nothing is stripped, at either end: `plain` and `render` are exact inverses,
     # and one prose line is one rendered line. A *leading* blank is a genuinely
@@ -371,21 +441,35 @@ def render(block: Block, text: str, source: list[str] | None = None,
             if i < len(old) and was[i] == "" and old[i].action != textbox.NEW_BOX:
                 emit("", i, old[i].blank_before, old[i].macro)
                 i += 1
+            elif box.kind == "sign":
+                # There is no fresh box to start: a signpost is one window. So a
+                # blank line in one is a blank row, and it is written down as such
+                # rather than promoting the line below it to a `para` no signpost
+                # in the repo has ever contained.
+                emit("", i, False, _BLANK_ROW, kept=False)
             else:
                 fresh_box = True
             continue
 
         # The opener is never promoted: the box it opens is already the first one,
         # and a `para` in its place would open the text with a screen-clear.
-        box = fresh_box and i > 0
+        starts_box = fresh_box and i > 0
         # Keep the old line's macro only where it *agrees* with the prose about
         # starting a box. Where they disagree the prose is the edit, and the macro
         # becomes the plain one for what the prose asked for.
-        kept = i < len(old) and box == (i > 0 and old[i].action == textbox.NEW_BOX)
+        kept = i < len(old) and starts_box == (i > 0 and old[i].action == textbox.NEW_BOX)
         if kept:
             macro, blank = old[i].macro, old[i].blank_before
+            if i not in already and cursor.clobbers(old[i].action):
+                # It was a `line` under a `para` and it is now a `line` under a
+                # `line`, because you merged the two boxes above it. The words are
+                # yours and the macro is ours: keeping it would draw this line over
+                # the one before it, which is a thing you did not ask for and could
+                # not see. (Unless the block *arrived* clobbering — then it is not
+                # ours to quietly repair, and `already` is what remembers that.)
+                macro, kept = written(), False
         else:
-            macro, blank = (_NEW_BOX if box else _NEW_LINE), box
+            macro, blank = (_NEW_BOX if starts_box else written()), starts_box
         emit(prose, i, blank, macro, kept)
         fresh_box = False
         i += 1

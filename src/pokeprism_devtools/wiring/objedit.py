@@ -126,7 +126,7 @@ def spliced(entry: eh.Entry, changed: dict[int, object]) -> list[str]:
     return args
 
 
-def _palette(arg: str, palette: str) -> str:
+def repainted(arg: str, palette: str) -> str:
     """A palette argument with a new colour in it, and everything else where it
     was — the `8 +`, the `+ 8`, the spacing."""
     if palette == palette_of(arg):
@@ -313,7 +313,7 @@ def edit_npc(root: Path, map_const: str, index: int, obj: Object, *,
     entry = ctx.entry(eh.ListKind.OBJECT_EVENTS, index)
     ctx.replace_entry(eh.ListKind.OBJECT_EVENTS, index, spliced(entry, {
         SPRITE: obj.sprite, Y: obj.y, X: obj.x, MOVEMENT: obj.movement,
-        PALETTE: _palette(entry.args[PALETTE], obj.palette),
+        PALETTE: repainted(entry.args[PALETTE], obj.palette),
         FLAG: ctx.flag(flag or "", entry.event_flag),
     }))
     return ctx.done(f"{obj.sprite} at ({obj.y}, {obj.x}) in {map_const}",
@@ -361,7 +361,7 @@ def edit_trainer(root: Path, map_const: str, index: int, obj: Object, cls: str,
     entry = ctx.entry(eh.ListKind.OBJECT_EVENTS, index)
     ctx.replace_entry(eh.ListKind.OBJECT_EVENTS, index, spliced(entry, {
         SPRITE: obj.sprite, Y: obj.y, X: obj.x, MOVEMENT: obj.movement,
-        PALETTE: _palette(entry.args[PALETTE], obj.palette), PARAM: sight,
+        PALETTE: repainted(entry.args[PALETTE], obj.palette), PARAM: sight,
     }))
     return ctx.done(f"{cls} at ({obj.y}, {obj.x}) in {map_const} [party {party}]",
                     f"{cls} at ({obj.y}, {obj.x})")
@@ -372,7 +372,7 @@ def edit_signpost(root: Path, map_const: str, index: int, y: int, x: int, *,
     ctx = MapEdit(root, map_const)
     entry = ctx.entry(eh.ListKind.BG_EVENTS, index)
     if entry.arg(S_FACING) == "SIGNPOST_ITEM":
-        raise EditError("that is a hidden item, not a signpost — edit it from Pickups")
+        raise EditError("that is a hidden item, not a signpost — edit it from Objects")
 
     if prose is not None and (pointer := entry.pointer):
         ctx.reword(pointer, pointer, prose)

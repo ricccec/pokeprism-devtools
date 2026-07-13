@@ -41,13 +41,13 @@ from .edits import Edit
 # What an entry *means* is :mod:`.eventmodel`; this module is about the file it
 # lives in. Re-exported, because every caller wants both and the split is ours,
 # not theirs.
-from .eventmodel import (LIST_MACROS, LIST_ORDER, Entry, EventList, ListKind,
-                         UnparseableHeader, as_int, format_entry, _INDENT,
-                         _MACRO_RE, _split_args)
+from .eventmodel import (LIST_MACROS, LIST_ORDER, PROPS, Entry, EventList,
+                         ListKind, Prop, UnparseableHeader, as_int, format_entry,
+                         _INDENT, _MACRO_RE, _split_args)
 
-__all__ = ["LIST_MACROS", "LIST_ORDER", "Entry", "EventHeader", "EventList",
-           "ListKind", "UnparseableHeader", "as_int", "format_entry",
-           "parse_map", "parse_text"]
+__all__ = ["LIST_MACROS", "LIST_ORDER", "PROPS", "Entry", "EventHeader",
+           "EventList", "ListKind", "Prop", "UnparseableHeader", "as_int",
+           "format_entry", "parse_map", "parse_text"]
 
 #: Finding the block in a file, which is this module's whole job. The regex that
 #: reads *one line of it* is `eventmodel._MACRO_RE` — a different question.
@@ -109,7 +109,7 @@ class EventHeader:
             insert_at = lst.count_lineno + 1
 
         self.lines.insert(insert_at, line)
-        self._set_count(lst.count_lineno, lst.declared_count + 1)
+        self._set_count(lst.count_lineno, len(lst.entries) + 1)
         self._reparse()
         return self.lists[kind].entries[at]
 
@@ -122,7 +122,7 @@ class EventHeader:
         lst = self.lists[kind]
         entry = lst.entries[index]
         del self.lines[entry.lineno]
-        self._set_count(lst.count_lineno, lst.declared_count - 1)
+        self._set_count(lst.count_lineno, len(lst.entries) - 1)
         self._reparse()
 
     def replace_entry(self, kind: ListKind, index: int, args: list[str], *,
@@ -151,14 +151,9 @@ class EventHeader:
         self._reparse()
 
     def fix_count(self, kind: ListKind) -> None:
-        """Make the count byte agree with the entry lines actually present.
-
-        Strays count: they are entry lines the count byte was too small to
-        reach, so absorbing them is exactly the repair an under-declared list
-        needs. An over-declared list shrinks to what's really there.
-        """
+        """Make the count byte agree with the entry lines actually present."""
         lst = self.lists[kind]
-        self._set_count(lst.count_lineno, len(lst.entries) + len(lst.strays))
+        self._set_count(lst.count_lineno, len(lst.entries))
         self._reparse()
 
     def reparse(self) -> None:
@@ -182,7 +177,16 @@ class EventHeader:
     # -- internals ---------------------------------------------------------- #
     def _set_count(self, lineno: int, n: int) -> None:
         """Rewrite a ``db N`` count, preserving whatever sits around it — the
-        leading tab, an inline label (``.Warps: db 6``), a trailing comment."""
+        leading tab, an inline label (``.Warps: db 6``), a trailing comment.
+
+        Every caller passes the number of entries that will actually be in the
+        list, never ``declared_count ± 1``. On a healthy list those are the same
+        number. On a list whose count was already wrong they are not, and writing
+        ``declared_count + 1`` would leave the object we were just asked to add
+        sitting past the count byte, unspawnable, for a reason that has nothing to
+        do with what was asked. So a list we rewrite comes back counted correctly:
+        the diff shows it, and it is the only count that is true.
+        """
         m = _DB_RE.match(self.lines[lineno])
         if not m:                                     # pragma: no cover - parser guarantees
             raise UnparseableHeader(f"{self.path}:{lineno + 1}: not a db line")
@@ -265,43 +269,34 @@ def _parse_list(path: Path, lines: list[str], i: int, kind: ListKind) -> tuple[E
     next ``db N``, then take the entry lines under it. Returns the list and the
     index just past it.
 
-    The count byte is a *claim*, not a guarantee — it is read tolerantly. Lines
-    are consumed while they are legal entry macros for this list, up to the
-    declared count; the list ends early at anything else (EOF, the next list's
-    ``db``, a stray label, a commented-out entry that leaves the list short).
-    Entry macros found *past* the count are recorded as ``strays`` rather than
-    absorbed, so an under-declared count can be reported without guessing which
-    list an orphaned line belongs to.
+    **The count byte does not decide where the list ends — the lines do.** Entry
+    macros are consumed until something that is not one (EOF, the next list's
+    ``db``, a label, ordinary code), and the count is recorded beside them as the
+    claim it is. Reading only the first N would be believing the byte over the
+    file, and the byte is exactly the thing that is wrong when these two disagree
+    — see :class:`~.eventmodel.EventList`.
+
+    Nothing is guessed about which list an over-hanging line belongs to: it is
+    only taken if its macro is legal *here*, and a `signpost` under the BG count
+    can be nothing else.
     """
     count_lineno, count = _next_count(path, lines, i, kind)
     legal = LIST_MACROS[kind]
 
     entries: list[Entry] = []
     j = count_lineno + 1
-    while len(entries) < count and j < len(lines):
+    while j < len(lines):
         entry = _entry_at(lines, j, legal)
         if entry is _SKIP:
-            j += 1
+            j += 1                     # a blank or a comment inside the list
             continue
         if entry is None:
-            break                      # list ends short of its declared count
+            break                      # this line is not ours; the list is over
         entries.append(entry)
         j += 1
 
-    strays: list[int] = []
-    k = j
-    while k < len(lines):
-        entry = _entry_at(lines, k, legal)
-        if entry is _SKIP:
-            k += 1
-            continue
-        if entry is None:
-            break                      # next list (or non-entry code) begins
-        strays.append(k)
-        k += 1
-
     return EventList(kind=kind, count_lineno=count_lineno, declared_count=count,
-                     entries=entries, strays=strays), max(j, k)
+                     entries=entries), j
 
 
 _SKIP = object()          # a blank/comment line inside a list — skip, don't end it

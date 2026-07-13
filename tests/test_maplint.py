@@ -178,8 +178,13 @@ def _fixture(tmp: Path) -> Path:
         "ITEM_NAME_LENGTH EQU 13\n"
     )
 
+    # SPRITE_ROCK and SPRITE_BOULDER are here for the studio's sake rather than the
+    # linter's: they are what a `person_event` that is not a person looks like (see
+    # `shared/eventmodel.Prop`), and no map in this fixture places one. Last in the
+    # list, so no existing sprite's id moves — `sprite_headers.asm` is positional.
     sprites = ["SPRITE_NONE", "SPRITE_P0", "SPRITE_NPC", "SPRITE_BALL",
-               "SPRITE_STATUE", "SPRITE_STRANGER", *_CROWD]
+               "SPRITE_STATUE", "SPRITE_STRANGER", *_CROWD,
+               "SPRITE_ROCK", "SPRITE_BOULDER"]
     (root / "constants" / "sprite_constants.asm").write_text(
         "\tconst_def\n" + "".join(f"\tconst {s}\n" for s in sprites)
         + "SPRITE_POKEMON EQU const_value\n"
@@ -188,11 +193,14 @@ def _fixture(tmp: Path) -> Path:
         + "\tconst WALKING_SPRITE\n\tconst STANDING_SPRITE\n\tconst STILL_SPRITE\n"
         + "\n; movement data\n\tconst_def\n"
         + "\tconst SPRITEMOVEDATA_STANDING_DOWN\n\tconst SPRITEMOVEDATA_WANDER\n"
+        + "\tconst SPRITEMOVEDATA_SMASHABLE_ROCK\n"
+        + "\tconst SPRITEMOVEDATA_STRENGTH_BOULDER\n"
     )
     # Positional: the nth sprite_header is sprite id n (SPRITE_NONE has none).
     types = {"SPRITE_P0": "WALKING_SPRITE", "SPRITE_NPC": "WALKING_SPRITE",
              "SPRITE_BALL": "STILL_SPRITE", "SPRITE_STATUE": "STANDING_SPRITE",
              "SPRITE_STRANGER": "WALKING_SPRITE",
+             "SPRITE_ROCK": "STILL_SPRITE", "SPRITE_BOULDER": "STILL_SPRITE",
              **{s: "WALKING_SPRITE" for s in _CROWD}}
     (root / "data" / "sprite_headers.asm").write_text(
         "SpriteHeaders:\n" + "".join(
@@ -205,6 +213,8 @@ def _fixture(tmp: Path) -> Path:
         "SpriteMovementData::\n"
         "\tsprite_movement_data SPRITEMOVEFN_STANDING, DOWN, PERSON_ACTION_STAND, $00, $00, %0000 ; 00\n"
         "\tsprite_movement_data SPRITEMOVEFN_RANDOM_WALK_XY, DOWN, PERSON_ACTION_STAND, $00, $00, %0000 ; 01\n"
+        "\tsprite_movement_data SPRITEMOVEFN_STANDING, DOWN, PERSON_ACTION_STAND, $00, $00, %0000 ; 02\n"
+        "\tsprite_movement_data SPRITEMOVEFN_STANDING, DOWN, PERSON_ACTION_STAND, $00, $00, %0000 ; 03\n"
     )
     # Group 1's set omits SPRITE_STRANGER (-> sprite-outdoor).
     # Group 3's set is over-full with walkers (-> sprite-vram / -budget).
@@ -372,12 +382,17 @@ def _fixture(tmp: Path) -> Path:
     # party can be cited, and the reason #1 is not an orphan while #2 is.
     # Two item balls whose flag is the same bit of save state: pick up one and
     # the other disappears (flag-multi-owner).
+    # Its NPC stands on its warp — one tile, two lists, and both of them work: the
+    # guard is what stops you using the door until he moves (event-stack, info).
+    # Its second NPC stands on an *item ball*, which is one tile and one list, and
+    # only the first of the two can be reached (event-overlap, warning).
     _map("TownB", ["warp_def 1, 1, 1, CAVE_C"],
          [_person("SPRITE_NPC", 1, 1, "SPRITEMOVEDATA_STANDING_DOWN", "EVENT_SHARED"),
           _person("SPRITE_BALL", 2, 2, "SPRITEMOVEDATA_ITEM_TREE", "EVENT_TWICE",
                   ptype="PERSONTYPE_ITEMBALL"),
           _person("SPRITE_BALL", 3, 3, "SPRITEMOVEDATA_ITEM_TREE", "EVENT_TWICE",
-                  ptype="PERSONTYPE_ITEMBALL")])
+                  ptype="PERSONTYPE_ITEMBALL"),
+          _person("SPRITE_NPC", 2, 2, "SPRITEMOVEDATA_STANDING_DOWN")])
     b = root / "maps" / "TownB.asm"
     b.write_text("TownB_Trainer_1:\n"
                  "\ttrainer EVENT_REAL, SAGE, 3, .seen, .beaten\n\n"
@@ -419,6 +434,8 @@ _EXPECTED = {
     "warp-target": 1,
     "warp-oneway": 1,
     "obj-count": 1,
+    "event-overlap": 1,      # TownB: an NPC standing on an item ball, in one list
+    "event-stack": 1,        # TownB: an NPC standing on a warp, across two
     "sprite-outdoor": 1,
     "sprite-static-walker": 1,
     "flag-unknown": 1,
@@ -608,7 +625,7 @@ def test_baseline(root: Path, tmp: Path) -> None:
     # object count, so the engine reads a phantom object past the end.
     path = root / "maps" / "TownB.asm"
     before = path.read_text()
-    after = before.replace(".ObjectEvents\n\tdb 3\n", ".ObjectEvents\n\tdb 5\n")
+    after = before.replace(".ObjectEvents\n\tdb 4\n", ".ObjectEvents\n\tdb 6\n")
     check("the seeded bug really was seeded", after != before)
     path.write_text(after)
     check("a new finding still fails despite the baseline",
@@ -635,6 +652,13 @@ def test_real_repo() -> None:
         "warp-target": 13,          # warps into a slot the destination doesn't have
         "warp-oneway": 72,          # mostly the shared POKECENTER_BACKROOM — by design
         "obj-count": 4,             # count byte vs entries (see test_eventheader)
+        # MoundB2F's three warps on (40, 8), two of which are dead exits. Somebody
+        # already knew: the source says `; FIXME` on the two.
+        "event-overlap": 2,
+        # info: 26 tiles holding entries of two different lists. Nothing here is
+        # shadowed — an NPC standing on a warp is how you keep a door shut — and
+        # the rule says so rather than staying quiet, because a typo looks the same.
+        "event-stack": 26,
         "sprite-vram": 0,           # none: standing NPCs in table 2 are fine
         "sprite-vram-budget": 5,    # info: maps with no walking slots left
         "blk-size": 6,              # .blk and the declared dimensions disagree
