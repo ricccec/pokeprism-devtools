@@ -40,8 +40,8 @@ from ..shared import blocksrc, consts, maps as maps_mod, mapsource
 from ..shared.blockdata import BlockData
 from ..shared.edits import Edit
 from ..shared.mapspec import MapSpec
-from .actions import (FISHGROUPS, LANDMARKS, MUSIC, PERMISSIONS, TILESETS, TIMES,
-                      Action, ActionError, Field, Result)
+from .actions import (BLOCKS, FISHGROUPS, GROUPS, LANDMARKS, MUSIC, PERMISSIONS,
+                      TILESETS, TIMES, Action, ActionError, Field, Result)
 
 #: The `permission` a map_header takes — its third argument, and a bare `const`
 #: block in constants/map_constants.asm rather than a prefixed one, so there is
@@ -78,11 +78,12 @@ class NewMap(Action):
     FIELDS = (
         Field("label", "Label", help="CamelCase — its asm labels, its .blk, its sections"),
         Field("const", "Map id", help="SCREAMING_SNAKE — the MAP_ enum and the dimensions"),
-        Field("group", "Group", kind="int", default="1",
+        Field("group", "Group", kind="int", default="1", choices=GROUPS,
               help="an existing group; making a new one is not this tool's job"),
         Field("height", "Height", kind="int", help="in blocks — a block is 2×2 tiles"),
         Field("width", "Width", kind="int"),
-        Field("blk", "Blocks", help="the .ablk you drew in polished-map"),
+        Field("blk", "Blocks", choices=BLOCKS,
+              help="the .ablk you drew in polished-map — newest first"),
         Field("tileset", "Tileset", choices=TILESETS),
         Field("permission", "Permission", choices=PERMISSIONS, default="ROUTE"),
         Field("landmark", "Landmark", choices=LANDMARKS,
