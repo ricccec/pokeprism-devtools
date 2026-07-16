@@ -39,7 +39,7 @@ from textual.containers import Vertical
 from textual.message import Message
 from textual.widgets import DataTable, Static, TabbedContent, TabPane
 
-from .panels import Ref, Tab
+from .panels import Ref, Tab, prompt_column
 
 #: The Ref an "Add new…" row carries. `key` is the word the tab declared in
 #: `Tab.adds` — "NPC", "warp" — which the session turns into an action.
@@ -149,8 +149,15 @@ class MapTabs(Vertical):
         if tab.adds:
             # A row, not a button: the end of the list is where your hand already
             # is once you have looked down it and not found the thing you wanted.
-            table.add_row(Text(f"▸  Add new {tab.adds}…", style="italic dim"),
-                          *[""] * (len(cols) - 1))
+            #
+            # The caret at the left and the words further along, because a cell is
+            # what makes its column wide and `#` is a column of single digits. See
+            # `panels.prompt_column`.
+            cells = [""] * len(cols)
+            cells[0] = Text("▸", style="italic dim")
+            cells[prompt_column(cols)] = Text(f"Add new {tab.adds}…",
+                                              style="italic dim")
+            table.add_row(*cells)
             refs.append(Ref(ADD, key=tab.adds))
 
         self._refs[tab.name] = refs

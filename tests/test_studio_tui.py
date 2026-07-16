@@ -30,9 +30,9 @@ from textual.widgets import DataTable, Input, OptionList, TabbedContent, TextAre
 from pokeprism_devtools.shared import blocksrc, coords, eventheader, paths, swatches
 from pokeprism_devtools.studio import Session, panels
 from pokeprism_devtools.studio.actions import ActionError
-from pokeprism_devtools.studio.content import (HIDDEN, ITEMBALL, TMHM, TREE,
-                                               AddNpc, AddProp, AddSignpost,
-                                               AddTrainer)
+from pokeprism_devtools.studio.content import (BOULDER, HIDDEN, ITEMBALL,
+                                               PROP_KINDS, TMHM, TREE, AddNpc,
+                                               AddProp, AddSignpost, AddTrainer)
 from pokeprism_devtools.studio.app import Studio
 from pokeprism_devtools.studio.combo import Combo
 from pokeprism_devtools.studio.edits import (EditMap, EditNpc, EditProp,
@@ -144,6 +144,23 @@ class TestPanels(unittest.TestCase):
         _, rows = panels.wild({})
         self.assertTrue(all(r.ref is None for r in rows))
 
+    def test_the_add_prompt_keeps_out_of_the_number_columns(self) -> None:
+        """Where the dim "Add new…" row writes its words, and why it matters.
+
+        A DataTable column is as wide as its widest cell. So a seventeen-character
+        prompt in the `#` column — a column of single digits — made `#` seventeen
+        cells wide on every tab of every map, which is what the eye actually sees:
+        a great empty gutter down the left of the table.
+        """
+        for table in (panels.npcs(self.header, {}), panels.trainers(self.header),
+                      panels.objects(self.header), panels.warps(self.header),
+                      panels.triggers(self.header), panels.signposts(self.header)):
+            cols = table[0]
+            at = panels.prompt_column(cols)
+            self.assertGreater(at, 0, f"{cols}: the prompt is back in the # column")
+            self.assertNotIn(cols[at], panels.NUMERIC,
+                             f"{cols[at]} holds numbers — a sentence would stretch it")
+
 
 class TestGridWidget(unittest.TestCase):
     def test_the_letter_never_leaves_its_tile(self) -> None:
@@ -211,6 +228,34 @@ class TestShell(_Driven):
                 self.assertGreater(len(maps), 400)
                 self.assertIn(BROKEN, [m.label for m in maps])
                 self.assertGreater(len(app.query_one(MapList)._shown), 400)
+                await app.action_quit()
+
+        drive(go())
+
+    def test_the_number_column_is_as_wide_as_a_number(self) -> None:
+        """The table as it is really drawn, which is the only place this shows up.
+
+        `panels` can say where the prompt goes; only the widget can say what that
+        cost. A DataTable sizes each column to its widest cell, so the check is on
+        the rendered width — the number the eye is complaining about.
+        """
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot)
+                table = await self.open_tab(app, pilot, "npcs")
+
+                first = list(table.columns.values())[0]
+                self.assertEqual(str(first.label), "#")
+                self.assertLessEqual(
+                    first.get_render_width(table), 6,
+                    "the # column is wide enough to hold a sentence — which is "
+                    "exactly what somebody put in it")
+
+                last = [str(cell) for cell in table.get_row_at(table.row_count - 1)]
+                self.assertIn("Add new NPC", " ".join(last),
+                              "the add row lost its words on the way out of column 0")
+                self.assertNotIn("Add", last[0])
                 await app.action_quit()
 
         drive(go())
@@ -1899,6 +1944,16 @@ class TestTheCombo(_Driven):
         await pilot.pause(0.3)
         return form
 
+    async def _settled(self, pilot, widget, tries: int = 20) -> None:
+        """Pause until `widget` stops moving on screen. A scroll settles over
+        several frames and one `pause()` is not guaranteed to outlast it."""
+        was = None
+        for _ in range(tries):
+            await pilot.pause()
+            if widget.region == was:
+                return
+            was = widget.region
+
     def test_it_matches_the_middle_of_a_name_not_only_the_front(self) -> None:
         """The whole reason the dropdown exists. Inline autocomplete only helps if
         you know how the name starts — and you want the black belt's sprite, which
@@ -1968,15 +2023,25 @@ class TestTheCombo(_Driven):
 
         drive(go())
 
-    def test_the_list_stays_on_the_screen(self) -> None:
-        """A dropdown below the bottom of the terminal is a dropdown you cannot read.
+    def test_the_list_opens_against_the_box_it_belongs_to(self) -> None:
+        """A dropdown you cannot read is a dropdown that isn't there.
 
-        The list lives on its own layer, which is what lets it hang over the form
-        rather than being clipped inside it — and is also what let it hang over the
-        *edge of the window*. Textual will position a widget past the viewport and
-        simply not draw the part that is not there: no clip, no scroll, no warning,
-        just a forty-row list showing you two of its rows. So the last field of a
-        long form is the one to check, and the fix is to open upwards.
+        Two bugs deep, and the second one hid inside the fix for the first. The list
+        lives on its own layer, which is what lets it hang over the form rather than
+        being clipped inside it — and Textual will position a layered widget past the
+        bottom of the terminal and simply not draw the rows that are off the end. No
+        clip, no scroll, no warning: a forty-row list showing you two of its rows.
+
+        The fix for *that* was to open upwards when there is no room below, and it
+        was written as a `styles.offset` — which the first version of this test then
+        checked, and passed, while the list was landing under the form and nowhere
+        near the box it belonged to. Because an offset is measured from wherever the
+        layout put the widget, the form is `align: center middle`, and `arrange()`
+        aligns **each layer**: the list's origin was the middle of the screen.
+
+        So this asserts on `region` — where the thing actually is — and against the
+        input, which is the only thing it was ever supposed to be near. A test that
+        checks the arithmetic you did checks that you did the arithmetic you did.
         """
         async def go():
             app = Studio(ROOT)
@@ -1984,26 +2049,53 @@ class TestTheCombo(_Driven):
             async with app.run_test(size=(120, 26)) as pilot:
                 await self.ready(app, pilot)
                 form = await self._form(app, pilot, AddTrainer)
+                screen = app.screen.size.height
 
+                opened_up = 0
                 for name in ("cls", "sprite", "movement", "palette", "flag"):
                     box = form.query_one(f"#field-{name}", Combo)
                     box.focus()
-                    await pilot.pause()
+                    # Focusing a field scrolls the form to bring it into view, and
+                    # that scroll plays out over several frames. The list is pinned
+                    # to the box's on-screen region the instant it opens, so opening
+                    # it mid-scroll pins it where the box *was* and the scroll then
+                    # strands it. A human never hits this — the scroll settles long
+                    # before they arrow the list open — so wait it out before we do.
+                    box.scroll_visible(animate=False)
+                    await self._settled(pilot, box)
                     await pilot.press("down")            # opens the list
                     await pilot.pause()
 
                     rows = box._list                     # noqa: SLF001 — the thing under test
                     self.assertTrue(rows.has_class("open"), name)
-                    top = rows.styles.offset.y.value
-                    height = rows.outer_size.height
-                    self.assertGreaterEqual(top, 0, f"{name}: the list starts above row 0")
+                    here, there = box.region, rows.region
+
+                    self.assertEqual(
+                        there.x, here.x,
+                        f"{name}: the list is {there.x - here.x} columns off the box")
+                    # Directly under the box, or directly over it. Nothing else is
+                    # "the list belonging to this field".
+                    under, over = there.y == here.bottom, there.bottom == here.y
+                    self.assertTrue(
+                        under or over,
+                        f"{name}: the box is rows {here.y}–{here.bottom} and its list "
+                        f"is rows {there.y}–{there.bottom} — it is attached to nothing")
+                    opened_up += over
+
+                    self.assertGreaterEqual(there.y, 0, f"{name}: starts above row 0")
                     self.assertLessEqual(
-                        top + height, app.screen.size.height,
-                        f"{name}: the list runs {top + height - app.screen.size.height} "
-                        f"rows off the bottom of a {app.screen.size.height}-row screen")
-                    self.assertGreater(height, 2, f"{name}: nothing but border is visible")
+                        there.bottom, screen,
+                        f"{name}: the list runs {there.bottom - screen} rows off the "
+                        f"bottom of a {screen}-row screen")
+                    self.assertGreater(there.height, 2,
+                                       f"{name}: nothing but border is visible")
                     await pilot.press("escape")
                     await pilot.pause()
+
+                self.assertTrue(opened_up, "on a 26-row screen the last fields of a "
+                                           "trainer form have no room below them — if "
+                                           "every list opened downwards, the thing "
+                                           "this test is for never happened")
                 await app.action_quit()
 
         drive(go())
@@ -2028,6 +2120,45 @@ class TestAFormThatChangesShape(_Driven):
 
     def _fields(self, form) -> list[str]:
         return [f.name for f in form._shown]
+
+    def test_the_kind_is_a_list_you_pick_from(self) -> None:
+        """The one field whose answers are not in the repo.
+
+        A sprite you can at least guess at; "fruit tree" is a word this studio made
+        up, and a box you have to already know the contents of is a box you cannot
+        use. The six ride on the field itself — the form asks the session for the
+        lists it can enumerate, and there is nothing in pokeprism to enumerate here.
+
+        Still a combo, not a `Select`: a seventh word is refused by the action, with
+        the six in the message, which is the only place that can say why there is no
+        seventh.
+        """
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot)
+                form = await self._pickup(app, pilot, ITEMBALL)
+
+                box = form.query_one("#field-kind", Combo)
+                self.assertEqual(box.matches(""), list(PROP_KINDS))
+                self.assertEqual(box.matches("bould"), [BOULDER])
+
+                # And picking one still reshapes the form, which is the whole point
+                # of the field: a boulder has no item and no quantity.
+                box.focus()
+                box.value = ""
+                await pilot.pause(0.2)
+                await pilot.press("down")
+                for _ in range(PROP_KINDS.index(BOULDER)):
+                    await pilot.press("down")
+                await pilot.press("enter")
+                await pilot.pause(0.3)
+
+                self.assertEqual(box.value, BOULDER)
+                self.assertEqual(self._fields(form), ["kind", "y", "x", "palette"])
+                await app.action_quit()
+
+        drive(go())
 
     def test_a_tm_ball_has_no_quantity_box_to_get_wrong(self) -> None:
         async def go():

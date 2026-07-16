@@ -93,6 +93,13 @@ class Field:
     kind: str = "text"
     default: str = ""
     choices: str = ""
+    #: The answers, written down here rather than named for the session to go and
+    #: find. For the one kind of field whose answers are not in the repo at all: an
+    #: object's kind is a closed list this studio made up — six things it knows how
+    #: to place — and there is nothing in pokeprism to enumerate. A field with these
+    #: gets the same combo a `choices` field gets, and the form still doesn't know
+    #: what any of the words mean.
+    options: tuple[str, ...] = ()
     help: str = ""
     #: For `lines`: which box this text is drawn in, so the preview measures it
     #: against the right width. A sign is a different shape from a speech bubble

@@ -153,6 +153,24 @@ def _num(header: eh.EventHeader, kind: eh.ListKind, i: int, shown: int) -> str:
     return f"{shown} {UNDECLARED}" if past else str(shown)
 
 
+#: The columns that hold numbers. A DataTable column is as wide as its widest
+#: cell, and the dim "Add new NPC…" row at the foot of every tab was putting
+#: twenty characters of prose in the first one — so `#`, a column of single
+#: digits, was drawn twenty cells wide on every tab, and every number in it sat
+#: under a stripe of empty air. The prompt has to go somewhere; it goes in the
+#: first column that is *words*, where its width costs nothing.
+NUMERIC = {"#", "y", "x", "qty", "scene", "sight", "coord", "offset", "strip", "delta"}
+
+
+def prompt_column(cols: list[str]) -> int:
+    """Which cell of the "Add new…" row its words are written in.
+
+    Never column 0, which is where the ▸ goes: one cell wide, and a caret at the
+    left edge is what makes the row scan as a row you can stand on.
+    """
+    return next((i for i, name in enumerate(cols) if i and name not in NUMERIC), 0)
+
+
 def _tile(entry: eh.Entry) -> tuple[int, int] | None:
     """The tile it stands on, or None when the coordinates aren't literal numbers.
 

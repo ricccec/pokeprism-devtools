@@ -24,17 +24,30 @@ scroll container the moment the field it belongs to was near the bottom — whic
 exactly when you need it. Living on its own layer, positioned from the input's
 on-screen region, it can hang over whatever is below.
 
-Which is also the trap, and it took a bug to see it. A widget on its own layer can
-be positioned *anywhere*, including past the bottom of the terminal, and Textual
-will do exactly that and simply not draw the rows that are off the end. Nothing
-clips, nothing scrolls, nothing complains — the list is just short. So the last
-field of a form got a dropdown showing two of its forty answers. It now opens
-upwards when there is no room below: see :meth:`Combo._place`.
+Which is also the trap, and it took two bugs to see the whole of it. A widget on
+its own layer can be positioned *anywhere*, including past the bottom of the
+terminal, and Textual will do exactly that and simply not draw the rows that are
+off the end. Nothing clips, nothing scrolls, nothing complains — the list is just
+short. So the last field of a form got a dropdown showing two of its forty answers.
+It now opens upwards when there is no room below: see :meth:`Combo._place`.
+
+And the second half, which is why that fix looked right and read wrong: **a layer
+is arranged, not exempted.** `_arrange.arrange()` walks the layers one at a time
+and applies the container's `align` to *each* of them, and the form is
+`align: center middle` — so the dropdown's own layer was centred too, and the
+list's natural origin was the middle of the screen rather than its top-left. A
+`styles.offset` is measured from there, so every list was drawn a half-screen down
+and to the right of the box it belonged to: below the form, and looking for all the
+world like the same off-the-bottom bug. What the offset needed was not better
+arithmetic but a fixed origin, and Textual has one — `absolute_offset`, the
+mechanism its own tooltips are placed with, which is in *screen* coordinates and
+therefore immune to whatever the container is doing to its children.
 """
 
 from __future__ import annotations
 
 from textual import events
+from textual.geometry import Offset
 from textual.suggester import SuggestFromList
 from textual.widgets import Input, OptionList
 
@@ -63,6 +76,10 @@ class Suggestions(OptionList):
         background: $surface;
         padding: 0;
         scrollbar-size-vertical: 1;
+        /* The backstop under `Combo._place`, and the reason a wrong answer there
+           can no longer put the list off the screen entirely: whatever we ask for,
+           Textual moves it back inside the container before drawing it. */
+        constrain: inside;
     }}
     Suggestions.open {{ display: block; }}
     """
@@ -132,37 +149,46 @@ class Combo(Input):
             self._place(rows)
 
     def _place(self, rows: int) -> None:
-        """Under the input — or over it, when under it is off the screen.
+        """Directly under the input — or directly over it, when under it is off the
+        screen.
 
-        The dropdown is alone on its layer, so its natural position is the screen's
-        top-left and the offset *is* the position. `region` is where this input is
-        on the screen right now — including any scrolling the form has done — which
-        is why this is recomputed on every open rather than remembered.
+        `region` is where this box is on the screen right now, scrolling and all,
+        which is why the answer is recomputed on every open rather than remembered.
 
-        And why the *direction* is recomputed too. A form is a modal in the middle
-        of the screen and its last field is a few rows off its bottom edge, so a
-        list that always hung downwards hung off the end of the window: the sprite
-        combo would offer you forty sprites and show you two. Textual will happily
-        position a widget past the viewport and simply not draw the part that
-        isn't there — nothing clips, nothing scrolls, nothing says anything.
+        **In screen coordinates, and that is the whole trick.** `styles.offset`
+        would be measured from wherever the layout had already put the list, and
+        the form aligns its children centre-middle — so the offset that reads like
+        "just under the box" landed the list a half-screen away from it, under the
+        form and off its bottom edge. `absolute_offset` is the position, full stop:
+        no layout, no alignment, no container between the number and the screen.
+        It is how Textual places its own tooltips, for exactly this reason.
 
-        So: below if it fits, above if it doesn't, and whichever way has more room
-        if neither does — with the height cut to that room, because a list that
-        runs off the top is not an improvement on one that runs off the bottom.
+        The *direction* is decided here too. A form is a modal in the middle of the
+        screen and its last field is a few rows off the bottom edge, so a list that
+        always hung downwards hung off the end of the window — and Textual will
+        happily position a widget past the viewport and simply not draw the part
+        that isn't there. So: below if it fits, above if it doesn't, and whichever
+        way has more room if neither does, with the height cut to that room. A list
+        that runs off the top is not an improvement on one that runs off the bottom.
         """
         region = self.region
         wanted = min(rows + _BORDER, MAX_HEIGHT)
 
-        below = self.screen.size.height - (region.y + region.height)
+        below = self.screen.size.height - region.bottom
         above = region.y
         if wanted <= below or below >= above:
-            top, room = region.y + region.height, below
+            top, room = region.bottom, below
         else:
             top, room = max(0, region.y - wanted), above
 
+        self._list.absolute_offset = Offset(region.x, top)
         self._list.styles.width = region.width
         self._list.styles.max_height = max(_BORDER + 1, min(wanted, room))
-        self._list.styles.offset = (region.x, top)
+        # `absolute_offset` is a plain attribute, not a style: nothing about setting
+        # it tells the compositor to arrange anything. A list that is already open
+        # and refiltering — same width, same height, new row count — would otherwise
+        # keep the position it had when the box it belongs to was somewhere else.
+        self._list.refresh(layout=True)
 
     # -- the keys --------------------------------------------------------------- #
     def on_key(self, event: events.Key) -> None:

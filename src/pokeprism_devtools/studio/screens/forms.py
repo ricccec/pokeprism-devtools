@@ -259,6 +259,10 @@ class Form(ModalScreen["Preview | Draft | None"]):
         return self._box_of.get(f.name, f.box)
 
     def _options(self, f: Field) -> list[str]:
+        """What the combo under this field offers: the answers the field carries,
+        else the ones the session can enumerate, else no combo at all."""
+        if f.options:
+            return list(f.options)
         return self._session.choices(f.choices, self.values()) if f.choices else []
 
     def values(self) -> dict[str, str]:
