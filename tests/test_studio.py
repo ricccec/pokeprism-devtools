@@ -505,6 +505,32 @@ def test_boot_stands_you_where_the_cursor_is(root: Path) -> None:
         check("without a built ROM it refuses", False)
 
 
+def test_a_quiet_build_keeps_only_the_problems(root: Path) -> None:
+    """The filter a quiet build runs each line through — the studio's grep. It has
+    to keep every line that carries the answer and drop the mountain that doesn't,
+    because the mountain is the whole reason quiet exists."""
+    print("\nthe quiet build's grep")
+    from pokeprism_devtools.studio import play as play_mod
+
+    keep = [
+        "maps/CastroForest.asm:41: error: Unknown symbol \"SPRITE_NOPE\"",
+        "error.o: fatal: Segment overflow",
+        "engine/foo.asm:9: warning: Deprecated",
+        "make: *** [Makefile:120: pokeprism.gbc] Error 1",
+        "make[1]: *** No rule to make target 'x'.  Stop.",
+    ]
+    drop = [
+        "rgbasm -h -E -o build/CastroForest.o maps/CastroForest.asm",
+        "        DEP     build/CastroForest.d",
+        "python3 tools/make_patch.py",
+        "Linking pokeprism.gbc",             # 'error' is not in it; a bare verb is not a problem
+    ]
+    for ln in keep:
+        check(f"kept: {ln[:40]}", play_mod.is_problem(ln))
+    for ln in drop:
+        check(f"dropped: {ln[:40]}", not play_mod.is_problem(ln))
+
+
 def test_it_boots_the_rom_it_built(root: Path) -> None:
     """The two ROMs sit side by side, and picking between them by which file exists
     is how the studio came to build one and boot the other.
@@ -777,6 +803,7 @@ def main() -> int:
                    test_preview_is_what_lands, test_lint_stays_in_step, test_map_list,
                    test_an_object_past_the_count_is_still_shown,
                    test_boot_stands_you_where_the_cursor_is,
+                   test_a_quiet_build_keeps_only_the_problems,
                    test_it_boots_the_rom_it_built,
                    test_the_blocks_on_offer_are_the_newest_first,
                    test_the_world_notices, test_a_stale_model_will_not_write,

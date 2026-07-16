@@ -18,6 +18,14 @@ moved to the spot you want to look at — but a spawn tile is worth being able t
 correct without going back to the map, and a `.blk` you have only just drawn has
 tiles you cannot stand on.
 
+**Quiet.** On by default, and the reason the build stopped feeling unusually long:
+a `prism` build is a few thousand lines of compiler chatter, and putting every one
+of them into the log — a widget write across a thread boundary, per line — is
+itself minutes the compiler never asked for. Quiet keeps only the lines that carry
+the answer (`play.is_problem` — the errors, and the `make: ***` after them), the
+same thing you would reach for a `grep` to do by hand, with a line counter ticking
+so a silent log does not read as a hung one. Uncheck it to watch the whole build.
+
 Then `make` takes minutes and can fail, and when it fails the reason is in its
 output — usually naming your map, because your map is what changed. So this shows
 that output as it arrives rather than a spinner that cannot tell you anything. If
@@ -35,17 +43,24 @@ minutes is an app that has hung, and it looks exactly like one too.
 from __future__ import annotations
 
 import os
+import time
 
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, RichLog, Static
+from textual.widgets import Button, Checkbox, Input, Label, RichLog, Static
 
 from ..combo import Combo
-from ..play import DEFAULT_TARGET, TARGETS
+from ..play import DEFAULT_TARGET, TARGETS, is_problem
 from ..session import Session, SessionError
+
+#: How often the log's line counter is allowed to touch the screen while a quiet
+#: build streams past it. The whole point of quiet is *not* writing to the widget
+#: on every line, so the heartbeat that proves the build is alive is throttled to
+#: the same end — often enough to see it moving, rare enough to cost nothing.
+_HEARTBEAT = 0.25
 
 
 class Build(ModalScreen[None]):
@@ -98,6 +113,7 @@ class Build(ModalScreen[None]):
                 yield Input(value=str(y), id="build-y", classes="narrow")
                 yield Label("X")
                 yield Input(value=str(x), id="build-x", classes="narrow")
+                yield Checkbox("Quiet", value=True, id="build-quiet")
             yield RichLog(id="build-log", wrap=False, markup=False, auto_scroll=True)
             yield Static("", id="build-status")
             with Horizontal(id="build-buttons"):
@@ -131,20 +147,36 @@ class Build(ModalScreen[None]):
             status.update(f"[b]{e}[/b]")
             return
 
+        quiet = self.query_one("#build-quiet", Checkbox).value
         self._started = True
-        for widget in self.query("#build-config Input"):
+        for widget in self.query("#build-config Input, #build-quiet"):
             widget.disabled = True
         self.query_one("#go", Button).disabled = True
-        self._run(target, jobs, (y, x))
+        self._run(target, jobs, (y, x), quiet)
 
     @work(thread=True, exclusive=True)
-    def _run(self, target: str, jobs: int, spawn: tuple[int, int]) -> None:
+    def _run(self, target: str, jobs: int, spawn: tuple[int, int], quiet: bool) -> None:
         """Off the event loop: `make` owns this thread for as long as it takes."""
         log = self.query_one("#build-log", RichLog)
         status = self.query_one("#build-status", Static)
+        seen = [0]          # a box, so `line` can count across its own calls
+        beat = [0.0]
 
         def line(text: str) -> None:
-            self.app.call_from_thread(log.write, text)
+            seen[0] += 1
+            if not quiet or is_problem(text):
+                self.app.call_from_thread(log.write, text)
+            if not quiet:
+                return
+            # The heartbeat: a quiet build writes almost nothing, so without this
+            # the log sits still for minutes and looks hung. The counter proves it
+            # is not — throttled, because updating it every line would be the very
+            # per-line widget write quiet exists to avoid.
+            now = time.monotonic()
+            if now - beat[0] >= _HEARTBEAT:
+                beat[0] = now
+                self.app.call_from_thread(
+                    status.update, f"Building {target}… ({seen[0]} lines, quiet)")
 
         def say(text: str) -> None:
             self.app.call_from_thread(status.update, text)
