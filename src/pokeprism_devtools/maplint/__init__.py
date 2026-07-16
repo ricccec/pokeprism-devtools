@@ -35,7 +35,8 @@ from pathlib import Path
 
 from ..shared.paths import RepoNotFound, repo_root
 from . import (
-    rules_content, rules_flags, rules_geometry, rules_objects, rules_sprites, rules_text,
+    rules_content, rules_flags, rules_geometry, rules_objects, rules_sprites,
+    rules_text, rules_trainers,
 )
 from .context import LintContext
 from .diagnostics import Diagnostic, Severity, apply_suppressions
@@ -43,7 +44,8 @@ from .diagnostics import Diagnostic, Severity, apply_suppressions
 BASELINE = ".devtools/maplint-baseline.json"
 
 ALL_RULES = (*rules_geometry.ALL, *rules_objects.ALL, *rules_sprites.ALL,
-             *rules_content.ALL, *rules_flags.ALL, *rules_text.ALL)
+             *rules_content.ALL, *rules_flags.ALL, *rules_text.ALL,
+             *rules_trainers.ALL)
 
 _COLOR = {Severity.ERROR: "\033[31m", Severity.WARNING: "\033[33m", Severity.INFO: "\033[36m"}
 _RESET = "\033[0m"
