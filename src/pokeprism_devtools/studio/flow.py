@@ -27,6 +27,7 @@ from .actions import Action
 from .content import EditText
 from .grid import MapGrid
 from .maplist import MapList
+from .resize import ResizeMap
 from .screens import Confirm, Findings, Form, History, Picker
 from .session import Draft, Preview, SessionError, TextRef
 from .status import Where
@@ -160,6 +161,19 @@ class Flow:
                  values={"label": text.label, "text": text.prose},
                  boxes={"text": text.box}),
             self._filled)
+
+    # -- resizing ------------------------------------------------------------------ #
+    def action_resize(self) -> None:
+        """`s`: change the map's shape from an edge.
+
+        The one thing `edits.EditMap` refuses on the Attributes tab, because
+        doing it right means moving the block grid — and, at the top or left,
+        every object's coordinates — with it. See `wiring/mapresize.py`.
+        """
+        if self._const is None or self._wanted is None or not self._may_write():
+            self.bell()
+            return
+        self._open(ResizeMap)
 
     # -- taking it back --------------------------------------------------------- #
     def action_undo(self) -> None:

@@ -97,6 +97,7 @@ class Studio(Flow, App):
         Binding("e", "edit", "Edit"),
         Binding("d", "delete", "Delete"),
         Binding("a", "add_map", "Add map"),
+        Binding("s", "resize", "Resize"),
         Binding("b", "build", "Build & run"),
         Binding("t", "texts", "All text"),
         Binding("u", "undo", "Undo"),
@@ -330,7 +331,7 @@ class Studio(Flow, App):
             return True if ref is not None else None
         if action == "delete":
             return True if ref is not None and ref.what not in (ADD, "map") else None
-        if action in ("build", "texts"):
+        if action in ("build", "texts", "resize"):
             return True if self._const is not None else None
         if action == "undo":
             return True if self.session.can_undo else None
