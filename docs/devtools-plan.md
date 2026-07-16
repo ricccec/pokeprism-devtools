@@ -496,8 +496,15 @@ zero-NPC behaviour.
 - Party/items/event-flag editing in `state.json` (v1 leaves these
   untouched; the TUI surfaces them as disabled menu entries to telegraph
   the roadmap).
-- Connection-aware `wScreenSave` for player positions at map edges (today
-  uses zero-padding outside the map — wrong for maps with N/S/E/W connections).
+- ~~Connection-aware `wScreenSave` for player positions at map edges~~
+  **Done** — `blockdata.map_connections` + `compute_screen_save(neighbors=...)`
+  overlay the neighbouring maps' edge blocks, verified byte-for-byte against a
+  real save at a two-connection corner.
+- On-screen NPC instantiation at spawn: the Continue-load path doesn't run
+  `InitializeVisibleSprites`, so NPCs within the screen window aren't copied
+  into `wObjectStructs` and don't render until the player steps. Needs the
+  visibility check plus `CopyMapObjectToObjectStruct` (movement-data table,
+  radius/coord math) and the outdoor-sprite VRAM-tile (`SPRITE_TILE`) allocator.
 - **Backup cleanup subcommand**: `prism-dev clean-backups [--keep N]` to prune
   old `.sav` files from `.devtools/sav-backups/`. Every launch writes a backup,
   so the folder grows quickly during active dev sessions. The subcommand should

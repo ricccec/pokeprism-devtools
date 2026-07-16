@@ -44,6 +44,25 @@ SIGNPOST_SIZE = 5       # y, x, function, then two bytes either way (ReadSignpos
 #: length, which is why the array can be indexed at all.
 PERSON_EVENT_SIZE = 13
 
+#: A connection struct, as GetMapConnection copies it out of the ROM: group,
+#: number, strip pointer, strip location, strip length, connected-map width, y
+#: offset, x offset, window (wram.asm `wNorthMapConnection`). 12 bytes.
+CONNECTION_STRUCT_SIZE = 12
+
+#: Connections in the order GetMapConnections reads them — N, S, W, E — with the
+#: bit each occupies in the second header's connection-flags byte. The flags are
+#: `shift_const EAST, WEST, SOUTH, NORTH` (constants/map_constants.asm), so EAST
+#: is bit 0 and NORTH is bit 3.
+_CONNECTION_DIRS = (("north", 0x08), ("south", 0x04), ("west", 0x02), ("east", 0x01))
+
+#: FillNorth/SouthConnectionStrip copy 3 rows deep; FillWest/East copy 3 cols
+#: wide. The other dimension is the connection's own strip length.
+CONNECTION_STRIP_DEPTH = 3
+
+#: The overworld-map row is the current map's width plus a 3-block border on each
+#: side — the stride `\7_WIDTH + 6` the connection macro bakes into its pointers.
+OVERWORLD_BORDER = 2 * PADDING
+
 
 @dataclass(frozen=True)
 class BlockData:
@@ -56,6 +75,28 @@ class BlockData:
     blocks: bytes        # height * width bytes, row-major
     tileset_id: int = 0  # primary header byte 1
     permission: int = 0  # primary header byte 2
+
+
+@dataclass(frozen=True)
+class Connection:
+    """One resolved map connection, as FillMapConnections would apply it.
+
+    The neighbour block at (source_row + k, source_col + j) lands in the current
+    map's wOverworldMap at (dest_row + k, dest_col + j), for k in range(rows) and
+    j in range(cols). The geometry is recovered from the baked wOverworldMap and
+    wDecompressScratch pointers the connection macro stores, so the strip's y/x
+    offsets and window — which the engine uses only for scrolling, not for the
+    initial fill — never enter into it.
+    """
+    direction: str
+    group: int
+    map_id: int
+    source_row: int
+    source_col: int
+    dest_row: int
+    dest_col: int
+    rows: int
+    cols: int
 
 
 def rom_offset(bank: int, addr: int) -> int:
@@ -233,7 +274,87 @@ def load(
     )
 
 
-def compute_screen_save(bd: BlockData, x: int, y: int) -> bytes:
+def map_connections(
+    rom_path: Path,
+    syms: symfile.SymFile,
+    group: int,
+    map_id: int,
+    *,
+    map_width: int,
+    name: str = "",
+) -> list[Connection]:
+    """The map's N/S/W/E connections, resolved to neighbour→overworld geometry.
+
+    Reads the connection-flags byte at the tail of the second map header and the
+    connection structs that follow it, then recovers each strip's placement by
+    subtracting the wram base addresses the macro baked into the pointers:
+    `strip pointer - wDecompressScratch` is an offset into the neighbour's
+    decompressed grid (stride = the neighbour's own width), and `strip location -
+    wOverworldMap` is an offset into the current map's overworld grid (stride =
+    this map's width + 6). See docs/blockdata-plan.md.
+    """
+    rom = rom_path.read_bytes()
+    hdr = _headers(rom, syms, group, map_id, name)
+    flags = rom[hdr.secondary_off + SECOND_MAP_HEADER_SIZE - 1]
+
+    overworld_base = syms["wOverworldMap"].addr
+    scratch_base = syms["wDecompressScratch"].addr
+    dest_stride = map_width + OVERWORLD_BORDER
+    who = name or f"(group={group}, map_id={map_id})"
+
+    at = hdr.secondary_off + SECOND_MAP_HEADER_SIZE
+    out: list[Connection] = []
+    for direction, bit in _CONNECTION_DIRS:
+        if not flags & bit:
+            continue
+        c = rom[at : at + CONNECTION_STRUCT_SIZE]
+        at += CONNECTION_STRUCT_SIZE
+        if len(c) < CONNECTION_STRUCT_SIZE:
+            raise ValueError(f"{who} {direction} connection struct runs past ROM end")
+
+        ngroup, nmap = c[0], c[1]
+        strip_ptr = _u16_le(c, 2)
+        strip_loc = _u16_le(c, 4)
+        strip_len = c[6]
+        connected_width = c[7]
+        if connected_width == 0:
+            raise ValueError(f"{who} {direction} connection has zero-width neighbour")
+
+        src_off = strip_ptr - scratch_base
+        dst_off = strip_loc - overworld_base
+        if src_off < 0 or dst_off < 0:
+            raise ValueError(
+                f"{who} {direction} connection pointer below its wram base "
+                f"(strip={strip_ptr:#06x}, loc={strip_loc:#06x})"
+            )
+        src_row, src_col = divmod(src_off, connected_width)
+        dst_row, dst_col = divmod(dst_off, dest_stride)
+        if direction in ("north", "south"):
+            rows, cols = CONNECTION_STRIP_DEPTH, strip_len
+        else:
+            rows, cols = strip_len, CONNECTION_STRIP_DEPTH
+
+        out.append(Connection(
+            direction=direction,
+            group=ngroup,
+            map_id=nmap,
+            source_row=src_row,
+            source_col=src_col,
+            dest_row=dst_row,
+            dest_col=dst_col,
+            rows=rows,
+            cols=cols,
+        ))
+    return out
+
+
+def compute_screen_save(
+    bd: BlockData,
+    x: int,
+    y: int,
+    *,
+    neighbors: "tuple[tuple[Connection, BlockData], ...] | list[tuple[Connection, BlockData]]" = (),
+) -> bytes:
     """Return the 30 bytes the game would have written to wScreenSave if the
     player had been standing at (x, y) on this map when they saved.
 
@@ -246,11 +367,12 @@ def compute_screen_save(bd: BlockData, x: int, y: int) -> bytes:
            game to read the same map back, we just emit what wOverworldMap
            contains at that window.
 
-    Padding regions stay zero (= block 0). For interior positions on
-    indoor maps with no connections, this is exactly what wOverworldMap
-    contains. For edge positions on maps with connections, the game's
-    FillMapConnections would have filled the padding with neighbor map
-    data — see docs/blockdata-plan.md "Limitations".
+    Padding regions the current map doesn't cover stay zero (= block 0) unless
+    a connection fills them. Pass `neighbors` — the `(Connection, BlockData)`
+    pairs from `map_connections`, with each neighbour's blockdata loaded — to
+    overlay the neighbouring maps' edge blocks exactly as FillMapConnections
+    would have, so an edge position on a connected map reads the real border
+    instead of void. See docs/blockdata-plan.md.
     """
     if not (0 <= x < 256 and 0 <= y < 256):
         raise ValueError(f"(x, y) = ({x}, {y}) out of byte range")
@@ -275,7 +397,23 @@ def compute_screen_save(bd: BlockData, x: int, y: int) -> bytes:
                 out[row * SCREEN_SAVE_COLS + col] = bd.blocks[
                     grid_row * bd.width + grid_col
                 ]
-            # else: stays zero
+            # else: stays zero, or a connection fills it below
+
+    # Overlay each connection's strip into the padding cells that fall inside the
+    # window. Processed in the N/S/W/E order the engine fills them, so a corner
+    # claimed by two strips ends up with the same one that wins in-game.
+    for conn, nb in neighbors:
+        for k in range(conn.rows):
+            for j in range(conn.cols):
+                row = conn.dest_row + k - anchor_row
+                col = conn.dest_col + j - anchor_col
+                if not (0 <= row < SCREEN_SAVE_ROWS and 0 <= col < SCREEN_SAVE_COLS):
+                    continue
+                nr = conn.source_row + k
+                ncol = conn.source_col + j
+                if not (0 <= nr < nb.height and 0 <= ncol < nb.width):
+                    continue
+                out[row * SCREEN_SAVE_COLS + col] = nb.blocks[nr * nb.width + ncol]
     return bytes(out)
 
 

@@ -212,14 +212,14 @@ After writing `blockdata.py`:
 
 ## Limitations (document, don't hide)
 
-- **Connections**: if the target map has `connections != 0` in the
-  secondary header AND the player position is near an edge, the padding
-  region overlapped by `wScreenSave` should contain neighbor blocks (which
-  `FillMapConnections` fills). v1 writes zeros there, so the very edge of
-  the visible area may look wrong for ~1 block until the player walks.
-  Most "I want to teleport to X town" cases place the player in the
-  interior of the map, far from edges — won't matter in practice.
-  Documented as a known limitation; v2 can read neighbor maps.
+- **Connections**: ~~v1 writes zeros in the padding, so an edge position on
+  a connected map looks wrong for ~1 block until the player walks.~~
+  **Fixed.** `blockdata.map_connections` parses the secondary header's
+  connection structs and recovers each strip's neighbour→overworld geometry
+  from the baked `wOverworldMap` / `wDecompressScratch` pointers;
+  `compute_screen_save(..., neighbors=...)` overlays the neighbouring maps'
+  edge blocks exactly as `FillMapConnections` would. Verified byte-for-byte
+  against a real game-written save at a two-connection (south + west) corner.
 
 - **Maps with map-script tile mods**: a few maps run `MAPCALLBACK_TILES`
   that mutate `wOverworldMap` after `LoadBlockData` (e.g., draw a custom
