@@ -16,7 +16,7 @@ import sys
 
 from pokeprism_devtools.shared import (
     blockdata, constants, eventheader, lz, maps, mapsource, paths, party, people,
-    render, savefile, species, symfile,
+    render, savefile, species, spritevram, symfile,
 )
 
 
@@ -298,6 +298,114 @@ def main() -> None:
         len(sav2.data) == small and "map_npcs_dropped" in ch2,
         ch2.get("map_npcs_dropped", "(no warning!)"),
     )
+
+    print("\npeople.py — instantiate_visible_sprites (hermetic)")
+    # InitRadius bumps each nibble; $00 -> $11, and a low nibble that wraps to 0
+    # takes the carry into the high nibble instead of a second +$10.
+    check("radius $00 -> $11", people._incremented_radius(0x00) == 0x11)
+    check("radius $0f -> $10", people._incremented_radius(0x0F) == 0x10)
+    check("radius $23 -> $34", people._incremented_radius(0x23) == 0x34)
+
+    # Two rocks like MtEmberWest's: one on screen at map (21,79), one behind the
+    # player at (9,79). Player raw coords (15,79). Only the visible one is bound.
+    mo_size = 16 * people.MAP_OBJECT_LEN
+    os_size = people.NUM_OBJECT_STRUCTS * people.OBJECT_STRUCT_LEN
+    buf = bytearray(mo_size + os_size)
+    sav = type("S", (), {"data": buf})()
+    os_off = mo_size  # object structs laid out right after the map objects
+
+    def put_mapobj(slot, *, sprite, y, x, movement, radius, color, param):
+        at = slot * people.MAP_OBJECT_LEN
+        buf[at + people.MAPOBJ_OBJECT_STRUCT_ID] = people.OBJECT_STRUCT_ID_NONE
+        buf[at + people.MAPOBJ_SPRITE] = sprite
+        buf[at + people.MAPOBJ_Y_COORD] = y
+        buf[at + people.MAPOBJ_X_COORD] = x
+        buf[at + people.MAPOBJ_MOVEMENT] = movement
+        buf[at + people.MAPOBJ_RADIUS] = radius
+        buf[at + people.MAPOBJ_COLOR] = color
+        buf[at + people.MAPOBJ_PARAMETER] = param
+
+    put_mapobj(13, sprite=89, y=79, x=9, movement=24, radius=0, color=0x37, param=0)
+    put_mapobj(14, sprite=89, y=79, x=21, movement=24, radius=0, color=0x37, param=0)
+    move_rows = [(0, 0, 0, 0, 0)] * 40
+    move_rows[24] = (0, 1, 0x2E, 0x10, 0x00)  # facing DOWN, action STAND, flags, pal 0
+    ch = people.instantiate_visible_sprites(
+        sav,
+        object_structs_offset=os_off,
+        map_objects_offset=0,
+        map_objects_size=mo_size,
+        x=15, y=79,
+        sprite_tiles={89: 200},
+        sprite_palettes={89: 7},
+        movement_data=move_rows,
+        default_tile=0,
+    )
+    p = os_off + people.OBJECT_STRUCT_LEN  # struct slot 1
+    check("only the on-screen NPC is instantiated", "instantiated 1" in ch["visible_sprites"],
+          ch["visible_sprites"])
+    check("off-screen NPC (behind player) left unbound",
+          buf[13 * people.MAP_OBJECT_LEN + people.MAPOBJ_OBJECT_STRUCT_ID]
+          == people.OBJECT_STRUCT_ID_NONE)
+    check("on-screen NPC bound to struct 1",
+          buf[14 * people.MAP_OBJECT_LEN + people.MAPOBJ_OBJECT_STRUCT_ID] == 1)
+    check("struct: sprite=89, tile=200, map-object index=14",
+          buf[p + people.OBJ_SPRITE] == 89 and buf[p + people.OBJ_SPRITE_TILE] == 200
+          and buf[p + people.OBJ_MAP_OBJECT_INDEX] == 14)
+    check("struct: movement type + flags copied from the movement row",
+          buf[p + people.OBJ_MOVEMENTTYPE] == 24 and buf[p + people.OBJ_FLAGS1] == 0x2E
+          and buf[p + people.OBJ_FLAGS2] == 0x10)
+    check("struct: palette is the colour-nibble override, ORed with the move palette",
+          buf[p + people.OBJ_PALETTE] == 3, f"got {buf[p + people.OBJ_PALETTE]}")
+    check("struct: radius $00 -> $11", buf[p + people.OBJ_RADIUS] == 0x11)
+    check("struct: sprite_x = (Δx & $f) << 4 = (21-15) << 4 = 96",
+          buf[p + people.OBJ_SPRITE_X] == 96 and buf[p + people.OBJ_SPRITE_Y] == 0)
+    check("struct: init/map/next coords all seeded from the map object",
+          buf[p + people.OBJ_INIT_X] == 21 and buf[p + people.OBJ_MAP_X] == 21
+          and buf[p + people.OBJ_NEXT_MAP_Y] == 79)
+
+    print("\nspritevram.py — VRAM allocator vs a real game-written save")
+    truth = root / "pokeprism_ember_west_79_15.sav"
+    try:
+        drom = paths.rom_path(root, debug=True, fallback=False)
+        dsym = paths.sym_path(root, debug=True, fallback=False)
+    except FileNotFoundError:
+        drom = None
+    if truth.exists() and drom is not None and drom.exists():
+        dsyms = symfile.SymFile.load(dsym)
+        # MtEmberWest is group 95; the player is SPRITE_P0 (id 1). The engine
+        # rebuilds this same list on Continue, so the tile must match the save.
+        pool = spritevram.outdoor_sprite_ids(drom, dsyms, 95, name="MT_EMBER_WEST")
+        tiles = spritevram.sprite_tiles(drom, dsyms, 1, pool)
+        check("SPRITE_ROCK (89) allocates to VRAM tile 200 (matches the save)",
+              tiles.get(89) == 200, f"got {tiles.get(89)}")
+
+        # Full path: patch a template save to MtEmberWest (15,79) and confirm the
+        # instantiated struct matches the game's, on every field the game does not
+        # re-derive per frame (step type / walking direction / anim counters do).
+        from pokeprism_devtools.dev_server import apply as devapply, inventory as devinv
+        template = root / "pokeprism.sav"
+        if template.exists():
+            inv = devinv.build(root, dsym)
+            mdef = next(m for m in inv["maps"] if m["group"] == 95 and m["map_id"] == 2)
+            patched = savefile.SaveFile.load(template)
+            devapply.apply_state(
+                patched, {"map": {"name": mdef["name"], "x": 15, "y": 79}},
+                inv, rom_path=drom, syms=dsyms,
+            )
+            truth_sf = savefile.SaveFile.load(truth)
+            o = inv["sram_offsets"]["wObjectStructs"]["sav_offset"] + people.OBJECT_STRUCT_LEN
+            stable = [0, 1, 2, 3, 4, 5, 6, 8, 16, 17, 18, 19, 20, 21, 22, 23, 24, 32]
+            same = all(patched.data[o + f] == truth_sf.data[o + f] for f in stable)
+            check("patched struct 1 matches the real save on every settled field",
+                  same,
+                  "diverged: " + ", ".join(
+                      f"@{f}={patched.data[o+f]}!={truth_sf.data[o+f]}"
+                      for f in stable if patched.data[o+f] != truth_sf.data[o+f]
+                  ) if not same else "all 18 fields equal")
+        else:
+            print("  (no pokeprism.sav template — skipping the full-path cross-check)")
+    else:
+        print("  (no debug build + MtEmberWest truth save — skipping)")
 
     print("\nmaps.py")
     map_defs = maps.parse_maps(root / "constants" / "map_dimension_constants.asm")

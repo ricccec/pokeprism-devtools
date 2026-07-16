@@ -401,23 +401,31 @@ the patcher, here's the chain:
    `wObjectStructs[0]` positional fields to `(wXCoord + 4, wYCoord + 4)`
    so the player sprite renders at the right location. The `+4` is the
    game's screen-edge offset, verified against real saves.
-4. **NPC clear**: by default, zeroes `wObjectStructs[1..]` and
-   `wMapObjects[1..]` so ghost NPCs from the previous map don't render.
-   Pass `--keep-people` to skip this (you'll see stale NPCs — useful only
-   for debugging the difference).
+4. **NPC clear + reload**: by default, zeroes `wObjectStructs[1..]` and
+   `wMapObjects[1..]` so ghost NPCs from the previous map don't render, then
+   reloads the destination map's own NPCs into `wMapObjects` from
+   `MapEventHeader` (`people.load_map_npcs`). Pass `--keep-people` to skip the
+   whole step (you'll see stale NPCs — useful only for debugging the difference).
+5. **On-screen NPC instantiation** (`people.instantiate_visible_sprites`):
+   for each reloaded NPC whose map coords fall in the player's screen window,
+   fills the next `wObjectStructs` slot the way `InitializeVisibleSprites` +
+   `CopyMapObjectToObjectStruct` would (movement-data flags, palette, radius,
+   sprite-pixel coords) and binds the map object to it. The one non-obvious
+   field is `SPRITE_TILE`: the Continue path *does* rebuild the sprite-GFX VRAM
+   allocator (`LoadGraphics` → `RefreshSprites`), so the tile we write has to
+   match what that allocator produces — `spritevram` reproduces it (`GetSpriteVTile`).
 
 After this, both SRAM checksums (primary `sChecksum` over `sGameData`,
 plus `sExtraChecksum` over `sExtraData`) are recomputed and written.
 
 ### Known limitations on map change
 
-- **On-screen NPCs aren't instantiated**: the destination map's NPCs are
-  reloaded into `wMapObjects` from `MapEventHeader` (see `people.load_map_npcs`),
-  but the Continue-load path never runs `InitializeVisibleSprites`, so an NPC
-  standing within the screen window at spawn isn't copied into `wObjectStructs`
-  and doesn't render until the player steps. Replicating that instantiation
-  (including the VRAM-tile allocation the sprite needs) is the next piece of
-  work; see the object-struct notes in `devtools-plan.md`.
+- ~~**On-screen NPCs aren't instantiated**~~ **Fixed.** The destination map's
+  on-screen NPCs are now copied into `wObjectStructs`
+  (`people.instantiate_visible_sprites`, with `SPRITE_TILE` from `spritevram`),
+  so they render at spawn instead of only after the player steps. Verified
+  byte-for-byte against a real game-written save (MtEmberWest): the instantiated
+  struct matches the game's on every field the engine doesn't re-derive per frame.
 - ~~**Edge positions on connected maps**~~ **Fixed.** `wScreenSave` now
   overlays neighbouring-map edge blocks at connections (via
   `blockdata.map_connections` + `compute_screen_save(neighbors=...)`), so an
