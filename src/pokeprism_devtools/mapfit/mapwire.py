@@ -145,7 +145,7 @@ def wire_script(root: Path, spec: MapSpec) -> Edit:
         return Edit(rel, False, f"{include} already present")
 
     placement = spec.placement("script")
-    if placement.mode == INTO:
+    if placement.mode == INTO or _section_exists(original, placement.section):
         return _place(rel, original, placement, [include], barrier=SCRIPTS_GUARD)
 
     guard = next((i for i, ln in enumerate(lines) if SCRIPTS_GUARD in ln), None)
@@ -261,7 +261,11 @@ def _place(rel: str, text: str, placement, entry: list[str],
     module is — the caller has already checked the map isn't wired, and neither
     mode depends on a line number.
     """
-    if placement.mode == INTO:
+    # INTO says "join this section" outright; but even an own-section placement
+    # must join a section of that name if one already exists — writing a second
+    # `SECTION "<name>"` is not a rename, it is a duplicate the linker splits back
+    # apart. So a section name you reuse in the form appends, it does not fork.
+    if placement.mode == INTO or _section_exists(text, placement.section):
         lines = _append_into_section(text.split("\n"), placement.section, entry, barrier)
         return Edit(rel, True,
                     f"appended into existing section '{placement.section}' "
@@ -271,6 +275,12 @@ def _place(rel: str, text: str, placement, entry: list[str],
     block = ["", f'SECTION "{placement.section}", ROMX', *entry]
     return Edit(rel, True, f"added section '{placement.section}'",
                 text.rstrip("\n") + "\n" + "\n".join(block) + "\n", base=text)
+
+
+def _section_exists(text: str, section: str) -> bool:
+    """Whether a ``SECTION "<section>"`` is already declared in this file."""
+    return any((m := _SECTION_RE.match(ln)) and m.group(1) == section
+               for ln in text.splitlines())
 
 
 def _append_into_section(lines: list[str], section: str, entry: list[str],
