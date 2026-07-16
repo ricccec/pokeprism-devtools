@@ -247,9 +247,10 @@ def add_signpost(root: Path, map_const: str, y: int, x: int,
 class MapCtx:
     """A map's asm held open across several splices, so one Edit carries them all.
 
-    Script and text blocks go *above* the ``X_MapEventHeader::`` line, which is
-    where every map in the repo keeps them, and the event-header lists are
-    spliced through :mod:`.eventheader` so the count bytes stay honest.
+    Script and text blocks go into the map's content half — below the event
+    header for a header-first map, above it for the older header-last ones (see
+    :meth:`add_script`) — and the event-header lists are spliced through
+    :mod:`.eventheader` so the count bytes stay honest.
     """
 
     def __init__(self, root: Path, map_const: str) -> None:
@@ -317,12 +318,42 @@ class MapCtx:
 
     # -- splices ------------------------------------------------------------ #
     def add_script(self, label: str, block: list[str]) -> None:
-        """Put a script/text block above the event header."""
+        """Put a script/text block in the map's *content* half.
+
+        Where that half is depends on how the map is laid out, and the map's own
+        shape decides so the file stays internally consistent. A map that keeps
+        its event header up top — the object list first, then the scripts, the
+        way MtEmberWest and every map the studio now writes are built — gets the
+        block appended below everything, under `; ***** Scripts *****`. The older
+        maps we inherited keep their scripts *above* the event header, which sits
+        at the foot of the file; there the block goes above the header, joining
+        the scripts already there rather than stranding one under the object list.
+        """
         if self._defines(label):
             raise ScaffoldError(f"maps/{self.map_label}.asm already defines {label}")
-        at = self.header.header_lineno
-        self.header.lines[at:at] = [*block, ""]
+
+        lines = self.header.lines
+        if self._scripts_below_header():
+            while lines and not lines[-1].strip():
+                lines.pop()                      # normalise trailing blank lines
+            lines.extend(["", *block, ""])
+        else:
+            at = self.header.header_lineno
+            lines[at:at] = [*block, ""]
         self.header.reparse()
+
+    def _scripts_below_header(self) -> bool:
+        """Whether this map keeps its scripts below the event header.
+
+        The tell is what follows the last list: a map laid out header-first has
+        its callbacks and scripts down there, so there is content past the object
+        events; a map laid out header-last ends with the object events, and there
+        is nothing after them.
+        """
+        objects = self.header.lists[eh.ListKind.OBJECT_EVENTS]
+        end = (objects.entries[-1].lineno + 1 if objects.entries
+               else objects.count_lineno + 1)
+        return any(line.strip() for line in self.header.lines[end:])
 
     def add_object(self, obj: Object, persontype: str, param: str | int,
                    pointer: str, flag: str) -> None:
