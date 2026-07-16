@@ -160,6 +160,15 @@ class SpriteData:
         """The sprites a map in `group` may legally use, if it's outdoors."""
         return self.outdoor_sets.get(group, [])
 
+    def player_sprite(self) -> str:
+        """Which sprite id `GetPlayerSprite` hands back, across the forks that
+        renamed it. `RefreshSprites` calls it before `AddMapSprites`, so the
+        player always takes the used-sprite list's first — and walking — slot."""
+        for candidate in ("SPRITE_P0", "SPRITE_PLAYER", "SPRITE_CHRIS"):
+            if candidate in self.sprite_ids:
+                return candidate
+        return "SPRITE_P0"
+
     @cached_property
     def missing_headers(self) -> set[str]:
         """Sprites that ought to have a header and don't — a build-clean way to

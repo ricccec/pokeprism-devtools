@@ -245,6 +245,13 @@ class Form(ModalScreen["Preview | Draft | None"]):
                              placeholder=f.choices))
         else:
             out.append(Input(value=self._prefill(f), id=f"field-{f.name}"))
+        if f.name == "sprite" and any(x.name == "cls" for x in self._shown):
+            # Only a trainer's sprite has a class next to it to be a suggestion
+            # *about*. Kept out of `Field.help`, which is fixed at declaration —
+            # this line depends on the sprite you are looking at and the map
+            # you opened the form from, and both can change after the form is
+            # already on screen.
+            out.append(Static(id="sprite-hint", classes="field-help"))
         return out
 
     def _prefill(self, f: Field) -> str:
@@ -298,6 +305,7 @@ class Form(ModalScreen["Preview | Draft | None"]):
     def on_mount(self) -> None:
         self._focus_first()
         self._retile()
+        self._update_hint()
 
     def _focus_first(self) -> None:
         # The first thing you can type in — which for "Edit dialogue" is the text
@@ -319,16 +327,38 @@ class Form(ModalScreen["Preview | Draft | None"]):
         if field is None:
             return
 
-        # Typed in by hand, so nothing may fill it in from now on. `Input.Changed`
-        # fires for programmatic writes too, hence the check: only a change to the
-        # *focused* box is a change you made.
-        if self.focused is event.input:
-            self._typed_in.add(name)
+        if name in ("sprite", "cls"):
+            self._update_hint()
+
+        # `Input.Changed` fires for programmatic writes too — a field prefilled
+        # from the object it edits posts one the moment it's built, same as if you
+        # had typed it. Only a change to the *focused* box is a change you made,
+        # and only that kind may mark a field as typed-in or fill in the rest of
+        # the form: an edit form's prefilled sprite must not be overwritten by the
+        # class's usual one the instant the class field mounts with its own
+        # existing value.
+        if self.focused is not event.input:
+            return
+        self._typed_in.add(name)
 
         self._follow(name)
         self._refresh_choices(name)
         if field.reveals:
             await self._reshape(name)
+
+    def _update_hint(self) -> None:
+        """Refresh the sprite field's hint line, if this form has one.
+
+        Runs on every change to `sprite` or `cls` — including the mount-time
+        one a prefilled edit form fires on its own, which is exactly when this
+        should say something: opening a trainer you did not just create is the
+        moment the hint has an actual sprite to talk about.
+        """
+        found = self.query("#sprite-hint")
+        if not found:
+            return
+        text = self._session.sprite_hint(self._map, self.values().get("sprite", ""))
+        found.first(Static).update(text)
 
     def _follow(self, changed: str) -> None:
         """Let the action fill in the fields this one implies — a trainer class

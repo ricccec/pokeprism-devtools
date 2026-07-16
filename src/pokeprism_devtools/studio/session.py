@@ -43,7 +43,7 @@ from .. import maplint
 from ..dev_server import playtest as devplay
 from ..maplint.context import LintContext
 from ..maplint.diagnostics import Diagnostic, Severity
-from ..shared import caches, eventheader, textbox, world
+from ..shared import caches, eventheader, spritepack, textbox, trainerstats, world
 from ..shared.edits import StaleEdit, apply_edits
 from ..wiring import objedit
 from . import (actions, content, edits, offers, panels, play, prefill as fill,
@@ -170,6 +170,38 @@ class Session:
         """What the form should fill in for itself, now one field has changed — a
         trainer class knows what it usually wears."""
         return offers.follows(self.root, action, changed, values)
+
+    def sprite_hint(self, map_const: str, sprite: str) -> str:
+        """The sprite field's hint line: who plays this sprite, and whether they
+        can walk here.
+
+        *Who* is counted from every trainer already in the repo, the same way
+        `follows` is — see `shared/trainerstats.classes_for`. A class does not
+        say what it wears; only counting what is already there does.
+
+        *Whether they can walk* is measured the way `maplint.rules_sprites`
+        measures it, not guessed from the sprite's own type: an outdoor map
+        only ever loads its group's `OutdoorSprites` set, and only the sprites
+        that land inside VRAM table 1 there ever animate a walk cycle — the
+        ~9 the docstring in `shared/spritepack` explains. Indoor maps load
+        whatever their objects ask for, so nothing here bounds them.
+        """
+        sprite = sprite.strip()
+        if not sprite:
+            return ""
+        who = trainerstats.classes_for(self.root, sprite)
+        text = f"worn by: {', '.join(who[:6])}" if who else "no trainer wears this sprite yet"
+
+        mapdef = self.ctx.map_defs.get(map_const)
+        if mapdef is None or not self.ctx.is_outdoor(map_const):
+            return text
+        sd = self.ctx.sprites
+        group = sd.outdoor_set(mapdef.group)
+        if sprite not in group:
+            name = sd.set_names.get(mapdef.group, "this group")
+            return f"{text} — not in {name}, this map's sprite set"
+        walkable = spritepack.walkable(sd, [sd.player_sprite(), *group])
+        return f"{text} — {'can walk here' if sprite in walkable else 'stands still here (table 2)'}"
 
     def warm(self) -> None:
         """Read everything a form will want, before a form asks."""

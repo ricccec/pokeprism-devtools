@@ -25,7 +25,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from textual import events
 from textual.geometry import Offset
-from textual.widgets import DataTable, Input, OptionList, TabbedContent, TextArea
+from textual.widgets import (DataTable, Input, OptionList, Static, TabbedContent,
+                             TextArea)
 
 from pokeprism_devtools.shared import blocksrc, coords, eventheader, paths, swatches
 from pokeprism_devtools.studio import Session, panels
@@ -1233,6 +1234,39 @@ class TestEditing(_Driven):
 
         drive(go())
 
+    def test_e_on_a_trainer_keeps_the_sprite_it_actually_wears(self) -> None:
+        """A class's usual sprite is a suggestion for a *new* trainer, and must
+        never overwrite the one an existing trainer is already wearing.
+
+        `MtEmberWest_Trainer_4` is a real counterexample already in the repo: a
+        MINER — a class that wears SPRITE_MINER eight times out of thirteen —
+        drawn as SPRITE_CAMPER. Opening its form used to flip the sprite field to
+        SPRITE_MINER the instant the class combo mounted with its own prefilled
+        value, because that mount fires the same `Input.Changed` a real edit
+        would and nothing told the two apart.
+        """
+        async def go():
+            app = Studio(self.root)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot, "MtEmberWest")
+                table = await self.open_tab(app, pilot, "trainers")
+
+                row = next(i for i in range(table.row_count)
+                           if table.get_row_at(i)[3] == "SPRITE_CAMPER"
+                           and table.get_row_at(i)[4] == "MINER")
+                await self.go_to_row(app, pilot, table, row)
+                await pilot.press("e")
+                await pilot.pause(0.2)
+
+                form = app.screen
+                self.assertIsInstance(form, Form, "e on a trainer opened nothing")
+                self.assertEqual(form.query_one("#field-cls", Combo).value, "MINER")
+                self.assertEqual(form.query_one("#field-sprite", Combo).value,
+                                 "SPRITE_CAMPER")
+                await app.action_quit()
+
+        drive(go())
+
     def test_e_on_a_warp_opens_where_it_goes(self) -> None:
         """And refuses a destination warp that does not exist, which is the one
         mistake here that assembles perfectly: `warp_to` is a *position* in the
@@ -2392,6 +2426,30 @@ class TestAClassKnowsWhatItWears(_Driven):
                 form.query_one("#field-cls", Input).value = "SKIER"
                 await pilot.pause(0.3)
                 self.assertEqual(form.values()["sprite"], "SPRITE_ROCKET")
+                await app.action_quit()
+
+        drive(go())
+
+    def test_the_sprite_field_says_who_else_wears_it(self) -> None:
+        """The reverse question: given a sprite, who usually battles as it —
+        FEAT7. `_BODY`'s default sprite is SPRITE_GRAMPS, which no trainer in
+        this repo wears (an NPC sprite through and through), so the form opens
+        saying so; picking SKIER dresses the trainer in SPRITE_BUENA, and the
+        hint updates to name who else already wears that one."""
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot)
+                form = await self._trainer(app, pilot)
+
+                hint = form.query_one("#sprite-hint", Static)
+                self.assertEqual(str(hint.render()), "no trainer wears this sprite yet")
+
+                form.query_one("#field-cls", Input).value = "SKIER"
+                await pilot.pause(0.3)
+                self.assertEqual(form.query_one("#field-sprite", Combo).value,
+                                 "SPRITE_BUENA")
+                self.assertEqual(str(hint.render()), "worn by: BEAUTY, SKIER")
                 await app.action_quit()
 
         drive(go())
