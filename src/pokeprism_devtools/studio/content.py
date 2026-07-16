@@ -179,8 +179,12 @@ class AddProp(_Placed):
     name = "prop"
     title = "Add an object"
 
-    _KIND = Field("kind", "Kind", choices="", default=ITEMBALL, reveals=True,
-                  help=" / ".join(PROP_KINDS))
+    #: The six, on a list you pick from — because they are not a thing you could
+    #: know to type. Still a combo and not a `Select`, so the six are an offer and
+    #: a seventh word is refused by `run` with the list in the message, which is
+    #: the one place that can say *why* there is no seventh.
+    _KIND = Field("kind", "Kind", options=PROP_KINDS, default=ITEMBALL, reveals=True,
+                  help="what it is decides the rest of the form")
     _WHERE = (Field("y", "Y", kind="int"), Field("x", "X", kind="int"))
     _FLAG = Field("flag", "Event flag", choices=FLAGS,
                   help="blank and one is generated. It is what remembers you took it.")
