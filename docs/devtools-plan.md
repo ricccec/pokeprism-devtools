@@ -500,11 +500,13 @@ zero-NPC behaviour.
   **Done** — `blockdata.map_connections` + `compute_screen_save(neighbors=...)`
   overlay the neighbouring maps' edge blocks, verified byte-for-byte against a
   real save at a two-connection corner.
-- On-screen NPC instantiation at spawn: the Continue-load path doesn't run
-  `InitializeVisibleSprites`, so NPCs within the screen window aren't copied
-  into `wObjectStructs` and don't render until the player steps. Needs the
-  visibility check plus `CopyMapObjectToObjectStruct` (movement-data table,
-  radius/coord math) and the outdoor-sprite VRAM-tile (`SPRITE_TILE`) allocator.
+- ~~On-screen NPC instantiation at spawn~~ **Done** — the Continue-load path
+  doesn't run `InitializeVisibleSprites`, so `people.instantiate_visible_sprites`
+  does it: the visibility check plus `CopyMapObjectToObjectStruct` (movement-data
+  table, radius/coord math), with `SPRITE_TILE` from `spritevram`, which replays
+  the sprite-GFX VRAM allocator the Continue path *does* rebuild. Verified
+  byte-for-byte against a real MtEmberWest save (the on-screen SPRITE_ROCK's
+  struct, tile 200 included).
 - **Backup cleanup subcommand**: `prism-dev clean-backups [--keep N]` to prune
   old `.sav` files from `.devtools/sav-backups/`. Every launch writes a backup,
   so the folder grows quickly during active dev sessions. The subcommand should
