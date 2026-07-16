@@ -10,10 +10,19 @@ different amounts in each direction, so there is no single expected value.
 
 from __future__ import annotations
 
+import re
+
 from .context import OPPOSITE, LintContext
 from .diagnostics import Diagnostic, Severity
 
 _SECOND_HEADERS = "maps/second_map_headers.asm"
+_MAP_DIMENSIONS = "constants/map_dimension_constants.asm"
+
+#: The engine loads a map into a fixed WRAM buffer padded by a 3-block border on
+#: every side, so an H×W map costs (H+6)×(W+6) blocks. Past this it runs off the
+#: end of the buffer. Fitted against the repo: the biggest maps are 30×30 = 1296,
+#: just under, and nothing exceeds it — so the limit is safe to report as an error.
+_MAP_BUFFER = 1300
 
 #: `dummy_warp` writes `db -1` into the warp_to slot, so -1 is the engine's
 #: "this warp has no destination" sentinel. A hand-written `warp_def` carrying
@@ -228,5 +237,40 @@ def warp_oneway(ctx: LintContext) -> list[Diagnostic]:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# dimensions                                                                  #
+# --------------------------------------------------------------------------- #
+
+def map_too_big(ctx: LintContext) -> list[Diagnostic]:
+    """A map plus its border must fit the engine's map buffer.
+
+    The overworld loads the H×W map into WRAM with a 3-block border on every
+    side, so it costs (H+6)×(W+6) blocks. Past the buffer's size it corrupts, and
+    the fix is not a form field — the map has to be redrawn smaller in
+    polished-map — so this reports the arithmetic rather than pretending to
+    resize. 30×30 (1296) is the largest square that fits.
+    """
+    out = []
+    lines = ctx.source_lines(_MAP_DIMENSIONS)
+    for const, m in sorted(ctx.map_defs.items()):
+        loaded = (m.height + 6) * (m.width + 6)
+        if loaded <= _MAP_BUFFER:
+            continue
+        out.append(Diagnostic(
+            "map-too-big", Severity.ERROR, _MAP_DIMENSIONS,
+            _mapgroup_line(lines, const),
+            f"{const} is {m.height}×{m.width} blocks, which loads as "
+            f"(h+6)×(w+6) = {loaded} with its border — over the engine's "
+            f"{_MAP_BUFFER}-block map buffer; it has to be drawn smaller",
+        ))
+    return out
+
+
+def _mapgroup_line(lines: list[str], const: str) -> int:
+    """The 1-based line of `const`'s mapgroup declaration, or 1 if not found."""
+    rx = re.compile(rf"^\s*mapgroup\s+{re.escape(const)}\s*,")
+    return next((i for i, ln in enumerate(lines, start=1) if rx.match(ln)), 1)
+
+
 ALL = (conn_self, conn_target, conn_missing, conn_align, conn_flags,
-       warp_target, warp_oneway)
+       warp_target, warp_oneway, map_too_big)
