@@ -244,15 +244,15 @@ def test_npc(root: Path) -> None:
     apply_edits(root, s.edits, dry_run=False)
     text = (root / "maps/TownA.asm").read_text()
 
-    check("the label avoids the one already in the file", s.label == "TownANPC")
+    check("the label is <Map>_NPC_<n>", s.label == "TownA_NPC_1")
     check("dialogue opens with ctxt", '\tctxt "Hi there,"' in text)
     check("the second row is `line`", '\tline "traveller."' in text)
     check("a new textbox is `para`", '\tpara "Mind the"' in text)
     check("and it ends with done", text.count("\tdone") == 2)
     check("the text block sits above the event header",
-          text.index("TownANPC:") < text.index("TownA_MapEventHeader::"))
-    check("the person_event points at it",
-          "PERSONTYPE_TEXT, 0, TownANPC, -1" in text)
+          text.index("TownA_NPC_1:") < text.index("TownA_MapEventHeader::"))
+    check("the person_event points at it, facing the player",
+          "PERSONTYPE_TEXTFP, 0, TownA_NPC_1, -1" in text)
     check("the object count went 0 -> 1",
           eh.parse_map(root / "maps/TownA.asm").lists[eh.ListKind.OBJECT_EVENTS].declared_count == 1)
     check("no flag was allocated for an always-there NPC", s.flag is None)

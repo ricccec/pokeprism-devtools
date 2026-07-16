@@ -122,7 +122,10 @@ def add_npc(root: Path, map_const: str, obj: Object, pages: list[list[str]], *,
     """
     obj.check(root)
     ctx = MapCtx(root, map_const)
-    label = label or ctx.unique_label("NPC")
+    # `<Map>_NPC_<n>`, the convention this fork's own maps follow (MtEmber_NPC_1,
+    # EagulouCity_NPC_2) and the same numbered shape a trainer's label gets — not
+    # the concatenated `<Map>NPC` of the vanilla maps we inherited.
+    label = label or ctx.unique_label("NPC", numbered=True)
     edits: list[Edit] = []
 
     flag_name = None
@@ -131,7 +134,10 @@ def add_npc(root: Path, map_const: str, obj: Object, pages: list[list[str]], *,
         edits.append(flag_edit)
 
     ctx.add_script(label, _text_block(label, pages))
-    ctx.add_object(obj, "PERSONTYPE_TEXT", sight, label, flag_name or ALWAYS)
+    # TEXTFP, not TEXT: it runs `jumptextfaceplayer` (engine/events.asm:540), so the
+    # NPC turns to face you before it speaks. That is what a person does when you
+    # talk to them, and it is what all but a handful of this repo's NPCs are.
+    ctx.add_object(obj, "PERSONTYPE_TEXTFP", sight, label, flag_name or ALWAYS)
     edits.append(ctx.to_edit(f"NPC {label} at ({obj.y}, {obj.x})"))
 
     return Scaffold(f"NPC {label} in {map_const}", edits, flag_name, label)
