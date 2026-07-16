@@ -32,15 +32,17 @@ _PERMISSIONS = ("TOWN", "ROUTE", "INDOOR", "CAVE", "PERM_5", "GATE", "DUNGEON")
 #: An empty map: no triggers, no callbacks, and an event header with four empty
 #: lists. Public because the studio's `NewMap` action writes the same one, and a
 #: second copy of it would be a second definition of what an empty map *is*.
+#:
+#: The event header comes *first*, so the top of a map is the list of what stands
+#: in it — every object and its attributes, at a glance — and the scripts and
+#: dialogue those objects point at fill the second half below. That is the shape
+#: MtEmberWest.asm keeps, and the shape the scaffolds add content into: a person
+#: joins the object list up top, and its words go under `; ***** Scripts *****`.
 TEMPLATE = """{label}_MapScriptHeader:
  ;trigger count
 \tdb 0
  ;callback count
 \tdb 0
-
-; ***** Map callbacks *****
-
-; ***** *****
 
 ; ***** Event header *****
 {label}_MapEventHeader:: db 0, 0
@@ -56,6 +58,10 @@ TEMPLATE = """{label}_MapScriptHeader:
 
 .ObjectEvents
 \tdb 0
+
+; ***** Map callbacks *****
+
+; ***** Scripts *****
 """
 
 _LABEL_RE = re.compile(r"^[A-Z][A-Za-z0-9]*$")

@@ -261,6 +261,38 @@ def test_npc(root: Path) -> None:
     _reset(root, saved)
 
 
+def test_npc_below_a_header_first_map(root: Path) -> None:
+    print("\na header-first map keeps its object list on top, its scripts below")
+    saved = _snapshot(root)
+    # RouteB laid out the way MtEmberWest and every studio-written map are: the
+    # event header up top, then a scripts section for the content to live in.
+    (root / "maps/RouteB.asm").write_text(
+        "RouteB_MapScriptHeader:\n\tdb 0\n\tdb 0\n\n"
+        "; ***** Event header *****\n"
+        "RouteB_MapEventHeader:: db 0, 0\n\n"
+        ".Warps\n\tdb 0\n\n.CoordEvents\n\tdb 0\n\n"
+        ".BGEvents\n\tdb 0\n\n.ObjectEvents\n\tdb 0\n\n"
+        "; ***** Map callbacks *****\n\n; ***** Scripts *****\n"
+    )
+    s = sc.add_npc(root, "ROUTE_B", sc.Object("SPRITE_YOUNGSTER", 5, 6),
+                   pages=[["Hi."]])
+    apply_edits(root, s.edits, dry_run=False)
+    text = (root / "maps/RouteB.asm").read_text()
+
+    check("the person_event joined the object list up top",
+          text.index("PERSONTYPE_TEXTFP, 0, RouteB_NPC_1, -1")
+          < text.index("; ***** Scripts *****"))
+    check("but the text block itself went below the event header",
+          text.index("RouteB_MapEventHeader::") < text.index("RouteB_NPC_1:"))
+    check("under the scripts section, where the content half lives",
+          text.index("; ***** Scripts *****") < text.index("RouteB_NPC_1:"))
+    check("the object count still went 0 -> 1",
+          eh.parse_map(root / "maps/RouteB.asm")
+            .lists[eh.ListKind.OBJECT_EVENTS].declared_count == 1)
+    _reset(root, saved)
+    (root / "maps/RouteB.asm").unlink(missing_ok=True)
+
+
 def test_trainer(root: Path) -> None:
     print("\na trainer: flag + party + macro + three texts, or nothing at all")
     saved = _snapshot(root)
@@ -815,6 +847,7 @@ def main() -> int:
         test_unbacked_classes(root)
         test_wild(root)
         test_npc(root)
+        test_npc_below_a_header_first_map(root)
         test_trainer(root)
         test_items(root)
         test_the_other_two_pickups(root)
