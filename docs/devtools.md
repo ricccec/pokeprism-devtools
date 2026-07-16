@@ -411,15 +411,17 @@ plus `sExtraChecksum` over `sExtraData`) are recomputed and written.
 
 ### Known limitations on map change
 
-- **Destination map has no NPCs** (default behaviour clears them; we don't
-  yet reload from `MapEventHeader`). Tracked in
-  [`devtools-plan.md`](devtools-plan.md#future-work--known-v1-limitations)
-  under the planned `--load-map-npcs` flag.
-- **Edge positions on connected maps**: `wScreenSave` zero-pads outside
-  the map's block grid, which is wrong for maps with N/S/E/W connections
-  (those padding regions should contain neighbor-map blocks). The screen
-  may show one row/column of incorrect tiles at the very edge. Walking
-  refreshes it.
+- **On-screen NPCs aren't instantiated**: the destination map's NPCs are
+  reloaded into `wMapObjects` from `MapEventHeader` (see `people.load_map_npcs`),
+  but the Continue-load path never runs `InitializeVisibleSprites`, so an NPC
+  standing within the screen window at spawn isn't copied into `wObjectStructs`
+  and doesn't render until the player steps. Replicating that instantiation
+  (including the VRAM-tile allocation the sprite needs) is the next piece of
+  work; see the object-struct notes in `devtools-plan.md`.
+- ~~**Edge positions on connected maps**~~ **Fixed.** `wScreenSave` now
+  overlays neighbouring-map edge blocks at connections (via
+  `blockdata.map_connections` + `compute_screen_save(neighbors=...)`), so an
+  edge position renders the real border instead of one row/column of void.
 
 ### TUI (dev-server mode)
 

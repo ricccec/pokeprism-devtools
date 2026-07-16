@@ -118,6 +118,40 @@ def main() -> None:
         f"{aqua.width}x{aqua.height}, len={len(aqua.blocks)}",
     )
 
+    print("\nblockdata.py — connection overlay (hermetic)")
+    # A 10x10 map of block $11, and a neighbour of block $22. The Connection
+    # places two neighbour blocks into two known window cells; everything else
+    # stays the map's own $11. This pins the overlay arithmetic (dest→window
+    # offset and source→neighbour index) without needing the ROM.
+    home = blockdata.BlockData(
+        name="home", group=1, map_id=1, width=10, height=10,
+        border_block=0, blocks=bytes([0x11]) * 100,
+    )
+    away = blockdata.BlockData(
+        name="away", group=1, map_id=2, width=10, height=10,
+        border_block=0, blocks=bytes([0x22]) * 100,
+    )
+    # Player at (8, 8): anchor (row 5, col 5), window covers wOverworldMap rows
+    # 5..9, cols 5..10 — all inside the map, so the base is pure $11.
+    conn = blockdata.Connection(
+        direction="south", group=1, map_id=2,
+        source_row=0, source_col=0, dest_row=7, dest_col=6, rows=1, cols=2,
+    )
+    ss = blockdata.compute_screen_save(home, 8, 8, neighbors=[(conn, away)])
+    # dest (7,6) and (7,7) → window rows/cols (2,1) and (2,2) → indices 13, 14.
+    check("overlay writes the two targeted cells from the neighbour",
+          ss[13] == 0x22 and ss[14] == 0x22, ss.hex())
+    check("overlay leaves the rest of the window as the map's own blocks",
+          ss[12] == 0x11 and ss[15] == 0x11 and ss.count(0x22) == 2, ss.hex())
+    # Out-of-window and out-of-neighbour-bounds strips are dropped, not crash.
+    off_conn = blockdata.Connection(
+        direction="south", group=1, map_id=2,
+        source_row=9, source_col=9, dest_row=99, dest_col=99, rows=3, cols=3,
+    )
+    ss2 = blockdata.compute_screen_save(home, 8, 8, neighbors=[(off_conn, away)])
+    check("a strip outside the window changes nothing",
+          ss2 == blockdata.compute_screen_save(home, 8, 8))
+
     print("\nblockdata.py — strong cross-check against real save")
     # If a backup of the user's pre-patch save exists, use it to verify our
     # computed wScreenSave matches what the game wrote.
@@ -149,10 +183,24 @@ def main() -> None:
         y = sf.data[off["wYCoord"]]
         x = sf.data[off["wXCoord"]]
         bd = blockdata.load(rom, syms, group=g, map_id=m)
-        computed = blockdata.compute_screen_save(bd, x, y)
+        # Fold in the neighbours the same way apply.py does — without them an
+        # edge save (one standing near a connection) never matches, because the
+        # game filled that padding from the adjacent map.
+        neighbors = []
+        for conn in blockdata.map_connections(
+            rom, syms, g, m, map_width=bd.width
+        ):
+            try:
+                nb = blockdata.load(rom, syms, conn.group, conn.map_id)
+            except ValueError:
+                continue
+            neighbors.append((conn, nb))
+        computed = blockdata.compute_screen_save(bd, x, y, neighbors=neighbors)
         actual = bytes(sf.data[off["wScreenSave"]:off["wScreenSave"] + 30])
+        edges = ", ".join(c.direction for c, _ in neighbors) or "none"
         check(
-            f"wScreenSave for (g={g},m={m},x={x},y={y}) matches the save's actual bytes",
+            f"wScreenSave for (g={g},m={m},x={x},y={y}) matches the save's actual "
+            f"bytes [connections: {edges}]",
             computed == actual,
             f"computed={computed.hex()} vs actual={actual.hex()}",
         )
