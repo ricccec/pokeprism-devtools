@@ -1627,7 +1627,7 @@ class TestNewMap(unittest.TestCase):
             "tileset": "TILESET_FOREST", "permission": "CAVE",
             "landmark": "SPECIAL_MAP", "music": "MUSIC_ROUTE_2",
             "palette": "PALETTE_NITE", "fishgroup": "FISHGROUP_POND",
-            "phone": "0", "border_block": "0", "conn_flags": "0", "bank": "",
+            "phone": "0", "border_block": "0", "bank": "",
             "blockdata_section": "", "script_section": "", "secondary_section": "",
         } | override
 
@@ -1664,6 +1664,26 @@ class TestNewMap(unittest.TestCase):
         with self.assertRaises(ActionError) as caught:
             self.session.sketch(NewMap(**self.form(blk="")))
         self.assertIn("point at the", str(caught.exception))
+
+    def test_the_blk_you_point_at_is_not_a_collision_with_itself(self) -> None:
+        """BUG 12: draw a map, save its .blk in maps/blk under the map's own name,
+        then make the map from that very file. Source and destination are one
+        path, so writing it overwrites nothing — a shared .blk is ordinary here.
+        The objection is a .blk belonging to *something else*, not one existing."""
+        dest = self.root / "maps/blk/SharedDraw.blk"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(self.BLOCKS)
+        action = NewMap(**self.form(label="SharedDraw", const="SHARED_DRAW",
+                                    blk=str(dest)))
+        self.assertEqual(action._collisions(self.root, action.spec(dest)), [])
+
+        # But a destination that is a *different* file still collides.
+        other = self.root / "maps/blk/OtherDraw.ablk"    # matches self.blk's suffix
+        other.write_bytes(self.BLOCKS)
+        clash = NewMap(**self.form(label="OtherDraw", const="OTHER_DRAW",
+                                   blk=str(self.blk)))     # source is elsewhere
+        problems = clash._collisions(self.root, clash.spec(self.blk))
+        self.assertTrue(any("OtherDraw.ablk" in p for p in problems), problems)
 
     # -- the writing ------------------------------------------------------------- #
     def test_a_goes_straight_to_the_map_form(self) -> None:
