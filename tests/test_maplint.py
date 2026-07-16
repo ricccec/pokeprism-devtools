@@ -308,9 +308,9 @@ def _fixture(tmp: Path) -> Path:
         )
 
     def _person(sprite: str, y: int, x: int, move: str, flag: str = "-1",
-                ptype: str = "PERSONTYPE_TEXTFP") -> str:
+                ptype: str = "PERSONTYPE_TEXTFP", script: str = "SomeScript") -> str:
         return (f"person_event {sprite}, {y}, {x}, {move}, 0, 0, -1, -1, "
-                f"PAL_OW_RED, {ptype}, 0, SomeScript, {flag}")
+                f"PAL_OW_RED, {ptype}, 0, {script}, {flag}")
 
     # Warps are a chain, so they're laid out so exactly one rule fires:
     #   TownA #1 <-> CaveC #1 ..................................... clean, reciprocal
@@ -386,13 +386,25 @@ def _fixture(tmp: Path) -> Path:
     # guard is what stops you using the door until he moves (event-stack, info).
     # Its second NPC stands on an *item ball*, which is one tile and one list, and
     # only the first of the two can be reached (event-overlap, warning).
+    # Three trainers battle as SAGE — two in SPRITE_NPC, one in SPRITE_STATUE. The
+    # odd one out is the same class wearing a second overworld sprite, which is
+    # trainer-sprite. All three point at the one SAGE block, so nothing new is
+    # cited: the class stays as backed and party #2 as orphaned as before. Both
+    # sprites are in Group1Sprites, so sprite-outdoor stays silent, and all three
+    # stand at their own tile, clear of the warp and item balls.
     _map("TownB", ["warp_def 1, 1, 1, CAVE_C"],
          [_person("SPRITE_NPC", 1, 1, "SPRITEMOVEDATA_STANDING_DOWN", "EVENT_SHARED"),
           _person("SPRITE_BALL", 2, 2, "SPRITEMOVEDATA_ITEM_TREE", "EVENT_TWICE",
                   ptype="PERSONTYPE_ITEMBALL"),
           _person("SPRITE_BALL", 3, 3, "SPRITEMOVEDATA_ITEM_TREE", "EVENT_TWICE",
                   ptype="PERSONTYPE_ITEMBALL"),
-          _person("SPRITE_NPC", 2, 2, "SPRITEMOVEDATA_STANDING_DOWN")])
+          _person("SPRITE_NPC", 2, 2, "SPRITEMOVEDATA_STANDING_DOWN"),
+          _person("SPRITE_NPC", 5, 5, "SPRITEMOVEDATA_STANDING_DOWN",
+                  ptype="PERSONTYPE_TRAINER", script="TownB_Trainer_1"),
+          _person("SPRITE_NPC", 6, 6, "SPRITEMOVEDATA_STANDING_DOWN",
+                  ptype="PERSONTYPE_TRAINER", script="TownB_Trainer_1"),
+          _person("SPRITE_STATUE", 7, 7, "SPRITEMOVEDATA_STANDING_DOWN",
+                  ptype="PERSONTYPE_TRAINER", script="TownB_Trainer_1")])
     b = root / "maps" / "TownB.asm"
     b.write_text("TownB_Trainer_1:\n"
                  "\ttrainer EVENT_REAL, SAGE, 3, .seen, .beaten\n\n"
@@ -446,6 +458,7 @@ _EXPECTED = {
     "sprite-vram": 1,
     "sprite-vram-budget": 1,
     "blk-size": 1,
+    "trainer-sprite": 1,     # TownB: one SAGE in SPRITE_STATUE, the rest SPRITE_NPC
     "trainer-party": 1,
     "trainer-orphan": 1,        # Sage #2: #1 is reached by loadtrainer, #2 by nothing
     "wild-region": 1,
@@ -692,7 +705,7 @@ def test_baseline(root: Path, tmp: Path) -> None:
     # object count, so the engine reads a phantom object past the end.
     path = root / "maps" / "TownB.asm"
     before = path.read_text()
-    after = before.replace(".ObjectEvents\n\tdb 4\n", ".ObjectEvents\n\tdb 6\n")
+    after = before.replace(".ObjectEvents\n\tdb 7\n", ".ObjectEvents\n\tdb 9\n")
     check("the seeded bug really was seeded", after != before)
     path.write_text(after)
     check("a new finding still fails despite the baseline",
@@ -735,6 +748,11 @@ def test_real_repo() -> None:
         "wild-rate": 1,             # LAUREL_FOREST's `db 3` is 1.2%, not 3%
         "trainer-class": 0,         # none: the 7 unbacked classes are all uncited
         "trainer-orphan": 7,        # info: parties nothing references — dead weight
+        # info: 11 classes drawn with a second overworld sprite somewhere —
+        # HIKER as SPRITE_FISHER, LASS as SPRITE_COOLTRAINER_F, and so on. Real
+        # inconsistencies, most of them old; a few (BEAUTY's rocket variant) are
+        # deliberate. This is the drift the rule exists to stop growing.
+        "trainer-sprite": 28,
         "flag-shared": 9,           # deliberate: one flag gating objects in two maps
         "flag-multi-owner": 2,      # info: EmberBrook's twins, and Provincial Park's PP Ups
         "flag-unused": 200,         # info: declared flags nothing references
