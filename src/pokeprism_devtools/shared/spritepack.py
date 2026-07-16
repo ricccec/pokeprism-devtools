@@ -132,3 +132,11 @@ def arrange(sd: SpriteData, sprites: list[str]) -> list[Allocation]:
     for sprite, type_name, tiles in entries[i:]:
         out.append(Allocation(sprite, type_name, tiles, None))
     return out
+
+
+def walkable(sd: SpriteData, sprites: list[str]) -> frozenset[str]:
+    """Which of this used-sprite list would actually animate a walk cycle here —
+    the ones whose standing tiles land entirely inside table 1. See the module
+    docstring for why that caps out near 9 once the player has taken a slot."""
+    return frozenset(a.sprite for a in arrange(sd, sprites)
+                      if a.walking and a.walk_frames_ok)

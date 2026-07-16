@@ -96,6 +96,23 @@ def defaults(root: Path, cls: str) -> dict[str, str]:
     return {"sprite": sprite, "palette": palette}
 
 
+def classes_for(root: Path, sprite: str) -> list[str]:
+    """Every class that wears this sprite anywhere in the repo, most-common
+    first — the reverse of :func:`defaults`. Empty for a sprite no trainer
+    wears: an NPC-only sprite, or one nothing has been given yet.
+
+    Counts *appearances*, not classes: a class that wears this sprite in six
+    towns outranks one that wears it once, regardless of what else either of
+    them also wears.
+    """
+    totals: Counter[str] = Counter()
+    for cls, worn in _counts(root).items():
+        n = sum(count for (spr, _pal), count in worn.items() if spr == sprite)
+        if n:
+            totals[cls] = n
+    return [cls for cls, _ in totals.most_common()]
+
+
 def rosters(root: Path, cls: str) -> list[str]:
     """Every existing party of a class, one line each: `3  Joey — RATTATA 4`.
 
