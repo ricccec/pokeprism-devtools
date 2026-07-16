@@ -12,6 +12,7 @@ else, so playtesting a map does not cost you the character you play it as.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -40,6 +41,26 @@ DEFAULT_TARGET = "prism"
 class PlayError(RuntimeError):
     """Nothing built, or the save could not be patched. Carries a message for a
     human, because every one of these is something you can do something about."""
+
+
+#: A line of `make` output worth stopping on when the build is run *quiet*. This
+#: is the studio's version of the pipe a person reaches for by hand —
+#: `make ... 2>&1 | grep -E ': (error|fatal):|^make: \*\*\*'` — and it is here
+#: rather than in the build screen so it can be tested without a compiler.
+#:
+#: The reason quiet exists at all: a `prism` build is a few thousand lines of
+#: `rgbasm`/`rgblink` chatter, and streaming every one of them into a Textual
+#: `RichLog` — a widget write, marshalled across a thread boundary, per line — is
+#: itself minutes of work the compiler never asked for. The lines that carry the
+#: *answer*, though, are a handful: the errors, and the `make: ***` that follows
+#: them. Keep those, drop the rest, and the log stays the thing you read when it
+#: breaks without being the thing that makes it slow.
+_PROBLEM = re.compile(r": (error|fatal|warning):|^make(\[\d+\])?: \*\*\*")
+
+
+def is_problem(line: str) -> bool:
+    """Whether this line of build output is one a quiet build still shows."""
+    return _PROBLEM.search(line) is not None
 
 
 def _debug(target: str) -> bool:
