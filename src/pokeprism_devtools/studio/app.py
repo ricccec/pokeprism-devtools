@@ -120,11 +120,15 @@ class Studio(Flow, App):
         #: The map on screen, as the session handed it over. What turns a tile into
         #: the row that owns it, and back — see :meth:`_moved`.
         self._data: MapData | None = None
-        #: Where to put the cursor back after a reload, and on which map. Re-reading
-        #: the map is how a new NPC appears on the grid, but it would also send the
-        #: cursor home — off the tile you were working on, the moment you worked on
-        #: it. Keyed by label because a write can bring a *different* map with it.
-        self._keep_cursor: tuple[str, tuple[int, int]] | None = None
+        #: Where to put the cursor *and the scroll* back after a reload, and on which
+        #: map. Re-reading the map is how a new NPC appears on the grid, but it would
+        #: also send you home — cursor to the corner, the map scrolled back to the
+        #: top-left — off the spot you were working on, the moment you worked on it.
+        #: The scroll is kept as well as the cursor because restoring only the cursor
+        #: leaves the map scrolled to wherever minimally shows it, which throws away
+        #: any pan you had made across a map wider than the viewport. Keyed by label
+        #: because a write can bring a *different* map with it.
+        self._keep_cursor: tuple[str, tuple[int, int], tuple[int, int]] | None = None
         self._texts: list[TextRef] = []
         self._linted = False
         #: What is highlighted in the tabs. The footer is a function of this.
@@ -237,7 +241,11 @@ class Studio(Flow, App):
             grid.display = True
             grid.show(data.geometry)
             if self._keep_cursor and self._keep_cursor[0] == data.label:
-                grid.cursor = self._keep_cursor[1]
+                _, cursor, scroll = self._keep_cursor
+                grid.cursor = cursor
+                # After the cursor, and it wins: setting the cursor scrolls to make
+                # it visible, which is not the same as the scroll you actually had.
+                grid.scroll_to(*scroll, animate=False)
 
         self.query_one(MapTabs).show(data.tabs)
         self._show_diagnostics(data.const)
@@ -294,8 +302,13 @@ class Studio(Flow, App):
         self.refresh_bindings()
 
         # The mirror: walking down the warps table walks the cursor along the doors.
+        # Only when the selection actually *moved* within a table, though — merely
+        # switching tabs (or a load settling) announces the new row for the footer
+        # but must leave the cursor where you put it. Otherwise switching to Items
+        # to add a ball drags the cursor onto the first item and you drop on it.
         grid = self.query_one("#grid", MapGrid)
-        if self._syncing or event.ref is None or self._data is None or grid.view is None:
+        if (not event.move or self._syncing or event.ref is None
+                or self._data is None or grid.view is None):
             return
         tile = self._data.tile_of(event.ref)
         if tile is None or tile == grid.cursor:

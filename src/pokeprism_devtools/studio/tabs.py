@@ -79,11 +79,20 @@ class MapTabs(Vertical):
     """
 
     class Selected(Message):
-        """The highlighted row changed — possibly to nothing at all."""
+        """The highlighted row changed — possibly to nothing at all.
 
-        def __init__(self, ref: Ref | None) -> None:
+        `move` says whether the *grid* cursor should follow. It should when you
+        walked onto this row inside a table (the map is a mirror of the tables and
+        that is the point), and it should **not** when the row merely came up under
+        a tab you switched to. Switching to the Items tab to reach "Add new…" would
+        otherwise fling the cursor onto the first item and drop your next object on
+        top of it — see the app's `_selected`.
+        """
+
+        def __init__(self, ref: Ref | None, move: bool = False) -> None:
             super().__init__()
             self.ref = ref
+            self.move = move
 
     class Chosen(Message):
         """Enter, on a row worth acting on."""
@@ -98,6 +107,11 @@ class MapTabs(Vertical):
         #: list rather than a DataTable row key: the table is refilled wholesale
         #: on every load, and keys would only be a second thing to keep in step.
         self._refs: dict[str, list[Ref | None]] = {}
+        #: True only while `show()` is rebuilding the tables. Clearing and refilling
+        #: a DataTable fires `RowHighlighted` as the cursor snaps back to the top —
+        #: a spurious "selection moved" that would drag the grid cursor around on
+        #: every map load. `show()` sends one deliberate announcement at the end.
+        self._filling = False
 
     def compose(self) -> ComposeResult:
         with TabbedContent(id="tabs"):
@@ -119,20 +133,27 @@ class MapTabs(Vertical):
         was = panes.active
         have = {t.name: t for t in tabs}
 
-        for name in ALL:
-            tab = have.get(name)
-            if tab is None:
-                panes.hide_tab(_pane(name))
-                self._refs[name] = []
-                continue
-            panes.show_tab(_pane(name))
-            self._fill(tab)
+        self._filling = True
+        try:
+            for name in ALL:
+                tab = have.get(name)
+                if tab is None:
+                    panes.hide_tab(_pane(name))
+                    self._refs[name] = []
+                    continue
+                panes.show_tab(_pane(name))
+                self._fill(tab)
 
-        # The tab you were on may not exist on this map. Fall back to the first
-        # one that does — never to nothing, which would leave the pane blank and
-        # the footer offering keys for a row that isn't there.
-        if was not in {_pane(t.name) for t in tabs}:
-            panes.active = _pane(tabs[0].name) if tabs else ""
+            # The tab you were on may not exist on this map. Fall back to the first
+            # one that does — never to nothing, which would leave the pane blank and
+            # the footer offering keys for a row that isn't there.
+            if was not in {_pane(t.name) for t in tabs}:
+                panes.active = _pane(tabs[0].name) if tabs else ""
+        finally:
+            self._filling = False
+        # One announcement for the footer, and deliberately move=False: the grid
+        # cursor is the app's to place on load (it restores where you were), not
+        # something a table rebuild gets to reset.
         self._announce()
 
     def _fill(self, tab: Tab) -> None:
@@ -185,6 +206,13 @@ class MapTabs(Vertical):
         NPCs tab comes up with that NPC highlighted, ready for `e` and `d`. The
         widget still knows nothing about NPCs — it is handed a Ref it cannot read
         and finds the row holding an equal one.
+
+        This is an *explicit* selection, so it announces `move=True`: the grid is
+        meant to follow it (the app guards the one case where it must not — the
+        grid-to-tab sync — with `_syncing`). We say so ourselves rather than lean on
+        `move_cursor` firing `RowHighlighted`, because when the row asked for is the
+        row already under the cursor it fires nothing at all, and the selection
+        would then silently fail to reach the grid.
         """
         for name, refs in self._refs.items():
             if ref not in refs:
@@ -197,6 +225,7 @@ class MapTabs(Vertical):
             table.move_cursor(row=refs.index(ref))
             if switching:
                 self._repaint_when_shown(table)
+            self._announce(move=True)
             return True
         return False
 
@@ -218,12 +247,20 @@ class MapTabs(Vertical):
         self.call_after_refresh(table.refresh)
 
     @on(DataTable.RowHighlighted)
-    @on(TabbedContent.TabActivated)
-    def _moved(self) -> None:
-        self._announce()
+    def _row_highlighted(self) -> None:
+        # Walking within a table *is* moving the cursor — the grid follows.
+        if not self._filling:
+            self._announce(move=True)
 
-    def _announce(self) -> None:
-        self.post_message(self.Selected(self.ref))
+    @on(TabbedContent.TabActivated)
+    def _tab_activated(self) -> None:
+        # A new tab changes what the footer offers, but not where you are pointing
+        # on the map. The grid stays put; only the selection the keys act on moves.
+        if not self._filling:
+            self._announce(move=False)
+
+    def _announce(self, move: bool = False) -> None:
+        self.post_message(self.Selected(self.ref, move))
 
     @on(DataTable.RowSelected)
     def _chose(self, event: DataTable.RowSelected) -> None:

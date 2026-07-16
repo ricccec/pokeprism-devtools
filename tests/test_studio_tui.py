@@ -810,6 +810,90 @@ class TestTheGridIsAWayIn(_Driven):
 
         drive(go())
 
+    def test_switching_a_tab_leaves_the_cursor_where_you_put_it(self) -> None:
+        """A tab switch changes what the footer offers, not where you are pointing.
+
+        The gesture that made this matter: click a tile to place an itemball, then
+        switch to the Items tab to reach "Add new…". If the switch auto-selected an
+        item and dragged the cursor onto it, the ball dropped on top of that item
+        and the linter — rightly — complained of two objects on one cell. The mirror
+        moves the cursor when you walk *within* a table; a tab merely becoming active
+        must not.
+        """
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(150, 60)) as pilot:
+                grid = await self.ready(app, pilot)
+                data = app._data
+
+                # A tab with a placed object on it — the row a broken mirror would
+                # yank the cursor onto. Its first tiled row is the bait.
+                tab = next((t for t in data.tabs
+                            if any(r.tile for r in t.table[1])), None)
+                self.assertIsNotNone(tab, f"{MAP} has no tab with a placed object")
+                bait = next(r.tile for r in tab.table[1] if r.tile)
+
+                # Park the cursor somewhere that is not that object.
+                empty = next((y, x)
+                             for y in range(grid.view.size[0])
+                             for x in range(grid.view.size[1])
+                             if not data.at((y, x)))
+                self.assertNotEqual(empty, bait)
+                grid.cursor = empty
+                await pilot.pause(0.2)
+
+                # The pure tab switch — no row navigation, no focus games.
+                slug = tab.name.lower().replace(" ", "-")
+                app.query_one(MapTabs).query_one(TabbedContent).active = f"pane-{slug}"
+                await pilot.pause(0.3)
+
+                self.assertEqual(grid.cursor, empty,
+                                 "switching tabs dragged the cursor onto the tab's object")
+                # It did announce, though: the footer now acts on that tab's row.
+                self.assertIsNotNone(app._ref, "the tab switch told the footer nothing")
+                await app.action_quit()
+
+        drive(go())
+
+    def test_a_write_keeps_the_map_where_you_scrolled_it(self) -> None:
+        """Every write re-reads the map so the change shows on the grid — and that
+        reload used to fling the map back to the top-left corner, throwing away
+        whatever you had scrolled across to look at. The cursor was put back; the
+        scroll was not, so a map wider than the window jumped every time you touched
+        it. The scroll is restored now too.
+        """
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(150, 60)) as pilot:
+                grid = await self.ready(app, pilot)
+                grid.zoom = 4
+                await pilot.pause(0.2)
+                if grid.virtual_size.width <= grid.size.width:
+                    self.skipTest("the grid fits the window — no scroll to lose")
+
+                grid.cursor = (10, 30)
+                await pilot.pause(0.2)
+                grid.scroll_to(grid.virtual_size.width - grid.size.width, 0,
+                               animate=False)
+                await pilot.pause(0.2)
+                was = grid.scroll_offset
+                self.assertGreater(was.x, 0, "the scroll never moved — bad setup")
+
+                # The tail every mutation runs through: re-read, re-lint, redraw.
+                before = app._data
+                app._after_write()
+                for _ in range(400):
+                    await pilot.pause(0.02)
+                    if app._data is not before:
+                        break
+                await pilot.pause(0.3)          # let show() reset and the restore win
+
+                self.assertEqual(grid.scroll_offset.x, was.x,
+                                 "the reload reset the horizontal scroll")
+                await app.action_quit()
+
+        drive(go())
+
 
 class TestRefresh(unittest.TestCase):
     """The repo is not the studio's alone.

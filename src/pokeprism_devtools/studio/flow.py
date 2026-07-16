@@ -213,7 +213,8 @@ class Flow:
         self._linted = False
         grid = self.query_one("#grid", MapGrid)
         if self._wanted and grid.view is not None:
-            self._keep_cursor = (self._wanted, grid.cursor)
+            scroll = grid.scroll_offset
+            self._keep_cursor = (self._wanted, grid.cursor, (scroll.x, scroll.y))
 
         maps = self.session.maps
         known = [m.label for m in maps]
