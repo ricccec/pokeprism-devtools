@@ -493,6 +493,32 @@ def test_table2_is_not_a_bug(root: Path) -> None:
     path.write_text(original)
 
 
+def test_map_too_big(root: Path) -> None:
+    """A map whose (h+6)×(w+6) exceeds the engine's 1300-block buffer is flagged;
+    30×30 (1296) is the largest that fits and stays clean."""
+    print("\na map bigger than the map buffer is an error")
+    path = root / "constants" / "map_dimension_constants.asm"
+    original = path.read_text()
+
+    def sized(h: int, w: int) -> list:
+        path.write_text(original.replace("\tmapgroup TOWN_A, 10, 10",
+                                         f"\tmapgroup TOWN_A, {h}, {w}"))
+        return [d for d in maplint.run(LintContext(root)) if d.code == "map-too-big"]
+
+    over = sized(40, 40)                       # (46)×(46) = 2116
+    check("an over-buffer map is flagged", len(over) == 1, str(over))
+    check("the finding names the map and the arithmetic",
+          over and "TOWN_A" in over[0].message and "2116" in over[0].message,
+          over[0].message if over else "")
+    check("it points at the mapgroup line, not line 1",
+          over and over[0].line > 1 and "map_dimension" in over[0].path,
+          str(over[0]) if over else "")
+
+    check("30×30 (1296) is under the limit and clean", not sized(30, 30))
+    check("31×30 (1332) is over it", len(sized(31, 30)) == 1)
+    path.write_text(original)
+
+
 def test_messages(root: Path) -> None:
     print("\nfindings say what is wrong and where")
     by_code = {d.code: d for d in maplint.run(LintContext(root))}
@@ -702,6 +728,7 @@ def main() -> int:
         root = _fixture(tmp)
         test_seeded(root)
         test_table2_is_not_a_bug(root)
+        test_map_too_big(root)
         test_messages(root)
         test_suppression(root)
         test_file_suppression(root)
