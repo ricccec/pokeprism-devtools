@@ -24,6 +24,16 @@ _LIST_NAMES = {
 
 _EVENT_RE = re.compile(r"\bEVENT_[A-Z0-9_]+\b")
 
+#: A map may declare at most this many object events. `ReadObjectEvents`
+#: (home/map.asm) copies the list into `wMapObjects`, a fixed `NUM_OBJECTS` = 16
+#: array (constants/wram_constants.asm) whose slot 0 is always the player — so 15
+#: are left for the map. The copy (`CopyMapObjectHeaders`) is *unclamped*: a 16th
+#: entry is written straight past `wMap15Object` into the WRAM that follows. And
+#: it is one shared pool — NPCs, trainers and boulders are all `person_event`s,
+#: counted together, not 15 of each. Fitted against the repo: four maps sit
+#: exactly on 15 and none is over, so >15 is safe to report as an error.
+_MAX_OBJECT_EVENTS = 15
+
 
 def obj_count(ctx: LintContext) -> list[Diagnostic]:
     """Each list's count byte must match the entries under it.
@@ -54,6 +64,40 @@ def obj_count(ctx: LintContext) -> list[Diagnostic]:
                        f"{present - lst.declared_count} will never spawn")
             out.append(Diagnostic("obj-count", Severity.ERROR, path,
                                   lst.count_lineno + 1, msg))
+    return out
+
+
+def object_overflow(ctx: LintContext) -> list[Diagnostic]:
+    """A map declares more object events than the engine's map-object array holds.
+
+    The overworld copies a map's object events into `wMapObjects`, a fixed
+    16-slot WRAM array whose first slot is the player — so 15 remain. The copy
+    doesn't check: `CopyMapObjectHeaders` (home/map.asm) writes `declared_count`
+    entries unconditionally, so a 16th spills past the array's end into whatever
+    WRAM sits after it. Assembles cleanly; corrupts at load. This is keyed on the
+    count byte the engine actually reads, so it doesn't double-report a map whose
+    count is simply wrong — that is :func:`obj_count`'s job.
+
+    NPCs, trainers and boulders are one pool, not three: they are all
+    `person_event`s under the one object-events list, so the 15 is shared.
+    """
+    out = []
+    for const, info in sorted(ctx.map_infos.items()):
+        header = ctx.header(const)
+        if header is None:
+            continue
+        lst = header.lists[ListKind.OBJECT_EVENTS]
+        if lst.declared_count <= _MAX_OBJECT_EVENTS:
+            continue
+        out.append(Diagnostic(
+            "object-overflow", Severity.ERROR, ctx.rel(info.path),
+            lst.count_lineno + 1,
+            f"{lst.declared_count} object events, but the engine loads a map's "
+            f"objects into a {_MAX_OBJECT_EVENTS + 1}-slot array with the player "
+            f"in slot 0 — only {_MAX_OBJECT_EVENTS} fit, and the rest overflow "
+            f"into the WRAM after it at load. NPCs, trainers and boulders all "
+            f"count against this one limit",
+        ))
     return out
 
 
@@ -293,4 +337,5 @@ def sprite_static_walker(ctx: LintContext) -> list[Diagnostic]:
     return out
 
 
-ALL = (obj_count, event_overlap, event_stack, sprite_outdoor, sprite_static_walker)
+ALL = (obj_count, object_overflow, event_overlap, event_stack,
+       sprite_outdoor, sprite_static_walker)
