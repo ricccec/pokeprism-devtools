@@ -519,6 +519,47 @@ def test_map_too_big(root: Path) -> None:
     path.write_text(original)
 
 
+def test_object_overflow(root: Path) -> None:
+    """A map may declare at most 15 object events: the engine copies them into a
+    16-slot WRAM array whose slot 0 is the player. 16 overflows; 15 is the ceiling
+    and stays clean. The count byte is what the engine reads, so a well-formed map
+    of 16 fires this and not obj-count."""
+    print("\na map with more than 15 object events overflows the map-object array")
+    path = root / "maps" / "CaveC.asm"
+    original = path.read_text()
+
+    def with_objects(n: int) -> list:
+        objs = "".join(
+            f"\tperson_event SPRITE_NPC, {2 + i}, 2, SPRITEMOVEDATA_STANDING_DOWN, "
+            f"0, 0, -1, -1, PAL_OW_RED, PERSONTYPE_TEXTFP, 0, SomeScript, -1\n"
+            for i in range(n))
+        path.write_text(
+            "CaveC_MapEventHeader:: db 0, 0\n\n"
+            ".Warps\n\tdb 1\n\twarp_def 1, 1, 1, TOWN_A\n\n"
+            ".CoordEvents\n\tdb 0\n\n"
+            ".BGEvents\n\tdb 0\n\n"
+            f".ObjectEvents\n\tdb {n}\n" + objs)
+        return [d for d in maplint.run(LintContext(root)) if d.code == "object-overflow"]
+
+    over = with_objects(16)
+    check("16 object events is flagged", len(over) == 1, str(over))
+    check("the finding names the count and the limit",
+          bool(over) and "16" in over[0].message and "15" in over[0].message,
+          over[0].message if over else "")
+    check("it points at the ObjectEvents count line in the map file",
+          bool(over) and over[0].path == "maps/CaveC.asm" and over[0].line > 1,
+          str(over[0]) if over else "")
+    # A clean map of 16 has its count byte right, so obj-count stays quiet — the
+    # two rules must not both fire on the same map.
+    also = [d for d in maplint.run(LintContext(root))
+            if d.code == "obj-count" and d.path == "maps/CaveC.asm"]
+    check("obj-count does not double-report the same map", not also, str(also))
+
+    check("15 object events is the ceiling and clean", not with_objects(15))
+    check("17 is over it", len(with_objects(17)) == 1)
+    path.write_text(original)
+
+
 def test_messages(root: Path) -> None:
     print("\nfindings say what is wrong and where")
     by_code = {d.code: d for d in maplint.run(LintContext(root))}
@@ -729,6 +770,7 @@ def main() -> int:
         test_seeded(root)
         test_table2_is_not_a_bug(root)
         test_map_too_big(root)
+        test_object_overflow(root)
         test_messages(root)
         test_suppression(root)
         test_file_suppression(root)
