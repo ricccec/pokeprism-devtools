@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -49,35 +50,70 @@ _LABEL_RE = re.compile(r"^([A-Za-z_]\w*):")
 _PALETTE_RE = re.compile(r"\bPAL_OW_\w+")
 
 
+@dataclass(frozen=True)
+class Appearance:
+    """One trainer on one map: the class it battles as, and what it wears there.
+
+    `palette` is `None` when the person_event carries no `PAL_OW_*` name — a bare
+    number, say. `map` is the file stem (``Route55``) and `line` is 1-based, so a
+    caller can point an editor or a diagnostic straight at the person_event.
+    """
+    cls: str
+    sprite: str
+    palette: str | None
+    map: str
+    line: int
+
+
 @lru_cache(maxsize=4)
-def _counts(root: Path) -> dict[str, Counter[tuple[str, str]]]:
-    """class -> how often each (sprite, palette) pair is worn by it."""
-    out: dict[str, Counter[tuple[str, str]]] = {}
+def appearances(root: Path) -> tuple[Appearance, ...]:
+    """Every trainer person_event in the repo, resolved to its class.
+
+    The one parse the rest of this module is built on. A map keeps its scripts
+    above its event header, so a single pass collects both halves: which class
+    each script block battles as (`trainer FLAG, CLASS, …`), and which sprite the
+    person_event pointing at that block wears. A person_event whose pointer names
+    no script block here — a plain NPC, or a `loadtrainer` battle with no
+    `trainer` macro — resolves to no class and is left out.
+    """
+    out: list[Appearance] = []
     for path in sorted((root / "maps").glob("*.asm")):
         try:
             lines = path.read_text(errors="replace").split("\n")
         except OSError:
             continue
 
-        # A map keeps its scripts above its event header, so one pass collects
-        # both halves: which class each script block battles as, and which
-        # sprite the person_event pointing at it wears.
         classes: dict[str, str] = {}
-        people: list[tuple[str, str, str]] = []
+        people: list[tuple[str, str | None, str, int]] = []
         label = ""
-        for line in lines:
+        for i, line in enumerate(lines, start=1):
             if m := _LABEL_RE.match(line):
                 label = m.group(1)
             elif m := _TRAINER_RE.match(line):
                 if label:
                     classes[label] = m.group(1)
             elif m := _PERSON_RE.match(line):
-                if pal := _PALETTE_RE.search(m["palette"]):
-                    people.append((m["sprite"], pal.group(0), m["pointer"]))
+                pal = _PALETTE_RE.search(m["palette"])
+                people.append((m["sprite"], pal.group(0) if pal else None,
+                               m["pointer"], i))
 
-        for sprite, palette, pointer in people:
+        for sprite, palette, pointer, lineno in people:
             if cls := classes.get(pointer):
-                out.setdefault(cls, Counter())[(sprite, palette)] += 1
+                out.append(Appearance(cls, sprite, palette, path.stem, lineno))
+    return tuple(out)
+
+
+@lru_cache(maxsize=4)
+def _counts(root: Path) -> dict[str, Counter[tuple[str, str | None]]]:
+    """class -> how often each (sprite, palette) pair is worn by it.
+
+    A bare-palette trainer still *wears the sprite*, so it counts toward
+    who-wears-what (:func:`classes_for`); it just says nothing about the palette
+    a class prefers, so :func:`defaults` skips it when choosing one.
+    """
+    out: dict[str, Counter[tuple[str, str | None]]] = {}
+    for a in appearances(root):
+        out.setdefault(a.cls, Counter())[(a.sprite, a.palette)] += 1
     return out
 
 
@@ -92,8 +128,23 @@ def defaults(root: Path, cls: str) -> dict[str, str]:
     counts = _counts(root).get(cls)
     if not counts:
         return {}
-    (sprite, palette), _ = counts.most_common(1)[0]
-    return {"sprite": sprite, "palette": palette}
+    # The modal sprite, over every appearance — a bare-palette trainer wears a
+    # sprite as surely as any other.
+    sprites: Counter[str] = Counter()
+    for (sprite, _pal), n in counts.items():
+        sprites[sprite] += n
+    sprite = sprites.most_common(1)[0][0]
+    out = {"sprite": sprite}
+    # The palette that sprite wears most often, ignoring the appearances that
+    # named none: a class with only bare-palette trainers offers its sprite and
+    # leaves the palette field as it was, rather than inventing PAL_OW_RED.
+    palettes: Counter[str] = Counter()
+    for (spr, pal), n in counts.items():
+        if spr == sprite and pal is not None:
+            palettes[pal] += n
+    if palettes:
+        out["palette"] = palettes.most_common(1)[0][0]
+    return out
 
 
 def classes_for(root: Path, sprite: str) -> list[str]:
