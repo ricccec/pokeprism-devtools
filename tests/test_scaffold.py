@@ -248,6 +248,8 @@ def test_npc(root: Path) -> None:
     check("dialogue opens with ctxt", '\tctxt "Hi there,"' in text)
     check("the second row is `line`", '\tline "traveller."' in text)
     check("a new textbox is `para`", '\tpara "Mind the"' in text)
+    check("a blank line separates the para from the box above it",
+          '\tline "traveller."\n\n\tpara "Mind the"' in text)
     check("and it ends with done", text.count("\tdone") == 2)
     check("the text block sits above the event header",
           text.index("TownA_NPC_1:") < text.index("TownA_MapEventHeader::"))
