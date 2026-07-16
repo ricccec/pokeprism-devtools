@@ -27,6 +27,7 @@ from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
 from pokeprism_devtools.shared import eventheader as eh  # noqa: E402
 from pokeprism_devtools.shared.edits import apply_edits  # noqa: E402
 from pokeprism_devtools.wiring import connections as C, objedit as O  # noqa: E402
+from pokeprism_devtools.wiring import mapresize as MR  # noqa: E402
 from pokeprism_devtools.wiring import removal as R, warpdel as WD  # noqa: E402
 from pokeprism_devtools.wiring import warps as W  # noqa: E402
 from pokeprism_devtools.wiring.scaffold import Object  # noqa: E402
@@ -253,6 +254,167 @@ def test_paired_warp(root: Path) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# resizing                                                                    #
+# --------------------------------------------------------------------------- #
+
+def _resize_fixture(tmp: Path) -> Path:
+    """One map (Grove, 4x5 blocks) with a warp, a trigger, a signpost and an
+    NPC standing near every edge, a connection to prove the note fires, and a
+    second pair of labels (AliasA/AliasB) sharing one `.ablk` to prove the
+    aliasing refusal. Copy this with `shutil.copytree` per scenario rather
+    than mutating it in place — the scenarios below disagree about what
+    should happen to Grove, and a shared root would make them order-dependent.
+    """
+    root = tmp / "resize_template"
+    (root / "constants").mkdir(parents=True)
+    (root / "maps" / "blk").mkdir(parents=True)
+
+    (root / "constants" / "map_dimension_constants.asm").write_text(
+        "\tconst_def\n\tnewgroup ; 1\n"
+        "\tmapgroup GROVE, 4, 5\n"
+        "\tmapgroup ALIAS_A, 2, 2\n"
+    )
+    (root / "maps" / "second_map_headers.asm").write_text(
+        'SECTION "Second Map Headers", ROMX\n'
+        "\tmap_header_2 Grove, GROVE, $63, NORTH\n"
+        "\tconnection north, CAVE, Cave, 0, 0, 3\n"
+        "\n"
+        "\tmap_header_2 AliasA, ALIAS_A, $1, 0\n"
+    )
+    (root / "maps" / "blockdata.asm").write_text(
+        "Grove_BlockData:\n\tINCBIN \"maps/blk/Grove.ablk\"\n"
+        "AliasA_BlockData:\n"
+        "AliasB_BlockData:\n\tINCBIN \"maps/blk/Alias.ablk\"\n"
+    )
+    (root / "maps" / "blk" / "Grove.ablk").write_bytes(bytes(range(1, 21)))  # 4x5
+    (root / "maps" / "blk" / "Alias.ablk").write_bytes(bytes(range(1, 5)))   # 2x2
+
+    # y in [0,8), x in [0,10) — 4 blocks tall, 5 wide, 2 tiles per block.
+    (root / "maps" / "Grove.asm").write_text(
+        "Grove_MapEventHeader:: db 0, 0\n\n"
+        ".Warps\n\tdb 1\n"
+        "\twarp_def 7, 3, 1, CAVE\n\n"
+        ".CoordEvents\n\tdb 1\n"
+        "\txy_trigger 0, 6, 2, .trig\n\n"
+        ".BGEvents\n\tdb 1\n"
+        "\tsignpost 2, 2, SIGNPOST_TEXT, .sign\n\n"
+        ".ObjectEvents\n\tdb 1\n"
+        "\tperson_event SPRITE_NPC, 1, 8, SPRITEMOVEDATA_STANDING_DOWN, 0, 0, "
+        "-1, -1, PAL_OW_RED, PERSONTYPE_TEXTFP, 0, .npc, -1\n"
+    )
+    return root
+
+
+def test_resize(tmp: Path) -> None:
+    template = _resize_fixture(tmp)
+    made = [0]
+
+    def fresh() -> Path:
+        made[0] += 1
+        dest = tmp / f"resize_{made[0]}"
+        shutil.copytree(template, dest)
+        return dest
+
+    print("\ngrow bottom/right moves the grid and leaves every coordinate alone")
+    root = fresh()
+    original = (root / "maps/blk/Grove.ablk").read_bytes()
+    change = MR.resize(root, "GROVE", "bottom", "grow", 2)
+    check("only the dims and the .ablk move — no maps/Grove.asm edit",
+          {e.path for e in change.changes} == {MR.DIMENSIONS, "maps/blk/Grove.ablk"},
+          str([e.path for e in change.changes]))
+    blk = next(e for e in change.changes if e.path == "maps/blk/Grove.ablk")
+    check("grown by the right count", len(blk.data) == 30, str(len(blk.data)))
+    check("the old blocks are all still there, untouched", blk.data[:20] == original)
+    check("the new rows are the border block", blk.data[20:] == bytes([0x63]) * 10,
+          blk.data[20:].hex())
+    check("and it warns about the connection",
+          any("connection(s) may need review" in n for n in change.notes),
+          str(change.notes))
+    apply_edits(root, change.changes, dry_run=False)
+    header = eh.parse_map(root / "maps/Grove.asm")
+    check("object coordinates are unchanged", header.warps[0].coords == (7, 3))
+    check("the map file still round-trips byte-for-byte",
+          header.to_text() == (root / "maps/Grove.asm").read_text())
+    dims_text = (root / MR.DIMENSIONS).read_text()
+    check("the dimension constant grew", "mapgroup GROVE, 6, 5" in dims_text, dims_text)
+
+    print("\ngrow top shifts every coordinate down by 2 tiles per block")
+    root = fresh()
+    change = MR.resize(root, "GROVE", "top", "grow", 1)
+    check("this one touches the map file too",
+          {e.path for e in change.changes}
+          == {MR.DIMENSIONS, "maps/blk/Grove.ablk", "maps/Grove.asm"})
+    apply_edits(root, change.changes, dry_run=False)
+    header = eh.parse_map(root / "maps/Grove.asm")
+    check("the warp moved down 2 tiles", header.warps[0].coords == (9, 3),
+          str(header.warps[0].coords))
+    check("the trigger too", header.coord_events[0].coords == (8, 2))
+    check("the signpost too", header.bg_events[0].coords == (4, 2))
+    check("and the person", header.object_events[0].coords == (3, 8))
+    check("the note names what moved and how far",
+          any("shifted 4 object(s) 2 tiles down" in n for n in change.notes),
+          str(change.notes))
+
+    print("\ngrow left shifts every x the same way, and y not at all")
+    root = fresh()
+    change = MR.resize(root, "GROVE", "left", "grow", 1)
+    blk = next(e for e in change.changes if e.path == "maps/blk/Grove.ablk")
+    check("the fill column is the border block", blk.data[0] == 0x63, hex(blk.data[0]))
+    apply_edits(root, change.changes, dry_run=False)
+    header = eh.parse_map(root / "maps/Grove.asm")
+    check("x shifted by 2, y untouched", header.warps[0].coords == (7, 5),
+          str(header.warps[0].coords))
+
+    print("\nshrink refuses when something stands in the strip being removed")
+    for edge, blocks, wants in (
+        ("bottom", 1, "warp_def at (7, 3)"),
+        ("top", 1, "person_event at (1, 8)"),
+        ("right", 1, "person_event at (1, 8)"),
+    ):
+        root = fresh()
+        try:
+            MR.resize(root, "GROVE", edge, "shrink", blocks)
+            check(f"shrinking {edge} under what's standing there is refused", False)
+        except MR.EditError as exc:
+            check(f"shrinking {edge} under what's standing there is refused",
+                  wants in str(exc), str(exc))
+
+    print("\nshrink refuses past the map's own extent")
+    root = fresh()
+    try:
+        MR.resize(root, "GROVE", "top", "shrink", 4)
+        check("shrinking a 4-block axis by 4 is refused", False)
+    except MR.EditError as exc:
+        check("shrinking a 4-block axis by 4 is refused",
+              "only 4 blocks" in str(exc), str(exc))
+
+    print("\na map whose .ablk is shared with another map's label refuses entirely")
+    root = fresh()
+    try:
+        MR.resize(root, "ALIAS_A", "top", "grow", 1)
+        check("a shared .ablk refuses the whole resize", False)
+    except MR.EditError as exc:
+        check("a shared .ablk refuses the whole resize",
+              "AliasB" in str(exc), str(exc))
+
+    print("\ngrow N then shrink N from the same edge round-trips exactly")
+    root = fresh()
+    before_map = (root / "maps/Grove.asm").read_text()
+    before_dims = (root / MR.DIMENSIONS).read_text()
+    before_blk = (root / "maps/blk/Grove.ablk").read_bytes()
+
+    grown = MR.resize(root, "GROVE", "top", "grow", 2)
+    apply_edits(root, grown.changes, dry_run=False)
+    shrunk = MR.resize(root, "GROVE", "top", "shrink", 2)
+    apply_edits(root, shrunk.changes, dry_run=False)
+
+    check("the map file is back to byte-identical",
+          (root / "maps/Grove.asm").read_text() == before_map)
+    check("so is the dimension line", (root / MR.DIMENSIONS).read_text() == before_dims)
+    check("and the blocks", (root / "maps/blk/Grove.ablk").read_bytes() == before_blk)
+
+
+# --------------------------------------------------------------------------- #
 # against the real repo                                                       #
 # --------------------------------------------------------------------------- #
 
@@ -324,6 +486,26 @@ def test_real_repo(tmp: Path) -> None:
         header = eh.parse_map(path)
         check(f"{label}.asm still round-trips byte-for-byte",
               header.to_text() == path.read_text())
+
+    print("\nresizing a real map that now has a connection")
+    before_resize = Counter((d.code, d.path) for d in maplint.run(LintContext(scratch)))
+    resized = MR.resize(scratch, "CASTRO_FOREST", "bottom", "grow", 1)
+    check("touches the dimension constant and the block grid",
+          {e.path for e in resized.changes}
+          == {MR.DIMENSIONS, "maps/blk/CastroForest.ablk"},
+          str([e.path for e in resized.changes]))
+    check("and warns that the connection may need a look",
+          any("connection(s) may need review" in n for n in resized.notes),
+          str(resized.notes))
+    apply_edits(scratch, resized.changes, dry_run=False)
+
+    after_resize = Counter((d.code, d.path) for d in maplint.run(LintContext(scratch)))
+    new_resize = {k: after_resize[k] - before_resize.get(k, 0)
+                  for k in after_resize if after_resize[k] > before_resize.get(k, 0)
+                  and not k[0].startswith("conn-")}
+    check("no new non-connection findings anywhere", not new_resize, str(new_resize))
+    check("CastroForest.asm still parses",
+          eh.parse_map(scratch / "maps/CastroForest.asm") is not None)
 
     test_editing(scratch, before)
     test_deleting(scratch, before)
@@ -634,6 +816,7 @@ def main() -> int:
         test_plan(root)
         test_connect(root)
         test_paired_warp(root)
+        test_resize(tmp)
         test_real_repo(tmp)
 
     print()

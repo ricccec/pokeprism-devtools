@@ -23,10 +23,12 @@ pair, so **every existing save file would drop the player onto the wrong map.**
 That is not something a form field should be able to do while you were looking at
 the music dropdown.
 
-*The height and the width* are read-only. The `mapgroup` line in
+*The height and the width* are not fields here. The `mapgroup` line in
 `constants/map_dimension_constants.asm` is where they live, and changing them
-without resizing the `.blk` behind them corrupts the map. Resizing is
-polished-map's job, and that is a standing decision.
+without resizing the `.blk` behind them — and, at the top or left, every
+object's coordinates — corrupts the map. That is a real operation, with its own
+refusals, and it lives in `wiring/mapresize.py` rather than as a field on this
+form.
 
 *conn_flags* is read-only because it is not a fact about the map — it is a summary
 of the `connection` lines underneath it, and `connections._set_flag` already
