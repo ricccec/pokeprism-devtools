@@ -32,14 +32,7 @@ def _map_sprite_list(ctx: LintContext, const: str) -> list[str] | None:
     else:
         sprites = [obj.sprite for obj in header.object_events]
 
-    return [_player_sprite(ctx), *sprites]
-
-
-def _player_sprite(ctx: LintContext) -> str:
-    for candidate in ("SPRITE_P0", "SPRITE_PLAYER", "SPRITE_CHRIS"):
-        if candidate in ctx.sprites.sprite_ids:
-            return candidate
-    return "SPRITE_P0"
+    return [ctx.sprites.player_sprite(), *sprites]
 
 
 def sprite_vram(ctx: LintContext) -> list[Diagnostic]:
