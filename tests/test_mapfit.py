@@ -471,6 +471,51 @@ def test_manual_placement(tmp: Path) -> None:
           any("not both" in p for p in both.validate(root)), str(both.validate(root)))
 
 
+def test_reused_section_name_appends(tmp: Path) -> None:
+    """An own-section placement (`*_section`, what the new-map form sets) whose
+    name already exists must *append into* that section, not write a second
+    `SECTION "<name>"` the linker would split back apart. A section name reused in
+    the form is the studio's way of saying 'put it here', same as `*_into`."""
+    print("\nreusing an existing section name appends, it does not duplicate")
+    root = _fixture_repo(tmp, "reuse")
+    spec = _spec_for_fixture()
+    # Name each blob's own section after one the fixture already has.
+    spec.blockdata_section = "Map block data 1"
+    spec.script_section = "Map Scripts 1"
+    spec.secondary_section = "Second Map Headers"
+
+    e_blk = mapwire.wire_blockdata(root, spec)
+    e_scr = mapwire.wire_script(root, spec)
+    e_sec = mapwire.wire_secondary_header(root, spec)
+    mapwire.apply_edits(root, [e_blk, e_scr, e_sec], dry_run=False)
+
+    blk = (root / "maps" / "blockdata.asm").read_text()
+    check("blockdata joined the existing section, no duplicate",
+          blk.count('SECTION "Map block data 1"') == 1
+          and "MtEmberSmallRoom_BlockData:" in blk, blk)
+
+    scr = (root / "maps" / "map_scripts.asm").read_text()
+    check("script joined the existing section, above the guard",
+          scr.count('SECTION "Map Scripts 1"') == 1
+          and scr.index('INCLUDE "maps/MtEmberSmallRoom.asm"') < scr.index("DO NOT ADD"),
+          scr)
+
+    sec = (root / "maps" / "second_map_headers.asm").read_text()
+    check("secondary joined the existing section, no per-map name",
+          sec.count('SECTION "Second Map Headers"') == 1
+          and 'SECTION "Second Map Header MtEmberSmallRoom"' not in sec
+          and "map_header_2 MtEmberSmallRoom," in sec, sec)
+
+    check("each editor reports appending, not adding",
+          all("appended into existing section" in e.detail
+              for e in (e_blk, e_scr, e_sec)),
+          str([e.detail for e in (e_blk, e_scr, e_sec)]))
+
+    again = [mapwire.wire_blockdata(root, spec), mapwire.wire_script(root, spec),
+             mapwire.wire_secondary_header(root, spec)]
+    check("still idempotent on re-run", not any(e.changed for e in again))
+
+
 def test_manual_placement_fit(tmp: Path) -> None:
     """A hand-placed blob skips the packer, so nothing else checks it fits —
     resolve_manual is the only thing standing between a bad bank and a confusing
@@ -582,6 +627,7 @@ def main() -> int:
         test_mapspec(tmp)
         test_wiring(tmp)
         test_manual_placement(tmp)
+        test_reused_section_name_appends(tmp)
         test_manual_placement_fit(tmp)
         test_shared_section_detection(tmp)
         test_pinning(tmp)
