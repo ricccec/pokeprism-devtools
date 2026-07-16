@@ -15,7 +15,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pokeprism_devtools.shared import blockdata, party as party_mod, people, savefile, species, symfile
+from pokeprism_devtools.shared import (
+    blockdata,
+    party as party_mod,
+    people,
+    savefile,
+    species,
+    spritevram,
+    symfile,
+)
 
 
 def load_state(path: Path, presets_dir: Path) -> dict:
@@ -162,13 +170,41 @@ def apply_state(
             keep_npcs=keep_people,
         )
         if not keep_people:
+            events = blockdata.object_events(
+                rom_path, syms, final_group, final_map, name=map_label or ""
+            )
             people_changes |= people.load_map_npcs(
                 sav,
                 map_objects_offset=offsets["wMapObjects"]["sav_offset"],
                 map_objects_size=offsets["wMapObjects"]["size"],
-                events=blockdata.object_events(
-                    rom_path, syms, final_group, final_map, name=map_label or ""
-                ),
+                events=events,
+            )
+            # Instantiate the NPCs that fall on screen into wObjectStructs — the
+            # Continue path loads their graphics (LoadGraphics rebuilds the VRAM
+            # allocator) but never runs InitializeVisibleSprites, so without this
+            # they exist in wMapObjects yet render as nothing. The SPRITE_TILE we
+            # write has to agree with that rebuilt allocator, which is what
+            # spritevram reproduces.
+            player_sprite = sav.data[offsets["wObjectStructs"]["sav_offset"] + people.OBJ_SPRITE]
+            if blockdata.is_outdoor(bd.permission):
+                pool = spritevram.outdoor_sprite_ids(
+                    rom_path, syms, final_group, name=map_label or ""
+                )
+            else:
+                pool = [ev[0] for ev in events]  # indoor: the map's own NPC sprites
+            npc_sprites = [ev[0] for ev in events]
+            tiles = spritevram.sprite_tiles(rom_path, syms, player_sprite, pool)
+            people_changes |= people.instantiate_visible_sprites(
+                sav,
+                object_structs_offset=offsets["wObjectStructs"]["sav_offset"],
+                map_objects_offset=offsets["wMapObjects"]["sav_offset"],
+                map_objects_size=offsets["wMapObjects"]["size"],
+                x=final_x,
+                y=final_y,
+                sprite_tiles=tiles,
+                sprite_palettes=spritevram.sprite_palettes(rom_path, syms, npc_sprites),
+                movement_data=spritevram.movement_data(rom_path, syms),
+                default_tile=tiles.get(player_sprite, 0),
             )
         changes.append(
             "people: " + ", ".join(f"{k}={v}" for k, v in people_changes.items())

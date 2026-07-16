@@ -63,6 +63,16 @@ CONNECTION_STRIP_DEPTH = 3
 #: side — the stride `\7_WIDTH + 6` the connection macro bakes into its pointers.
 OVERWORLD_BORDER = 2 * PADDING
 
+#: Map permissions (constants/map_constants.asm). CheckOutdoorMap treats TOWN and
+#: ROUTE as outdoor; on those the overworld draws sprites from the map *group*'s
+#: OutdoorSprites pool rather than the map's own NPC list.
+TOWN, ROUTE = 1, 2
+
+
+def is_outdoor(permission: int) -> bool:
+    """Whether `AddMapSprites` uses the group's OutdoorSprites pool for this map."""
+    return permission in (TOWN, ROUTE)
+
 
 @dataclass(frozen=True)
 class BlockData:

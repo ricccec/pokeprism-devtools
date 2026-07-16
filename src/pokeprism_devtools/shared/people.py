@@ -38,13 +38,53 @@ OBJ_INIT_X          = 20
 OBJ_INIT_Y          = 21
 OBJECT_STRUCT_LEN   = 40
 
+# Object struct fields we populate at instantiation (canonical names, from the
+# `object struct` const block in `constants/map_constants.asm`). The player-slot
+# reset above uses its own STANDING_/LAST_ aliases for some of these offsets.
+OBJ_SPRITE           = 0
+OBJ_MAP_OBJECT_INDEX = 1
+OBJ_SPRITE_TILE      = 2
+OBJ_MOVEMENTTYPE     = 3
+OBJ_FLAGS1           = 4
+OBJ_FLAGS2           = 5
+OBJ_PALETTE          = 6
+OBJ_FACING           = 8
+OBJ_ACTION           = 11
+OBJ_FACING_STEP      = 13
+OBJ_NEXT_MAP_X       = 16
+OBJ_NEXT_MAP_Y       = 17
+OBJ_MAP_X            = 18
+OBJ_MAP_Y            = 19
+OBJ_RADIUS           = 22
+OBJ_SPRITE_X         = 23
+OBJ_SPRITE_Y         = 24
+OBJ_RANGE            = 32
+
+#: Values CopyTempObjectToObjectStruct writes verbatim: the struct starts settled
+#: at STEP_TYPE_00 with a standing facing-step, and the engine evolves both on the
+#: first frame (as it would after any warp).
+STEP_TYPE_00 = 0
+STANDING = 0xFF
+
 # Map object layout (from `constants/map_constants.asm:93-110`). 16 bytes.
 MAPOBJ_OBJECT_STRUCT_ID = 0
 MAPOBJ_SPRITE           = 1
 MAPOBJ_Y_COORD          = 2
 MAPOBJ_X_COORD          = 3
+MAPOBJ_MOVEMENT         = 4
+MAPOBJ_RADIUS           = 5
+MAPOBJ_COLOR            = 8
+MAPOBJ_PARAMETER        = 9
 MAPOBJ_E                = 14   # first of the two unused trailing bytes
 MAP_OBJECT_LEN          = 16
+
+# wMapObjects holds NUM_OBJECTS = 16 slots (slot 0 the player, 1..15 the NPCs).
+NUM_OBJECTS = 16
+
+# InitializeVisibleSprites' screen window (constants/map_constants.asm):
+# an NPC shows when (mapobj_coord + 1 - player_coord) is in [0, SCREEN).
+MAPOBJECT_SCREEN_HEIGHT = 11
+MAPOBJECT_SCREEN_WIDTH  = 12
 
 #: The span CopyMapObjectHeaders copies out of a `person_event`: everything from
 #: the sprite up to the unused bytes, which is exactly what the macro emits.
@@ -188,3 +228,170 @@ def load_map_npcs(
             f"{len(events) - room} object event(s) past the {room} available slots"
         )
     return changes
+
+
+def _incremented_radius(radius: int) -> int:
+    """`InitRadius` — increment the low and high nibble of `radius` separately.
+
+    The engine does `inc a`, then adds `$10` unless that inc already carried into
+    the high nibble (i.e. unless the low nibble wrapped to 0). So `$00 -> $11`.
+    """
+    a = (radius + 1) & 0xFF
+    return a if (a & 0x0F) == 0 else (a + 0x10) & 0xFF
+
+
+def instantiate_visible_sprites(
+    sav,
+    *,
+    object_structs_offset: int,
+    map_objects_offset: int,
+    map_objects_size: int,
+    x: int,
+    y: int,
+    sprite_tiles: dict[int, int],
+    sprite_palettes: dict[int, int],
+    movement_data: list[tuple[int, int, int, int, int]],
+    default_tile: int = 0,
+    global_offset_x: int = 0,
+    global_offset_y: int = 0,
+) -> dict:
+    """Populate `wObjectStructs` for the NPCs on screen, as the engine would.
+
+    `MAPSETUP_CONTINUE` never runs `InitializeVisibleSprites`, so a patched save's
+    on-screen NPCs are defined in `wMapObjects` (via `load_map_npcs`) but never
+    instantiated — invisible. This walks `wMapObjects[1..]`, and for each NPC whose
+    map coords fall in the player's screen window, fills the next free object
+    struct exactly as `CopyMapObjectToObjectStruct` + `CopySpriteMovementData` do,
+    then binds the map object to that struct (its `OBJECT_STRUCT_ID`).
+
+    Only the fields those two routines set are written; the engine re-derives the
+    animated remainder (step type, walking direction) on the first frame, the same
+    as it does right after a normal warp. Call *after* `reset_player_and_clear_npcs`
+    (which zeroes the slots) and `load_map_npcs` (which fills `wMapObjects`).
+
+    The three lookups come from `spritevram` (`sprite_tiles`, `sprite_palettes`,
+    `movement_data`); `default_tile` is the player's tile, the value `GetSpriteVTile`
+    falls back to for a sprite absent from the VRAM list. `x`/`y` are the raw
+    player coords (`wXCoord`/`wYCoord`); the map coords in `wMapObjects` already
+    carry the `+4` the `person_event` macro added, and the window check mixes the
+    two exactly as the engine does.
+    """
+    n_slots = map_objects_size // MAP_OBJECT_LEN
+    struct_index = 1  # object struct 0 is the player
+    instantiated: list[tuple[int, int, int]] = []
+
+    for mi in range(1, min(n_slots, NUM_OBJECTS)):
+        mo = map_objects_offset + mi * MAP_OBJECT_LEN
+        sprite = sav.data[mo + MAPOBJ_SPRITE]
+        if sprite == 0:
+            continue
+        if sav.data[mo + MAPOBJ_OBJECT_STRUCT_ID] != OBJECT_STRUCT_ID_NONE:
+            continue  # already bound to a struct
+
+        mx = sav.data[mo + MAPOBJ_X_COORD]
+        my = sav.data[mo + MAPOBJ_Y_COORD]
+        # An 8-bit underflow (NPC behind the player) wraps to a large value, so the
+        # single upper-bound test rejects it too — exactly the engine's `jr c` + `cp`.
+        if (mx + 1 - x) & 0xFF >= MAPOBJECT_SCREEN_WIDTH:
+            continue
+        if (my + 1 - y) & 0xFF >= MAPOBJECT_SCREEN_HEIGHT:
+            continue
+        if struct_index >= NUM_OBJECT_STRUCTS:
+            break  # no free struct — CopyObjectStruct returns carry and gives up
+
+        sav.data[mo + MAPOBJ_OBJECT_STRUCT_ID] = struct_index
+        _write_object_struct(
+            sav,
+            object_structs_offset + struct_index * OBJECT_STRUCT_LEN,
+            map_object_index=mi,
+            sprite=sprite,
+            movement=sav.data[mo + MAPOBJ_MOVEMENT],
+            radius=sav.data[mo + MAPOBJ_RADIUS],
+            color=sav.data[mo + MAPOBJ_COLOR],
+            param=sav.data[mo + MAPOBJ_PARAMETER],
+            mx=mx,
+            my=my,
+            px=x,
+            py=y,
+            sprite_tiles=sprite_tiles,
+            sprite_palettes=sprite_palettes,
+            movement_data=movement_data,
+            default_tile=default_tile,
+            global_offset_x=global_offset_x,
+            global_offset_y=global_offset_y,
+        )
+        instantiated.append((struct_index, mi, sprite))
+        struct_index += 1
+
+    if instantiated:
+        desc = ", ".join(f"slot {s}=sprite {sp} (map obj {mi})" for s, mi, sp in instantiated)
+    else:
+        desc = "(none on screen)"
+    return {"visible_sprites": f"instantiated {len(instantiated)}: {desc}"}
+
+
+def _write_object_struct(
+    sav,
+    p: int,
+    *,
+    map_object_index: int,
+    sprite: int,
+    movement: int,
+    radius: int,
+    color: int,
+    param: int,
+    mx: int,
+    my: int,
+    px: int,
+    py: int,
+    sprite_tiles: dict[int, int],
+    sprite_palettes: dict[int, int],
+    movement_data: list[tuple[int, int, int, int, int]],
+    default_tile: int,
+    global_offset_x: int,
+    global_offset_y: int,
+) -> None:
+    """Write one instantiated NPC into the object struct at file offset `p`.
+
+    Mirrors `CopyTempObjectToObjectStruct` + `CopySpriteMovementData`. The slot is
+    zeroed first so only the settled fields are set (the engine finds an empty slot
+    for the same reason).
+    """
+    sav.data[p : p + OBJECT_STRUCT_LEN] = bytes(OBJECT_STRUCT_LEN)
+
+    sav.data[p + OBJ_MAP_OBJECT_INDEX] = map_object_index
+
+    # CopySpriteMovementData: movement type, then the table row's facing/action/
+    # flags. GetSpriteMovementFunction clamps an out-of-range movement to 0.
+    mv = movement if 0 <= movement < len(movement_data) else 0
+    facing_raw, action, flags1, flags2, move_palette = movement_data[mv]
+    sav.data[p + OBJ_MOVEMENTTYPE] = movement
+    sav.data[p + OBJ_FACING] = (facing_raw << 2) & 0x0C
+    sav.data[p + OBJ_ACTION] = action
+    sav.data[p + OBJ_FLAGS1] = flags1
+    sav.data[p + OBJ_FLAGS2] = flags2
+
+    # Palette: the sprite's default, overridden by the map object's colour nibble
+    # when set, then ORed with the movement row's palette flags.
+    palette = sprite_palettes.get(sprite, 0)
+    if color & 0xF0:
+        palette = (color >> 4) & 0x07
+    sav.data[p + OBJ_PALETTE] = palette | move_palette
+
+    # Coords: the map object's own X/Y seed INIT / NEXT_MAP / MAP; SPRITE_X/Y are
+    # the pixel offset from the player, (Δtile & $f) << 4 minus the global offset.
+    sav.data[p + OBJ_NEXT_MAP_X] = mx
+    sav.data[p + OBJ_MAP_X] = mx
+    sav.data[p + OBJ_INIT_X] = mx
+    sav.data[p + OBJ_NEXT_MAP_Y] = my
+    sav.data[p + OBJ_MAP_Y] = my
+    sav.data[p + OBJ_INIT_Y] = my
+    sav.data[p + OBJ_SPRITE_X] = ((((mx - px) & 0x0F) << 4) - global_offset_x) & 0xFF
+    sav.data[p + OBJ_SPRITE_Y] = ((((my - py) & 0x0F) << 4) - global_offset_y) & 0xFF
+
+    sav.data[p + OBJ_SPRITE] = sprite
+    sav.data[p + OBJ_SPRITE_TILE] = sprite_tiles.get(sprite, default_tile)
+    sav.data[p + OBJ_STEP_TYPE] = STEP_TYPE_00
+    sav.data[p + OBJ_FACING_STEP] = STANDING
+    sav.data[p + OBJ_RADIUS] = _incremented_radius(radius)
+    sav.data[p + OBJ_RANGE] = param
