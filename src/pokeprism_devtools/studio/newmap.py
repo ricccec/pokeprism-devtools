@@ -95,8 +95,10 @@ class NewMap(Action):
         Field("phone", "Phone service", kind="int", default="0"),
         Field("border_block", "Border block", default="0",
               help="the block the world is made of past the edge"),
-        Field("conn_flags", "Connection flags", default="0",
-              help="which edges have a neighbour: 0, NORTH, or NORTH | EAST"),
+        # No connection flags: a new map starts with no neighbours, and connections
+        # are their own form — `connections._set_flag` recomputes this nibble from
+        # the edges that are actually there, so a value typed here would only be a
+        # second place to keep in step with them.
         Field("bank", "Bank", default="",
               help="blank: leave the sections floating for prism-mapfit to pack. "
                    "Or pin all three yourself, e.g. $7C"),
@@ -244,9 +246,17 @@ class NewMap(Action):
         dims = root / "constants/map_dimension_constants.asm"
         if spec.const in {d.name for d in maps_mod.parse_maps(dims)}:
             out.append(f"{spec.const} is already a map id")
-        for rel in (spec.script_asm, spec.blk):
-            if (root / rel).exists():
-                out.append(f"{rel} already exists — it belongs to something")
+        if (root / spec.script_asm).exists():
+            out.append(f"{spec.script_asm} already exists — it belongs to something")
+        # The .blk is a collision only if writing it would *overwrite a different
+        # file*. Point the form at `maps/blk/X.blk` and name the map `X` and the
+        # source and the destination are the same path — we copy it onto itself,
+        # changing nothing. And a .blk drawn once and reused for a second map is
+        # ordinary here, so the destination merely existing is not the objection;
+        # it belonging to something else is.
+        dest = root / spec.blk
+        if dest.exists() and dest.resolve() != self.blk_source().resolve():
+            out.append(f"{spec.blk} already exists — it belongs to something")
         return out
 
     def _unknown_names(self, root: Path) -> list[str]:
