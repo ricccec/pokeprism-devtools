@@ -30,7 +30,7 @@ from textual.widgets import (DataTable, Input, OptionList, Static, TabbedContent
 
 from pokeprism_devtools.shared import blocksrc, coords, eventheader, paths, swatches
 from pokeprism_devtools.studio import Session, panels
-from pokeprism_devtools.studio.actions import ActionError
+from pokeprism_devtools.studio.actions import ITEMS, ActionError
 from pokeprism_devtools.studio.content import (BOULDER, HIDDEN, ITEMBALL,
                                                PROP_KINDS, TMHM, TREE, AddNpc,
                                                AddProp, AddSignpost, AddTrainer)
@@ -2294,6 +2294,33 @@ class TestAFormThatChangesShape(_Driven):
 
                 self.assertEqual(box.value, BOULDER)
                 self.assertEqual(self._fields(form), ["kind", "y", "x", "palette"])
+                await app.action_quit()
+
+        drive(go())
+
+    def test_the_item_list_is_offered_whole_not_a_capped_head(self) -> None:
+        """A long field is scrolled, not truncated.
+
+        There are 369 item constants, and the dropdown once capped what it offered
+        at 40 rows: the box ended at `CHERI_BERRY`, and you could scroll it to the
+        bottom and never learn there was a `FULL_RESTORE`. The list has a fixed
+        height and a scrollbar — the head-cap only hid entries, it never shortened
+        the box. So the offer is the whole match, and reaching the end is a scroll,
+        not a guess at the next letter."""
+        async def go():
+            app = Studio(ROOT)
+            async with app.run_test(size=(120, 45)) as pilot:
+                await self.ready(app, pilot)
+                form = await self._pickup(app, pilot, ITEMBALL)
+
+                box = form.query_one("#field-item", Combo)
+                offered = app.session.choices(ITEMS, form.values())
+                self.assertGreater(len(offered), 40,
+                                   "the field this guards has more items than the old cap")
+                # An empty box offers every item, in order — not a 40-row head of it.
+                self.assertEqual(box.matches(""), list(offered))
+                # And an item past where the cap used to fall is reachable.
+                self.assertIn(offered[-1], box.matches(""))
                 await app.action_quit()
 
         drive(go())

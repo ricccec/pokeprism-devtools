@@ -51,11 +51,6 @@ from textual.geometry import Offset
 from textual.suggester import SuggestFromList
 from textual.widgets import Input, OptionList
 
-#: How many rows to offer. The list is not a browser: past a screenful, the answer
-#: is to type another letter, and a dropdown taller than the form is a dropdown
-#: that hides the form.
-LIMIT = 40
-
 #: How tall the list gets, border included — the same number as the `max-height` in
 #: the CSS below, and here as well because :meth:`Combo._place` has to know how tall
 #: the list will be *before* it can decide which way to open it.
@@ -122,14 +117,22 @@ class Combo(Input):
     def matches(self, text: str) -> list[str]:
         """What is on offer for this text: what starts with it, then what merely
         contains it. Empty text offers everything, because an empty box is a
-        question ("what is there?"), not a filter."""
+        question ("what is there?"), not a filter.
+
+        The whole match is returned, not a truncated head of it. The list has a
+        fixed on-screen height (`max-height` in the CSS) and a scrollbar, so a long
+        answer scrolls rather than growing — and a cap here was invisible in exactly
+        the wrong way: the item field holds 369 constants, so a 40-row cap ended the
+        offered list at `CHERI_BERRY` and you could scroll to the bottom and never
+        learn a `FULL_RESTORE` existed. Typing a letter still narrows it; it is no
+        longer the *only* way to reach past the first screenful."""
         needle = text.strip().lower()
         if not needle:
-            return self._options[:LIMIT]
+            return list(self._options)
         starts = [o for o in self._options if o.lower().startswith(needle)]
         within = [o for o in self._options
                   if needle in o.lower() and not o.lower().startswith(needle)]
-        return (starts + within)[:LIMIT]
+        return starts + within
 
     @property
     def _open(self) -> bool:
