@@ -368,6 +368,11 @@ def _text_body(pages: list[list[str]]) -> list[str]:
     for p, lines in enumerate(pages):
         if not lines:
             raise ScaffoldError("a textbox with no lines in it")
+        if p > 0:
+            # A blank line before every `para`, the way this fork's own maps space
+            # their paragraphs (MtEmberWest.asm): a `para` opens a fresh textbox,
+            # and the empty line makes that break legible in the source.
+            out.append("")
         for i, line in enumerate(lines):
             macro = ("ctxt" if p == 0 else "para") if i == 0 else ("line" if i == 1 else "cont")
             out.append(f'{INDENT}{macro} "{_escape(line)}"')
