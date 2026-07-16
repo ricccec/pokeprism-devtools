@@ -116,13 +116,33 @@ def apply_state(
         bd = blockdata.load(
             rom_path, syms, final_group, final_map, name=map_label or ""
         )
-        ss_bytes = blockdata.compute_screen_save(bd, final_x, final_y)
+        # Pull in the connected neighbours so an edge position renders the real
+        # border blocks instead of void. A neighbour that won't load (malformed
+        # header) just falls back to zero padding — no worse than before.
+        neighbors = []
+        for conn in blockdata.map_connections(
+            rom_path, syms, final_group, final_map,
+            map_width=bd.width, name=map_label or "",
+        ):
+            try:
+                nb = blockdata.load(
+                    rom_path, syms, conn.group, conn.map_id,
+                    name=f"{map_label or 'map'} {conn.direction} neighbour",
+                )
+            except ValueError:
+                continue
+            neighbors.append((conn, nb))
+        ss_bytes = blockdata.compute_screen_save(
+            bd, final_x, final_y, neighbors=neighbors
+        )
         sav.write_bytes(off("wScreenSave"), ss_bytes)
 
         label = map_label or f"(group {final_group}, id {final_map})"
+        edges = ", ".join(c.direction for c, _ in neighbors) or "none"
         changes.append(
             f"map = {label} at ({final_x}, {final_y}); "
-            f"recomputed wScreenSave from {bd.width}x{bd.height} block grid"
+            f"recomputed wScreenSave from {bd.width}x{bd.height} block grid "
+            f"(connections filled: {edges})"
         )
 
         # Reset the player struct, then (unless --keep-people) clear the NPC
