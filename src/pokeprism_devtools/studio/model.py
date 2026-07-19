@@ -40,7 +40,7 @@ class MapGeometry:
     swatches: tuple[swatches.Swatch, ...]
     #: Coordinate tile -> marker glyph. Empty when the event header doesn't parse:
     #: the map still has a shape, and it is still worth looking at.
-    marks: dict[tuple[int, int], str]
+    marks: dict[coords.Tile, str]
 
     @property
     def size(self) -> tuple[int, int]:
@@ -101,7 +101,7 @@ class MapData:
     # the rows that carry the Refs means the index and the row cannot diverge,
     # because they are the same list.
 
-    def at(self, tile: tuple[int, int]) -> tuple[panels.Ref, ...]:
+    def at(self, tile: coords.Tile) -> tuple[panels.Ref, ...]:
         """Everything standing on this tile, in tab order.
 
         A tuple, not one Ref: two objects can share a tile — a signpost on the
@@ -112,7 +112,7 @@ class MapData:
         return tuple(row.ref for tab in self.tabs for row in tab.table[1]
                      if row.tile == tile and row.ref is not None)
 
-    def tile_of(self, ref: panels.Ref) -> tuple[int, int] | None:
+    def tile_of(self, ref: panels.Ref) -> coords.Tile | None:
         """Where this row's object stands, if it stands anywhere. A connection is
         a property of the whole map edge and a wild encounter is not on the map at
         all, so for those the answer is None and the cursor stays where it is."""

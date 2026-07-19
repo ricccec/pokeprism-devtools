@@ -39,6 +39,7 @@ from dataclasses import dataclass, field
 from ..maplint.context import Connection
 from ..shared import eventheader as eh
 from ..shared import roofs, wilddata
+from ..shared.coords import Tile
 
 _NONE = "—"
 
@@ -56,14 +57,27 @@ HIDDEN_ITEM = "SIGNPOST_ITEM"
 # what a row is                                                               #
 # --------------------------------------------------------------------------- #
 
+#: The `what` of the Ref an "Add new…" row carries. Minted by :func:`add_ref`,
+#: recognised by the session's adders — the view only ever sees it as a truthy
+#: :attr:`Ref.adds`.
+ADD = "add"
+
+
 @dataclass(frozen=True)
 class Ref:
     """What `e` and `d` act on: enough to name one thing on one map.
 
     **Opaque to the view.** `tabs.py` reads a Ref off the highlighted row and
     hands it straight back to the session, which is the only side of the seam
-    allowed to know a `person_event` from a `signpost`. The view's whole share of
-    the knowledge is "this row names something, and that one doesn't".
+    allowed to know a `person_event` from a `signpost`. The view's whole share
+    of the knowledge is the three declared affordances — "this row names
+    something" (the Ref exists at all), :attr:`adds`, :attr:`deletable` — plus
+    equality, for finding the row that carries a Ref again. The *fields* are the
+    port's own, and no view code may read them: today identity is a list kind
+    and a position, because that is all prism's source can say about an object;
+    the rest of the gen-2 family names its objects (`object_const_def`), and the
+    day an adapter carries a named handle here instead, a view that never read
+    the fields is a view that does not notice.
     """
     #: npc | trainer | prop | signpost | warp | trigger | connection | map
     what: str
@@ -73,8 +87,29 @@ class Ref:
     kind: str = ""
     #: Its position in that list.
     index: int = -1
-    #: A connection's direction. Nothing else needs it.
+    #: A connection's direction, or the kind an "Add new…" row offers.
     key: str = ""
+
+    # -- the view-facing surface -------------------------------------------- #
+    @property
+    def adds(self) -> str:
+        """The kind of thing this row would add — the word the tab declared in
+        `Tab.adds` — or "" for a row that names something that already exists."""
+        return self.key if self.what == ADD else ""
+
+    @property
+    def deletable(self) -> bool:
+        """Whether `d` exists on this row. The map's own rows say no — deleting
+        a whole map is not something the studio does — and so does an "Add
+        new…" row, which names nothing yet."""
+        return self.what not in (ADD, "map")
+
+
+def add_ref(kind: str) -> Ref:
+    """The Ref an "Add new…" row carries. Minted here, on the port side, so the
+    view never assembles a Ref of its own — it draws the dim row because
+    `Tab.adds` told it to, and hands back what it was given."""
+    return Ref(ADD, key=kind)
 
 
 @dataclass(frozen=True)
@@ -95,7 +130,7 @@ class Row:
     #:
     #: None for a row that is not on the map at all: a connection is a property of
     #: the whole edge, a wild encounter is not a place.
-    tile: tuple[int, int] | None = None
+    tile: Tile | None = None
 
 
 Table = tuple[list[str], list[Row]]
@@ -171,7 +206,7 @@ def prompt_column(cols: list[str]) -> int:
     return next((i for i, name in enumerate(cols) if i and name not in NUMERIC), 0)
 
 
-def _tile(entry: eh.Entry) -> tuple[int, int] | None:
+def _tile(entry: eh.Entry) -> Tile | None:
     """The tile it stands on, or None when the coordinates aren't literal numbers.
 
     An object whose `y` is a constant expression rather than a number still gets a
@@ -179,7 +214,7 @@ def _tile(entry: eh.Entry) -> tuple[int, int] | None:
     and pretending otherwise would put it at (0, 0).
     """
     y, x = entry.coords
-    return None if y is None or x is None else (y, x)
+    return None if y is None or x is None else Tile(y=y, x=x)
 
 
 def _block(header: eh.EventHeader, label: str | None) -> list[str]:

@@ -61,6 +61,7 @@ from textual.containers import Horizontal
 from textual.widgets import Footer, Header
 
 from ..shared import paths
+from ..shared.coords import Tile
 from .flow import Flow
 from .grid import MapGrid
 from .maplist import MapList
@@ -69,7 +70,7 @@ from .panels import Ref
 from .screens import Build, Form, Picker
 from .session import Draft, MapData, Session, SessionError, TextRef
 from .status import Banner, Centre, Diagnostics, Where
-from .tabs import ADD, MapTabs
+from .tabs import MapTabs
 
 #: How often to ask whether the repo moved. A sweep is ~22ms of `stat` on a thread,
 #: so this is a fraction of a percent of one core — and the thing it is watching for
@@ -282,7 +283,7 @@ class Studio(Flow, App):
         exactly as they were: a cursor that reset the selection every time it passed
         over grass would make the tables useless to think next to.
         """
-        refs = self._data.at((event.y, event.x)) if self._data else ()
+        refs = self._data.at(Tile(y=event.y, x=event.x)) if self._data else ()
         self.query_one(Where).cursor(event, stacked=len(refs))
         if refs and not self._syncing:
             self._syncing = True
@@ -330,7 +331,7 @@ class Studio(Flow, App):
         if action == "edit":
             return True if ref is not None else None
         if action == "delete":
-            return True if ref is not None and ref.what not in (ADD, "map") else None
+            return True if ref is not None and ref.deletable else None
         if action in ("build", "texts", "resize"):
             return True if self._const is not None else None
         if action == "undo":
@@ -361,8 +362,8 @@ class Studio(Flow, App):
         if self._const is None or self._wanted is None or not self._may_write():
             self.bell()
             return
-        if ref.what == ADD:
-            self._add(ref.key)
+        if ref.adds:
+            self._add(ref.adds)
             return
 
         try:
@@ -488,6 +489,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         root = args.root or paths.repo_root()
+        paths.assert_prism_layout(root)
     except paths.RepoNotFound as exc:
         print(f"prism-studio: {exc}", file=sys.stderr)
         return 2

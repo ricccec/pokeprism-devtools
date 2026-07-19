@@ -32,6 +32,27 @@ exactly one pair of functions here, named for what they convert between.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
+
+class Tile(NamedTuple):
+    """One coordinate tile, as it crosses the seam between port and view.
+
+    Field order is **(y, x)** — the order prism's macros write and the order a
+    row-major grid draws — and the fields are named because the order is exactly
+    what other hacks disagree about: vanilla and polished both write
+    ``object_event x, y``. Whoever parses an (x, y) macro family normalises
+    *here*, at construction, by keyword — ``Tile(y=…, x=…)`` — so a swapped pair
+    is a mistake you can grep for rather than a map whose NPCs all stand
+    transposed. See docs/polished-crystal-feasibility.md, assumption #4.
+
+    A ``Tile`` is a tuple, equal to the bare ``(y, x)`` pairs older callers
+    still build — the type adds names, not incompatibility.
+    """
+    y: int
+    x: int
+
+
 #: Pixels per graphics tile / coordinate tile / block.
 TILE_PX = 8
 COORD_PX = 16
@@ -121,7 +142,7 @@ _ITEM_TYPES = ("PERSONTYPE_ITEMBALL", "PERSONTYPE_TMHMBALL", "PERSONTYPE_FRUITTR
 _TRAINER_TYPES = ("PERSONTYPE_TRAINER", "PERSONTYPE_GENERICTRAINER")
 
 
-def markers(header) -> dict[tuple[int, int], str]:
+def markers(header) -> dict[Tile, str]:
     """Everything placed on a map, by the coordinate tile it stands on.
 
     Takes an :class:`..eventheader.EventHeader`. **No offset is applied, and that
@@ -141,21 +162,21 @@ def markers(header) -> dict[tuple[int, int], str]:
     """
     from .eventheader import ListKind
 
-    out: dict[tuple[int, int], str] = {}
+    out: dict[Tile, str] = {}
     for kind, glyph in ((ListKind.WARPS, WARP), (ListKind.COORD_EVENTS, TRIGGER),
                         (ListKind.BG_EVENTS, SIGN)):
         for entry in header.list_of(kind).entries:
             y, x = entry.coords
             if y is not None and x is not None:
-                out[(y, x)] = glyph
+                out[Tile(y=y, x=x)] = glyph
 
     for entry in header.object_events:
         y, x = entry.coords
         if y is None or x is None:
             continue
         kind = entry.persontype
-        out[(y, x)] = (ITEM if kind in _ITEM_TYPES else
-                       TRAINER if kind in _TRAINER_TYPES else PERSON)
+        out[Tile(y=y, x=x)] = (ITEM if kind in _ITEM_TYPES else
+                               TRAINER if kind in _TRAINER_TYPES else PERSON)
     return out
 
 

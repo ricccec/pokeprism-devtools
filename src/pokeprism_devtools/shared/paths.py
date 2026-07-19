@@ -21,6 +21,37 @@ def repo_root(start: Path | None = None) -> Path:
     )
 
 
+#: The two files every map parser here starts from. Their *presence* is what
+#: makes a tree prism-shaped; every other gen-2 hack keeps these facts elsewhere.
+_PRISM_LAYOUT = ("maps/second_map_headers.asm",
+                 "constants/map_dimension_constants.asm")
+
+
+def assert_prism_layout(root: Path) -> None:
+    """Refuse, loudly, a repo whose map data these tools cannot read.
+
+    Every gen-2 disassembly has a Makefile and a main.asm, so :func:`repo_root`
+    accepts pokecrystal and polished-crystal as happily as pokeprism — and the
+    map parsers then fail *silently*: `header_pairs` returns an empty list when
+    `maps/second_map_headers.asm` does not exist, so the studio would open on a
+    vanilla checkout and report zero maps, which reads as "empty repo", not as
+    "wrong hack". Measured in docs/polished-crystal-feasibility.md, Phase 0:
+    five of eight parsers fail this way. Until an adapter for the vanilla layout
+    exists, the honest answer is an error that names the tree it found.
+    """
+    if all((root / rel).exists() for rel in _PRISM_LAYOUT):
+        return
+    looks_like = ("a pokecrystal-family checkout (map data under data/maps/)"
+                  if (root / "data/maps/maps.asm").exists()
+                  else "not a gen-2 map source layout these tools know")
+    missing = ", ".join(rel for rel in _PRISM_LAYOUT if not (root / rel).exists())
+    raise RepoNotFound(
+        f"{root} is not laid out like pokeprism ({missing} missing) — it looks "
+        f"like {looks_like}. Only the pokeprism layout can be read today; "
+        "reading other hacks is sketched in docs/adapter-plan.md but not built."
+    )
+
+
 def rom_path(root: Path | None = None, *, debug: bool = False,
              fallback: bool = True) -> Path:
     """Return the path to the built ROM. Prefers the requested build and, by

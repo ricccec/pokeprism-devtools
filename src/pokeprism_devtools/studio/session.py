@@ -43,7 +43,8 @@ from .. import maplint
 from ..dev_server import playtest as devplay
 from ..maplint.context import LintContext
 from ..maplint.diagnostics import Diagnostic, Severity
-from ..shared import caches, eventheader, spritepack, textbox, trainerstats, world
+from ..shared import (caches, eventheader, paths, spritepack, textbox,
+                      trainerstats, world)
 from ..shared.edits import StaleEdit, apply_edits
 from ..wiring import objedit
 from . import (actions, content, edits, offers, panels, play, prefill as fill,
@@ -96,6 +97,10 @@ class Session:
     """One repo, open for editing."""
 
     def __init__(self, root: Path) -> None:
+        # The seam's own gate, not just the CLI's: a headless caller that points
+        # a Session at a pokecrystal checkout gets an error naming the tree,
+        # rather than a session that swears the repo has no maps in it.
+        paths.assert_prism_layout(root)
         self.root = root
         self.ctx = LintContext(root)
         self.history: list[Applied] = []

@@ -39,11 +39,11 @@ from textual.containers import Vertical
 from textual.message import Message
 from textual.widgets import DataTable, Static, TabbedContent, TabPane
 
-from .panels import Ref, Tab, prompt_column
-
-#: The Ref an "Add new…" row carries. `key` is the word the tab declared in
-#: `Tab.adds` — "NPC", "warp" — which the session turns into an action.
-ADD = "add"
+# ADD is re-exported for callers that assert on it; this file never reads it.
+# The Ref an "Add new…" row carries is minted by `panels.add_ref`, on the port
+# side of the seam — the view draws the dim row because `Tab.adds` told it to,
+# and hands back a Ref it never assembled itself.
+from .panels import ADD, Ref, Tab, add_ref, prompt_column  # noqa: F401
 
 #: Every tab the studio can show, in the order it shows them. A map gets the ones
 #: it has; the rest are hidden. "Unreadable" is the one a map with a broken event
@@ -179,7 +179,7 @@ class MapTabs(Vertical):
             cells[prompt_column(cols)] = Text(f"Add new {tab.adds}…",
                                               style="italic dim")
             table.add_row(*cells)
-            refs.append(Ref(ADD, key=tab.adds))
+            refs.append(add_ref(tab.adds))
 
         self._refs[tab.name] = refs
         self.query_one(f"#note-{_slug(tab.name)}", Static).update(tab.note)

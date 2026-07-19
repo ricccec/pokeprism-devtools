@@ -28,7 +28,8 @@ from test_maplint import _fixture as _lint_fixture  # noqa: E402
 
 from pokeprism_devtools import maplint  # noqa: E402
 from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
-from pokeprism_devtools.shared import eventheader, world  # noqa: E402
+from pokeprism_devtools.shared import coords, eventheader, world  # noqa: E402
+from pokeprism_devtools.shared import paths as shared_paths  # noqa: E402
 from pokeprism_devtools.studio import actions, content, offers, panels  # noqa: E402
 from pokeprism_devtools.studio.session import (Session, SessionError,  # noqa: E402
                                                StaleWorld)
@@ -404,6 +405,58 @@ def test_map_list(root: Path) -> None:
     check("every wired map is listed", labels == sorted(labels) and "TownA" in labels,
           str(labels))
     check("a map that parses says so", s.parses("TOWN_A"))
+
+
+def test_a_ref_offers_only_its_affordances() -> None:
+    """The view's whole share of a Ref is its declared surface — `adds`,
+    `deletable`, equality. The fields underneath are the port's, and they are
+    about to change shape: prism names an object by list position because that
+    is all its source can say, but the rest of the gen-2 family writes
+    `object_const_def` — see docs/polished-crystal-feasibility.md, #1. A view
+    that reads only the surface is a view that will not notice.
+    """
+    print("\na Ref offers only its affordances")
+    add = panels.add_ref("NPC")
+    check("an add-row Ref says what it would add", add.adds == "NPC")
+    check("and is not deletable — it names nothing yet", not add.deletable)
+    npc = panels.Ref("npc", "object_events", 3)
+    check("a real row adds nothing", npc.adds == "")
+    check("and can be deleted", npc.deletable)
+    check("the map's own rows cannot", not panels.Ref("map").deletable)
+
+
+def test_a_tile_crosses_the_seam_by_name() -> None:
+    """(y, x) and (x, y) both typecheck as two ints, and the hacks disagree on
+    the order — prism is (y, x), vanilla and polished are (x, y). The seam's
+    tile carries names so the order is written down once, at construction."""
+    print("\na tile crosses the seam by name")
+    t = coords.Tile(y=7, x=9)
+    check("Tile(y=7, x=9) has named fields", t.y == 7 and t.x == 9)
+    check("and is still the bare (7, 9) older callers build", t == (7, 9))
+    check("markers are keyed by it", all(
+        isinstance(k, coords.Tile)
+        for k in coords.markers(eventheader.parse_text(
+            "X_MapEventHeader::\n\tdb 0, 0\n\tdb 1\n\twarp_def 3, 5, 1, TOWN_A\n"
+            "\tdb 0\n\tdb 0\n\tdb 0\n", Path("X.asm"))).keys()))
+
+
+def test_a_foreign_tree_is_refused_loudly(tmp: Path) -> None:
+    """Phase 0 (docs/polished-crystal-feasibility.md) measured five of eight
+    parsers failing *silently* on a pokecrystal checkout — empty lists, not
+    errors. A studio opened on one would report an empty repo with a straight
+    face. The session is the seam, so the session is where the refusal lives.
+    """
+    print("\na foreign tree is refused loudly")
+    vanilla = tmp / "vanillaish"
+    (vanilla / "data/maps").mkdir(parents=True)
+    (vanilla / "data/maps/maps.asm").write_text("")
+    try:
+        Session(vanilla)
+        check("Session refuses a vanilla-shaped tree", False)
+    except shared_paths.RepoNotFound as exc:
+        check("Session refuses a vanilla-shaped tree", True)
+        check("and says what the tree looks like", "data/maps" in str(exc), str(exc))
+        check("and points at the plan", "adapter-plan" in str(exc))
 
 
 def test_an_object_past_the_count_is_still_shown(root: Path) -> None:
@@ -796,8 +849,11 @@ def real_root() -> Path:
 
 
 def main() -> int:
+    test_a_ref_offers_only_its_affordances()
+    test_a_tile_crosses_the_seam_by_name()
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
+        test_a_foreign_tree_is_refused_loudly(tmp)
         for fn in (test_two_items_get_two_flags, test_an_npc_is_always_there,
                    test_failure_changes_nothing, test_undo, test_undo_refuses_to_clobber,
                    test_preview_is_what_lands, test_lint_stays_in_step, test_map_list,
