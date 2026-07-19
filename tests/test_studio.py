@@ -409,20 +409,30 @@ def test_map_list(root: Path) -> None:
 
 def test_a_ref_offers_only_its_affordances() -> None:
     """The view's whole share of a Ref is its declared surface — `adds`,
-    `deletable`, equality. The fields underneath are the port's, and they are
-    about to change shape: prism names an object by list position because that
-    is all its source can say, but the rest of the gen-2 family writes
-    `object_const_def` — see docs/polished-crystal-feasibility.md, #1. A view
-    that reads only the surface is a view that will not notice.
+    `deletable`, equality. Identity underneath is the adapter's Handle, carried
+    whole: prism names an object by list position because that is all its
+    source can say, but the rest of the gen-2 family writes `object_const_def`
+    — see docs/polished-crystal-feasibility.md, #1. A view that reads only the
+    surface, and a port that never takes a handle apart, will not notice when
+    an adapter mints names instead.
     """
     print("\na Ref offers only its affordances")
     add = panels.add_ref("NPC")
     check("an add-row Ref says what it would add", add.adds == "NPC")
     check("and is not deletable — it names nothing yet", not add.deletable)
-    npc = panels.Ref("npc", "object_events", 3)
+    npc = panels.Ref("npc", eventheader.Handle(eventheader.ListKind.OBJECT_EVENTS, 3))
     check("a real row adds nothing", npc.adds == "")
     check("and can be deleted", npc.deletable)
     check("the map's own rows cannot", not panels.Ref("map").deletable)
+    header = eventheader.parse_text(
+        "X_MapEventHeader::\n\tdb 0, 0\n\tdb 1\n\twarp_def 3, 5, 1, TOWN_A\n"
+        "\tdb 0\n\tdb 0\n\tdb 0\n", Path("X.asm"))
+    warp = eventheader.Handle(eventheader.ListKind.WARPS, 0)
+    found = header.entry_at(warp)
+    check("a handle resolves by being handed back to the adapter",
+          found is not None and found.macro == "warp_def")
+    check("a handle the map has outgrown resolves to None, not a crash",
+          header.entry_at(eventheader.Handle(eventheader.ListKind.WARPS, 7)) is None)
 
 
 def test_a_tile_crosses_the_seam_by_name() -> None:
@@ -494,7 +504,7 @@ def test_an_object_past_the_count_is_still_shown(root: Path) -> None:
     # And it is not a ghost: it can be pointed at, which is the whole reason to show
     # it. A row whose Ref you cannot edit would just be a nicer way of hiding it.
     ref = rows[-1].ref
-    check("it can be selected like any other", ref is not None and ref.index == n - 1)
+    check("it can be selected like any other", ref is not None and ref.handle.index == n - 1)
     action, values, _ = s.editor("TownA", "TOWN_A", ref)
     check("and `e` opens it, filled in from the line that is really there",
           (values["y"], values["x"]) == ("8", "8"), str(values))
@@ -814,7 +824,7 @@ def test_editing_leaves_alone_what_it_did_not_touch(root: Path) -> None:
                 missing = [f.name for f in action.fields_for(values)
                            if f.name not in values]
                 if missing and len(trouble) < 5:
-                    trouble.append(f"{m.label} {ref.what} #{ref.index}: the form asks "
+                    trouble.append(f"{m.label} {ref.what} #{ref.handle.index}: the form asks "
                                    f"for {missing} and the prefill has no answer")
                 rows += 1
 
@@ -825,12 +835,12 @@ def test_editing_leaves_alone_what_it_did_not_touch(root: Path) -> None:
                 except Exception as exc:                      # noqa: BLE001
                     crashed += 1
                     if len(trouble) < 5:
-                        trouble.append(f"{m.label} {ref.what} #{ref.index}: {exc}")
+                        trouble.append(f"{m.label} {ref.what} #{ref.handle.index}: {exc}")
                     continue
                 if result.edits:
                     wrote += 1
                     if len(trouble) < 5:
-                        trouble.append(f"{m.label} {ref.what} #{ref.index} rewrote "
+                        trouble.append(f"{m.label} {ref.what} #{ref.handle.index} rewrote "
                                        f"{[e.path for e in result.edits]}")
 
     check(f"every editable row on every map opens a filled-in form ({rows})",

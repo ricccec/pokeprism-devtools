@@ -73,20 +73,23 @@ class Ref:
     of the knowledge is the three declared affordances — "this row names
     something" (the Ref exists at all), :attr:`adds`, :attr:`deletable` — plus
     equality, for finding the row that carries a Ref again. The *fields* are the
-    port's own, and no view code may read them: today identity is a list kind
-    and a position, because that is all prism's source can say about an object;
-    the rest of the gen-2 family names its objects (`object_const_def`), and the
-    day an adapter carries a named handle here instead, a view that never read
-    the fields is a view that does not notice.
+    port's own, and no view code may read them.
+
+    Identity itself is not even the port's: it is the adapter's
+    :class:`~..shared.eventmodel.Handle`, carried whole and resolved by handing
+    it back (`EventHeader.entry_at`). Today a handle is a list kind and a
+    position, because that is all prism's source can say about an object; the
+    rest of the gen-2 family names its objects (`object_const_def`), and the day
+    an adapter mints handles carrying the const name, a port that never took one
+    apart is a port that does not notice. A prop's handle can name either list —
+    a hidden item is a `signpost` — which is exactly why the list is in the
+    handle and not implied by `what`.
     """
     #: npc | trainer | prop | signpost | warp | trigger | connection | map
     what: str
-    #: The `ListKind` it lives in, when it is an event-header entry. A prop can be
-    #: in either list — a hidden item is a `signpost` — which is exactly why this
-    #: is not implied by `what`.
-    kind: str = ""
-    #: Its position in that list.
-    index: int = -1
+    #: The adapter's name for the entry, when this row is one. None for the rows
+    #: that are not event-header entries: the map itself, a connection, "Add new…".
+    handle: eh.Handle | None = None
     #: A connection's direction, or the kind an "Add new…" row offers.
     key: str = ""
 
@@ -286,7 +289,7 @@ def npcs(header: eh.EventHeader, says: dict[str, str]) -> Table:
             [_num(header, eh.ListKind.OBJECT_EVENTS, i, i), y, x, e.sprite,
              e.movement.replace("SPRITEMOVEDATA_", ""),
              says.get(pointer, pointer or _NONE), e.event_flag],
-            Ref("npc", eh.ListKind.OBJECT_EVENTS.value, i), _tile(e),
+            Ref("npc", eh.Handle(eh.ListKind.OBJECT_EVENTS, i)), _tile(e),
         ))
     return cols, rows
 
@@ -301,7 +304,7 @@ def trainers(header: eh.EventHeader) -> Table:
         rows.append(Row(
             [_num(header, eh.ListKind.OBJECT_EVENTS, i, i), y, x, e.sprite,
              cls, party, sight, flag],
-            Ref("trainer", eh.ListKind.OBJECT_EVENTS.value, i), _tile(e),
+            Ref("trainer", eh.Handle(eh.ListKind.OBJECT_EVENTS, i)), _tile(e),
         ))
     return cols, rows
 
@@ -329,7 +332,7 @@ def objects(header: eh.EventHeader) -> Table:
         rows.append(Row(
             [_num(header, eh.ListKind.OBJECT_EVENTS, i, i), y, x, kind, what or _NONE,
              e.arg(10) if ball else _NONE, e.event_flag],
-            Ref("prop", eh.ListKind.OBJECT_EVENTS.value, i), _tile(e),
+            Ref("prop", eh.Handle(eh.ListKind.OBJECT_EVENTS, i)), _tile(e),
         ))
 
     for i, e in enumerate(header.bg_events):
@@ -343,7 +346,7 @@ def objects(header: eh.EventHeader) -> Table:
         item = next((ln.split()[-1] for ln in record if ln.strip().startswith("db ")), _NONE)
         rows.append(Row(
             [_num(header, eh.ListKind.BG_EVENTS, i, i), y, x, "hidden", item, _NONE, flag],
-            Ref("prop", eh.ListKind.BG_EVENTS.value, i), _tile(e),
+            Ref("prop", eh.Handle(eh.ListKind.BG_EVENTS, i)), _tile(e),
         ))
     return cols, rows
 
@@ -360,7 +363,7 @@ def signposts(header: eh.EventHeader) -> Table:
         rows.append(Row(
             [_num(header, eh.ListKind.BG_EVENTS, i, i), y, x,
              kind.replace("SIGNPOST_", ""), e.pointer or _NONE],
-            Ref("signpost", eh.ListKind.BG_EVENTS.value, i), _tile(e),
+            Ref("signpost", eh.Handle(eh.ListKind.BG_EVENTS, i)), _tile(e),
         ))
     return cols, rows
 
@@ -375,7 +378,7 @@ def warps(header: eh.EventHeader) -> Table:
         dest = e.arg(3) if len(e.args) > 3 else _NONE
         which = e.arg(2) if len(e.args) > 2 else _NONE
         rows.append(Row([_num(header, eh.ListKind.WARPS, i, i + 1), y, x, dest, which],
-                        Ref("warp", eh.ListKind.WARPS.value, i), _tile(e)))
+                        Ref("warp", eh.Handle(eh.ListKind.WARPS, i)), _tile(e)))
     return cols, rows
 
 
@@ -386,7 +389,7 @@ def triggers(header: eh.EventHeader) -> Table:
         y, x = _yx(e)
         rows.append(Row([_num(header, eh.ListKind.COORD_EVENTS, i, i),
                          e.arg(0), y, x, e.pointer or _NONE],
-                        Ref("trigger", eh.ListKind.COORD_EVENTS.value, i), _tile(e)))
+                        Ref("trigger", eh.Handle(eh.ListKind.COORD_EVENTS, i)), _tile(e)))
     return cols, rows
 
 

@@ -85,12 +85,12 @@ class StaleWorld(SessionError):
 
 def _entry_of(header: eventheader.EventHeader, label: str,
               ref: panels.Ref) -> eventheader.Entry:
-    entries = header.list_of(eventheader.ListKind(ref.kind)).entries
-    if not 0 <= ref.index < len(entries):
+    entry = header.entry_at(ref.handle) if ref.handle else None
+    if entry is None:
         raise SessionError(
-            f"{label} no longer has a {ref.what} at position {ref.index} — the "
+            f"{label} no longer has a {ref.what} at {ref.handle} — the "
             f"map changed under the table. Select it again.")
-    return entries[ref.index]
+    return entry
 
 
 class Session:
@@ -256,18 +256,16 @@ class Session:
         if ref.what == "map":
             raise SessionError("deleting a whole map is not something this does.")
 
-        # Neither of these is an entry in an event list, so neither is named the
-        # way the objects below are. A warp is named by its *position*, because
-        # that is what the rest of the repo counts to; a connection by its
-        # direction, because a map has at most one each way.
+        # A connection is not an entry in an event list, so it carries no handle
+        # — it is named by its direction, because a map has at most one each way.
         if ref.what == "warp":
-            return content.RemoveWarp(const, index=str(ref.index))
+            return content.RemoveWarp(const, index=str(ref.handle.index))
         if ref.what == "connection":
             return content.Disconnect(const, direction=ref.key)
 
-        # `entry` is not how the object is found — `kind` and `index` are, and they
-        # came off the row. It is read to *name* the thing on the confirm screen,
-        # and re-read from the file rather than remembered, so a Ref that has gone
+        # `entry` is not how the object is found — the handle is, and it came off
+        # the row. It is read to *name* the thing on the confirm screen, and
+        # re-read from the file rather than remembered, so a Ref that has gone
         # stale says so instead of describing whatever is standing in its place.
         #
         # This is the difference between a description and an identity. Owsauri's
@@ -277,8 +275,11 @@ class Session:
         # thing you want gone — you pointed at it.
         entry = _entry_of(self._header(label), label, ref)
         y, x = entry.coords
+        # The handle is spelled out only here, into the form-shaped strings the
+        # action takes — the actions are the write half of the same adapter that
+        # minted it, so this is the handle going home, not the port reading it.
         return content.Remove(
-            const, index=str(ref.index), kind=ref.kind,
+            const, index=str(ref.handle.index), kind=ref.handle.kind.value,
             label=entry.pointer or "",
             y="" if y is None else str(y), x="" if x is None else str(x))
 

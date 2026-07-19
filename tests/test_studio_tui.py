@@ -72,7 +72,7 @@ class TestPanels(unittest.TestCase):
         # The +4 the person_event macro adds at assembly must not appear here:
         # this table is what you would *type*, not what the ROM holds.
         for row in rows:
-            entry = self.header.object_events[row.ref.index]
+            entry = self.header.object_events[row.ref.handle.index]
             self.assertEqual(row.cells[1], str(entry.y))
             self.assertEqual(row.cells[2], str(entry.x))
 
@@ -88,8 +88,8 @@ class TestPanels(unittest.TestCase):
                 panels.objects(self.header)[1]]
         found: list[int] = []
         for rows in tabs:
-            found += [r.ref.index for r in rows
-                      if r.ref.kind == eventheader.ListKind.OBJECT_EVENTS.value]
+            found += [r.ref.handle.index for r in rows
+                      if r.ref.handle.kind is eventheader.ListKind.OBJECT_EVENTS]
 
         self.assertEqual(sorted(found), list(range(len(self.header.object_events))))
         self.assertEqual(len(found), len(set(found)), "an object is on two tabs")
@@ -100,7 +100,7 @@ class TestPanels(unittest.TestCase):
         rewrite whoever is really seventh."""
         rows = panels.npcs(self.header, {})[1]
         for row in rows:
-            entry = self.header.object_events[row.ref.index]
+            entry = self.header.object_events[row.ref.handle.index]
             self.assertNotIn(entry.persontype, panels.TRAINER_TYPES)
             self.assertNotIn(entry.persontype, panels.PICKUP_TYPES)
 
@@ -110,14 +110,14 @@ class TestPanels(unittest.TestCase):
         remember which of the engine's two lists it really came from."""
         header = eventheader.parse_map(ROOT / "maps/BotanCity.asm")
         rows = panels.objects(header)[1]
-        kinds = {r.ref.kind for r in rows}
-        self.assertIn(eventheader.ListKind.BG_EVENTS.value, kinds,
+        kinds = {r.ref.handle.kind for r in rows}
+        self.assertIn(eventheader.ListKind.BG_EVENTS, kinds,
                       "BotanCity has a hidden item; it isn't on the Pickups tab")
 
     def test_a_signpost_tab_never_shows_a_hidden_item(self) -> None:
         header = eventheader.parse_map(ROOT / "maps/BotanCity.asm")
         for row in panels.signposts(header)[1]:
-            entry = header.bg_events[row.ref.index]
+            entry = header.bg_events[row.ref.handle.index]
             self.assertNotEqual(entry.arg(2), panels.HIDDEN_ITEM)
 
     def test_a_trainer_reads_his_class_off_the_macro(self) -> None:
