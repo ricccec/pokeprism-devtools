@@ -205,10 +205,15 @@ def _HEADER_2(label: str) -> re.Pattern[str]:
     return re.compile(rf"^\s*map_header_2\s+{re.escape(label)}\s*,")
 
 
-def _wild(root: Path, const: str) -> dict[str, wilddata.WildBlock]:
-    """The map's encounters. A map with none is the common case, not an error —
-    most maps are indoors."""
-    found: dict[str, wilddata.WildBlock] = {}
+def _wild(root: Path, const: str) -> dict[str, dict[str, list[panels.WildMon]]]:
+    """The map's encounters, in the seam's words. A map with none is the common
+    case, not an error — most maps are indoors.
+
+    Prism's mon is a scalar species, so `WildMon.form` is filled with its
+    constant, `""` — the form column exists for the hacks whose mon is
+    `(species, form)`, and an adapter without forms never has to say so.
+    """
+    found: dict[str, dict[str, list[panels.WildMon]]] = {}
     for kind in (wilddata.GRASS, wilddata.WATER):
         try:
             table = wilddata.table_for(root, const, kind)
@@ -216,7 +221,9 @@ def _wild(root: Path, const: str) -> dict[str, wilddata.WildBlock]:
             continue
         for block in table.blocks:
             if block.map_const == const:
-                found[kind] = block
+                found[kind] = {time: [panels.WildMon(e.level, e.species)
+                                      for e in mons]
+                               for time, mons in block.mons.items()}
     return found
 
 

@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 
 from ..maplint.context import Connection
 from ..hacks.prism import eventheader as eh
-from ..hacks.prism import roofs, wilddata
+from ..hacks.prism import roofs
 from ..shared.coords import Tile
 
 _NONE = "—"
@@ -495,14 +495,33 @@ def roof(r: roofs.Roof) -> Table:
     return cols, rows
 
 
-def wild(blocks: dict[str, wilddata.WildBlock]) -> Table:
-    """The map's encounters, keyed by which table they came from (GRASS, WATER)."""
-    cols = ["table", "time", "#", "level", "species"]
+@dataclass(frozen=True)
+class WildMon:
+    """One encounter slot, in the seam's words.
+
+    `form` is the axis polished adds: a mon there is `(species, form)`, with the
+    ninth species bit living in the form byte. The hacks whose mon is a scalar —
+    prism is one — fill it with the constant ``""``, and the column below only
+    exists when some row doesn't. That is the whole negotiation: an adapter that
+    has no forms never says so, it just has nothing to show.
+    """
+    level: int
+    species: str
+    form: str = ""
+
+
+def wild(blocks: dict[str, dict[str, list[WildMon]]]) -> Table:
+    """The map's encounters, keyed by which table they came from (GRASS, WATER),
+    then by time of day."""
+    formed = any(m.form for times in blocks.values()
+                 for mons in times.values() for m in mons)
+    cols = ["table", "time", "#", "level", "species"] + (["form"] if formed else [])
     rows: list[Row] = []
-    for kind, block in blocks.items():
-        for time, encounters in block.mons.items():
-            for i, e in enumerate(encounters):
-                first = not rows or rows[-1].cells[0] != kind
-                rows.append(Row([kind if first else "", time if i == 0 else "",
-                                 str(i + 1), str(e.level), e.species]))
+    for kind, times in blocks.items():
+        for t, (time, mons) in enumerate(times.items()):
+            for i, m in enumerate(mons):
+                cells = [kind if t == 0 and i == 0 else "",
+                         time if i == 0 else "",
+                         str(i + 1), str(m.level), m.species]
+                rows.append(Row(cells + ([m.form] if formed else [])))
     return cols, rows
