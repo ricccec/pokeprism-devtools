@@ -458,16 +458,46 @@ def test_a_foreign_tree_is_refused_loudly(tmp: Path) -> None:
     face. The session is the seam, so the session is where the refusal lives.
     """
     print("\na foreign tree is refused loudly")
-    vanilla = tmp / "vanillaish"
-    (vanilla / "data/maps").mkdir(parents=True)
-    (vanilla / "data/maps/maps.asm").write_text("")
+    alien = tmp / "alien"
+    (alien / "src").mkdir(parents=True)
+    (alien / "Makefile").write_text("")
     try:
-        Session(vanilla)
-        check("Session refuses a vanilla-shaped tree", False)
+        Session(alien)
+        check("Session refuses a tree no adapter recognises", False)
     except hackmount.UnknownTree as exc:
-        check("Session refuses a vanilla-shaped tree", True)
-        check("and says what the tree looks like", "data/maps" in str(exc), str(exc))
-        check("and points at the plan", "feasibility" in str(exc))
+        check("Session refuses a tree no adapter recognises", True)
+        check("and names what it looked for",
+              "second_map_headers" in str(exc), str(exc))
+
+    # Family-shaped, but no map file carries either anchor — a tree the mount
+    # can place in the pokecrystal family and no adapter can claim.
+    hollow = tmp / "hollow"
+    (hollow / "data/maps").mkdir(parents=True)
+    (hollow / "data/maps/maps.asm").write_text("")
+    try:
+        Session(hollow)
+        check("Session refuses a family tree with no readable map", False)
+    except hackmount.UnknownTree as exc:
+        check("Session refuses a family tree with no readable map", True)
+        check("and names both anchors", "_MapEvents" in str(exc)
+              and "_MapScriptHeader" in str(exc), str(exc))
+
+    # Polished-shaped: the event block opens the map file. Its adapter is the
+    # last Phase 3 slice, and until it lands the refusal must say so.
+    pol = tmp / "polishedish"
+    (pol / "data/maps").mkdir(parents=True)
+    (pol / "maps").mkdir()
+    (pol / "data/maps/maps.asm").write_text(
+        "\tmap TownA, TILESET_JOHTO, TOWN, LANDMARK_A, MUSIC_A, FALSE, "
+        "PALETTE_AUTO, FISHGROUP_SHORE\n")
+    (pol / "maps/TownA.asm").write_text(
+        "TownA_MapScriptHeader:\n\tdef_scene_scripts\n")
+    try:
+        Session(pol)
+        check("Session refuses a polished tree, for now", False)
+    except hackmount.UnknownTree as exc:
+        check("Session refuses a polished tree, for now", True)
+        check("and points at the plan", "feasibility" in str(exc), str(exc))
 
 
 def test_an_object_past_the_count_is_still_shown(root: Path) -> None:

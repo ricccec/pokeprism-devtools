@@ -40,6 +40,7 @@ never an `if <hack name>`.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -89,11 +90,21 @@ def mount(root: Path) -> Hack:
                     writes=True, plays=True, measures=True)
 
     if (root / "data/maps/maps.asm").exists():
+        anchor = _family_anchor(root)
+        if anchor == "_MapEvents":
+            from .vanilla.read import Reader
+            return Hack("vanilla", Reader(root))
+        if anchor == "_MapScriptHeader":
+            raise UnknownTree(
+                f"{root} is a polished-family checkout (its map files open "
+                "with the event block) — that read adapter is the last slice "
+                "of Phase 3 in docs/polished-crystal-feasibility.md and is "
+                "not built yet.")
         raise UnknownTree(
-            f"{root} is a pokecrystal-family checkout (map data under "
-            "data/maps/) — its read adapter is Phase 3 of "
-            "docs/polished-crystal-feasibility.md and is not built yet. Only "
-            "the pokeprism layout can be read today.")
+            f"{root} keeps map data under data/maps/ like the pokecrystal "
+            "family, but no map file carries either family anchor "
+            "(_MapEvents at the tail, _MapScriptHeader at the head), so no "
+            "adapter can claim it.")
 
     missing = ", ".join(rel for rel in _PRISM_LAYOUT if not (root / rel).exists())
     raise UnknownTree(
@@ -105,3 +116,26 @@ def mount(root: Path) -> Hack:
 #: makes a tree prism-shaped; every other gen-2 hack keeps these facts elsewhere.
 _PRISM_LAYOUT = ("maps/second_map_headers.asm",
                  "constants/map_dimension_constants.asm")
+
+
+def _family_anchor(root: Path) -> str:
+    """Which event-block anchor the first listed map file carries. Within the
+    pokecrystal family this is the one structural difference the mount needs:
+    vanilla ends a map file with `<Label>_MapEvents:`, polished opens it with
+    `<Label>_MapScriptHeader:`. "" when no map file can be probed at all."""
+    listing = re.compile(r"^\s*map\s+(\w+)\s*,")
+    try:
+        lines = (root / "data/maps/maps.asm").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    for m in map(listing.match, lines.splitlines()):
+        if m is None:
+            continue
+        src = root / f"maps/{m.group(1)}.asm"
+        if not src.exists():
+            continue
+        text = src.read_text(encoding="utf-8", errors="replace")
+        for anchor in ("_MapEvents", "_MapScriptHeader"):
+            if f"{m.group(1)}{anchor}:" in text:
+                return anchor
+    return ""
