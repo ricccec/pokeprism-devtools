@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import landmarks
-from .edits import Edit
+from ...shared.edits import Edit
 
 _DIR = "data/wild"
 

@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import sys
 
-from pokeprism_devtools.shared import (
-    blockdata, constants, eventheader, lz, maps, mapsource, paths, party, people,
-    render, savefile, species, spritevram, symfile,
-)
+from pokeprism_devtools.hacks.prism import (
+    blockdata, eventheader, maps, mapsource, party, people, render, savefile, species,
+    spritevram)
+from pokeprism_devtools.shared import constants, lz, paths, symfile
 
 
 def check(label: str, cond: bool, detail: str = "") -> None:

@@ -180,7 +180,7 @@ def _fixture(tmp: Path) -> Path:
 
     # SPRITE_ROCK and SPRITE_BOULDER are here for the studio's sake rather than the
     # linter's: they are what a `person_event` that is not a person looks like (see
-    # `shared/eventmodel.Prop`), and no map in this fixture places one. Last in the
+    # `hacks/prism/eventmodel.Prop`), and no map in this fixture places one. Last in the
     # list, so no existing sprite's id moves — `sprite_headers.asm` is positional.
     sprites = ["SPRITE_NONE", "SPRITE_P0", "SPRITE_NPC", "SPRITE_BALL",
                "SPRITE_STATUE", "SPRITE_STRANGER", *_CROWD,

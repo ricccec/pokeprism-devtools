@@ -36,10 +36,10 @@ from pathlib import Path
 
 from ..map_new import TEMPLATE
 from ..mapfit import mapwire
-from ..shared import blocksrc, consts, maps as maps_mod, mapsource
-from ..shared.blockdata import BlockData
+from ..hacks.prism import blocksrc, consts, maps as maps_mod, mapsource
+from ..hacks.prism.blockdata import BlockData
 from ..shared.edits import Edit
-from ..shared.mapspec import MapSpec
+from ..hacks.prism.mapspec import MapSpec
 from .actions import (BLOCKS, FISHGROUPS, GROUPS, LANDMARKS, MUSIC, PERMISSIONS,
                       TILESETS, TIMES, Action, ActionError, Field, Result)
 

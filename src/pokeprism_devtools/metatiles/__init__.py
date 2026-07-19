@@ -29,7 +29,7 @@ from ..shared import constants, lz, paths
 from ..shared.symfile import SymFile
 from ..shared.viewer import is_stale, open_images, parse_tileset_id
 
-# ``shared.render`` pulls in Pillow; import it lazily so the pure helpers below
+# ``hacks.prism.render`` pulls in Pillow; import it lazily so the pure helpers below
 # (and their tests) stay usable without it. Only analyze()/--render need it.
 
 _TILES_PER_METATILE = 16
@@ -369,7 +369,7 @@ def load_syms(root: Path) -> SymFile | None:
 def analyze(
     root: Path, tileset_id: int, uses: list[MapUse], syms: SymFile | None = None
 ) -> TilesetAnalysis:
-    from ..shared.render import load_tileset_files
+    from ..hacks.prism.render import load_tileset_files
     metatiles, attributes, gfx = load_tileset_files(root, tileset_id)
     n_defined = max(1, len(metatiles) // _TILES_PER_METATILE)
     usage = metatile_usage(uses, n_defined)
@@ -550,7 +550,7 @@ def _render_sheet(root: Path, tileset_id: int, force: bool) -> Path:
     ]
     cache_file = cache_dir / f"tileset_{tid}_outdoor_day.png"
     if is_stale(cache_file, sources, force):
-        from ..shared.render import palettes_for_table, render_tileset_sheet
+        from ..hacks.prism.render import palettes_for_table, render_tileset_sheet
         palettes = palettes_for_table(root, "outdoor", 1)
         render_tileset_sheet(root, tileset_id, palettes).save(str(cache_file))
     return cache_file

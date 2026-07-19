@@ -26,8 +26,8 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from ..shared import (consts, eventflags, maps as maps_mod, spritesets,
-                      trainerparty, trainerstats)
+from ..hacks.prism import (
+    consts, eventflags, maps as maps_mod, spritesets, trainerparty, trainerstats)
 from ..wiring import connections, props, scaffold
 from . import actions, newmap
 from .actions import Action

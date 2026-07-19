@@ -23,7 +23,8 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from ..shared import paths
-from ..shared.render import PALETTE_TABLES, palettes_for_table, render_tileset_sheet
+from ..hacks.prism.render import (
+    PALETTE_TABLES, palettes_for_table, render_tileset_sheet)
 from ..shared.viewer import TOD_MAP, TOD_NAMES, is_stale, open_images, parse_tileset_id
 
 

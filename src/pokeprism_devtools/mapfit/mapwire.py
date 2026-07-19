@@ -25,7 +25,7 @@ import re
 from pathlib import Path
 
 from ..shared.edits import Edit, apply_edits
-from ..shared.mapspec import INTO, MapSpec
+from ..hacks.prism.mapspec import INTO, MapSpec
 
 __all__ = ["Edit", "apply_edits", "WiringError", "SCRIPTS_GUARD"]
 

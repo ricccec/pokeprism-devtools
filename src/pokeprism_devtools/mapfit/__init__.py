@@ -27,13 +27,14 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..shared import mapsource, paths
+from ..hacks.prism import mapsource
+from ..shared import paths
 from . import mapwire
-from ..shared.blobsizes import (
+from ..hacks.prism.blobsizes import (
     PRIMARY_HEADER_GROWTH, compressed_blk_size, secondary_size,
 )
 from ..shared.mapfile import MapFile
-from ..shared.mapspec import BLOBS, INTO, MapSpec
+from ..hacks.prism.mapspec import BLOBS, INTO, MapSpec
 from .packing import FreeSpace, Item, NoFitError, Placement, pack
 
 

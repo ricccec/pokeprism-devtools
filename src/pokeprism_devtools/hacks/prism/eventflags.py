@@ -23,7 +23,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .edits import Edit
+from ...shared.edits import Edit
 
 _REL = "constants/event_flags.asm"
 _PARENT_REL = "constants.asm"

@@ -42,7 +42,7 @@ import re
 
 from pathlib import Path
 
-from ..shared import mapsource
+from ..hacks.prism import mapsource
 from ..shared.edits import Edit
 from .objedit import Change, EditError, same
 

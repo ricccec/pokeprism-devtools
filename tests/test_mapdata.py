@@ -16,8 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools.shared import eventflags, eventheader as eh, spritesets  # noqa: E402
-from pokeprism_devtools.shared.eventflags import FlagError  # noqa: E402
+from pokeprism_devtools.hacks.prism import (  # noqa: E402
+    eventflags, eventheader as eh, spritesets)
+from pokeprism_devtools.hacks.prism.eventflags import FlagError  # noqa: E402
 
 _failures = 0
 

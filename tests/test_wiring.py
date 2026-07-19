@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from pokeprism_devtools import maplint  # noqa: E402
 from pokeprism_devtools.maplint import rules_geometry  # noqa: E402
 from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
-from pokeprism_devtools.shared import eventheader as eh  # noqa: E402
+from pokeprism_devtools.hacks.prism import eventheader as eh # noqa: E402
 from pokeprism_devtools.shared.edits import apply_edits  # noqa: E402
 from pokeprism_devtools.wiring import connections as C, objedit as O  # noqa: E402
 from pokeprism_devtools.wiring import mapresize as MR  # noqa: E402
