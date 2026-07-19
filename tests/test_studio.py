@@ -28,9 +28,9 @@ from test_maplint import _fixture as _lint_fixture  # noqa: E402
 
 from pokeprism_devtools import maplint  # noqa: E402
 from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
+from pokeprism_devtools.hacks import mount as hackmount # noqa: E402
 from pokeprism_devtools.hacks.prism import eventheader # noqa: E402
 from pokeprism_devtools.shared import coords, world # noqa: E402
-from pokeprism_devtools.shared import paths as shared_paths # noqa: E402
 from pokeprism_devtools.studio import actions, content, offers, panels  # noqa: E402
 from pokeprism_devtools.studio.session import (Session, SessionError,  # noqa: E402
                                                StaleWorld)
@@ -464,10 +464,10 @@ def test_a_foreign_tree_is_refused_loudly(tmp: Path) -> None:
     try:
         Session(vanilla)
         check("Session refuses a vanilla-shaped tree", False)
-    except shared_paths.RepoNotFound as exc:
+    except hackmount.UnknownTree as exc:
         check("Session refuses a vanilla-shaped tree", True)
         check("and says what the tree looks like", "data/maps" in str(exc), str(exc))
-        check("and points at the plan", "adapter-plan" in str(exc))
+        check("and points at the plan", "feasibility" in str(exc))
 
 
 def test_an_object_past_the_count_is_still_shown(root: Path) -> None:

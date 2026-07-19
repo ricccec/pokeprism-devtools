@@ -60,6 +60,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Footer, Header
 
+from ..hacks import mount as hackmount
 from ..shared import paths
 from ..shared.coords import Tile
 from .flow import Flow
@@ -262,7 +263,7 @@ class Studio(Flow, App):
         self._linted = True
         if self._wanted:
             self._show_diagnostics(
-                self.session.ctx.label_to_const.get(self._wanted, self._wanted))
+                self.session.const_of(self._wanted))
 
     def _show_diagnostics(self, const: str) -> None:
         panel = self.query_one(Diagnostics)
@@ -489,8 +490,11 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         root = args.root or paths.repo_root()
-        paths.assert_prism_layout(root)
-    except paths.RepoNotFound as exc:
+        # Mounted once here for the *error*: an unrecognisable tree should be
+        # refused on stderr, before a full-screen TUI has repainted the
+        # terminal. The session mounts its own.
+        hackmount.mount(root)
+    except (paths.RepoNotFound, hackmount.UnknownTree) as exc:
         print(f"prism-studio: {exc}", file=sys.stderr)
         return 2
 

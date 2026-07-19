@@ -36,15 +36,14 @@ changed under us is one whose old contents we have no business restoring.
 from __future__ import annotations
 
 from collections.abc import Callable
-from functools import cached_property
 from pathlib import Path
 
 from .. import maplint
 from ..dev_server import playtest as devplay
-from ..maplint.context import LintContext
 from ..maplint.diagnostics import Diagnostic, Severity
-from ..hacks.prism import eventheader, spritepack, textbox, trainerstats
-from ..shared import caches, paths, world
+from ..hacks.mount import mount
+from ..hacks.prism import eventheader, spritepack, trainerstats
+from ..shared import caches, world
 from ..shared.edits import StaleEdit, apply_edits
 from ..wiring import objedit
 from . import (actions, content, edits, offers, panels, play, prefill as fill,
@@ -98,11 +97,16 @@ class Session:
 
     def __init__(self, root: Path) -> None:
         # The seam's own gate, not just the CLI's: a headless caller that points
-        # a Session at a pokecrystal checkout gets an error naming the tree,
-        # rather than a session that swears the repo has no maps in it.
-        paths.assert_prism_layout(root)
+        # a Session at a tree no adapter recognises gets an error naming the
+        # tree, rather than a session that swears the repo has no maps in it.
+        # `mount` is also where every question about *which hack this is* stops:
+        # from here down, the session reads through `self.hack.reads` and
+        # branches only on the capabilities the mount declared.
+        self.hack = mount(root)
         self.root = root
-        self.ctx = LintContext(root)
+        # The linter's context, for the hack the linter is written against.
+        # None means "this tree has no linter", and every lint answer is [].
+        self.ctx = self.hack.ctx
         self.history: list[Applied] = []
         self._found: list[Diagnostic] | None = None
         # The repo as it was when we read it. Everything this object believes was
@@ -133,6 +137,23 @@ class Session:
         if moved := self.drifted():
             raise StaleWorld(moved)
 
+    # -- what this tree can do ------------------------------------------------ #
+    def _writable(self) -> None:
+        """The gate in front of everything that changes the repo, or reasons
+        about changing it. Not a hack-name check: the mount declared what this
+        tree can do, and "no" comes with the reason."""
+        if not self.hack.writes:
+            raise SessionError(
+                f"this {self.hack.name} tree is mounted read-only — the studio "
+                "can look at it, not write it. Write adapters are Phase 4 of "
+                "docs/polished-crystal-feasibility.md.")
+
+    def _playable(self) -> None:
+        if not self.hack.plays:
+            raise SessionError(
+                f"this {self.hack.name} tree has no build-and-boot wiring — "
+                "the studio can show its maps, not play them.")
+
     # -- maps ---------------------------------------------------------------- #
     @property
     def maps(self) -> list[MapRef]:
@@ -140,12 +161,17 @@ class Session:
         still have a grid and a name, and hiding them is how you fail to notice
         that a map is broken."""
         return sorted(
-            (MapRef(const, label) for label, const in self.ctx.label_to_const.items()),
+            (MapRef(const, label) for label, const in self.hack.reads.maps().items()),
             key=lambda m: m.label,
         )
 
+    def const_of(self, label: str) -> str:
+        """The map id a label names — the adapter's catalog, for the callers
+        (the view among them) that only hold the label."""
+        return self.hack.reads.maps().get(label, label)
+
     def parses(self, const: str) -> bool:
-        return self.ctx.header(const) is not None
+        return self.hack.reads.parses(const)
 
     def load(self, label: str) -> MapData:
         """Everything about one map, from source — see :mod:`.reader`.
@@ -153,13 +179,14 @@ class Session:
         Slow enough to want a thread (five files), so it takes no locks and
         touches no state.
         """
-        return reader.read_map(self.root, self.ctx, label, self._boxes)
+        return reader.read_map(self.hack.reads, label)
 
     def sketch(self, action: Action) -> MapGeometry | None:
         """A picture of what an action would put on the grid, before it exists —
         see :func:`.reader.sketch`. Not gated on :meth:`_fresh`: the form calls this
         on every keystroke, and it draws rather than writes."""
-        return reader.sketch(self.root, action)
+        self._writable()
+        return reader.sketch(self.hack.reads, action)
 
     # -- what a form may offer ------------------------------------------------ #
     def choices(self, kind: str, values: dict[str, str] | None = None) -> list[str]:
@@ -168,12 +195,14 @@ class Session:
         `values` is the form as it stands, because some lists depend on another
         field: which parties exist depends entirely on which class you picked.
         """
+        self._writable()
         return offers.for_kind(self.root, kind, self._map_consts, values)
 
     def follows(self, action: type[Action], changed: str,
                 values: dict[str, str]) -> dict[str, str]:
         """What the form should fill in for itself, now one field has changed — a
         trainer class knows what it usually wears."""
+        self._writable()
         return offers.follows(self.root, action, changed, values)
 
     def sprite_hint(self, map_const: str, sprite: str) -> str:
@@ -192,7 +221,7 @@ class Session:
         whatever their objects ask for, so nothing here bounds them.
         """
         sprite = sprite.strip()
-        if not sprite:
+        if not sprite or not self.hack.writes:
             return ""
         who = trainerstats.classes_for(self.root, sprite)
         text = f"worn by: {', '.join(who[:6])}" if who else "no trainer wears this sprite yet"
@@ -209,8 +238,10 @@ class Session:
         return f"{text} — {'can walk here' if sprite in walkable else 'stands still here (table 2)'}"
 
     def warm(self) -> None:
-        """Read everything a form will want, before a form asks."""
-        offers.warm(self.root)
+        """Read everything a form will want, before a form asks. A tree with no
+        forms has nothing worth warming."""
+        if self.hack.writes:
+            offers.warm(self.root)
 
     @property
     def _map_consts(self) -> tuple[str, ...]:
@@ -226,7 +257,11 @@ class Session:
         tab can be added to and never learns what it would be adding. More than
         one means the view asks which — an object is six different things wearing
         the same coat, and until they share one form the honest thing is to ask.
+
+        Empty on a read-only mount: the dim row draws, and offers nothing.
         """
+        if not self.hack.writes:
+            return ()
         return edits.ADDERS.get(kind, ())
 
     def _header(self, label: str) -> eventheader.EventHeader:
@@ -244,6 +279,7 @@ class Session:
         and if the entry has moved, saying so beats deleting whatever is standing
         in its place now.
         """
+        self._writable()
         return _entry_of(self._header(label), label, ref)
 
     def deletion(self, label: str, const: str, ref: panels.Ref) -> Action:
@@ -253,6 +289,7 @@ class Session:
         says *why* — which beats an absent key, because the reason is the
         interesting part.
         """
+        self._writable()
         if ref.what == "map":
             raise SessionError("deleting a whole map is not something this does.")
 
@@ -290,6 +327,7 @@ class Session:
         The mirror of :meth:`deletion`, and like it, it refuses by *explaining* —
         an absent key tells you nothing, and the reason is the interesting part.
         """
+        self._writable()
         if (action := edits.EDITORS.get(ref.what)) is None:
             raise SessionError(edits.NOT_YET.get(
                 ref.what, f"editing a {ref.what} is not wired up yet."))
@@ -306,16 +344,22 @@ class Session:
 
     # -- the words ------------------------------------------------------------ #
     def texts(self, label: str) -> list[TextRef]:
-        """Every text block in one map, as prose — see :func:`.reader.texts`."""
-        return reader.texts(self.root, label, self._boxes)
+        """Every text block in one map, as prose — the adapter's reading of its
+        own text macros."""
+        return self.hack.reads.texts(label)
 
     def measure(self, text: str, box: str = "speech") -> TextPreview:
-        """Dialogue-in-progress against the box it lands in, in *tiles*."""
-        return reader.measure(self.root, self.ctx, text, self._boxes[box])
+        """Dialogue-in-progress against the box it lands in, in *tiles*.
 
-    @cached_property
-    def _boxes(self) -> dict[str, textbox.Box]:
-        return textbox.boxes(self.root)
+        Tiles are engine physics — a VWF, a charmap, buffer tokens — so only a
+        hack that declared the capability can answer; prism is the only one
+        with a VWF in its family. Refused with the reason, not with silence.
+        """
+        if not self.hack.measures:
+            raise SessionError(
+                f"this {self.hack.name} tree declares no text metrics — "
+                "nothing here can say how wide a line will draw.")
+        return self.hack.reads.measure(text, box)
 
     # -- diagnostics --------------------------------------------------------- #
     def lint(self) -> list[Diagnostic]:
@@ -325,7 +369,12 @@ class Session:
         output rather than scoping the work, and a warm pass is 64ms anyway.
         Linting everything also means a change here shows up in the map it breaks
         *over there* — which is the entire reason a cross-file linter exists.
+
+        A tree with no linter (no `ctx`) has no findings, and that is an
+        answer, not an error: the Diagnostics pane renders the absence.
         """
+        if self.ctx is None:
+            return []
         if self._found is None:
             self._found = maplint.run(self.ctx)
         return self._found
@@ -363,7 +412,7 @@ class Session:
 
     def _finding(self, d: Diagnostic) -> Finding:
         stem = Path(d.path).stem
-        known = d.path.startswith("maps/") and stem in set(self.ctx.label_to_const)
+        known = d.path.startswith("maps/") and stem in self.hack.reads.maps()
         return Finding(
             severity=d.severity.value, code=d.code, message=d.message,
             location=d.location, line=d.line, map_label=stem if known else "",
@@ -385,6 +434,7 @@ class Session:
         the action can't be built at all, which is a clean no-op, not a partial
         failure.
         """
+        self._writable()
         self._fresh()
         return Preview(action, action.run(self.root))
 
@@ -397,6 +447,7 @@ class Session:
         the file the edit was computed from. Minutes can pass between opening a
         form and confirming it, and both of those can go stale in that time.
         """
+        self._writable()
         self._fresh()
         changed = [e for e in preview.edits if e.changed and (e.new_text or e.binary)]
         if not changed:
@@ -473,6 +524,7 @@ class Session:
     def build(self, log: Callable[[str], None], *,
               target: str = play.DEFAULT_TARGET, jobs: int | None = None) -> bool:
         """`make -j<n> <target>`, streamed a line at a time. True if it built."""
+        self._playable()
         try:
             return play.build(self.root, log, target=target, jobs=jobs)
         except play.PlayError as e:
@@ -484,6 +536,7 @@ class Session:
         is where the target is argued: the two ROMs sit side by side in the repo,
         and choosing between them by which file happens to exist is how the studio
         came to build one and boot the other."""
+        self._playable()
         try:
             return play.boot(self.root, self._emulator, const, y, x,
                              target=target, keep_people=keep_people)
@@ -492,7 +545,8 @@ class Session:
 
     # -- keeping the linter honest -------------------------------------------- #
     def _invalidate(self, paths: list[str]) -> None:
-        self.ctx.invalidate(paths)
+        if self.ctx is not None:
+            self.ctx.invalidate(paths)
         self._found = None
         # A new map is a new entry in every list of maps, and a new NPC's flag is
         # a new entry in the list the forms offer.
@@ -526,9 +580,11 @@ class Session:
         silently give up that guard instead of exercising it.
         """
         caches.clear()          # which finds `offers._index` too, by discovery
-        self.ctx = LintContext(self.root)
+        # Mounted afresh: the adapter's own state (the linter's context among
+        # it) was derived from the old tree, and a re-read is a re-mount.
+        self.hack = mount(self.root)
+        self.ctx = self.hack.ctx
         self._found = None
-        self.__dict__.pop("_boxes", None)
         # The stamp is taken now and the repo is re-read lazily, on the next
         # question anybody asks. So the stamp is always *older* than the reads it
         # vouches for, and a file that changes in the gap is reported as drift
