@@ -54,10 +54,15 @@ class _Edited(_Placed):
     @property
     def at(self) -> int:
         """Which one. Absent means the form was opened without a row under it,
-        which is a bug rather than a mistake — but a bell beats a traceback."""
-        if self.target is None:
+        which is a bug rather than a mistake — but a bell beats a traceback.
+
+        The handle is spelled out here, into the position the wiring functions
+        take — wiring is the write half of the adapter that minted it, so this
+        is the handle going home, not the port reading it. Each editor already
+        knows its own list; the position is the part the row contributed."""
+        if self.target is None or self.target.handle is None:
             raise ActionError("nothing is selected to edit")
-        return self.target.index
+        return self.target.handle.index
 
     def _done(self, change: objedit.Change) -> Result:
         return Result(change.summary, change.changes, change.notes)
