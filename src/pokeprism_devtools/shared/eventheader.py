@@ -42,12 +42,12 @@ from .edits import Edit
 # lives in. Re-exported, because every caller wants both and the split is ours,
 # not theirs.
 from .eventmodel import (LIST_MACROS, LIST_ORDER, PROPS, Entry, EventList,
-                         ListKind, Prop, UnparseableHeader, as_int, format_entry,
-                         _INDENT, _MACRO_RE, _split_args)
+                         Handle, ListKind, Prop, UnparseableHeader, as_int,
+                         format_entry, _INDENT, _MACRO_RE, _split_args)
 
 __all__ = ["LIST_MACROS", "LIST_ORDER", "PROPS", "Entry", "EventHeader",
-           "EventList", "ListKind", "Prop", "UnparseableHeader", "as_int",
-           "format_entry", "parse_map", "parse_text"]
+           "EventList", "Handle", "ListKind", "Prop", "UnparseableHeader",
+           "as_int", "format_entry", "parse_map", "parse_text"]
 
 #: Finding the block in a file, which is this module's whole job. The regex that
 #: reads *one line of it* is `eventmodel._MACRO_RE` — a different question.
@@ -83,6 +83,14 @@ class EventHeader:
     @property
     def object_events(self) -> list[Entry]:
         return self.lists[ListKind.OBJECT_EVENTS].entries
+
+    def entry_at(self, handle: Handle) -> Entry | None:
+        """The entry a :class:`~.eventmodel.Handle` names, or None if the map no
+        longer has one there. Resolution lives here rather than with the caller
+        because only the side that minted the handle knows what kind of name it
+        holds — the port passes it back and asks."""
+        entries = self.lists[handle.kind].entries
+        return entries[handle.index] if 0 <= handle.index < len(entries) else None
 
     def to_text(self) -> str:
         """The file's full text. Byte-identical to the source if nothing was

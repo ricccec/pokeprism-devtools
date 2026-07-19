@@ -44,7 +44,7 @@ def prefill(root: Path, label: str, const: str, ref: Ref,
         return mapedit.values(root, label), {}
 
     ctx = objedit.MapEdit(root, const)
-    entry = ctx.entry(eh.ListKind(ref.kind), ref.index)
+    entry = ctx.entry(ref.handle.kind, ref.handle.index)
     said = {(t.owner, t.label): t for t in texts}
 
     if ref.what == "warp":

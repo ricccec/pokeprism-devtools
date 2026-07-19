@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import NamedTuple
 
 _MACRO_RE = re.compile(r"^\s*(?P<macro>[a-z_]\w*)\s+(?P<args>.*?)\s*(?P<comment>;.*)?$")
 
@@ -47,6 +48,25 @@ LIST_ORDER: tuple[ListKind, ...] = (
     ListKind.BG_EVENTS,
     ListKind.OBJECT_EVENTS,
 )
+
+
+class Handle(NamedTuple):
+    """How this hack names one entry of an event header, across the seam.
+
+    A list and a position, because that is the most prism's source can say about
+    an object: `object_const_def` appears in none of its 465 maps, so an object
+    *is* its ordinal — the scripts say ``disappear 3`` — and no name exists to
+    carry. The rest of the gen-2 family names its objects, and an adapter for one
+    of those will mint handles carrying the const name instead. The port stores
+    handles and hands them back — :meth:`~.eventheader.EventHeader.entry_at`
+    resolves them, on this side of the seam — and does no arithmetic on them,
+    which is what lets that shape change without the port noticing.
+    """
+    kind: ListKind
+    index: int
+
+    def __str__(self) -> str:
+        return f"{self.kind.value}[{self.index}]"
 
 # --------------------------------------------------------------------------- #
 # model                                                                       #
