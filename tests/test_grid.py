@@ -25,9 +25,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools import map_show  # noqa: E402
-from pokeprism_devtools.shared import (  # noqa: E402
-    blockdata, blocksrc, coords, eventheader, render, swatches, symfile,
-)
+from pokeprism_devtools.hacks.prism import (  # noqa: E402
+    blockdata, blocksrc, eventheader, render, swatches)
+from pokeprism_devtools.shared import coords, symfile # noqa: E402
 
 PRISM = Path.home() / "code/ricccec/pokeprism"
 FAILED = 0
@@ -87,7 +87,7 @@ def test_source_agrees_with_the_rom() -> None:
     print("\nevery map, read from source and from the ROM")
     syms = symfile.SymFile.load(sym)
 
-    from pokeprism_devtools.shared import mapsource
+    from pokeprism_devtools.hacks.prism import mapsource
     pairs = mapsource.header_pairs(PRISM)
 
     same = 0
@@ -218,7 +218,7 @@ def test_markers_are_where_the_source_says() -> None:
         print("  (skipping — pokeprism not found)")
         return
 
-    marks = coords.markers(eventheader.parse_map(path))
+    marks = eventheader.markers(eventheader.parse_map(path))
 
     # Read straight off maps/CastroForest.asm.
     check("a warp at warp_def 11, 8", marks.get((11, 8)) == coords.WARP)

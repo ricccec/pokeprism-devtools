@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from ..shared import mapsource, trainercite, trainerparty, wilddata
+from ..hacks.prism import mapsource, trainercite, trainerparty, wilddata
 from .context import LintContext
 from .diagnostics import Diagnostic, Severity
 

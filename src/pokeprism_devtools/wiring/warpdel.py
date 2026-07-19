@@ -48,9 +48,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..shared import eventheader as eh, mapsource
+from ..hacks.prism import eventheader as eh, mapsource
 from ..shared.edits import Edit
-from ..shared.eventheader import ListKind
+from ..hacks.prism.eventheader import ListKind
 
 #: Which argument holds the warp number, and which holds the map, in each macro.
 _WARP_TO, _WARP_MAP = 2, 3

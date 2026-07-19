@@ -33,7 +33,7 @@ five-kind mechanism finally being pointed at the boulder.
 `engine/events.asm`: `.itemball` at 513, `.tmhm` at 529, the fruit tree at 598, and
 the hidden item's three-byte record at 682. The std scripts a rock and a boulder
 run are `smashrock` and `strengthboulder` (`engine/std_scripts.asm`), and what
-makes them props rather than people is written down in `shared/eventmodel.Prop`.
+makes them props rather than people is written down in `hacks/prism/eventmodel.Prop`.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..shared import consts, eventheader as eh
+from ..hacks.prism import consts, eventheader as eh
 from .objedit import (FLAG, PALETTE, PARAM, POINTER, S_FACING, X, Y, Change,
                       EditError, MapEdit, palette_of, repainted, spliced)
 from .scaffold import (ALWAYS, INDENT, MapCtx, Object, Scaffold, ScaffoldError,

@@ -34,7 +34,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .edits import Edit
+from ...shared.edits import Edit
 
 _DIR = "trainers/groups"
 _POINTERS = "trainers/trainer_pointers.asm"

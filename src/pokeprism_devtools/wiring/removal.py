@@ -12,7 +12,7 @@ Three of the four pieces come out cleanly:
 
 The fourth, a **trainer's party**, does not, and this module will not touch it.
 Parties are 1-based ordinals into ``trainers/groups/<class>.asm`` (see
-:mod:`..shared.trainercite`), so deleting one re-teams every trainer below it in
+:mod:`..hacks.prism.trainercite`), so deleting one re-teams every trainer below it in
 the group. What you get instead is a warning that the party is now an orphan,
 and the linter's ``trainer-orphan`` will keep saying so until someone deals with
 it deliberately.
@@ -34,7 +34,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..shared import eventflags, eventheader as eh, mapsource, trainercite
+from ..hacks.prism import eventflags, eventheader as eh, mapsource, trainercite
 from ..shared.edits import Edit
 
 #: A person_event's flag argument when the object is unconditional.

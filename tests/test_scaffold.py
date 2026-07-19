@@ -21,10 +21,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools.shared import (  # noqa: E402
+from pokeprism_devtools.hacks.prism import (  # noqa: E402
     consts, eventheader as eh, landmarks, trainercite as tc, trainerparty as tp,
-    wilddata as wd,
-)
+    wilddata as wd)
 from pokeprism_devtools.shared.edits import StaleEdit, apply_edits  # noqa: E402
 from pokeprism_devtools.wiring import (  # noqa: E402
     props as pk, removal as rm, scaffold as sc)

@@ -16,11 +16,10 @@ from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
-from ..shared import (
+from ..hacks.prism import (
     dialogue, eventflags, eventheader as eh, flagrefs, landmarks, maps, mapsource,
-    spritesets, textbox, trainercite, trainerparty,
-)
-from ..shared.maps import MapDef
+    spritesets, textbox, trainercite, trainerparty)
+from ..hacks.prism.maps import MapDef
 
 _SECOND_HEADERS = "maps/second_map_headers.asm"
 _PRIMARY_HEADERS = "maps/map_headers.asm"

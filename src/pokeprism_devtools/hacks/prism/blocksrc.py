@@ -27,7 +27,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import constants, lz, maps as maps_mod, mapsource
+from . import maps as maps_mod, mapsource
+from ...shared import constants, lz
 from .blockdata import BlockData
 
 _DIMENSIONS = "constants/map_dimension_constants.asm"

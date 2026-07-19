@@ -14,8 +14,8 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from ..shared import maps as maps_mod
-from ..shared import mapsource
+from ..hacks.prism import maps as maps_mod
+from ..hacks.prism import mapsource
 from ..shared.paths import RepoNotFound, repo_root
 
 # ---------------------------------------------------------------------------

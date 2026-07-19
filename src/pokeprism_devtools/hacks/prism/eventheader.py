@@ -37,17 +37,17 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .edits import Edit
+from ...shared.edits import Edit
 # What an entry *means* is :mod:`.eventmodel`; this module is about the file it
 # lives in. Re-exported, because every caller wants both and the split is ours,
 # not theirs.
 from .eventmodel import (LIST_MACROS, LIST_ORDER, PROPS, Entry, EventList,
                          Handle, ListKind, Prop, UnparseableHeader, as_int,
-                         format_entry, _INDENT, _MACRO_RE, _split_args)
+                         format_entry, markers, _INDENT, _MACRO_RE, _split_args)
 
 __all__ = ["LIST_MACROS", "LIST_ORDER", "PROPS", "Entry", "EventHeader",
            "EventList", "Handle", "ListKind", "Prop", "UnparseableHeader",
-           "as_int", "format_entry", "parse_map", "parse_text"]
+           "as_int", "format_entry", "markers", "parse_map", "parse_text"]
 
 #: Finding the block in a file, which is this module's whole job. The regex that
 #: reads *one line of it* is `eventmodel._MACRO_RE` — a different question.

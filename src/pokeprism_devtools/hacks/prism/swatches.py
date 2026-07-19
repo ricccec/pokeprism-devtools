@@ -21,7 +21,8 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from . import coords, render
+from . import render
+from ...shared import coords
 
 Rgb = tuple[int, int, int]
 #: A block's four quadrant colors, in reading order: top-left, top-right,

@@ -13,7 +13,7 @@ has no quantity box to get wrong and a boulder has no dialogue box at all.
 The kinds are a *closed list*, on purpose. The studio does not offer to place "an
 object" and then ask you thirteen questions about it; it offers the half-dozen
 objects it knows how to place correctly, each with everything the engine has
-already decided filled in. A seventh kind is a `Prop` in `shared/eventmodel.py`
+already decided filled in. A seventh kind is a `Prop` in `hacks/prism/eventmodel.py`
 plus a branch here — which is a change to make deliberately, rather than a form
 that lets you assemble a broken one out of dropdowns.
 """
@@ -24,9 +24,9 @@ import re
 
 from pathlib import Path
 
-from ..shared import eventmodel, trainerstats
-from ..shared.eventflags import FlagError
-from ..shared.eventheader import ListKind
+from ..hacks.prism import eventmodel, trainerstats
+from ..hacks.prism.eventflags import FlagError
+from ..hacks.prism.eventheader import ListKind
 from ..wiring import connections, props, removal, scaffold, warpdel
 # By name, not by module: `Action.text()` is a method, and `text.reword(...)`
 # sitting next to `self.text("label")` in the same three lines is a trap.

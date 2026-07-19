@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from ..shared.eventheader import LIST_ORDER, ListKind
+from ..hacks.prism.eventheader import LIST_ORDER, ListKind
 from .context import LintContext
 from .diagnostics import Diagnostic, Severity
 

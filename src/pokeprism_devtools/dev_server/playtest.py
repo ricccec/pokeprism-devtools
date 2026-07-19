@@ -24,7 +24,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pokeprism_devtools.shared import savefile, symfile
+from pokeprism_devtools.hacks.prism import savefile
+from pokeprism_devtools.shared import symfile
 
 from . import apply, launcher
 

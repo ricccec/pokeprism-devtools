@@ -23,7 +23,8 @@ import sys
 import time
 import traceback
 
-from pokeprism_devtools.shared import paths, savefile, symfile
+from pokeprism_devtools.hacks.prism import savefile
+from pokeprism_devtools.shared import paths, symfile
 
 from . import apply, inventory
 

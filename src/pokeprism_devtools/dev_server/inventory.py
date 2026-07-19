@@ -14,7 +14,8 @@ import re
 from dataclasses import asdict
 from pathlib import Path
 
-from pokeprism_devtools.shared import constants, maps, savefile, species, symfile
+from pokeprism_devtools.hacks.prism import maps, savefile, species
+from pokeprism_devtools.shared import constants, symfile
 
 
 # Bump when the inventory layout changes (new fields, new offsets); cached

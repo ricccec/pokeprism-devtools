@@ -30,12 +30,13 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..shared import (
-    blocksrc, coords, eventheader, mapsource, maps as maps_mod, paths, render, swatches,
-)
-from ..shared.blobsizes import PRIMARY_HEADER_GROWTH, compressed_blk_size, secondary_size
+from ..hacks.prism import (
+    blocksrc, eventheader, mapsource, maps as maps_mod, render, swatches)
+from ..shared import coords, paths
+from ..hacks.prism.blobsizes import (
+    PRIMARY_HEADER_GROWTH, compressed_blk_size, secondary_size)
 from ..shared.mapfile import MapFile
-from ..shared.mapspec import MapSpec
+from ..hacks.prism.mapspec import MapSpec
 
 
 class MapNotFound(RuntimeError):
@@ -256,7 +257,7 @@ def print_grid(root: Path, label: str, time_of_day: int = 1, zoom: int | None = 
 
     marks: dict[tuple[int, int], str] = {}
     try:
-        marks = coords.markers(eventheader.parse_map(root / f"maps/{label}.asm"))
+        marks = eventheader.markers(eventheader.parse_map(root / f"maps/{label}.asm"))
     except (eventheader.UnparseableHeader, FileNotFoundError) as e:
         print(f"  (no objects drawn — {e})\n", file=sys.stderr)
 

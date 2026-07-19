@@ -101,7 +101,7 @@ def boot(root: Path, emulator: devplay.Emulator, const: str, y: int, x: int, *,
 
     `y` and `x` are coordinate tiles, which is what the grid cursor reports and
     what `wYCoord`/`wXCoord` hold. No `+4` here: that offset lives inside the
-    object structs, and `shared/people.py` is the one that knows about it.
+    object structs, and `hacks/prism/people.py` is the one that knows about it.
 
     **The ROM is the one named, or none.** No falling back to the other build: you
     said which target, the build wrote that one, and handing back the *other* one

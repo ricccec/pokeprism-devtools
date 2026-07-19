@@ -16,7 +16,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from . import blockdata, lz, symfile
+from . import blockdata
+from ...shared import lz, symfile
 
 TILE_PX = 8
 BLOCK_PX = 32   # 4×4 graphics tiles per block (wDecompressedMetatiles: ds 256 * 16)
