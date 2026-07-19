@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import lz, symfile
+from ...shared import lz, symfile
 
 # Sizes derived from the asm — see docs/blockdata-plan.md.
 MAP_HEADER_SIZE = 9     # 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1

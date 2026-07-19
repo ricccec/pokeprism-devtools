@@ -25,8 +25,10 @@ import re
 from pathlib import Path
 
 from ..maplint.context import LintContext
-from ..shared import (blocksrc, coords, dialogue, eventheader, maps as maps_mod,
-                      mapsource, roofs, swatches, textbox, wilddata)
+from ..hacks.prism import (
+    blocksrc, dialogue, eventheader, maps as maps_mod, mapsource, roofs, swatches,
+    textbox, wilddata)
+from ..shared import coords
 from . import panels
 from .model import MapData, MapGeometry, Measured, TextPreview, TextRef
 
@@ -98,7 +100,7 @@ def read_map(root: Path, ctx: LintContext, label: str,
     geometry = MapGeometry(
         label=label, blocks=bd.blocks, height=bd.height, width=bd.width,
         swatches=swatches.for_map(root, bd.tileset_id, bd.permission),
-        marks=coords.markers(header) if header else {},
+        marks=eventheader.markers(header) if header else {},
     )
     return MapData(label, const, geometry, error, tabs)
 

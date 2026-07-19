@@ -33,7 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..shared.blockdata import BlockData
+from ..hacks.prism.blockdata import BlockData
 from ..shared.edits import Edit
 from ..wiring import connections, scaffold, warps
 from .panels import Ref
@@ -176,7 +176,7 @@ class Action:
         """What other fields should say, now that `changed` has changed.
 
         Picking a trainer class fills in the sprite and the palette that class
-        usually wears — see `shared/trainerstats.py`, which *counts* rather than
+        usually wears — see `hacks/prism/trainerstats.py`, which *counts* rather than
         guessing, because the sprite for a `SKIER` is `SPRITE_BUENA` and no rule
         was ever going to produce that.
 

@@ -28,8 +28,9 @@ from test_maplint import _fixture as _lint_fixture  # noqa: E402
 
 from pokeprism_devtools import maplint  # noqa: E402
 from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
-from pokeprism_devtools.shared import coords, eventheader, world  # noqa: E402
-from pokeprism_devtools.shared import paths as shared_paths  # noqa: E402
+from pokeprism_devtools.hacks.prism import eventheader # noqa: E402
+from pokeprism_devtools.shared import coords, world # noqa: E402
+from pokeprism_devtools.shared import paths as shared_paths # noqa: E402
 from pokeprism_devtools.studio import actions, content, offers, panels  # noqa: E402
 from pokeprism_devtools.studio.session import (Session, SessionError,  # noqa: E402
                                                StaleWorld)
@@ -445,7 +446,7 @@ def test_a_tile_crosses_the_seam_by_name() -> None:
     check("and is still the bare (7, 9) older callers build", t == (7, 9))
     check("markers are keyed by it", all(
         isinstance(k, coords.Tile)
-        for k in coords.markers(eventheader.parse_text(
+        for k in eventheader.markers(eventheader.parse_text(
             "X_MapEventHeader::\n\tdb 0, 0\n\tdb 1\n\twarp_def 3, 5, 1, TOWN_A\n"
             "\tdb 0\n\tdb 0\n\tdb 0\n", Path("X.asm"))).keys()))
 
@@ -687,7 +688,7 @@ def _check_every_tile_points_at_its_own_row(s: Session) -> None:
     """The grid and the tables must agree about where everything is.
 
     A map's objects are laid out twice: once as glyphs on the grid, once as rows in
-    the tables. The grid's marks come from `coords.markers` walking the event
+    the tables. The grid's marks come from `eventheader.markers` walking the event
     header; the rows come from `panels` walking it again. If those two ever disagree
     — about the order, about the `+4` the `person_event` macro adds, about which
     list a hidden item lives in — then clicking the third NPC highlights the fourth,

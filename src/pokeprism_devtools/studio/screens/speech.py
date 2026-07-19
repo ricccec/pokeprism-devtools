@@ -1,6 +1,6 @@
 """A dialogue box that tells you what each line costs, on the line.
 
-(Named `speech`, not `dialogue`: `shared/dialogue.py` is the parser, and the seam
+(Named `speech`, not `dialogue`: `hacks/prism/dialogue.py` is the parser, and the seam
 test that keeps the view from importing a parser matches on the module name.)
 
 The old form printed the speech twice: once in the box you were typing into, and

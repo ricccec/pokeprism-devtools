@@ -33,8 +33,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..shared import (consts, dialogue, eventheader as eh, mapsource, spritesets,
-                      trainercite, trainerparty)
+from ..hacks.prism import (
+    consts, dialogue, eventheader as eh, mapsource, spritesets, trainercite,
+    trainerparty)
 from ..shared.edits import Edit
 from .scaffold import INDENT, Object, ScaffoldError, allocate_flag, require
 

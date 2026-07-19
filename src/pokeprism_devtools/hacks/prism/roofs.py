@@ -48,7 +48,7 @@ _LABEL_RE = re.compile(r"^MapGroupRoofs:")
 _INCBIN_RE = re.compile(r'^\s*INCBIN\s+"([^"]+)"')
 
 #: Game Boy Color channels are 5 bits. 8-bit ×255/31 is the conversion the rest
-#: of the toolchain uses (see `shared/render.py`), so the colours here match the
+#: of the toolchain uses (see `hacks/prism/render.py`), so the colours here match the
 #: ones the grid is drawn with rather than being a second, slightly different
 #: idea of the same red.
 def _rgb555(r: int, g: int, b: int) -> str:

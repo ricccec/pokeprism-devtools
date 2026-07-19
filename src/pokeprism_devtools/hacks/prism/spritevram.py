@@ -32,7 +32,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from . import symfile
+from ...shared import symfile
 
 # Sprite types (constants/sprite_constants.asm). GetSpriteLength gives STILL_SPRITE
 # 4 tiles and everything else 12; only the STILL/non-STILL split matters here.

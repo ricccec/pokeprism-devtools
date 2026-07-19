@@ -18,8 +18,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools.shared import eventheader as eh  # noqa: E402
-from pokeprism_devtools.shared.eventheader import ListKind, UnparseableHeader  # noqa: E402
+from pokeprism_devtools.hacks.prism import eventheader as eh # noqa: E402
+from pokeprism_devtools.hacks.prism.eventheader import (  # noqa: E402
+    ListKind, UnparseableHeader)
 
 _failures = 0
 

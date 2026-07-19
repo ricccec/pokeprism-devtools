@@ -2,7 +2,7 @@
 
 `prism-mapfit` "assumes the map content already exists... it does not author
 maps" (see docs/devtools.md). This tool fills that gap for a map that doesn't
-exist yet: it interactively gathers a `MapSpec` (see `shared.mapspec`), writes
+exist yet: it interactively gathers a `MapSpec` (see `hacks.prism.mapspec`), writes
 an empty `maps/<Label>.asm` script/event-header stub, places the supplied
 `.blk`/`.ablk` at `maps/blk/<Label>.<ext>`, wires the five asm source files
 via `mapfit.mapwire.ALL_ASM_EDITORS`, and saves the resulting spec to
@@ -22,9 +22,9 @@ import sys
 from pathlib import Path
 
 from ..mapfit import mapwire
-from ..shared import maps as maps_mod
-from ..shared import mapsource
-from ..shared.mapspec import MapSpec
+from ..hacks.prism import maps as maps_mod
+from ..hacks.prism import mapsource
+from ..hacks.prism.mapspec import MapSpec
 from ..shared.paths import RepoNotFound, repo_root
 
 _PERMISSIONS = ("TOWN", "ROUTE", "INDOOR", "CAVE", "PERM_5", "GATE", "DUNGEON")

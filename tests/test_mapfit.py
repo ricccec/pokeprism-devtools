@@ -24,9 +24,10 @@ from pokeprism_devtools.mapfit import mapwire  # noqa: E402
 from pokeprism_devtools.mapfit.packing import (  # noqa: E402
     FreeSpace, Item, NoFitError, pack,
 )
-from pokeprism_devtools.shared import mapsource, paths  # noqa: E402
+from pokeprism_devtools.hacks.prism import mapsource # noqa: E402
+from pokeprism_devtools.shared import paths # noqa: E402
 from pokeprism_devtools.shared.mapfile import Bank, MapFile, Section  # noqa: E402
-from pokeprism_devtools.shared.mapspec import MapSpec  # noqa: E402
+from pokeprism_devtools.hacks.prism.mapspec import MapSpec  # noqa: E402
 
 _failures = 0
 

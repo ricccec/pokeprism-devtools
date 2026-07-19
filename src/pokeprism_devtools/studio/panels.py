@@ -2,7 +2,7 @@
 
 Pure functions: each returns `(columns, rows)`, so the contents of every tab can
 be tested without starting a terminal and the widgets stay dumb. Nothing here
-opens a file. An :class:`~..shared.eventheader.EventHeader` carries the whole map
+opens a file. An :class:`~..hacks.prism.eventheader.EventHeader` carries the whole map
 asm in `.lines`, so reading a trainer's class off the script block it points at is
 a walk over data we were already handed — not a second read of the repo.
 
@@ -37,8 +37,8 @@ import re
 from dataclasses import dataclass, field
 
 from ..maplint.context import Connection
-from ..shared import eventheader as eh
-from ..shared import roofs, wilddata
+from ..hacks.prism import eventheader as eh
+from ..hacks.prism import roofs, wilddata
 from ..shared.coords import Tile
 
 _NONE = "—"
@@ -76,7 +76,7 @@ class Ref:
     port's own, and no view code may read them.
 
     Identity itself is not even the port's: it is the adapter's
-    :class:`~..shared.eventmodel.Handle`, carried whole and resolved by handing
+    :class:`~..hacks.prism.eventmodel.Handle`, carried whole and resolved by handing
     it back (`EventHeader.entry_at`). Today a handle is a list kind and a
     position, because that is all prism's source can say about an object; the
     rest of the gen-2 family names its objects (`object_const_def`), and the day

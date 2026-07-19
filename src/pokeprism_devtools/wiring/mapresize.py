@@ -25,8 +25,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..shared import blocksrc, coords, maps as maps_mod, mapsource
-from ..shared import eventheader as eh
+from ..hacks.prism import blocksrc, maps as maps_mod, mapsource
+from ..shared import coords
+from ..hacks.prism import eventheader as eh
 from ..shared.edits import Edit
 from .objedit import (Change, EditError, MapEdit, S_X, S_Y, T_X, T_Y, W_X, W_Y,
                       X, Y, spliced)

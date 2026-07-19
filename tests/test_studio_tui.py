@@ -28,7 +28,8 @@ from textual.geometry import Offset
 from textual.widgets import (DataTable, Input, OptionList, Static, TabbedContent,
                              TextArea)
 
-from pokeprism_devtools.shared import blocksrc, coords, eventheader, paths, swatches
+from pokeprism_devtools.hacks.prism import blocksrc, eventheader, swatches
+from pokeprism_devtools.shared import coords, paths
 from pokeprism_devtools.studio import Session, panels
 from pokeprism_devtools.studio.actions import ITEMS, ActionError
 from pokeprism_devtools.studio.content import (BOULDER, HIDDEN, ITEMBALL,
@@ -953,7 +954,8 @@ class TestRefresh(unittest.TestCase):
         items it read an hour ago, with total confidence. `reload()` looked right
         and was wrong, and only a test that actually edited a file found it.
         """
-        from pokeprism_devtools.shared import caches, consts
+        from pokeprism_devtools.hacks.prism import consts
+        from pokeprism_devtools.shared import caches
 
         consts.names(self.root, consts.ITEMS)
         self.assertTrue(consts.names.cache_info().currsize,
@@ -1933,7 +1935,7 @@ class TestChoices(unittest.TestCase):
         self.assertGreater(len(tms), 90)
 
     def test_a_class_the_engine_would_crash_on_is_not_offered(self) -> None:
-        from pokeprism_devtools.shared import trainerparty
+        from pokeprism_devtools.hacks.prism import trainerparty
         offered = set(self.session.choices("classes"))
         null = {cls for cls, group in trainerparty.class_groups(ROOT).items()
                 if group is None}

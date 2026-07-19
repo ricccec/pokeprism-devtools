@@ -15,7 +15,8 @@ from __future__ import annotations
 import difflib
 from dataclasses import dataclass, field
 
-from ..shared import coords, swatches
+from ..hacks.prism import swatches
+from ..shared import coords
 from ..shared.edits import Edit
 from . import panels
 from .actions import Action, Result

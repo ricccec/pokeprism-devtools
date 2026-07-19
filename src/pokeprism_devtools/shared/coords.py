@@ -138,48 +138,6 @@ def hex_color(rgb: tuple[int, int, int]) -> str:
     return "#%02x%02x%02x" % rgb
 
 
-_ITEM_TYPES = ("PERSONTYPE_ITEMBALL", "PERSONTYPE_TMHMBALL", "PERSONTYPE_FRUITTREE")
-_TRAINER_TYPES = ("PERSONTYPE_TRAINER", "PERSONTYPE_GENERICTRAINER")
-
-
-def markers(header) -> dict[Tile, str]:
-    """Everything placed on a map, by the coordinate tile it stands on.
-
-    Takes an :class:`..eventheader.EventHeader`. **No offset is applied, and that
-    is the point**: `Entry.y()` reads the number written in the *source*, and in
-    source `warp_def`, `signpost` and `person_event` all share one origin. The +4
-    above is added by the assembler, so it belongs to the bytes, not to these.
-    Add it here and every NPC on the grid drifts four tiles from where the file
-    says it is.
-
-    Later entries win, because that is what the engine does with two objects on
-    one tile — and seeing only one of them is a fair picture of the result.
-
-    Coord events are in here, and they were not always: a trigger is a thing that
-    stands on a tile and fires when you walk onto it, and it used to be drawn as
-    nothing at all. An invisible object on a map you are reading by eye is worse
-    than a wrong one, because you will not go looking for it.
-    """
-    from .eventheader import ListKind
-
-    out: dict[Tile, str] = {}
-    for kind, glyph in ((ListKind.WARPS, WARP), (ListKind.COORD_EVENTS, TRIGGER),
-                        (ListKind.BG_EVENTS, SIGN)):
-        for entry in header.list_of(kind).entries:
-            y, x = entry.coords
-            if y is not None and x is not None:
-                out[Tile(y=y, x=x)] = glyph
-
-    for entry in header.object_events:
-        y, x = entry.coords
-        if y is None or x is None:
-            continue
-        kind = entry.persontype
-        out[Tile(y=y, x=x)] = (ITEM if kind in _ITEM_TYPES else
-                               TRAINER if kind in _TRAINER_TYPES else PERSON)
-    return out
-
-
 def glyph_cells(marks: dict[tuple[int, int], str], zoom: int) -> dict[tuple[int, int], str]:
     """Where each marker's *letter* goes, keyed by (half-row, column).
 

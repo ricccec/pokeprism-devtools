@@ -195,13 +195,23 @@ vanilla is a place it over-fit to the outlier we happened to build it around.
   and coordinates are normalised at the boundary (#4). Both reach the view; both
   are bought back while prism is still the only hack to break.
 
-  *Started.* The view's half of both is done: a `Ref`'s view-facing surface is
-  now three declared affordances (existence, `adds`, `deletable`) plus equality,
-  no view module reads a Ref field or mints one (`panels.add_ref` does), and the
-  seam's tile is `coords.Tile` — named `(y, x)` fields, constructed by keyword,
-  stated once as the place an (x, y) adapter normalises. Still open: the port's
-  half of #1 (identity as a named handle where the hack has names) and the
-  `hacks/prism/` move itself.
+  **Done.** The view's half first: a `Ref`'s view-facing surface is three
+  declared affordances (existence, `adds`, `deletable`) plus equality, no view
+  module reads a Ref field or mints one (`panels.add_ref` does), and the seam's
+  tile is `coords.Tile` — named `(y, x)` fields, constructed by keyword, stated
+  once as the place an (x, y) adapter normalises. Then the port's half of #1:
+  identity is `eventmodel.Handle`, minted where the entry is parsed and
+  resolved by handing it back (`EventHeader.entry_at`); the port does no
+  arithmetic on it, and it is spelled out only at the mouth of the write path
+  it came from (`session.deletion` → `content.Remove`, `_Edited.at` → wiring).
+  Then the move: `hacks/prism/` now holds the twenty-nine modules that read or
+  write prism itself — its asm dialect, its file layout, its engine replay
+  (sprite VRAM, WRAM structs, ROM palette tables) — behind one stated
+  criterion, *would a second adapter have to reimplement this?* What remains
+  in `shared/` is mechanism over data already extracted (edit splicing, LZ,
+  RGBDS `.map`/`.sym`, coordinate tiles, the mount point), and it imports
+  nothing from the adapter: `coords.markers` — a prism reading that had grown
+  inside the seam's own vocabulary module — moved out to prove it.
 
 - **Phase 2 — add the two genuinely new axes.** Species `(id, form)` (#5) and a
   named-lookup trainer (#6), surfaced through `FIELDS`, GUI-free. Prism fills form

@@ -17,6 +17,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import NamedTuple
 
+from ...shared import coords
+from ...shared.coords import Tile
+
 _MACRO_RE = re.compile(r"^\s*(?P<macro>[a-z_]\w*)\s+(?P<args>.*?)\s*(?P<comment>;.*)?$")
 
 #: The repo's dominant style for an entry line: a tab, the macro, `, ` between args.
@@ -266,6 +269,53 @@ class EventList:
         way the map still parses — the mismatch is a lint finding, so callers can
         edit and fix it rather than being locked out of the map."""
         return self.declared_count == len(self.entries)
+
+
+_ITEM_TYPES = ("PERSONTYPE_ITEMBALL", "PERSONTYPE_TMHMBALL", "PERSONTYPE_FRUITTREE")
+_TRAINER_TYPES = ("PERSONTYPE_TRAINER", "PERSONTYPE_GENERICTRAINER")
+
+
+def markers(header) -> dict[Tile, str]:
+    """Everything placed on a map, by the coordinate tile it stands on.
+
+    Takes an :class:`~.eventheader.EventHeader` and speaks the seam's glyph
+    vocabulary (`shared.coords`) — which is why it lives on this side of the
+    line and not in `coords`: deciding that a `PERSONTYPE_ITEMBALL` is an item
+    is a reading of prism's macros, and only the glyphs it answers with are
+    the port's.
+
+    **No offset is applied, and that is the point**: `Entry.y()` reads the
+    number written in the *source*, and in source `warp_def`, `signpost` and
+    `person_event` all share one origin. The +4 (see `shared.coords`) is added
+    by the assembler, so it belongs to the bytes, not to these. Add it here and
+    every NPC on the grid drifts four tiles from where the file says it is.
+
+    Later entries win, because that is what the engine does with two objects on
+    one tile — and seeing only one of them is a fair picture of the result.
+
+    Coord events are in here, and they were not always: a trigger is a thing that
+    stands on a tile and fires when you walk onto it, and it used to be drawn as
+    nothing at all. An invisible object on a map you are reading by eye is worse
+    than a wrong one, because you will not go looking for it.
+    """
+    out: dict[Tile, str] = {}
+    for kind, glyph in ((ListKind.WARPS, coords.WARP),
+                        (ListKind.COORD_EVENTS, coords.TRIGGER),
+                        (ListKind.BG_EVENTS, coords.SIGN)):
+        for entry in header.list_of(kind).entries:
+            y, x = entry.coords
+            if y is not None and x is not None:
+                out[Tile(y=y, x=x)] = glyph
+
+    for entry in header.object_events:
+        y, x = entry.coords
+        if y is None or x is None:
+            continue
+        kind = entry.persontype
+        out[Tile(y=y, x=x)] = (coords.ITEM if kind in _ITEM_TYPES else
+                               coords.TRAINER if kind in _TRAINER_TYPES
+                               else coords.PERSON)
+    return out
 
 
 def format_entry(macro: str, args: list[str]) -> str:

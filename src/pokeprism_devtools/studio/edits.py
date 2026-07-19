@@ -29,8 +29,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..shared.eventflags import FlagError
-from ..shared.trainerparty import TrainerPartyError
+from ..hacks.prism.eventflags import FlagError
+from ..hacks.prism.trainerparty import TrainerPartyError
 from ..wiring import mapedit, objedit, props, warps
 from ..wiring.scaffold import ScaffoldError
 from ..wiring.text import TextError
@@ -323,7 +323,7 @@ class EditMap(Action):
         — the same rule `objedit` keeps on the bytes.
         """
         from . import newmap
-        from ..shared import consts
+        from ..hacks.prism import consts
 
         out = []
         if new["permission"] != was["permission"] \

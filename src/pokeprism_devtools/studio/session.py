@@ -43,8 +43,8 @@ from .. import maplint
 from ..dev_server import playtest as devplay
 from ..maplint.context import LintContext
 from ..maplint.diagnostics import Diagnostic, Severity
-from ..shared import (caches, eventheader, paths, spritepack, textbox,
-                      trainerstats, world)
+from ..hacks.prism import eventheader, spritepack, textbox, trainerstats
+from ..shared import caches, paths, world
 from ..shared.edits import StaleEdit, apply_edits
 from ..wiring import objedit
 from . import (actions, content, edits, offers, panels, play, prefill as fill,
@@ -181,14 +181,14 @@ class Session:
         can walk here.
 
         *Who* is counted from every trainer already in the repo, the same way
-        `follows` is — see `shared/trainerstats.classes_for`. A class does not
+        `follows` is — see `hacks/prism/trainerstats.classes_for`. A class does not
         say what it wears; only counting what is already there does.
 
         *Whether they can walk* is measured the way `maplint.rules_sprites`
         measures it, not guessed from the sprite's own type: an outdoor map
         only ever loads its group's `OutdoorSprites` set, and only the sprites
         that land inside VRAM table 1 there ever animate a walk cycle — the
-        ~9 the docstring in `shared/spritepack` explains. Indoor maps load
+        ~9 the docstring in `hacks/prism/spritepack` explains. Indoor maps load
         whatever their objects ask for, so nothing here bounds them.
         """
         sprite = sprite.strip()

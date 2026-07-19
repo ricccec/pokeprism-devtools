@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_maplint import _fixture  # noqa: E402
 
-from pokeprism_devtools.shared import charmap, dialogue, textbox  # noqa: E402
+from pokeprism_devtools.hacks.prism import charmap, dialogue, textbox # noqa: E402
 
 _failures = 0
 

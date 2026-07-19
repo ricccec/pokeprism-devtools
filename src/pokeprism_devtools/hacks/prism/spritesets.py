@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
-from .constants import parse_constants, to_dict
+from ...shared.constants import parse_constants, to_dict
 
 _SPRITE_CONSTANTS = "constants/sprite_constants.asm"
 _MISC_CONSTANTS = "constants/misc_constants.asm"

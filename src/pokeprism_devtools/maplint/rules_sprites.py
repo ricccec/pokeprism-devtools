@@ -1,6 +1,6 @@
 """The VRAM budget: which of a map's sprites actually get usable graphics.
 
-Everything here comes out of :mod:`..shared.spritepack`, which replays the
+Everything here comes out of :mod:`..hacks.prism.spritepack`, which replays the
 engine's own allocator rather than encoding a rule of thumb. The well-known
 "about 8 walking NPCs per map" ceiling is never written down — it is what the
 allocator happens to produce today, and these rules recompute it per map.
@@ -8,7 +8,7 @@ allocator happens to produce today, and these rules recompute it per map.
 
 from __future__ import annotations
 
-from ..shared import spritepack
+from ..hacks.prism import spritepack
 from .context import LintContext
 from .diagnostics import Diagnostic, Severity
 

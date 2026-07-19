@@ -1,6 +1,6 @@
 """Rules about event flags — the bits the save file remembers you by.
 
-All three are built on :mod:`..shared.flagrefs`, which indexes *every* reference
+All three are built on :mod:`..hacks.prism.flagrefs`, which indexes *every* reference
 in the repo. That matters more than it sounds. A flag can be named in four
 places, and the obvious one is the least common:
 
@@ -17,7 +17,7 @@ points at. Both were invisible.
 
 from __future__ import annotations
 
-from ..shared import flagrefs
+from ..hacks.prism import flagrefs
 from .context import LintContext
 from .diagnostics import Diagnostic, Severity
 
