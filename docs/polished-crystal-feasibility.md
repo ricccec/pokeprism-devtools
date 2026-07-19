@@ -217,6 +217,21 @@ vanilla is a place it over-fit to the outlier we happened to build it around.
   named-lookup trainer (#6), surfaced through `FIELDS`, GUI-free. Prism fills form
   with a constant and keeps its inline trainer.
 
+  **Done.** A wild mon crosses the seam as `panels.WildMon` — `(level, species,
+  form)`, the `Attributes` pattern: a declared record the reading side fills.
+  Prism fills `form` with its constant, `""`, and the form column exists only
+  when some row fills it — the degrade-to-absence template, driven by the data
+  and never by a hack name. And the trainer *lookup* moved behind the seam:
+  `panels._trainer_macro` was the port parsing prism's inline `trainer FLAG,
+  CLASS, PARTY` grammar with its own regex — leak #6 verbatim — and that
+  grammar now lives in `eventmodel.trainer_of`, which answers with a declared
+  `Trainer(flag, cls, party)` record. `party` is prism's ordinal today and a
+  name in the hacks that name their trainers; the table renders the record
+  either way and reads no macro. The generic block walk (`script_block`) moved
+  with it. Still the port's, knowingly: the hidden-item `dw`/`db` field read in
+  `panels.objects`, which is Phase 3's business along with every other
+  adapter-type import above the seam.
+
 - **Phase 3 — vanilla read adapter, then polished.** Vanilla first because it is
   the median and validates the boundary cheaply; polished second because its
   top-of-file layout (#2) and self-counting (#3) are the real stress test. Render
