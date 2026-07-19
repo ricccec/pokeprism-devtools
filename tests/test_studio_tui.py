@@ -28,7 +28,8 @@ from textual.geometry import Offset
 from textual.widgets import (DataTable, Input, OptionList, Static, TabbedContent,
                              TextArea)
 
-from pokeprism_devtools.hacks.prism import blocksrc, eventheader, swatches
+from pokeprism_devtools.hacks.prism import (blocksrc, eventheader,
+                                            read as prism_read, swatches)
 from pokeprism_devtools.shared import coords, paths
 from pokeprism_devtools.studio import Session, panels
 from pokeprism_devtools.studio.actions import ITEMS, ActionError
@@ -65,9 +66,10 @@ class TestPanels(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.header = eventheader.parse_map(ROOT / f"maps/{MAP}.asm")
+        cls.tables = prism_read.tables(cls.header, {})
 
     def test_objects_are_source_coordinates(self) -> None:
-        cols, rows = panels.npcs(self.header, {})
+        cols, rows = panels.npcs(self.tables.npcs)
         self.assertEqual(cols[:3], ["#", "y", "x"])
 
         # The +4 the person_event macro adds at assembly must not appear here:
@@ -84,9 +86,9 @@ class TestPanels(unittest.TestCase):
         two of them could be deleted twice; one that fell into none would be
         invisible, and an invisible NPC is the worst kind.
         """
-        tabs = [panels.npcs(self.header, {})[1],
-                panels.trainers(self.header)[1],
-                panels.objects(self.header)[1]]
+        tabs = [panels.npcs(self.tables.npcs)[1],
+                panels.trainers(self.tables.trainers)[1],
+                panels.objects(self.tables.props)[1]]
         found: list[int] = []
         for rows in tabs:
             found += [r.ref.handle.index for r in rows
@@ -99,34 +101,34 @@ class TestPanels(unittest.TestCase):
         """The one that would silently corrupt a map. An NPC third on the NPC tab
         may be seventh in the object_events list; editing it by row number would
         rewrite whoever is really seventh."""
-        rows = panels.npcs(self.header, {})[1]
+        rows = panels.npcs(self.tables.npcs)[1]
         for row in rows:
             entry = self.header.object_events[row.ref.handle.index]
-            self.assertNotIn(entry.persontype, panels.TRAINER_TYPES)
-            self.assertNotIn(entry.persontype, panels.PICKUP_TYPES)
+            self.assertNotIn(entry.persontype, prism_read.TRAINER_TYPES)
+            self.assertNotIn(entry.persontype, prism_read.PICKUP_TYPES)
 
     def test_a_pickup_tab_holds_both_lists(self) -> None:
         """An item ball is an object event and a hidden item is a bg event. They
         are the same thing to a person, so they share a tab — and each row has to
         remember which of the engine's two lists it really came from."""
         header = eventheader.parse_map(ROOT / "maps/BotanCity.asm")
-        rows = panels.objects(header)[1]
+        rows = panels.objects(prism_read.tables(header, {}).props)[1]
         kinds = {r.ref.handle.kind for r in rows}
         self.assertIn(eventheader.ListKind.BG_EVENTS, kinds,
                       "BotanCity has a hidden item; it isn't on the Pickups tab")
 
     def test_a_signpost_tab_never_shows_a_hidden_item(self) -> None:
         header = eventheader.parse_map(ROOT / "maps/BotanCity.asm")
-        for row in panels.signposts(header)[1]:
+        for row in panels.signposts(prism_read.tables(header, {}).signposts)[1]:
             entry = header.bg_events[row.ref.handle.index]
-            self.assertNotEqual(entry.arg(2), panels.HIDDEN_ITEM)
+            self.assertNotEqual(entry.arg(2), prism_read.HIDDEN_ITEM)
 
     def test_a_trainer_reads_his_class_off_the_macro(self) -> None:
         """A trainer's person_event says `-1` where everyone else keeps their
         event flag, because his real flag is the first argument of the `trainer`
         macro in his script. Showing the -1 would be showing a column that is
         always the same lie."""
-        rows = panels.trainers(self.header)[1]
+        rows = panels.trainers(self.tables.trainers)[1]
         self.assertTrue(rows, f"{MAP} has no trainers?")
         for row in rows:
             self.assertNotEqual(row.cells[-1], "-1")
@@ -134,7 +136,7 @@ class TestPanels(unittest.TestCase):
             self.assertNotEqual(row.cells[4], "—", "no class found")
 
     def test_warps_name_the_destination(self) -> None:
-        cols, rows = panels.warps(self.header)
+        cols, rows = panels.warps(self.tables.warps)
         self.assertIn("to map", cols)
         for row, entry in zip(rows, self.header.warps):
             if entry.macro == "warp_def":
@@ -154,9 +156,12 @@ class TestPanels(unittest.TestCase):
         cells wide on every tab of every map, which is what the eye actually sees:
         a great empty gutter down the left of the table.
         """
-        for table in (panels.npcs(self.header, {}), panels.trainers(self.header),
-                      panels.objects(self.header), panels.warps(self.header),
-                      panels.triggers(self.header), panels.signposts(self.header)):
+        for table in (panels.npcs(self.tables.npcs),
+                      panels.trainers(self.tables.trainers),
+                      panels.objects(self.tables.props),
+                      panels.warps(self.tables.warps),
+                      panels.triggers(self.tables.triggers),
+                      panels.signposts(self.tables.signposts)):
             cols = table[0]
             at = panels.prompt_column(cols)
             self.assertGreater(at, 0, f"{cols}: the prompt is back in the # column")

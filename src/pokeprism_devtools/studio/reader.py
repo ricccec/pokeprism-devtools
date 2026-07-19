@@ -26,8 +26,8 @@ from pathlib import Path
 
 from ..maplint.context import LintContext
 from ..hacks.prism import (
-    blocksrc, dialogue, eventheader, maps as maps_mod, mapsource, roofs, swatches,
-    textbox, wilddata)
+    blocksrc, dialogue, eventheader, maps as maps_mod, mapsource,
+    read as prism_read, swatches, textbox, wilddata)
 from ..shared import coords
 from . import panels
 from .model import MapData, MapGeometry, Measured, TextPreview, TextRef
@@ -53,6 +53,7 @@ def read_map(root: Path, ctx: LintContext, label: str,
     error = None
 
     header = None
+    tables = None
     try:
         header = eventheader.parse_map(root / f"maps/{label}.asm")
     except (eventheader.UnparseableHeader, FileNotFoundError) as exc:
@@ -62,14 +63,14 @@ def read_map(root: Path, ctx: LintContext, label: str,
                            panels.attributes(_attributes(root, label, const))))
 
     if header is not None:
-        says = _says(root, label, boxes)
+        tables = prism_read.tables(header, _says(root, label, boxes))
         tabs += [
-            panels.Tab("NPCs", panels.npcs(header, says), adds="NPC"),
-            panels.Tab("Trainers", panels.trainers(header), adds="trainer"),
-            panels.Tab("Objects", panels.objects(header), adds="object"),
-            panels.Tab("Warps", panels.warps(header), adds="warp"),
-            panels.Tab("Signposts", panels.signposts(header), adds="signpost"),
-            panels.Tab("Triggers", panels.triggers(header), adds="trigger"),
+            panels.Tab("NPCs", panels.npcs(tables.npcs), adds="NPC"),
+            panels.Tab("Trainers", panels.trainers(tables.trainers), adds="trainer"),
+            panels.Tab("Objects", panels.objects(tables.props), adds="object"),
+            panels.Tab("Warps", panels.warps(tables.warps), adds="warp"),
+            panels.Tab("Signposts", panels.signposts(tables.signposts), adds="signpost"),
+            panels.Tab("Triggers", panels.triggers(tables.triggers), adds="trigger"),
         ]
     else:
         # The map has a shape but its header doesn't parse. Say so where the
@@ -82,12 +83,15 @@ def read_map(root: Path, ctx: LintContext, label: str,
 
     tabs.append(panels.Tab(
         "Connections",
-        panels.connections(ctx.connections_by_map.get(const, [])),
+        panels.connections([
+            panels.Link(direction=c.direction, target=c.target,
+                        offset=c.offset, coord=c.coord, strip=c.strip)
+            for c in ctx.connections_by_map.get(const, [])]),
         adds="connection"))
 
     group = _group(root, const)
     if group is not None:
-        tabs.append(panels.Tab("Roof", panels.roof(roofs.for_group(root, group)),
+        tabs.append(panels.Tab("Roof", panels.roof(prism_read.roof(root, group)),
                                note=panels.ROOF_IS_READ_ONLY))
     tabs.append(panels.Tab("Wild", panels.wild(_wild(root, const)),
                            note=panels.WILD_IS_READ_ONLY))
@@ -100,7 +104,7 @@ def read_map(root: Path, ctx: LintContext, label: str,
     geometry = MapGeometry(
         label=label, blocks=bd.blocks, height=bd.height, width=bd.width,
         swatches=swatches.for_map(root, bd.tileset_id, bd.permission),
-        marks=eventheader.markers(header) if header else {},
+        marks=tables.marks if tables else {},
     )
     return MapData(label, const, geometry, error, tabs)
 

@@ -15,7 +15,6 @@ from __future__ import annotations
 import difflib
 from dataclasses import dataclass, field
 
-from ..hacks.prism import swatches
 from ..shared import coords
 from ..shared.edits import Edit
 from . import panels
@@ -38,7 +37,7 @@ class MapGeometry:
     blocks: bytes
     height: int                                    # in blocks
     width: int                                     # in blocks
-    swatches: tuple[swatches.Swatch, ...]
+    swatches: tuple[panels.Swatch, ...]
     #: Coordinate tile -> marker glyph. Empty when the event header doesn't parse:
     #: the map still has a shape, and it is still worth looking at.
     marks: dict[coords.Tile, str]

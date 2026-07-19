@@ -2,49 +2,45 @@
 
 Pure functions: each returns `(columns, rows)`, so the contents of every tab can
 be tested without starting a terminal and the widgets stay dumb. Nothing here
-opens a file — and nothing here parses one either: what a trainer battles you
-with is the adapter's answer (`eventmodel.trainer_of`), read off data the header
-was already carrying, and this side only renders the record it gets back.
+opens a file — and nothing here parses one either. Each tab's input is a
+**declared record** (:class:`Npc`, :class:`Warp`, :class:`WildMon`, …), the
+`Attributes` pattern throughout: this side declares the vocabulary, the reading
+side — an adapter, `hacks/prism/read` today — fills it in from whatever its
+grammar happens to be. Which entry is an NPC and which is an item ball is a
+reading of one hack's macros, so the *classification* lives with the adapter
+too; this side renders six lists it is handed and never learns what a
+`person_event` is.
+
+The six lists are still a *person's* carve-up of a map, not any engine's, and
+the carve-up itself is this side's to declare: things that talk (NPCs), things
+that battle (Trainers), things lying about on the floor (Objects — item balls,
+rocks, and the hidden items the engine files under signs), things you read
+(Signposts), places you leave from (Warps), and tiles that fire (Triggers).
+An adapter's job is to pour its own lists into those six, however its engine
+happens to shelve them.
 
 Every coordinate shown is the number **written in the source**, because that is
-the number you would type to change it. The `+4` the `person_event` macro adds
-belongs to the assembled bytes and appears nowhere in this file.
-
-The tabs are a *person's* carve-up of a map, not the engine's. The engine keeps
-two lists — object events and bg events — and puts item balls in the first and
-hidden items in the second, which is an implementation detail of how they are
-found, not a difference in what they are. Both are things lying about on the
-floor, so both are Objects. Likewise a trainer is a `person_event` like any other
-and the thing that makes him a trainer is his persontype. So:
-
-    NPCs        person_events that are SCRIPT / TEXT / TEXTFP / JUMPSTD / MART,
-                and are *people* — see `Entry.prop`
-    Trainers    person_events that are TRAINER / GENERICTRAINER
-    Objects     person_events that are ITEMBALL / TMHMBALL / FRUITTREE, plus the
-                rocks and boulders, plus the SIGNPOST_ITEM bg_events
-    Signposts   every other bg_event
-
-The one that had to be *found* is the rock. A `SPRITE_ROCK` is a JUMPSTD like a
-mart clerk is, so it sat on the NPC tab with a sprite box, a movement box and an
-empty field asking what it says. It is not a person and it has never said
-anything; what makes it not a person is written down in `eventmodel.Entry.prop`,
-and it is not the sprite.
+the number you would type to change it. Offsets a macro adds while assembling
+belong to the assembled bytes and appear nowhere in this file — and a hack that
+writes (x, y) has already been turned around by its adapter, the way
+`shared.coords.Tile` says.
 """
 
 from __future__ import annotations
 
+from collections.abc import Hashable
 from dataclasses import dataclass, field
 
-from ..maplint.context import Connection
-from ..hacks.prism import eventheader as eh
-from ..hacks.prism import roofs
 from ..shared.coords import Tile
 
 _NONE = "—"
 
-TRAINER_TYPES = ("PERSONTYPE_TRAINER", "PERSONTYPE_GENERICTRAINER")
-PICKUP_TYPES = ("PERSONTYPE_ITEMBALL", "PERSONTYPE_TMHMBALL", "PERSONTYPE_FRUITTREE")
-HIDDEN_ITEM = "SIGNPOST_ITEM"
+
+class Unreadable(RuntimeError):
+    """An adapter's answer when a map's source cannot be read into records —
+    the event block doesn't fit its shape, the blocks file is missing. The
+    message is the interesting part: it is what the view shows in place of the
+    tables, so it should name the file and the way it disappointed."""
 
 
 # --------------------------------------------------------------------------- #
@@ -69,21 +65,21 @@ class Ref:
     equality, for finding the row that carries a Ref again. The *fields* are the
     port's own, and no view code may read them.
 
-    Identity itself is not even the port's: it is the adapter's
-    :class:`~..hacks.prism.eventmodel.Handle`, carried whole and resolved by handing
-    it back (`EventHeader.entry_at`). Today a handle is a list kind and a
-    position, because that is all prism's source can say about an object; the
-    rest of the gen-2 family names its objects (`object_const_def`), and the day
-    an adapter mints handles carrying the const name, a port that never took one
-    apart is a port that does not notice. A prop's handle can name either list —
-    a hidden item is a `signpost` — which is exactly why the list is in the
-    handle and not implied by `what`.
+    Identity itself is not even the port's: it is the adapter's **handle**,
+    carried whole and resolved by handing it back. Prism's is a list kind and a
+    position, because that is all its source can say about an object; vanilla's
+    carries the `object_const_def` name its scripts address the object by. The
+    port stores whatever it was given and does no arithmetic on it — all it
+    needs of a handle is equality, for finding the row that carries it again.
+    A prop's handle can name either engine list — a hidden item is filed with
+    the signs — which is exactly why the list is in the handle and not implied
+    by `what`.
     """
     #: npc | trainer | prop | signpost | warp | trigger | connection | map
     what: str
     #: The adapter's name for the entry, when this row is one. None for the rows
-    #: that are not event-header entries: the map itself, a connection, "Add new…".
-    handle: eh.Handle | None = None
+    #: that are not event entries: the map itself, a connection, "Add new…".
+    handle: Hashable | None = None
     #: A connection's direction, or the kind an "Add new…" row offers.
     key: str = ""
 
@@ -160,17 +156,167 @@ ROOF_IS_READ_ONLY = (
 )
 
 
-def _yx(entry: eh.Entry) -> tuple[str, str]:
-    y, x = entry.coords
-    return (_NONE if y is None else str(y), _NONE if x is None else str(x))
-
-
 #: Marks a row whose entry is in the file but past its list's count byte. The
 #: engine reads `db N` and stops, so it is written down and not in the game.
+#: Only an adapter whose lists *have* a count byte can ever set the flag this
+#: renders — prism's `db N` is the outlier; the `def_*` macros self-count, so a
+#: vanilla or polished row simply never carries it.
 UNDECLARED = "⚠"
 
 
-def _num(header: eh.EventHeader, kind: eh.ListKind, i: int, shown: int) -> str:
+# --------------------------------------------------------------------------- #
+# what crosses the seam: one record per kind of thing on a map                #
+# --------------------------------------------------------------------------- #
+#
+# Filled by the adapter, rendered here. Shared conventions:
+#
+#   handle       the adapter's name for the entry, carried into the row's Ref
+#   index        the entry's position in the engine list it came from — the
+#                number scripts address it by where scripts do that — not its
+#                position on the tab, which cuts three tabs out of one list
+#   y, x         the numbers written in the source, or None where the source
+#                writes an expression; the row still exists, the grid just
+#                can't point at it
+#   undeclared   in the file but past a count byte the engine trusts — see
+#                :data:`UNDECLARED`
+#
+# Display strings (sprite, movement, kind, …) arrive display-ready: the adapter
+# knows its own prefixes (`SPRITEMOVEDATA_`, `SIGNPOST_`, `BGEVENT_`) and strips
+# them before crossing; "" means "nothing to say" and renders as a dash.
+
+@dataclass(frozen=True)
+class Npc:
+    handle: Hashable
+    index: int
+    y: int | None
+    x: int | None
+    sprite: str
+    movement: str
+    says: str            # what they say, or the label that says it — resolved
+    flag: str
+    undeclared: bool = False
+
+
+@dataclass(frozen=True)
+class Trainer:
+    handle: Hashable
+    index: int
+    y: int | None
+    x: int | None
+    sprite: str
+    cls: str             # trainer class
+    party: str           # prism's 1-based ordinal; a name where hacks name them
+    sight: str
+    flag: str            # the flag that remembers you beat them
+    undeclared: bool = False
+
+
+@dataclass(frozen=True)
+class Prop:
+    """Something lying about: an item ball, a fruit tree, a rock, a hidden item."""
+    handle: Hashable
+    index: int
+    y: int | None
+    x: int | None
+    kind: str            # "itemball", "hidden", "rock", …: the adapter's word
+    what: str            # the item, the tree id, the std script
+    qty: str             # "" for the kinds where a count would be meaningless
+    flag: str
+    undeclared: bool = False
+
+
+@dataclass(frozen=True)
+class Signpost:
+    handle: Hashable
+    index: int
+    y: int | None
+    x: int | None
+    kind: str
+    points_at: str
+    undeclared: bool = False
+
+
+@dataclass(frozen=True)
+class Warp:
+    handle: Hashable
+    index: int
+    y: int | None
+    x: int | None
+    to_map: str
+    their_warp: str      # index into the *destination's* warp list, 1-based
+    undeclared: bool = False
+
+
+@dataclass(frozen=True)
+class Trigger:
+    handle: Hashable
+    index: int
+    y: int | None
+    x: int | None
+    scene: str
+    runs: str
+    undeclared: bool = False
+
+
+@dataclass(frozen=True)
+class MapTables:
+    """Everything standing on one map, already carved into the six lists the
+    tabs draw. The adapter's whole answer about a map's events — plus `marks`,
+    the same objects again as glyphs for the grid, so the two pictures come
+    from one enumeration and cannot disagree."""
+    npcs: list[Npc]
+    trainers: list[Trainer]
+    props: list[Prop]
+    signposts: list[Signpost]
+    warps: list[Warp]
+    triggers: list[Trigger]
+    marks: dict[Tile, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Link:
+    """One edge connection, in the seam's words. Prism writes all four numbers
+    in its `connection` macro; the modern `def_*` dialect declares only the
+    offset and computes the rest at assembly — so the computed columns are
+    None there, and appear only when some row fills them."""
+    direction: str
+    target: str
+    offset: int
+    coord: int | None = None
+    strip: int | None = None
+
+    @property
+    def delta(self) -> int | None:
+        """The alignment between the two maps' coordinate systems. The map on
+        the other side must carry exactly its negation, or the seam tears."""
+        return None if self.coord is None else self.coord - self.offset
+
+
+Rgb = tuple[int, int, int]
+
+#: A block's four quadrant colors, in reading order. Not an arbitrary carve-up:
+#: a block is 2×2 coordinate tiles, so one swatch quadrant is exactly one place
+#: you can stand, and the grid's cursor lands on a quadrant. How an adapter
+#: arrives at the four colors is its own affair — prism averages real pixels,
+#: an adapter without decoded graphics may answer from palettes alone.
+Swatch = tuple[Rgb, Rgb, Rgb, Rgb]
+
+
+@dataclass(frozen=True)
+class Blocks:
+    """A map's shape as the adapter read it: the block bytes, the size in
+    blocks, and one swatch per block id the bytes index into."""
+    blocks: bytes
+    height: int
+    width: int
+    swatches: tuple[Swatch, ...]
+
+
+def _yx(r) -> tuple[str, str]:
+    return (_NONE if r.y is None else str(r.y), _NONE if r.x is None else str(r.x))
+
+
+def _num(r, shown: int | None = None) -> str:
     """The `#` cell — and a mark on it when the engine will never get this far.
 
     PhloxLab1F says `db 6 ; FIXME` over seven `person_event`s, so its seventh
@@ -181,8 +327,8 @@ def _num(header: eh.EventHeader, kind: eh.ListKind, i: int, shown: int) -> str:
     cannot do is pretend the count byte is right, so the row says so, and the
     linter's `obj-count` says why.
     """
-    past = i >= header.lists[kind].declared_count
-    return f"{shown} {UNDECLARED}" if past else str(shown)
+    n = r.index if shown is None else shown
+    return f"{n} {UNDECLARED}" if r.undeclared else str(n)
 
 
 #: The columns that hold numbers. A DataTable column is as wide as its widest
@@ -203,167 +349,101 @@ def prompt_column(cols: list[str]) -> int:
     return next((i for i, name in enumerate(cols) if i and name not in NUMERIC), 0)
 
 
-def _tile(entry: eh.Entry) -> Tile | None:
+def _tile(r) -> Tile | None:
     """The tile it stands on, or None when the coordinates aren't literal numbers.
 
     An object whose `y` is a constant expression rather than a number still gets a
     row — you can see it and delete it — but nothing can point at it on the grid,
     and pretending otherwise would put it at (0, 0).
     """
-    y, x = entry.coords
-    return None if y is None or x is None else Tile(y=y, x=x)
+    return None if r.y is None or r.x is None else Tile(y=r.y, x=r.x)
 
 
 # --------------------------------------------------------------------------- #
 # the object tabs                                                             #
 # --------------------------------------------------------------------------- #
 
-def _people(header: eh.EventHeader, wanted) -> list[tuple[int, eh.Entry]]:
-    """Object events that `wanted` accepts, with their *real* index.
-
-    The index is the entry's position in the engine's object_events list, not its
-    position on this tab. Three tabs are cut out of one list, and an edit that
-    used the row number would rewrite whichever NPC happened to be third.
-    """
-    return [(i, e) for i, e in enumerate(header.object_events)
-            if len(e.args) > 9 and wanted(e)]
-
-
-def _is_npc(e: eh.Entry) -> bool:
-    return e.persontype not in TRAINER_TYPES + PICKUP_TYPES and e.prop is None
-
-
-def _is_object(e: eh.Entry) -> bool:
-    return e.persontype in PICKUP_TYPES or e.prop is not None
-
-
-def npcs(header: eh.EventHeader, says: dict[str, str]) -> Table:
+def npcs(recs: list[Npc]) -> Table:
     cols = ["#", "y", "x", "sprite", "movement", "says", "event flag"]
-    rows = []
-    for i, e in _people(header, _is_npc):
-        y, x = _yx(e)
-        pointer = e.pointer or ""
-        rows.append(Row(
-            [_num(header, eh.ListKind.OBJECT_EVENTS, i, i), y, x, e.sprite,
-             e.movement.replace("SPRITEMOVEDATA_", ""),
-             says.get(pointer, pointer or _NONE), e.event_flag],
-            Ref("npc", eh.Handle(eh.ListKind.OBJECT_EVENTS, i)), _tile(e),
-        ))
+    rows = [Row([_num(r), *_yx(r), r.sprite, r.movement, r.says or _NONE, r.flag],
+                Ref("npc", r.handle), _tile(r))
+            for r in recs]
     return cols, rows
 
 
-def trainers(header: eh.EventHeader) -> Table:
+def trainers(recs: list[Trainer]) -> Table:
     cols = ["#", "y", "x", "sprite", "class", "party", "sight", "event flag"]
-    rows = []
-    for i, e in _people(header, lambda e: e.persontype in TRAINER_TYPES):
-        y, x = _yx(e)
-        # The adapter answers "whom do they battle you with" — for prism that is
-        # a walk to the inline macro, for a hack that names its trainers it will
-        # be a lookup. The row renders the record either way and reads no macro.
-        t = eh.trainer_of(header, e)
-        sight = e.arg(10) if len(e.args) > 10 else _NONE
-        rows.append(Row(
-            [_num(header, eh.ListKind.OBJECT_EVENTS, i, i), y, x, e.sprite,
-             t.cls if t else _NONE, t.party if t else _NONE, sight,
-             t.flag if t else _NONE],
-            Ref("trainer", eh.Handle(eh.ListKind.OBJECT_EVENTS, i)), _tile(e),
-        ))
+    rows = [Row([_num(r), *_yx(r), r.sprite, r.cls or _NONE, r.party or _NONE,
+                 r.sight or _NONE, r.flag or _NONE],
+                Ref("trainer", r.handle), _tile(r))
+            for r in recs]
     return cols, rows
 
 
-def objects(header: eh.EventHeader) -> Table:
+def objects(recs: list[Prop]) -> Table:
     """Item balls, TM balls, fruit trees, rocks, boulders — and the hidden items,
-    which the engine keeps in the other list entirely. See the module docstring:
-    none of them is a person, and that is what the tab is for."""
+    which an engine may keep in the other list entirely. See the module
+    docstring: none of them is a person, and that is what the tab is for."""
     cols = ["#", "y", "x", "kind", "what", "qty", "event flag"]
-    rows = []
-    for i, e in _people(header, _is_object):
-        y, x = _yx(e)
-        # The item ball is the only one that carries a quantity: `\11` is the
-        # count and `\12` the item. A TM ball spends `\11` on the item itself and
-        # a fruit tree keeps its tree id in the pointer slot, so for both of those
-        # the count column is meaningless rather than 1.
-        ball = e.persontype == "PERSONTYPE_ITEMBALL"
-        if (prop := e.prop) is not None:
-            # A rock's slot 11 is a std script id, and its "flag" is the -1 that
-            # means "always here" — which is the only thing a rock could ever be.
-            kind, what = prop, e.arg(11)
-        else:
-            kind = e.persontype.replace("PERSONTYPE_", "").lower()
-            what = e.pointer if e.persontype != "PERSONTYPE_TMHMBALL" else e.arg(10)
-        rows.append(Row(
-            [_num(header, eh.ListKind.OBJECT_EVENTS, i, i), y, x, kind, what or _NONE,
-             e.arg(10) if ball else _NONE, e.event_flag],
-            Ref("prop", eh.Handle(eh.ListKind.OBJECT_EVENTS, i)), _tile(e),
-        ))
-
-    for i, e in enumerate(header.bg_events):
-        if len(e.args) < 3 or e.arg(2) != HIDDEN_ITEM:
-            continue
-        y, x = _yx(e)
-        # A hidden item's item and flag are in the record it points at, not in
-        # the bg_event: `dw EVENT_… / db ITEM`.
-        record = eh.script_block(header, e.pointer)
-        flag = next((ln.split()[-1] for ln in record if ln.strip().startswith("dw ")), _NONE)
-        item = next((ln.split()[-1] for ln in record if ln.strip().startswith("db ")), _NONE)
-        rows.append(Row(
-            [_num(header, eh.ListKind.BG_EVENTS, i, i), y, x, "hidden", item, _NONE, flag],
-            Ref("prop", eh.Handle(eh.ListKind.BG_EVENTS, i)), _tile(e),
-        ))
+    rows = [Row([_num(r), *_yx(r), r.kind, r.what or _NONE, r.qty or _NONE,
+                 r.flag or _NONE],
+                Ref("prop", r.handle), _tile(r))
+            for r in recs]
     return cols, rows
 
 
-def signposts(header: eh.EventHeader) -> Table:
-    """Every bg_event that isn't a hidden item — the ones you read."""
+def signposts(recs: list[Signpost]) -> Table:
+    """Every sign — the things you read. The hidden items an engine files with
+    them are on the Objects tab, where a person would look."""
     cols = ["#", "y", "x", "kind", "points at"]
-    rows = []
-    for i, e in enumerate(header.bg_events):
-        kind = e.arg(2) if len(e.args) > 2 else _NONE
-        if kind == HIDDEN_ITEM:
-            continue                                   # it's an object, not a sign
-        y, x = _yx(e)
-        rows.append(Row(
-            [_num(header, eh.ListKind.BG_EVENTS, i, i), y, x,
-             kind.replace("SIGNPOST_", ""), e.pointer or _NONE],
-            Ref("signpost", eh.Handle(eh.ListKind.BG_EVENTS, i)), _tile(e),
-        ))
+    rows = [Row([_num(r), *_yx(r), r.kind or _NONE, r.points_at or _NONE],
+                Ref("signpost", r.handle), _tile(r))
+            for r in recs]
     return cols, rows
 
 
-def warps(header: eh.EventHeader) -> Table:
-    """`warp_def y, x, id, map` — `id` is the *warp's* index in the destination
-    map's list, not a map id. Off by one and you land in the wrong doorway."""
+def warps(recs: list[Warp]) -> Table:
+    """`their warp #` is an index into the *destination* map's warp list, not a
+    map id. Off by one and you land in the wrong doorway."""
     cols = ["#", "y", "x", "to map", "their warp #"]
-    rows = []
-    for i, e in enumerate(header.warps):
-        y, x = _yx(e)
-        dest = e.arg(3) if len(e.args) > 3 else _NONE
-        which = e.arg(2) if len(e.args) > 2 else _NONE
-        rows.append(Row([_num(header, eh.ListKind.WARPS, i, i + 1), y, x, dest, which],
-                        Ref("warp", eh.Handle(eh.ListKind.WARPS, i)), _tile(e)))
+    rows = [Row([_num(r, r.index + 1), *_yx(r), r.to_map or _NONE,
+                 r.their_warp or _NONE],
+                Ref("warp", r.handle), _tile(r))
+            for r in recs]
     return cols, rows
 
 
-def triggers(header: eh.EventHeader) -> Table:
+def triggers(recs: list[Trigger]) -> Table:
     cols = ["#", "scene", "y", "x", "runs"]
-    rows = []
-    for i, e in enumerate(header.coord_events):
-        y, x = _yx(e)
-        rows.append(Row([_num(header, eh.ListKind.COORD_EVENTS, i, i),
-                         e.arg(0), y, x, e.pointer or _NONE],
-                        Ref("trigger", eh.Handle(eh.ListKind.COORD_EVENTS, i)), _tile(e)))
+    rows = [Row([_num(r), r.scene, *_yx(r), r.runs or _NONE],
+                Ref("trigger", r.handle), _tile(r))
+            for r in recs]
     return cols, rows
 
 
-def connections(conns: list[Connection]) -> Table:
+def connections(links: list[Link]) -> Table:
     """`delta` is the alignment between the two maps' coordinate systems. The
     map on the other side must carry exactly its negation, or the seam tears —
-    which is why it's a column and not a detail."""
-    cols = ["direction", "to map", "coord", "offset", "strip", "delta"]
-    rows = [Row([c.direction, c.target, str(c.coord), str(c.offset),
-                 str(c.strip), f"{c.delta:+d}"],
-                Ref("connection", key=c.direction))
-            for c in sorted(conns, key=lambda c: c.direction)]
+    which is why it's a column and not a detail.
+
+    The computed columns exist only when some row fills them: the modern
+    `def_*` dialect writes just the offset and lets the assembler derive the
+    rest, so there is nothing written in the source for those cells to show.
+    """
+    links = sorted(links, key=lambda c: c.direction)
+    computed = any(c.coord is not None for c in links)
+    cols = (["direction", "to map", "coord", "offset", "strip", "delta"]
+            if computed else ["direction", "to map", "offset"])
+    rows = []
+    for c in links:
+        cells = [c.direction, c.target]
+        if computed:
+            cells += [_NONE if c.coord is None else str(c.coord), str(c.offset),
+                      _NONE if c.strip is None else str(c.strip),
+                      _NONE if c.delta is None else f"{c.delta:+d}"]
+        else:
+            cells += [str(c.offset)]
+        rows.append(Row(cells, Ref("connection", key=c.direction)))
     return cols, rows
 
 
@@ -419,7 +499,32 @@ def attributes(attrs: Attributes) -> Table:
     return ["field", "value"], [Row([k, v], ref) for k, v in pairs]
 
 
-def roof(r: roofs.Roof) -> Table:
+@dataclass(frozen=True)
+class Roof:
+    """The roof a map group loads, in the seam's words — including the two ways
+    a source can disagree with itself about it, which are facts about the tree
+    and so cross as data, not as prose only one adapter could write."""
+    group: int
+    #: Index into the roof-tiles table, or None when the group has no roof.
+    tiles: int | None = None
+    #: The tiles file that index names, if it exists. None for an index with no
+    #: file behind it — itself worth knowing: the engine will copy whatever
+    #: bytes follow the last roof.
+    tile_file: str | None = None
+    #: morn/day ×2, then nite ×2, as `#rrggbb`.
+    colors: tuple[str, str, str, str] | None = None
+    #: What the source's comment *says* this byte belongs to, when that is not
+    #: this group. Prism's roofs.asm disagrees with its own engine on every row.
+    mislabelled: int | None = None
+    #: The group is past the end of the roof table — which is not "no roof":
+    #: the engine indexes the table unconditionally and reads whatever
+    #: assembles next as a roof index.
+    past_end: bool = False
+    #: How many entries the table actually has, for saying how far past.
+    entries: int = 0
+
+
+def roof(r: Roof) -> Table:
     """The roof the engine loads for this map's group — and the two ways the
     source disagrees with itself about it.
 
