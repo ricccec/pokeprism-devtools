@@ -318,6 +318,67 @@ def markers(header) -> dict[Tile, str]:
     return out
 
 
+@dataclass(frozen=True)
+class Trainer:
+    """What an object battles you with, in the seam's words.
+
+    Prism is the outlier here: it alone writes the declaration inline — a
+    ``trainer FLAG, CLASS, PARTY`` macro in the block the entry points at —
+    where vanilla cites a party in ``data/trainers/`` and polished a named
+    ``generictrainer`` block. So the *lookup* lives on this side of the seam,
+    and what crosses is this record: ``party`` is prism's 1-based ordinal
+    today, and a name in the hacks that name their trainers.
+    """
+    flag: str
+    cls: str
+    party: str
+
+
+#: The inline macro, which is where a prism trainer keeps the two things his
+#: `person_event` does not: the flag that remembers you beat him, and the party
+#: he battles with. `trainer FLAG, CLASS, PARTY, seen, defeated`.
+_TRAINER_RE = re.compile(r"^\s*trainer\s+(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,")
+
+
+def script_block(header, label: str | None) -> list[str]:
+    """The lines of the script block `label` names, if this map defines it.
+
+    From the header's own copy of the file — a walk over data already handed
+    out, not a second read of the repo. An item ball's "pointer" is an item
+    const rather than a label, so this correctly finds nothing for one.
+    """
+    if not label:
+        return []
+    lines = header.lines
+    start = next((i for i, ln in enumerate(lines)
+                  if ln.startswith(f"{label}:")), None)
+    if start is None:
+        return []
+    end = start + 1
+    while end < len(lines):
+        ln = lines[end]
+        if ln[:1].isalnum() or ln[:1] == "_":
+            if re.match(r"^\w+:", ln):
+                break                     # the next top-level label
+        end += 1
+    return lines[start:end]
+
+
+def trainer_of(header, entry: Entry) -> Trainer | None:
+    """The :class:`Trainer` behind this entry, or None if its block declares
+    none.
+
+    A trainer's `person_event` carries `-1` where every other object keeps its
+    event flag, because the flag that remembers you beat him lives on the
+    macro instead — so a table that showed the `-1` would be showing a column
+    that is always the same lie, and the flag here is the one to show.
+    """
+    for line in script_block(header, entry.pointer):
+        if m := _TRAINER_RE.match(line):
+            return Trainer(flag=m.group(1), cls=m.group(2), party=m.group(3))
+    return None
+
+
 def format_entry(macro: str, args: list[str]) -> str:
     """Render an entry line in the repo's dominant style: tab, macro, ``, ``."""
     return f"{_INDENT}{macro} {', '.join(str(a).strip() for a in args)}"
