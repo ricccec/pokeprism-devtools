@@ -138,6 +138,18 @@ breaks. An afternoon's work, and it is the only thing that will tell us whether
 the shared domain model is real or whether it's prism's model wearing a hat.
 Everything above is a guess until someone runs it.
 
+**Update — the map-format half was run** (`../pokecrystal`, `../polishedcrystal`;
+see `polished-crystal-feasibility.md`). The domain model *is* real, but the second
+question got the more interesting answer: it is prism's model wearing a hat, and
+we can now measure the hat. On the assumptions disguised as neutral vocabulary —
+object identity, event count, coordinate order — **vanilla agrees with
+polished-crystal and disagrees with prism.** `object_const_def` (named object
+identity) appears in 348 of vanilla's maps and 0 of prism's; both other hacks
+self-count their event lists where prism writes `db N`; both order coordinates
+`(x, y)` where prism is `(y, x)`. The port did not generalize a gen-2 model — it
+followed the one hack least like the rest. The correction that falls out: calibrate
+the seam to **vanilla**, the median every other hack forks, not to prism.
+
 ## The fork in the road, stated honestly
 
 If the goal is *the authoring loop for prism* — author a `.blk`, add the map,
