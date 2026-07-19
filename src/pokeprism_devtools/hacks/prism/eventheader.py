@@ -42,12 +42,14 @@ from ...shared.edits import Edit
 # lives in. Re-exported, because every caller wants both and the split is ours,
 # not theirs.
 from .eventmodel import (LIST_MACROS, LIST_ORDER, PROPS, Entry, EventList,
-                         Handle, ListKind, Prop, UnparseableHeader, as_int,
-                         format_entry, markers, _INDENT, _MACRO_RE, _split_args)
+                         Handle, ListKind, Prop, Trainer, UnparseableHeader,
+                         as_int, format_entry, markers, script_block,
+                         trainer_of, _INDENT, _MACRO_RE, _split_args)
 
 __all__ = ["LIST_MACROS", "LIST_ORDER", "PROPS", "Entry", "EventHeader",
-           "EventList", "Handle", "ListKind", "Prop", "UnparseableHeader",
-           "as_int", "format_entry", "markers", "parse_map", "parse_text"]
+           "EventList", "Handle", "ListKind", "Prop", "Trainer",
+           "UnparseableHeader", "as_int", "format_entry", "markers",
+           "parse_map", "parse_text", "script_block", "trainer_of"]
 
 #: Finding the block in a file, which is this module's whole job. The regex that
 #: reads *one line of it* is `eventmodel._MACRO_RE` — a different question.

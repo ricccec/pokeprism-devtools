@@ -2,9 +2,9 @@
 
 Pure functions: each returns `(columns, rows)`, so the contents of every tab can
 be tested without starting a terminal and the widgets stay dumb. Nothing here
-opens a file. An :class:`~..hacks.prism.eventheader.EventHeader` carries the whole map
-asm in `.lines`, so reading a trainer's class off the script block it points at is
-a walk over data we were already handed — not a second read of the repo.
+opens a file — and nothing here parses one either: what a trainer battles you
+with is the adapter's answer (`eventmodel.trainer_of`), read off data the header
+was already carrying, and this side only renders the record it gets back.
 
 Every coordinate shown is the number **written in the source**, because that is
 the number you would type to change it. The `+4` the `person_event` macro adds
@@ -33,7 +33,6 @@ and it is not the sprite.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 from ..maplint.context import Connection
@@ -42,11 +41,6 @@ from ..hacks.prism import roofs
 from ..shared.coords import Tile
 
 _NONE = "—"
-
-#: The trainer macro, which is where a trainer keeps the two things his
-#: `person_event` does not: the flag that remembers you beat him, and the party
-#: he battles with. `trainer FLAG, CLASS, PARTY, seen, defeated`.
-_TRAINER_RE = re.compile(r"^\s*trainer\s+(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,")
 
 TRAINER_TYPES = ("PERSONTYPE_TRAINER", "PERSONTYPE_GENERICTRAINER")
 PICKUP_TYPES = ("PERSONTYPE_ITEMBALL", "PERSONTYPE_TMHMBALL", "PERSONTYPE_FRUITTREE")
@@ -220,42 +214,6 @@ def _tile(entry: eh.Entry) -> Tile | None:
     return None if y is None or x is None else Tile(y=y, x=x)
 
 
-def _block(header: eh.EventHeader, label: str | None) -> list[str]:
-    """The lines of the script block `label` names, if this map defines it.
-
-    From the header's own copy of the file. An item ball's "pointer" is an item
-    const rather than a label, so this correctly finds nothing for one.
-    """
-    if not label:
-        return []
-    lines = header.lines
-    start = next((i for i, ln in enumerate(lines) if ln.startswith(f"{label}:")), None)
-    if start is None:
-        return []
-    end = start + 1
-    while end < len(lines):
-        ln = lines[end]
-        if ln[:1].isalnum() or ln[:1] == "_":
-            if re.match(r"^\w+:", ln):
-                break                     # the next top-level label
-        end += 1
-    return lines[start:end]
-
-
-def _trainer_macro(header: eh.EventHeader, entry: eh.Entry) -> tuple[str, str, str]:
-    """`(flag, class, party)` off the `trainer` macro in this entry's block.
-
-    A trainer's `person_event` carries `-1` where every other object keeps its
-    event flag, because the flag that remembers you beat him lives in the macro
-    instead. Showing the `-1` would be showing a column that is always the same
-    lie, so the table reads the macro.
-    """
-    for line in _block(header, entry.pointer):
-        if m := _TRAINER_RE.match(line):
-            return m.group(1), m.group(2), m.group(3)
-    return _NONE, _NONE, _NONE
-
-
 # --------------------------------------------------------------------------- #
 # the object tabs                                                             #
 # --------------------------------------------------------------------------- #
@@ -299,11 +257,15 @@ def trainers(header: eh.EventHeader) -> Table:
     rows = []
     for i, e in _people(header, lambda e: e.persontype in TRAINER_TYPES):
         y, x = _yx(e)
-        flag, cls, party = _trainer_macro(header, e)
+        # The adapter answers "whom do they battle you with" — for prism that is
+        # a walk to the inline macro, for a hack that names its trainers it will
+        # be a lookup. The row renders the record either way and reads no macro.
+        t = eh.trainer_of(header, e)
         sight = e.arg(10) if len(e.args) > 10 else _NONE
         rows.append(Row(
             [_num(header, eh.ListKind.OBJECT_EVENTS, i, i), y, x, e.sprite,
-             cls, party, sight, flag],
+             t.cls if t else _NONE, t.party if t else _NONE, sight,
+             t.flag if t else _NONE],
             Ref("trainer", eh.Handle(eh.ListKind.OBJECT_EVENTS, i)), _tile(e),
         ))
     return cols, rows
@@ -341,7 +303,7 @@ def objects(header: eh.EventHeader) -> Table:
         y, x = _yx(e)
         # A hidden item's item and flag are in the record it points at, not in
         # the bg_event: `dw EVENT_… / db ITEM`.
-        record = _block(header, e.pointer)
+        record = eh.script_block(header, e.pointer)
         flag = next((ln.split()[-1] for ln in record if ln.strip().startswith("dw ")), _NONE)
         item = next((ln.split()[-1] for ln in record if ln.strip().startswith("db ")), _NONE)
         rows.append(Row(
