@@ -18,6 +18,7 @@ from enum import Enum
 from typing import NamedTuple
 
 from ...shared import coords
+from ...shared.constants import as_int as _as_int
 from ...shared.coords import Tile
 
 _MACRO_RE = re.compile(r"^\s*(?P<macro>[a-z_]\w*)\s+(?P<args>.*?)\s*(?P<comment>;.*)?$")
@@ -384,24 +385,11 @@ def format_entry(macro: str, args: list[str]) -> str:
     return f"{_INDENT}{macro} {', '.join(str(a).strip() for a in args)}"
 
 
-def as_int(s: str) -> int | None:
-    """The number an argument denotes — decimal, `$hex`, `%binary` — or None if it
-    is a symbol or an expression.
-
-    Public because "is this the same number, written differently?" is a question
-    anyone *rewriting* an entry must ask, and `int(s, 0)` cannot answer it: rgbasm
-    spells hex `$b`, not `0xb`, and two thirds of the warps here are written that
-    way. An editor that got this wrong would reformat the lot.
-    """
-    s = s.strip()
-    try:
-        if s.startswith("$"):
-            return int(s[1:], 16)
-        if s.startswith("%"):
-            return int(s[1:], 2)
-        return int(s, 10)
-    except ValueError:
-        return None
+#: Reading an rgbasm number is not a prism fact — it is rgbasm's — so it lives in
+#: `shared` where every adapter and all of `wiring/` can reach it without
+#: importing a hack. Re-exported here because prism's callers have always spelled
+#: it `eventmodel.as_int`, and that name is part of this module's surface.
+as_int = _as_int
 
 
 def _split_args(rest: str) -> list[str]:
