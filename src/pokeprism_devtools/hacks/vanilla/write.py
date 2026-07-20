@@ -47,6 +47,8 @@ from pathlib import Path
 
 from ...shared.edits import Edit
 from ...studio import panels
+from ...studio.actions import Action, ActionError, Result
+from ..mount import Refused
 
 #: The four lists, in the order every map file writes them. The key is the
 #: word the read adapter's handles carry — ``("bg", 3)`` names the fourth
@@ -320,3 +322,173 @@ def _entries_after(lines: list[str], def_lineno: int, kind: str) -> list[Entry]:
                              args=[a.strip() for a in m.group("args").split(",")],
                              lineno=j, raw=line))
     return entries
+
+
+# --------------------------------------------------------------------------- #
+# the write adapter                                                           #
+# --------------------------------------------------------------------------- #
+
+class Writer:
+    """The family's write adapter — what `hacks.mount` hands `Session` as
+    ``Hack.writes`` for a vanilla or polished tree. Polished mounts this very
+    class with its head anchor, the same way its read adapter imports
+    vanilla's parsers: the fork relation is real, so the code states it.
+
+    **Deletion is the write that crosses today.** It is the operation the
+    seam's whole identity story was built for — a handle resolved by handing
+    it back, the const list kept in step — and the one whose blast radius is
+    a single file. Everything else answers with honest absence: no adders,
+    no forms, no choices, and an `editor` that refuses with the reason. Each
+    of those is a declared hole in this object, not a capability the session
+    could ever misread — the protocol is `hacks/mount.py`'s docstring.
+    """
+
+    def __init__(self, root: Path, anchor: str = "_MapEvents") -> None:
+        self.root = root
+        self.anchor = anchor
+
+    # -- what a form may offer: nothing, honestly ---------------------------- #
+    def adders(self, kind: str) -> tuple:
+        return ()
+
+    def form(self, name: str) -> None:
+        return None
+
+    def choices(self, kind: str, map_consts: tuple[str, ...],
+                values: dict[str, str] | None = None) -> list[str]:
+        return []
+
+    def follows(self, action, changed: str,
+                values: dict[str, str]) -> dict[str, str]:
+        return {}
+
+    def sprite_hint(self, map_const: str, sprite: str) -> str:
+        return ""
+
+    def warm(self) -> None:
+        pass
+
+    def forget(self) -> None:
+        pass
+
+    def editor(self, label: str, const: str, ref, said: list):
+        raise Refused(
+            f"editing a {ref.what} is not wired for this dialect yet — "
+            "deleting one is the write that crosses today.")
+
+    # -- what a selected row can do ------------------------------------------- #
+    def deletion(self, label: str, const: str, ref):
+        """The action `d` would run on this row — or the reason there isn't one.
+
+        A warp is refused for the same reason prism's needs `wiring/warpdel`:
+        `warp_event x, y, MAP, N` names the destination's warp *by position*,
+        so removing one pulls every door in the repo that counted past it off
+        by a step. Saying so beats doing the easy half of it.
+        """
+        from ..mount import Refused
+        if ref.what == "map":
+            raise Refused("deleting a whole map is not something this does.")
+        if ref.what == "connection":
+            raise Refused(
+                "removing a connection means rewriting the neighbour's side "
+                "too — not wired for this dialect yet.")
+        if ref.what == "warp":
+            raise Refused(
+                "removing a warp renumbers this map's warp list, and every "
+                "warp_event in the repo that names a warp here by position "
+                "would count past the hole — that bookkeeping is not wired "
+                "for this dialect yet.")
+
+        block = parse_map(self.root / f"maps/{label}.asm", self.anchor)
+        kind, index = _resolve(block, label, ref)
+        entry = block.lists[kind].entries[index]
+        y, x = _shown_coords(entry.args)
+        return Remove(label, self.anchor,
+                      what=ref.what, kind=kind, index=str(index),
+                      name=ref.handle if isinstance(ref.handle, str) else "",
+                      y=y, x=x)
+
+
+def _resolve(block: EventBlock, label: str, ref) -> tuple[str, int]:
+    """The (list, position) a handle names, freshly resolved. A named object's
+    handle is its const — resolution *is* the name lookup, which is what makes
+    it survive the list reordering underneath it — and a stale handle of
+    either shape refuses with the reason rather than pointing at whatever is
+    standing in its place now."""
+    handle = ref.handle
+    if isinstance(handle, str):
+        index = block.index_of(handle)
+        if index is None:
+            raise Refused(
+                f"{label} no longer declares {handle} — the map changed under "
+                "the table. Select it again.")
+        return "object", index
+    kind, index = handle
+    if block.entry_at(kind, index) is None:
+        raise Refused(
+            f"{label} no longer has a {ref.what} at {handle} — the map "
+            "changed under the table. Select it again.")
+    return kind, index
+
+
+def _shown_coords(args: list[str]) -> tuple[str, str]:
+    """The (y, x) to *say* on the confirm screen — the macro writes (x, y),
+    the turn the read adapter makes at the seam, made here for the same
+    sentence. "" where the source wrote an expression."""
+    x = args[0] if args and args[0].isdigit() else ""
+    y = args[1] if len(args) > 1 and args[1].isdigit() else ""
+    return y, x
+
+
+class Remove(Action):
+    """Take one entry out of a map — the family's whole write vocabulary today.
+
+    `name`/`kind`+`index` say **which** entry, and the rest only says what to
+    call it on the confirm screen. A named object is found by its const at
+    run time, not by the position it had when you pointed at it: the name is
+    the identity the dialect itself uses, so it is the identity this trusts.
+
+    The script block the entry pointed at is left alone, and the notes say
+    so: with no linter on this dialect, an orphaned block is yours to notice.
+    """
+    name = "remove"
+    title = "Remove an entry"
+
+    def __init__(self, label: str, anchor: str, **values: str) -> None:
+        super().__init__(**values)
+        self.label = label
+        self.anchor = anchor
+
+    def describe(self) -> str:
+        what = self.text("name") or (
+            f"{self.text('what')} at ({self.text('y')}, {self.text('x')})"
+            if self.text("y") else f"{self.text('what')} #{self.integer('index') + 1}")
+        return f"remove {what} from {self.label}"
+
+    def run(self, root: Path) -> Result:
+        block = parse_map(root / f"maps/{self.label}.asm", self.anchor)
+        if name := self.text("name"):
+            index = block.index_of(name)
+            if index is None:
+                raise ActionError(
+                    f"{self.label} no longer declares {name} — nothing was removed.")
+            kind = "object"
+        else:
+            kind, index = self.text("kind"), self.integer("index")
+            if block.entry_at(kind, index) is None:
+                raise ActionError(
+                    f"{self.label} no longer has a {self.text('what')} there — "
+                    "nothing was removed.")
+        entry = block.lists[kind].entries[index]
+        pointer = next((a for a in entry.args if a and a[0].isupper()
+                        and not a.isupper()), "")
+        removed = block.remove_entry(kind, index)
+        notes = []
+        if removed:
+            notes.append(f"removed const {removed} with it — scripts that "
+                         f"named it no longer assemble until they let go")
+        if pointer:
+            notes.append(f"{pointer} and its text stay in the file — "
+                         "no linter reads this dialect, so an orphan is "
+                         "yours to notice")
+        return Result(self.describe(), [block.to_edit(root, self.describe())], notes)

@@ -168,9 +168,11 @@ def test_the_mount_tells_the_family_apart(root: Path) -> None:
     print("\nthe mount tells polished from vanilla by where the anchor sits")
     hack = hackmount.mount(root)
     check("mounted as polished", hack.name == "polished")
-    check("read-only, no linter, nothing else declared",
-          hack.ctx is None and not hack.writes and not hack.plays
+    check("no linter, the family write adapter, nothing else declared",
+          hack.ctx is None and hack.writes is not None and not hack.plays
           and not hack.measures)
+    check("the writer holds the head anchor",
+          hack.writes.anchor == "_MapScriptHeader")
 
 
 def test_the_head_of_file_events(root: Path) -> None:
@@ -259,12 +261,38 @@ def test_wild_forms_and_roof(root: Path) -> None:
 
 
 def test_the_session_sees_no_name(root: Path) -> None:
-    print("\nthe session treats polished exactly like any read-only mount")
+    print("\nthe session treats polished exactly like any family mount")
     s = Session(root)
     md = s.load("TownA")
     check("the map loads whole", md.error is None and md.geometry is not None)
     check("lint is empty, adders are empty",
           s.lint() == [] and s.adders("NPC") == ())
+
+
+def test_deletion_splices_the_head(root: Path) -> None:
+    print("\ndeleting through the head block leaves the scripts below untouched")
+    src = root / "maps/TownA.asm"
+    before = src.read_text()
+    scripts_below = before[before.index("TownAKurtScript:"):]
+    s = Session(root)
+
+    # Polished names none of this fixture's objects, so the handle is the
+    # unnamed shape — the list and the position, exactly what the read
+    # adapter minted for the row.
+    preview = s.preview(s.deletion("TownA", "TOWN_A",
+                                   panels.Ref("npc", ("object", 0))))
+    s.apply(preview)
+    after = src.read_text()
+    check("the object_event is gone",
+          "SPRITE_TEACHER" not in after and "object_event  2,  9" in after)
+    check("every byte below the block is untouched",
+          after.endswith(scripts_below))
+    npcs = next(t for t in s.load("TownA").tabs if t.name == "NPCs")
+    check("the table agrees — Kurt remains", len(npcs.table[1]) == 1)
+
+    s.undo()
+    check("undo puts the head splice back to the byte",
+          src.read_text() == before)
 
 
 def test_real_tree() -> None:
@@ -307,6 +335,7 @@ def main() -> int:
         test_the_catalog_and_geometry(root)
         test_wild_forms_and_roof(root)
         test_the_session_sees_no_name(root)
+        test_deletion_splices_the_head(root)
     test_real_tree()
 
     print()

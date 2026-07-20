@@ -116,10 +116,15 @@ def mount(root: Path) -> Hack:
         anchor = _family_anchor(root)
         if anchor == "_MapEvents":
             from .vanilla.read import Reader
-            return Hack("vanilla", Reader(root))
+            from .vanilla.write import Writer
+            return Hack("vanilla", Reader(root), writes=Writer(root))
         if anchor == "_MapScriptHeader":
             from .polished.read import Reader
-            return Hack("polished", Reader(root))
+            from .vanilla.write import Writer
+            # The same writer vanilla mounts, holding the head anchor — the
+            # fork relation is real, so the code states it, exactly as the
+            # polished read adapter imports vanilla's parsers.
+            return Hack("polished", Reader(root), writes=Writer(root, anchor))
         raise UnknownTree(
             f"{root} keeps map data under data/maps/ like the pokecrystal "
             "family, but no map file carries either family anchor "

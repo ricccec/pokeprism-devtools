@@ -234,8 +234,8 @@ def test_the_mount_recognises_vanilla(root: Path) -> None:
     hack = hackmount.mount(root)
     check("mounted as vanilla", hack.name == "vanilla")
     check("with no linter", hack.ctx is None)
-    check("and every capability off",
-          not hack.writes and not hack.plays and not hack.measures)
+    check("with the family write adapter, and nothing else declared",
+          hack.writes is not None and not hack.plays and not hack.measures)
 
 
 def test_the_six_lists(root: Path) -> None:
@@ -375,7 +375,7 @@ def test_texts(root: Path) -> None:
 
 
 def test_the_session_degrades_to_absence(root: Path) -> None:
-    print("\nabove the seam a read-only mount is absence, not error")
+    print("\nabove the seam an undeclared capability is absence, not error")
     s = Session(root)
     md = s.load("TownA")
     check("the map loads whole", md.error is None and md.geometry is not None)
@@ -391,11 +391,61 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
         check("measuring refuses with a sentence", False)
     except SessionError as exc:
         check("measuring refuses with a sentence", "vanilla" in str(exc))
+    check("no app-level form exists",
+          all(s.form(n) is None for n in ("newmap", "resize", "reword")))
     try:
         s.editor("TownA", "TOWN_A", panels.Ref("npc", "TOWNA_TEACHER"))
         check("editing refuses with a sentence", False)
     except SessionError as exc:
-        check("editing refuses with a sentence", "read-only" in str(exc))
+        check("editing refuses with a sentence", "not wired" in str(exc))
+
+
+def test_deletion_crosses_the_seam(root: Path) -> None:
+    print("\ndeletion crosses the seam: the entry goes, the const goes with it")
+    src = root / "maps/TownA.asm"
+    before = src.read_text()
+    s = Session(root)
+
+    act = s.deletion("TownA", "TOWN_A", panels.Ref("trainer", "TOWNA_YOUNGSTER"))
+    check("the action names the thing on the confirm screen",
+          "TOWNA_YOUNGSTER" in act.describe())
+    preview = s.preview(act)
+    check("the preview is one file", [e.path for e in preview.edits]
+          == ["maps/TownA.asm"] and preview.edits[0].changed)
+    check("the orphaned script is a note, not a silence",
+          any("TrainerYoungsterZeke" in n for n in preview.notes))
+    check("nothing has been written yet", src.read_text() == before)
+
+    s.apply(preview)
+    after = src.read_text()
+    check("the entry line and its const are gone, in one splice",
+          "TrainerYoungsterZeke, EVENT_TOWN_A_YOUNGSTER" not in after
+          and "const TOWNA_YOUNGSTER" not in after)
+    check("the trainer's script block stays", "TrainerYoungsterZeke:" in after)
+    t = s.load("TownA").tabs
+    trainers = next(tab for tab in t if tab.name == "Trainers")
+    check("the table agrees", len(trainers.table[1]) == 0)
+
+    check("a stale name refuses instead of guessing",
+          _refused(s, "TownA", "TOWN_A", panels.Ref("trainer", "TOWNA_YOUNGSTER"),
+                   "no longer"))
+    check("a warp refuses with the renumbering reason",
+          _refused(s, "TownA", "TOWN_A", panels.Ref("warp", ("warp", 0)),
+                   "renumbers"))
+    check("a connection refuses with the neighbour reason",
+          _refused(s, "TownA", "TOWN_A",
+                   panels.Ref("connection", key="west"), "neighbour"))
+
+    s.undo()
+    check("undo puts the file back to the byte", src.read_text() == before)
+
+
+def _refused(s: Session, label: str, const: str, ref, phrase: str) -> bool:
+    try:
+        s.deletion(label, const, ref)
+        return False
+    except SessionError as exc:
+        return phrase in str(exc)
 
 
 # --------------------------------------------------------------------------- #
@@ -446,6 +496,7 @@ def main() -> int:
         test_wild_and_roof(root)
         test_texts(root)
         test_the_session_degrades_to_absence(root)
+        test_deletion_crosses_the_seam(root)
     test_real_tree()
 
     print()
