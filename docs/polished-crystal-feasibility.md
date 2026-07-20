@@ -184,9 +184,9 @@ vanilla is a place it over-fit to the outlier we happened to build it around.
   the missing count bytes. The finding Phase 0 *added*: five of the eight
   parsers fail **silently** (`None`, `[]`, `{}`) rather than raising, so a
   studio opened on a vanilla checkout reported an empty repo with a straight
-  face. That is now refused loudly — `shared/paths.assert_prism_layout`,
-  checked by `Session` and by `prism-studio` at startup — which is the
-  placeholder the adapter dispatch will one day stand in.
+  face. That is now refused loudly — first by `shared/paths.assert_prism_layout`,
+  the placeholder `hacks/mount.py` has since stood in for (Phase 3): the same
+  layout probe, answering with an adapter instead of only a refusal.
 
 - **Phase 1 — extract the seam, and un-fit the port from prism.** Make `MapData` /
   `Session` the formal boundary and move prism macros into `hacks/prism/`. The
@@ -236,6 +236,32 @@ vanilla is a place it over-fit to the outlier we happened to build it around.
   the median and validates the boundary cheaply; polished second because its
   top-of-file layout (#2) and self-counting (#3) are the real stress test. Render
   read-only.
+
+  **Done, in three moves.** First the leftovers Phase 2 named: the six event
+  tables cross as declared records (`panels.Npc`/`Trainer`/`Prop`/`Signpost`/
+  `Warp`/`Trigger`, plus `MapTables`, `Link`, `Blocks`, `Roof`), the
+  classification — which entry is an item, which sign hides one — moved into
+  `hacks/prism/read`, and `undeclared` is a record field only a count-byte
+  adapter ever sets. Then the mount: `hacks/mount.py` replaced
+  `assert_prism_layout`, recognises a tree by layout, and hands `Session` a
+  `Hack(name, reads, ctx, writes, plays, measures)`; every UI affordance now
+  gates on a capability, never a name, and a missing one degrades to absence
+  (no lint findings, empty adders, a refusal sentence on `measure`). Then the
+  two adapters, both read-only, both proving a different half of the claim.
+  `hacks/vanilla/` validated the boundary at its median: the tail
+  `_MapEvents` anchor, the (x, y) turn at the seam, classification as a walk
+  to the `trainer`/`itemball`/`fruittree`/`hiddenitem` line the pointer
+  names, `object_const_def` names as handles, offset-only connections
+  narrowing the table, and swatches from palette classes alone — the honest
+  degradation the `Swatch` alias licensed. `hacks/polished/` then stressed
+  it exactly where predicted (#2, #3, #5, #6) and the seam held without a new
+  record: the head anchor is a `parse()` parameter, the twelve-arg
+  `object_event`'s type-shifted args and inline `BGEVENT_ITEM + ITEM` are the
+  adapter's own reading, `generictrainer` fills the same `Trainer` record,
+  and an `ALOLAN_FORM` wildmon fills the `WildMon.form` axis Phase 2
+  declared — the column appears because a row fills it, and the port never
+  hears either hack's name. Polished imports vanilla's carving deliberately:
+  the fork relation is real, so the code states it.
 
 - **Phase 4 — write adapters + capability degradation.** `def_*` writers, named
   identity, the top-of-file splice for polished (#2); the Diagnostics/text panes
