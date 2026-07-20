@@ -277,12 +277,23 @@ class EventBlock:
     def replace_entry(self, kind: str, index: int, args: list[str]) -> None:
         """Rewrite an entry in place, keeping its comment. One line becomes
         another line, so nothing moves and nothing renumbers — what makes
-        editing safe where deleting is not."""
+        editing safe where deleting is not.
+
+        The comment is taken by splitting on the semicolon rather than by
+        asking :data:`_MACRO_RE` where the arguments stopped, and the
+        difference is not stylistic: that pattern's trailing `(?:;.*)?`
+        *consumes* the comment, so `m.end()` is the end of the line and the
+        slice it used to take was always empty. Every comment on every edited
+        entry was being dropped — including the `; hole` that is the only thing
+        distinguishing a Blackthorn Gym floor hole from a door, and the
+        `; inaccessible, left over from G/S` on three Burned Tower warps.
+        Twenty lines in vanilla and eighty-three in polished, found by
+        round-tripping every real entry rather than by reading this method.
+        """
         entry = self.lists[kind].entries[index]
-        m = _MACRO_RE.match(entry.raw)
-        comment = entry.raw[m.end():] if m and entry.raw[m.end():].strip() else ""
+        _, semi, comment = entry.raw.partition(";")
         line = format_entry(LIST_MACROS[kind], args)
-        self.lines[entry.lineno] = f"{line} {comment.strip()}" if comment else line
+        self.lines[entry.lineno] = f"{line} ;{comment}" if semi else line
         self._reparse()
 
     def to_edit(self, root: Path, detail: str) -> Edit:
@@ -429,17 +440,34 @@ class Writer:
     thing the dialect cannot do (spell a door to nowhere) is a refusal that
     names the doors rather than a silence.
 
-    Everything else answers with honest absence: no adders, no forms, no
-    choices, and an `editor` that refuses with the reason. Each of those is a
-    declared hole in this object, not a capability the session could ever
-    misread — the protocol is `hacks/mount.py`'s docstring.
+    **Editing crosses for all four lists, adding for three of them.** An
+    editor rewrites one line in place, which moves nothing and renumbers
+    nothing, so it is safe wherever the line already parses; an adder appends
+    one, which is safe exactly when the line it appends needs no script block
+    written beside it. Trainers and props need one, so they have no adder and
+    the tab's Add row says nothing rather than producing a map that will not
+    assemble. See `.actions` for the slot orders, which fork between the two
+    trees in four columns and swap the movement radius between two of them.
+
+    What is left is a declared hole rather than a capability the session could
+    misread: `form()` is None for all three app-level forms — new map is Phase
+    7, resize stands on it, rewording is the text project — and `follows` and
+    `sprite_hint` are argued absences, not stubs. The protocol is
+    `hacks/mount.py`'s docstring.
     """
 
     def __init__(self, root: Path, anchor: str = "_MapEvents",
                  grammar: WarpGrammar = WARPS,
-                 set_of: dict[str, ConstSet] | None = None) -> None:
+                 set_of: dict[str, ConstSet] | None = None,
+                 forms: tuple[dict, dict] | None = None) -> None:
         self.root = root
         self.anchor = anchor
+        #: The fourth fork the mount declares: which dialect's actions these
+        #: are, already stamped with its anchor and its `object_event` slot
+        #: order. Resolved lazily rather than defaulted in the signature
+        #: because `.actions` imports this module — the actions are the write
+        #: half of this adapter, so the arrow points that way and not back.
+        self._forms = forms
         #: Which warp macros this tree writes — the family's, or polished's
         #: larger set. Declared by the mount beside the anchor, for the same
         #: reason: both are forks the code states rather than sniffs.
@@ -450,10 +478,30 @@ class Writer:
         self.set_of = CHOICES if set_of is None else set_of
 
     # -- what a form may offer ----------------------------------------------- #
+    @property
+    def _actions(self) -> tuple[dict, dict]:
+        from . import actions as fa
+        if self._forms is None:
+            self._forms = (fa.VANILLA_ADDERS, fa.VANILLA_EDITORS)
+        return self._forms
+
     def adders(self, kind: str) -> tuple:
-        return ()
+        """What the tab-foot "Add new…" row opens.
+
+        Three of the four lists are here; trainers and props are not, and the
+        absence is measured rather than pending. Their entry line points at a
+        `trainer` / `itemball` / `fruittree` / `hiddenitem` block, and writing
+        blocks is family scaffolding — the project rewording is, and the one
+        Phase 6 said it would not claim. An adder that spliced the line alone
+        would produce a map that does not assemble, which is worse than a tab
+        whose Add row says nothing.
+        """
+        return self._actions[0].get(kind, ())
 
     def form(self, name: str) -> None:
+        """None for every app-level form: `newmap` is Phase 7, `resize` stands
+        on it, and `reword` is the text project. The view renders each as the
+        key not existing, which is the truth."""
         return None
 
     def choices(self, kind: str, map_consts: tuple[str, ...],
@@ -516,9 +564,32 @@ class Writer:
         read_set.cache_clear()
 
     def editor(self, label: str, const: str, ref, said: list):
-        raise Refused(
-            f"editing a {ref.what} is not wired for this dialect yet — "
-            "deleting one is the write that crosses today.")
+        """The form `e` would open on this row, filled in with what is there.
+
+        Keyed by the **list** the entry lives in rather than by `ref.what`.
+        The six tables above the seam are a reading of the block each entry
+        points at — an `object_event` is an NPC or a fruit tree depending on a
+        macro in another block entirely — but what an editor rewrites is a
+        line, and a line belongs to exactly one of four lists. So resolving the
+        handle *is* choosing the form, and the row's kind never comes into it.
+
+        `said` goes unused: rewording is the text project, and a family text
+        block is not a field on any of these forms.
+        """
+        if ref.what == "map":
+            raise Refused(
+                "the map's own attributes live in three files this adapter "
+                "only reads — editing them is not wired for this dialect yet.")
+        if ref.what == "connection":
+            raise Refused(
+                "editing a connection means rewriting the neighbour's side "
+                "too — not wired for this dialect yet.")
+
+        from . import actions as fa
+        block = parse_map(self.root / f"maps/{label}.asm", self.anchor)
+        kind, index = _resolve(block, label, ref)
+        action = self._actions[1][kind]
+        return action, fa.prefill(block, kind, index, action.shape), {}
 
     # -- what a selected row can do ------------------------------------------- #
     def deletion(self, label: str, const: str, ref):

@@ -387,7 +387,13 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
     check("lint finds nothing because there is no linter", s.lint() == [])
     check("and the panes can ask before drawing a verdict",
           s.lints is False and s.measures is False)
-    check("no tab offers to add", s.adders("NPC") == ())
+    # Three tabs offer to add and two do not, and the two are the measured
+    # absence: a trainer's and a prop's entry line points at a block that has
+    # to be written beside it, and `add_entry` splices lines.
+    check("the addable tabs offer one form each",
+          all(len(s.adders(k)) == 1 for k in ("NPC", "warp", "signpost")))
+    check("trainers and objects still offer nothing, having no block writer",
+          s.adders("trainer") == () and s.adders("object") == ())
     check("the sprite hint is silence", s.sprite_hint("TOWN_A", "SPRITE_TEACHER") == "")
     try:
         s.measure("Hello.")
@@ -396,11 +402,19 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
         check("measuring refuses with a sentence", "vanilla" in str(exc))
     check("no app-level form exists",
           all(s.form(n) is None for n in ("newmap", "resize", "reword")))
+    # Editing an entry now crosses; editing the *map* does not, and the refusal
+    # is the interesting half — an absent key would say nothing.
+    action, values, _ = s.editor("TownA", "TOWN_A",
+                                 panels.Ref("npc", "TOWNA_TEACHER"))
+    check("editing an npc opens the object editor on what is there",
+          action.title == "Edit an object"
+          and values["sprite"] == "SPRITE_TEACHER")
     try:
-        s.editor("TownA", "TOWN_A", panels.Ref("npc", "TOWNA_TEACHER"))
-        check("editing refuses with a sentence", False)
+        s.editor("TownA", "TOWN_A", panels.Ref("map", "TOWN_A"))
+        check("editing the map itself refuses with a sentence", False)
     except SessionError as exc:
-        check("editing refuses with a sentence", "not wired" in str(exc))
+        check("editing the map itself refuses with a sentence",
+              "not wired" in str(exc))
 
 
 def test_deletion_crosses_the_seam(root: Path) -> None:
@@ -857,6 +871,139 @@ def test_real_warp_deletion(root: Path, name: str, anchor: str, grammar,
                                anchor).lists["warp"].entries) == n - 1)
 
 
+def test_editing_round_trips(root: Path, name: str, anchor: str, shape) -> None:
+    """Prefill every entry in every real map, hand it straight back unchanged,
+    and demand the file come back the way it went in.
+
+    The one check that can catch a wrong slot order, because a wrong order is
+    not a crash — it is a plausible line with two arguments swapped. It caught
+    two things nothing else would have: `replace_entry` dropping every comment
+    (its regex consumed the comment before it measured where the arguments
+    stopped, so the slice was always empty), and polished's five-argument
+    `BGEVENT_JUMPSTD` losing its grotto id.
+    """
+    from pokeprism_devtools.hacks.vanilla import actions as fa
+    from pokeprism_devtools.hacks.vanilla import write as VW
+    print(f"\nevery entry in {name} survives being edited into itself")
+    tail = {"warp": ("to_map", "their_warp"), "coord": ("scene", "script"),
+            "bg": ("kind", "points_at")}
+    total = shifted = refused = 0
+    moved: list[str] = []
+    for path in sorted((root / "maps").glob("*.asm")):
+        try:
+            probe = VW.parse_map(path, anchor)
+        except Exception:
+            continue
+        for kind in ("warp", "coord", "bg", "object"):
+            for i in range(len(probe.lists[kind].entries)):
+                block = VW.parse_map(path, anchor)
+                entry = block.lists[kind].entries[i]
+                values = fa.prefill(block, kind, i, shape)
+                if kind == "object":
+                    if len(entry.args) != len(shape.slots):
+                        refused += 1
+                        continue
+                    args = shape.args(values)
+                else:
+                    a, b = tail[kind]
+                    args = [values["x"], values["y"], values[a], values[b]]
+                    if values.get("extra"):
+                        args.append(values["extra"])
+                before = block.to_text()
+                block.replace_entry(kind, i, args)
+                total += 1
+                if block.to_text() == before:
+                    continue
+                # Only `format_entry`'s two-column padding may differ, and only
+                # on the line that was edited. Anything else is a lost argument.
+                was, now = entry.raw, block.lines[entry.lineno]
+                if was.split() == now.split():
+                    shifted += 1
+                else:
+                    moved.append(f"{path.name} {kind}#{i}: {was!r} -> {now!r}")
+    check(f"{total} entries edited into themselves, none lost an argument",
+          not moved, "; ".join(moved[:3]))
+    check("comments survive the rewrite",
+          all("; hole" not in m for m in moved))
+    check(f"{shifted} differ only by the writer's own column padding",
+          shifted < total // 100,
+          f"{shifted}/{total} — house style, not data")
+    print(f"  ({refused} object lines refused: their trailing args mean "
+          f"something else)")
+
+
+def test_a_line_the_editor_will_not_rewrite(root: Path) -> None:
+    """Polished's thirteen-argument `object_event` spends its last three on an
+    item, a quantity and a flag where the ordinary twelve spend two on a
+    pointer and a flag. Rewriting one with the twelve-slot shape would slide
+    the flag into the quantity, so it refuses and names the line — the same
+    choice `read_set` makes about a constant `PURGE` took away."""
+    from pokeprism_devtools.hacks.vanilla import actions as fa
+    from pokeprism_devtools.studio.actions import ActionError
+    print("\nan object_event whose trailing args mean something else refuses")
+    src = root / "maps/TownA.asm"
+    text = src.read_text()
+    long_line = ("\tobject_event  1,  1, SPRITE_GRAMPS, "
+                 "SPRITEMOVEDATA_STANDING_DOWN, 0, 0, -1, PAL_NPC_RED, "
+                 "OBJECTTYPE_ITEMBALL, PLAYEREVENT_ITEMBALL, POTION, 1, -1")
+    src.write_text(text.replace("\tdef_object_events",
+                                "\tdef_object_events\n" + long_line, 1))
+    try:
+        editor = fa.POLISHED_EDITORS["object"]
+        act = editor("TOWN_A", index="0")
+        act.anchor = "_MapEvents"      # the fixture is a vanilla-shaped file
+        try:
+            act.run(root)
+            check("a 13-argument line is refused by the 12-slot editor", False)
+        except ActionError as exc:
+            check("a 13-argument line is refused by the 12-slot editor",
+                  "13 arguments" in str(exc) and "will not rewrite" in str(exc),
+                  str(exc))
+    finally:
+        src.write_text(text)
+
+
+def test_adding_an_entry(root: Path) -> None:
+    """The three adders that cross, and the one refusal that keeps a map
+    assembling: a name on a partially-named const list would take an ordinal
+    that belongs to somebody else."""
+    from pokeprism_devtools.hacks.vanilla import actions as fa
+    from pokeprism_devtools.studio.actions import ActionError
+    print("\nadding an entry: three lists cross, and the fourth says why not")
+
+    warp = fa.VANILLA_ADDERS["warp"][0]("TOWN_A", y="3", x="4",
+                                        to_map="HOUSE_A", their_warp="1")
+    result = warp.run(root)
+    check("a warp is appended, one file touched", len(result.edits) == 1)
+    check("and it is written x-first, the way the macro reads it",
+          "warp_event  4,  3, HOUSE_A, 1" in result.edits[0].new_text)
+
+    trigger = fa.VANILLA_ADDERS["trigger"][0]("TOWN_A", y="2", x="2", scene="0")
+    try:
+        trigger.run(root)
+        check("a trigger that runs nothing is refused", False)
+    except ActionError as exc:
+        check("a trigger that runs nothing is refused", "jump to" in str(exc))
+
+    sign = fa.VANILLA_ADDERS["signpost"][0](
+        "TOWN_A", y="1", x="1", kind="BGEVENT_ITEM + NUGGET", points_at="X")
+    try:
+        sign.run(root)
+        check("a hidden item is refused — its block is nobody's to write", False)
+    except ActionError as exc:
+        check("a hidden item is refused — its block is nobody's to write",
+              "hiddenitem" in str(exc))
+
+    npc = fa.VANILLA_ADDERS["NPC"][0]("TOWN_A", y="5", x="5",
+                                      sprite="SPRITE_GRAMPS",
+                                      script="TownATeacherScript")
+    written = npc.run(root).edits[0].new_text
+    check("an unnamed NPC gets this dialect's thirteen slots in its order",
+          "object_event  5,  5, SPRITE_GRAMPS, SPRITEMOVEDATA_STANDING_DOWN, "
+          "0, 0, -1, -1, PAL_NPC_RED, OBJECTTYPE_SCRIPT, 0, "
+          "TownATeacherScript, -1" in written, written)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as d:
         root = _fixture(Path(d))
@@ -867,6 +1014,8 @@ def main() -> int:
         test_wild_and_roof(root)
         test_texts(root)
         test_the_session_degrades_to_absence(root)
+        test_a_line_the_editor_will_not_rewrite(root)
+        test_adding_an_entry(root)
         test_deletion_crosses_the_seam(root)
     # Its own tree: this fixture gives HouseA a map file, and the catalog test
     # above rests on HouseA *not* having one.
@@ -878,6 +1027,13 @@ def main() -> int:
     test_real_choices(Path.home() / "code/ricccec/pokecrystal", "pokecrystal")
     test_real_choices(Path.home() / "code/ricccec/polishedcrystal",
                       "polishedcrystal")
+
+    from pokeprism_devtools.hacks.vanilla import actions as FA
+    test_editing_round_trips(Path.home() / "code/ricccec/pokecrystal",
+                             "pokecrystal", "_MapEvents", FA.VANILLA_OBJECT)
+    test_editing_round_trips(Path.home() / "code/ricccec/polishedcrystal",
+                             "polishedcrystal", "_MapScriptHeader",
+                             FA.POLISHED_OBJECT)
 
     from pokeprism_devtools.hacks.vanilla import write as VW
     test_real_warp_deletion(Path.home() / "code/ricccec/pokecrystal", "pokecrystal",

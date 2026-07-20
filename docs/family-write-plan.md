@@ -19,7 +19,7 @@ phases:
 | Refusal today | Why it refuses | Phase |
 |---|---|---|
 | ~~deleting a family warp~~ | **done** — crosses via a declared warp grammar | ~~5~~ |
-| family `a` / `e` (adders, editors) | form machinery is still prism's | **6** |
+| ~~family `a` / `e` (adders, editors)~~ | **done** — four editors, three adders | ~~6~~ |
 | family `a` on the map list (new map) | scaffold + bank placement unmodelled | **7** |
 
 Ordered smallest-risk-first, as before: 5 is a port of machinery that already
@@ -142,24 +142,99 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   off trainer tables and measured by `maplint`, and the family has neither, so
   half an answer that reads as authoritative is worse than none.
 
-  **Then the actions**: one Add and one Edit per kind, riding the existing
-  splice methods, declaring their own `Field`s. Named identity is the part
-  that thinks: on a fully-named list the form asks for the `const` name
-  (validated unique before preview); on a partially-named list it appends
-  unnamed — the writer already refuses to do otherwise, so the form offers
-  what the writer will accept. Kind shapes follow the read side's
-  classification (trainer / itemball / fruittree / hiddenitem write the line
-  shapes `hacks/vanilla/read.py` walks to recognize); polished's 12-arg
-  `object_event` with type-shifted trailing args is the polished writer's
-  override, stated as the fork it is, exactly like the head anchor.
+  **The actions and the prefill are done**, and they landed as one move
+  rather than two because an editor *is* its prefill — a form that opens on
+  nothing is not an editor. They are in `hacks/vanilla/actions.py`, with the
+  records they are built from in `hacks/vanilla/shapes.py`.
 
-  **Then prefill for `e`**: parsed `Entry` back into form values, with the
-  (x, y) ↔ `Tile(y, x)` turn happening at the seam and nowhere else.
+  One correction to the plan's own carve, and it is the shape of the whole
+  move: **not one form per kind — one per list.** This plan said "per kind"
+  because the tables show six (npc, trainer, prop, signpost, warp, trigger),
+  but those six are a *reading* of the block each entry points at, and what
+  an editor rewrites is a **line**. An NPC and a fruit tree are one
+  `object_event` with identical slots; what makes one a tree is the
+  `fruittree` macro in another block, which this line does not own. So there
+  are four editors, one per `def_*` list, and resolving the handle is what
+  picks the form. `Ref.what` never comes into it.
+
+  The fork is a fourth declared record, `ObjectShape`, beside the anchor, the
+  warp grammar and the constant sets — and the survey that produced it found
+  the sharpest thing in the phase:
+
+  * **The movement radius is swapped between the two trees.** Vanilla's macro
+    emits `dn \6, \5` and polished's `dn \5, \6`, so arguments 5 and 6 are the
+    radius in both dialects and mean opposite axes. 153 vanilla lines and 250
+    polished lines write an asymmetric one, and a writer that copied the other
+    tree's order would have reflected every one of those pacing boxes across
+    the diagonal — the identical failure the (x, y) ↔ `Tile(y, x)` turn exists
+    to prevent, one column further along, and invisible in the ~90% of lines
+    that write `0, 0`.
+
+  **Round-tripping every real entry is what earned the phase.** Prefill each
+  of the 9,257 entries in the two trees, hand it straight back unchanged, and
+  demand the file come back byte-identical. It is the only check that can
+  catch a wrong slot order, because a wrong order is not a crash — it is a
+  plausible line with two arguments transposed. It caught two live bugs:
+
+  * **`replace_entry` was dropping every comment.** Its docstring said
+    "keeping its comment" and its regex `(?:;.*)?` *consumed* the comment
+    before `m.end()` measured where the arguments stopped, so the slice was
+    always empty. Twenty lines in vanilla and eighty-three in polished,
+    including the `; hole` that is the only thing distinguishing a Blackthorn
+    Gym floor hole from a door. Pre-existing since Phase 4 and invisible until
+    something called `replace_entry` on real data.
+  * **Polished's `bg_event` takes an optional fifth argument.** `if _NARG == 5`
+    spends it on a `BGEVENT_JUMPSTD`'s argument — 35 lines, every one a hidden
+    grotto — and the four-argument form writes a zero in its place. A form
+    with four boxes would have turned each grotto into grotto 0 on first edit.
+
+  A third was caught by the fixture rather than the trees: `ObjectShape.args`
+  fell back to `"0"` for a slot with no declared default, and `0` is a
+  perfectly good `SPRITEMOVEDATA_*`. It now refuses instead, because a line
+  that assembles into the wrong pose is the failure mode this whole phase is
+  organised against.
+
+  Result: vanilla 3,684/3,684 byte-identical, polished 5,560/5,573 with the
+  13 differing only by `format_entry`'s own two-column padding — house style
+  on the edited line, the same cosmetic already on record for prism's
+  `dummy_warp`. 22 polished object lines *refuse*: the 13-argument
+  `object_event` spends its trailing three on item, quantity and flag where
+  the ordinary twelve spend two on a pointer and a flag, so rewriting one with
+  the 12-slot shape would slide the flag into the quantity. It says which line
+  instead.
+
+  **Adding crosses for three lists, not four, and the fourth is an absence
+  rather than a gap.** Warps, triggers and signposts append cleanly; NPCs
+  append with an optional `const`. Trainers and props have no adder, because
+  their entry line is the small half — the content is a `trainer` /
+  `itemball` / `fruittree` / `hiddenitem` block written beside it, and
+  `add_entry` splices lines. A line pointing at a block nobody wrote does not
+  assemble, so the tab's Add row says nothing rather than producing a map that
+  will not build. Family scaffolding is the project rewording is.
+
+  Named identity landed slightly differently from the sketch above: the const
+  box is always offered, and `add_entry`'s own refusal explains the ordinal
+  when the list names only its leading objects. Hiding the box would need
+  `adders()` to be told which map you are on, and it is told a tab's name and
+  nothing else — and the refusal arrives at *preview*, with everything you
+  typed still on screen and not one byte written, which is the moment the form
+  exists to reach.
 
   Not claimed by this phase, on purpose: `EditMap` (the attributes tab),
   rewording (family `text` vs prism's VWF `ctxt` is a text-wiring project of
   its own), and connection *adding* (`wiring/connections` is two-sided and
-  deserves its own look). Each keeps its sentence.
+  deserves its own look). Each keeps its sentence. Joining them, named by
+  this phase rather than assumed away: **family scaffolding** — the block
+  writer that trainer and prop adders would ride, and the thing rewording
+  needs too. It is one project, not three, and it is the natural Phase 8.
+
+  Left as a debt rather than paid: `hacks/vanilla/write.py` is 771 lines
+  against this repo's 500. It was 701 before this phase and the seam it wants
+  is clean — the `EventBlock` parser and splicer on one side, the `Writer`
+  adapter and its two delete actions on the other — but carving it is churn
+  across `mount`, `actions` and three test files, and it belongs in its own
+  commit rather than smuggled into a phase that just proved the module
+  correct on 9,257 entries.
 
 - **Phase 7 — a new map, and where it may be put.** The last capability, and
   the reason it is last: `NewMap` is a scaffold across many files *plus* the

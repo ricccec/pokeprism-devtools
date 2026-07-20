@@ -265,8 +265,17 @@ def test_the_session_sees_no_name(root: Path) -> None:
     s = Session(root)
     md = s.load("TownA")
     check("the map loads whole", md.error is None and md.geometry is not None)
-    check("lint is empty, adders are empty",
-          s.lint() == [] and s.adders("NPC") == ())
+    check("lint is empty — there is no linter for this dialect", s.lint() == [])
+    # The adder polished gets is *its own*: same class, stamped with the head
+    # anchor and the twelve-slot object shape, so the form it builds has a
+    # time-of-day box where vanilla's has two hour boxes.
+    adder = s.adders("NPC")[0]
+    slots = adder.shape.slots
+    check("the NPC adder is polished's fork of it",
+          adder.anchor == "_MapScriptHeader" and "time" in slots
+          and "h1" not in slots)
+    check("and its movement radius is the other way round",
+          slots.index("radius_y") < slots.index("radius_x"))
 
 
 def test_deletion_splices_the_head(root: Path) -> None:
