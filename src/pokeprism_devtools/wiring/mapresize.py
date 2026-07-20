@@ -3,10 +3,10 @@
 Three things describe a map's shape, in three different files, and they must
 move together or the map corrupts:
 
-    constants/map_dimension_constants.asm   `mapgroup CONST, H, W`
-    maps/blk/<Label>.ablk                   the block grid: H*W bytes, row-major
-    maps/<Label>.asm                        every warp/signpost/trigger/person,
-                                            each one a coordinate *into* that grid
+    a dimension constant     the declared `MapShape` — see below
+    the block grid           H*W bytes, row-major
+    the map's asm            every warp/signpost/trigger/person, each one a
+                             coordinate *into* that grid
 
 A block is 2x2 coordinate tiles (`shared/coords.TILES_PER_BLOCK`), and growing or
 shrinking at the **top or left** moves the grid's origin — so every coordinate on
@@ -14,51 +14,151 @@ the map has to shift with it, by 2 tiles per block. Growing or shrinking at the
 **bottom or right** leaves the origin exactly where it was, and nothing on the
 map needs to move at all.
 
-One entry point, taking only primitives — no `Action`, no `Session`, nothing
-from `studio/` — so a future `prism-resize` CLI is `argparse` ->
-:func:`resize` -> `apply_edits(root, change.changes, dry_run=...)`, the same
-shape as `prism-newmap`.
+That much is geometry, and it is the same in every tree. What is *not* the same
+is where those three things live and how they are spelled, so the tree answers
+that through a :class:`Dialect` and the geometry stays here, written once.
+
+The transposition this module exists to not get wrong
+-----------------------------------------------------
+The dimension macro takes its two numbers in a different order in each family::
+
+    prism   mapgroup  NAME, H, W    ->  NAME_HEIGHT EQU \\2 , NAME_WIDTH  EQU \\3
+    family  map_const NAME, W, H    ->  \\1_WIDTH    EQU \\2 , \\1_HEIGHT   EQU \\3
+
+Measured, not assumed: `PlayersHouse1F` is `map_const …, 5, 4` and its `.blk` is
+exactly 20 bytes. A resize that inherited the other tree's order would transpose
+every map it touched, and a transposed height and width assembles perfectly —
+it is the swapped movement radius of `hacks/vanilla/shapes.py` one file over.
+So :class:`MapShape` owns the order and does *both* the reading and the writing
+of that line, because the one way to guarantee they agree is to give them no
+opportunity to disagree.
+
+One entry point, taking only primitives and a dialect — no `Action`, no
+`Session`, nothing from `studio/` — so a future `prism-resize` CLI is
+`argparse` -> :func:`resize` -> `apply_edits(root, change.changes,
+dry_run=...)`, the same shape as `prism-newmap`.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
-from ..hacks.prism import blocksrc, maps as maps_mod, mapsource
 from ..shared import coords
-from ..hacks.prism import eventheader as eh
 from ..shared.edits import Edit
-from .objedit import (Change, EditError, MapEdit, S_X, S_Y, T_X, T_Y, W_X, W_Y,
-                      X, Y, spliced)
+from .objedit import Change, EditError
 
 EDGES = ("top", "bottom", "left", "right")
 MODES = ("grow", "shrink")
 
-DIMENSIONS = "constants/map_dimension_constants.asm"
 
-#: Where y/x sit in each list's entry, per `wiring/objedit.py`'s own constants —
-#: the same ones `edit_npc`/`edit_signpost`/`edit_trigger` already splice.
-_MOVES: dict[eh.ListKind, tuple[int, int]] = {
-    eh.ListKind.WARPS: (W_Y, W_X),
-    eh.ListKind.COORD_EVENTS: (T_Y, T_X),
-    eh.ListKind.BG_EVENTS: (S_Y, S_X),
-    eh.ListKind.OBJECT_EVENTS: (Y, X),
-}
+@dataclass(frozen=True)
+class MapShape:
+    """How a tree spells a map's height and width, and in which order.
 
-_MAPGROUP_RE_TMPL = (
-    r"^(?P<head>\s*mapgroup\s+{const}\s*,\s*)"
-    r"(?P<h>-?\d+)\s*,\s*(?P<w>-?\d+)(?P<tail>.*)$"
-)
+    `height_first` is the whole point: see the module docstring. Everything
+    that reads or writes the dimension line goes through here.
+    """
+    #: The constants file, relative to the repo root.
+    path: str
+    #: The macro that carries the two numbers.
+    macro: str
+    #: True when the macro is `NAME, H, W`; False when it is `NAME, W, H`.
+    height_first: bool
+
+    def _re(self, const: str) -> re.Pattern:
+        return re.compile(
+            rf"^(?P<head>\s*{re.escape(self.macro)}\s+{re.escape(const)}\s*,\s*)"
+            r"(?P<a>-?\d+)(?P<mid>\s*,\s*)(?P<b>-?\d+)(?P<tail>.*)$")
+
+    def read(self, root: Path, const: str) -> tuple[int, int]:
+        """(height, width), whichever order the file writes them in."""
+        rx = self._re(const)
+        for line in (root / self.path).read_text().split("\n"):
+            if m := rx.match(line):
+                a, b = int(m.group("a")), int(m.group("b"))
+                return (a, b) if self.height_first else (b, a)
+        raise EditError(
+            f"{const} has no `{self.macro}` line in {self.path}")
+
+    def rewrite(self, root: Path, const: str, height: int, width: int) -> Edit:
+        """The dimension line, renumbered. Keeps the line's own spacing and any
+        trailing comment — the family aligns these into columns and writes a map
+        index after them, and neither is ours to reflow."""
+        path = root / self.path
+        if not path.exists():
+            raise EditError(f"{self.path} is missing")
+        original = path.read_text()
+        lines = original.split("\n")
+        rx = self._re(const)
+        first, second = ((height, width) if self.height_first
+                         else (width, height))
+        for i, line in enumerate(lines):
+            m = rx.match(line)
+            if not m:
+                continue
+            rebuilt = (f"{m.group('head')}{first}{m.group('mid')}"
+                       f"{second}{m.group('tail')}")
+            if rebuilt == line:
+                return Edit(self.path, False, "unchanged", "", base=original)
+            lines[i] = rebuilt
+            return Edit(self.path, True, f"{const}: {height}x{width}",
+                        "\n".join(lines), base=original)
+        raise EditError(f"{self.path} has no `{self.macro}` line for {const}")
+
+
+@dataclass(frozen=True)
+class Standing:
+    """One thing standing on the map, for the shrink refusal to name."""
+    macro: str
+    y: int
+    x: int
+
+
+class Dialect(Protocol):
+    """What a resize has to ask the tree. Everything else on this page is
+    arithmetic that does not care which hack it is running against."""
+
+    #: How this tree spells the dimension constant.
+    shape: MapShape
+
+    def label_of(self, root: Path, const: str) -> str:
+        """The map's asm/blk label. Raises `EditError` if the map is unwired."""
+
+    def blk(self, root: Path, label: str) -> Path:
+        """The block grid file. Raises `EditError` when the map has no blocks,
+        or when it *shares* them with another map — resizing aliased block data
+        corrupts every map that aliases it, since their dimension constants do
+        not change with it."""
+
+    def read_grid(self, path: Path, height: int, width: int) -> bytes:
+        """`height * width` block bytes. Whether they are stored plain or
+        compressed is the tree's business, which is why this is here and not
+        a `read_bytes` on the page below."""
+
+    def border_block(self, root: Path, label: str) -> str:
+        """The block a grow fills new rows and columns with by default."""
+
+    def connections(self, root: Path, label: str) -> int:
+        """How many neighbours this map has, for the review note."""
+
+    def standing(self, root: Path, label: str) -> list[Standing]:
+        """Every entry's coordinates, so a shrink can refuse to bury them."""
+
+    def shift(self, root: Path, const: str, dy: int,
+              dx: int) -> tuple[Edit, int]:
+        """Move every entry by (dy, dx). Returns the edit and how many moved."""
 
 
 def resize(root: Path, map_const: str, edge: str, mode: str, blocks: int,
-          fill: str | None = None) -> Change:
+          fill: str | None = None, *, dialect: Dialect) -> Change:
     """Grow or shrink `map_const` by `blocks` blocks, from `edge`.
 
-    Refuses (writing nothing) if the map's `.ablk` is shared with another map's
-    `_BlockData:` label, if the shrink would take the map below one block on
-    that axis, or if anything on the map is standing in the strip being removed.
+    Refuses (writing nothing) if the map's block grid is shared with another
+    map, if the shrink would take the map below one block on that axis, or if
+    anything on the map is standing in the strip being removed.
     """
     if edge not in EDGES:
         raise EditError(f"edge must be one of {', '.join(EDGES)}, not {edge!r}")
@@ -67,15 +167,11 @@ def resize(root: Path, map_const: str, edge: str, mode: str, blocks: int,
     if blocks < 1:
         raise EditError("grow/shrink by at least one block")
 
-    label = _label_for(root, map_const)
-    secondary = mapsource.secondary_header(root, label)
-    if secondary is None:
-        raise EditError(f"{label} has no map_header_2 in maps/second_map_headers.asm")
-    mapdef = _mapdef_for(root, map_const)
-    height, width = mapdef.height, mapdef.width
+    label = dialect.label_of(root, map_const)
+    height, width = dialect.shape.read(root, map_const)
 
-    blk_path = _blk_path(root, label)
-    grid = _read_grid(blk_path, height, width)
+    blk_path = dialect.blk(root, label)
+    grid = dialect.read_grid(blk_path, height, width)
 
     axis = height if edge in ("top", "bottom") else width
     if mode == "shrink" and blocks >= axis:
@@ -83,7 +179,8 @@ def resize(root: Path, map_const: str, edge: str, mode: str, blocks: int,
             f"{label} is only {axis} blocks on that axis — shrinking by "
             f"{blocks} would leave nothing")
     if mode == "shrink":
-        orphans = _orphans(root, label, edge, blocks, height, width)
+        orphans = _orphans(dialect.standing(root, label), edge, blocks,
+                           height, width)
         if orphans:
             raise EditError(
                 f"shrinking {label}'s {edge} by {blocks} block(s) would remove: "
@@ -96,12 +193,12 @@ def resize(root: Path, map_const: str, edge: str, mode: str, blocks: int,
         new_height = height
         new_width = width + blocks if mode == "grow" else width - blocks
 
-    fill_block = (_fill_value(fill, secondary.border_block) if mode == "grow"
-                 else 0)
+    fill_block = (_fill_value(fill, dialect.border_block(root, label))
+                  if mode == "grow" else 0)
     new_grid = _reshape(grid, height, width, edge, mode, blocks, fill_block)
 
     edits = [
-        _rewrite_dims(root, map_const, new_height, new_width),
+        dialect.shape.rewrite(root, map_const, new_height, new_width),
         Edit(_rel(root, blk_path), True,
              f"{new_height}x{new_width} blocks", f"{len(new_grid)} bytes",
              data=new_grid),
@@ -114,7 +211,7 @@ def resize(root: Path, map_const: str, edge: str, mode: str, blocks: int,
     elif edge == "left":
         dx = blocks * coords.TILES_PER_BLOCK * (1 if mode == "grow" else -1)
     if dy or dx:
-        coord_edit, moved = _shift_coords(root, map_const, dy, dx)
+        coord_edit, moved = dialect.shift(root, map_const, dy, dx)
         if coord_edit.changed:
             edits.append(coord_edit)
         if moved:
@@ -123,55 +220,14 @@ def resize(root: Path, map_const: str, edge: str, mode: str, blocks: int,
                         "right" if dx > 0 else "left")
             notes.append(f"shifted {moved} object(s) {amount} tiles {direction}")
 
-    if secondary.connections:
+    if n := dialect.connections(root, label):
         notes.append(
-            f"{len(secondary.connections)} connection(s) may need review — the "
-            f"conn-align linter will flag any that broke.")
+            f"{n} connection(s) may need review — a connection is aligned "
+            f"against its neighbour's edge, and this map's edge just moved.")
 
     summary = (f"{label}: {mode} {edge} by {blocks} block(s) "
               f"({height}x{width} -> {new_height}x{new_width})")
     return Change(summary, edits, notes)
-
-
-# --------------------------------------------------------------------------- #
-# resolving the map                                                           #
-# --------------------------------------------------------------------------- #
-
-def _label_for(root: Path, map_const: str) -> str:
-    label = {c: l for l, c in mapsource.header_pairs(root)}.get(map_const)
-    if label is None:
-        raise EditError(f"{map_const} has no map_header_2 — wire the map first")
-    return label
-
-
-def _mapdef_for(root: Path, map_const: str) -> maps_mod.MapDef:
-    for d in maps_mod.parse_maps(root / DIMENSIONS):
-        if d.name == map_const:
-            return d
-    raise EditError(f"{map_const} has no `mapgroup` line in {DIMENSIONS}")
-
-
-def _blk_path(root: Path, label: str) -> Path:
-    labels = mapsource.blockdata_labels(root)
-    target = labels.get(label)
-    if target is None:
-        raise EditError(
-            f"no `{label}_BlockData:` in maps/blockdata.asm — the map has no "
-            f"blocks wired to it")
-    aliases = sorted(l for l, t in labels.items() if t == target and l != label)
-    if aliases:
-        raise EditError(
-            f"{label}'s block data is shared with {', '.join(aliases)} — "
-            f"resizing it would corrupt every map that aliases it, since their "
-            f"dimension constants don't change with it")
-    return root / (target[:-3] if target.endswith(".lz") else target)
-
-
-def _read_grid(blk_path: Path, height: int, width: int) -> bytes:
-    try:
-        return blocksrc.read_blk(blk_path, height, width)
-    except blocksrc.BlockSourceError as exc:
-        raise EditError(str(exc)) from exc
 
 
 def _rel(root: Path, path: Path) -> str:
@@ -182,15 +238,9 @@ def _rel(root: Path, path: Path) -> str:
 # refusals                                                                    #
 # --------------------------------------------------------------------------- #
 
-def _orphans(root: Path, label: str, edge: str, blocks: int,
+def _orphans(standing: list[Standing], edge: str, blocks: int,
             height: int, width: int) -> list[str]:
     """Everything standing in the tile-strip a shrink would remove."""
-    path = root / "maps" / f"{label}.asm"
-    try:
-        header = eh.parse_map(path)
-    except eh.UnparseableHeader as exc:
-        raise EditError(str(exc)) from exc
-
     lo_y, hi_y = 0, 2 * height
     lo_x, hi_x = 0, 2 * width
     if edge == "top":
@@ -204,14 +254,11 @@ def _orphans(root: Path, label: str, edge: str, blocks: int,
 
     on_the_y_axis = edge in ("top", "bottom")
     found = []
-    for kind in eh.LIST_ORDER:
-        for entry in header.list_of(kind).entries:
-            y, x = entry.coords
-            if y is None or x is None:
-                continue
-            in_strip = lo_y <= y < hi_y if on_the_y_axis else lo_x <= x < hi_x
-            if in_strip:
-                found.append(f"{entry.macro} at ({y}, {x})")
+    for s in standing:
+        in_strip = (lo_y <= s.y < hi_y if on_the_y_axis
+                    else lo_x <= s.x < hi_x)
+        if in_strip:
+            found.append(f"{s.macro} at ({s.y}, {s.x})")
     return found
 
 
@@ -261,50 +308,6 @@ def _reshape(grid: bytes, height: int, width: int, edge: str, mode: str,
     return b"".join(new_rows)
 
 
-# --------------------------------------------------------------------------- #
-# the dimension constant                                                      #
-# --------------------------------------------------------------------------- #
-
-def _rewrite_dims(root: Path, map_const: str, new_height: int, new_width: int) -> Edit:
-    path = root / DIMENSIONS
-    if not path.exists():
-        raise EditError(f"{DIMENSIONS} is missing")
-    original = path.read_text()
-    lines = original.split("\n")
-
-    rx = re.compile(_MAPGROUP_RE_TMPL.format(const=re.escape(map_const)))
-    for i, line in enumerate(lines):
-        m = rx.match(line)
-        if not m:
-            continue
-        rebuilt = f"{m.group('head')}{new_height}, {new_width}{m.group('tail')}"
-        if rebuilt == line:
-            return Edit(DIMENSIONS, False, "unchanged", "", base=original)
-        lines[i] = rebuilt
-        return Edit(DIMENSIONS, True, f"{map_const}: {new_height}x{new_width}",
-                   "\n".join(lines), base=original)
-    raise EditError(f"{DIMENSIONS} has no `mapgroup` line for {map_const}")
-
-
-# --------------------------------------------------------------------------- #
-# the coordinates (top/left only)                                            #
-# --------------------------------------------------------------------------- #
-
-def _shift_coords(root: Path, map_const: str, dy: int, dx: int) -> tuple[Edit, int]:
-    """Move every warp/signpost/trigger/person by (dy, dx). Returns the file
-    edit and how many entries actually moved."""
-    ctx = MapEdit(root, map_const)
-    moved = 0
-    for kind in eh.LIST_ORDER:
-        yi, xi = _MOVES[kind]
-        for i in range(len(ctx.header.list_of(kind).entries)):
-            entry = ctx.entry(kind, i)
-            y, x = entry.int_arg(yi), entry.int_arg(xi)
-            if y is None or x is None:
-                continue
-            args = spliced(entry, {yi: y + dy, xi: x + dx})
-            if args != entry.args:
-                ctx.replace_entry(kind, i, args)
-                moved += 1
-    change = ctx.done("", "")
-    return change.edits[0], moved
+# The dimension constant is `MapShape`'s job, at the head of this module, and
+# shifting coordinates is the dialect's — both because both differ per tree.
+# What is left here is arithmetic, and arithmetic has no dialect.

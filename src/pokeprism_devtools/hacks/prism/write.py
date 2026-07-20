@@ -119,8 +119,10 @@ class Writer:
         the key not existing."""
         from ...studio.content import EditText
         from ...studio.newmap import NewMap
-        from ...studio.resize import ResizeMap
-        return {"newmap": NewMap, "resize": ResizeMap, "reword": EditText}.get(name)
+        from ...studio.resize import resize_for
+        from .resize import DIALECT
+        return {"newmap": NewMap, "resize": resize_for(DIALECT, "Prism"),
+                "reword": EditText}.get(name)
 
     def choices(self, kind: str, map_consts: tuple[str, ...],
                 values: dict[str, str] | None = None) -> list[str]:
