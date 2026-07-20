@@ -227,8 +227,8 @@ def main() -> int:
         tmp = Path(d)
         test_readers(tmp)
         test_shapes(tmp)
-    test_real(VANILLA, NM.vanilla, "pokecrystal", P.JOIN)
-    test_real(POLISHED, NM.polished, "polishedcrystal", P.MINT)
+    test_real(VANILLA, NM.VANILLA.placements, "pokecrystal", P.JOIN)
+    test_real(POLISHED, NM.POLISHED.placements, "polishedcrystal", P.MINT)
 
     print()
     if _failures:
