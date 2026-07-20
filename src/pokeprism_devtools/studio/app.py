@@ -66,7 +66,6 @@ from ..shared.coords import Tile
 from .flow import Flow
 from .grid import MapGrid
 from .maplist import MapList
-from .newmap import NewMap
 from .panels import Ref
 from .screens import Build, Form, Picker
 from .session import Draft, MapData, Session, SessionError, TextRef
@@ -333,7 +332,17 @@ class Studio(Flow, App):
             return True if ref is not None else None
         if action == "delete":
             return True if ref is not None and ref.deletable else None
-        if action in ("build", "texts", "resize"):
+        if action == "add_map":
+            return True if self.session.form("newmap") is not None else None
+        if action == "resize":
+            return (True if self._const is not None
+                    and self.session.form("resize") is not None else None)
+        if action == "build":
+            # Build-and-boot is a declared capability, not a given: a tree
+            # whose adapter has no emulator wiring simply has no `b`.
+            return (True if self._const is not None
+                    and self.session.hack.plays else None)
+        if action == "texts":
             return True if self._const is not None else None
         if action == "undo":
             return True if self.session.can_undo else None
@@ -401,11 +410,15 @@ class Studio(Flow, App):
         And the one thing you can come *back* to: if you asked to see the map you
         were describing, the form went away so you could look at it, and this is the
         key that returns you to it — with every answer where you left it.
+
+        The form itself is the write adapter's — `session.form("newmap")` — so
+        the key exists exactly when the mounted tree's adapter writes maps.
         """
-        if not self._may_write():
+        if (form := self.session.form("newmap")) is None or not self._may_write():
+            self.bell()
             return
         self.push_screen(
-            Form(NewMap, self.session, self._const or "",
+            Form(form, self.session, self._const or "",
                  values=self._draft.values if self._draft else None),
             self._filled)
 

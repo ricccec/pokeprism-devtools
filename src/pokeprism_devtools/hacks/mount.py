@@ -16,10 +16,10 @@ the head) where vanilla ends with it (`_MapEvents:` at the tail).
 
 What the mount returns
 ----------------------
-A :class:`Hack`: a name for sentences, a read adapter, and the declared
-capabilities. The read adapter answers the studio's questions in the seam's
-records (see `studio/panels`); the protocol is whatever `studio/reader` and
-`Session` ask of it —
+A :class:`Hack`: a name for sentences, a read adapter, a write adapter, and
+the declared capabilities. The read adapter answers the studio's questions in
+the seam's records (see `studio/panels`); the protocol is whatever
+`studio/reader` and `Session` ask of it —
 
     maps() -> {label: const}                 the catalog
     parses(const) -> bool
@@ -31,7 +31,20 @@ records (see `studio/panels`); the protocol is whatever `studio/reader` and
     roof(const) -> panels.Roof | None
     texts(label) -> [panels.TextRef]
     measure(text, box) -> panels.TextPreview    (measures=True only)
-    sketch(action) -> panels.Blocks | None      (writes=True only)
+    sketch(action) -> panels.Blocks | None      (writes only)
+
+The write adapter is an object too, or None for a tree mounted read-only —
+what it can do is what its methods answer, and a "no" is a :class:`Refused`
+carrying the reason:
+
+    adders(kind) -> (Action subclasses,)     the tab-foot "Add new…" row
+    form(name) -> Action subclass | None     "newmap" | "resize" | "reword"
+    editor(label, const, ref, said) -> (Action subclass, values, boxes)
+    deletion(label, const, ref) -> Action    what `d` would run
+    choices(kind, map_consts, values) -> [str]
+    follows(action, changed, values) -> {field: value}
+    sprite_hint(map_const, sprite) -> str
+    warm() / forget()                        the constants caches
 
 A capability the adapter does not declare degrades to *absence* above the
 seam: no Diagnostics findings, no edit forms, no boot key — never a crash, and
@@ -52,6 +65,13 @@ class UnknownTree(RuntimeError):
     pokecrystal checkout" is."""
 
 
+class Refused(RuntimeError):
+    """A write adapter's "no": the operation exists in the protocol and this
+    adapter will not do it here, for the reason the message gives. Defined at
+    the mount because it is the seam's word, not any one hack's — the session
+    catches it and puts the sentence on screen, whichever adapter said it."""
+
+
 @dataclass(frozen=True)
 class Hack:
     """One mounted tree: its adapter, and what it declared it can do."""
@@ -62,8 +82,10 @@ class Hack:
     #: session lints exactly when this is not None, and hands it back to
     #: everything that asks repo-wide questions.
     ctx: Any = None
-    #: The studio's actions, forms and undo apply to this tree.
-    writes: bool = False
+    #: The write adapter — the studio's actions, forms and undo apply to this
+    #: tree through it. None mounts the tree read-only, and everything above
+    #: the seam that would change the repo degrades to absence.
+    writes: Any = None
     #: Build-and-boot (a patched save, an emulator) is wired for this tree.
     plays: bool = False
     #: Text is measured in tiles against a VWF engine (prism physics).
@@ -85,9 +107,10 @@ def mount(root: Path) -> Hack:
     if all((root / rel).exists() for rel in _PRISM_LAYOUT):
         from ..maplint.context import LintContext
         from .prism.read import Reader
+        from .prism.write import Writer
         ctx = LintContext(root)
         return Hack("prism", Reader(root, ctx), ctx=ctx,
-                    writes=True, plays=True, measures=True)
+                    writes=Writer(root, ctx), plays=True, measures=True)
 
     if (root / "data/maps/maps.asm").exists():
         anchor = _family_anchor(root)

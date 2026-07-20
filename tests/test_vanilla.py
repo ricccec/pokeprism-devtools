@@ -392,7 +392,7 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
     except SessionError as exc:
         check("measuring refuses with a sentence", "vanilla" in str(exc))
     try:
-        s.entry("TownA", panels.Ref("npc", "TOWNA_TEACHER"))
+        s.editor("TownA", "TOWN_A", panels.Ref("npc", "TOWNA_TEACHER"))
         check("editing refuses with a sentence", False)
     except SessionError as exc:
         check("editing refuses with a sentence", "read-only" in str(exc))

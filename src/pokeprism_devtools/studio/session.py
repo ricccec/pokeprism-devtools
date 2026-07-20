@@ -41,13 +41,10 @@ from pathlib import Path
 from .. import maplint
 from ..dev_server import playtest as devplay
 from ..maplint.diagnostics import Diagnostic, Severity
-from ..hacks.mount import mount
-from ..hacks.prism import eventheader, spritepack, trainerstats
+from ..hacks.mount import Refused, mount
 from ..shared import caches, world
 from ..shared.edits import StaleEdit, apply_edits
-from ..wiring import objedit
-from . import (actions, content, edits, offers, panels, play, prefill as fill,
-               reader, undo)
+from . import panels, play, reader, undo
 from .actions import Action
 # The shapes of the answers — see `model.py`. Re-exported, because whatever wants
 # a `MapData` wants it *from the session*: the session is the only thing that can
@@ -80,16 +77,6 @@ class StaleWorld(SessionError):
             f"{len(paths)} file(s) changed on disk since the studio last read the "
             f"repo ({', '.join(paths[:3])}{rest}). Everything it would check this "
             f"against is out of date, so it will not write. Press r to re-read.")
-
-
-def _entry_of(header: eventheader.EventHeader, label: str,
-              ref: panels.Ref) -> eventheader.Entry:
-    entry = header.entry_at(ref.handle) if ref.handle else None
-    if entry is None:
-        raise SessionError(
-            f"{label} no longer has a {ref.what} at {ref.handle} — the "
-            f"map changed under the table. Select it again.")
-    return entry
 
 
 class Session:
@@ -142,11 +129,11 @@ class Session:
         """The gate in front of everything that changes the repo, or reasons
         about changing it. Not a hack-name check: the mount declared what this
         tree can do, and "no" comes with the reason."""
-        if not self.hack.writes:
+        if self.hack.writes is None:
             raise SessionError(
                 f"this {self.hack.name} tree is mounted read-only — the studio "
-                "can look at it, not write it. Write adapters are Phase 4 of "
-                "docs/polished-crystal-feasibility.md.")
+                "can look at it, not write it. Nothing about it declares a "
+                "write adapter.")
 
     def _playable(self) -> None:
         if not self.hack.plays:
@@ -190,58 +177,44 @@ class Session:
 
     # -- what a form may offer ------------------------------------------------ #
     def choices(self, kind: str, values: dict[str, str] | None = None) -> list[str]:
-        """The constants a field of this kind will accept — see :mod:`.offers`.
+        """The constants a field of this kind will accept — the write adapter's
+        enumeration of its own repo.
 
         `values` is the form as it stands, because some lists depend on another
         field: which parties exist depends entirely on which class you picked.
         """
         self._writable()
-        return offers.for_kind(self.root, kind, self._map_consts, values)
+        return self.hack.writes.choices(kind, self._map_consts, values)
 
     def follows(self, action: type[Action], changed: str,
                 values: dict[str, str]) -> dict[str, str]:
         """What the form should fill in for itself, now one field has changed — a
         trainer class knows what it usually wears."""
         self._writable()
-        return offers.follows(self.root, action, changed, values)
+        return self.hack.writes.follows(action, changed, values)
+
+    def form(self, name: str) -> type[Action] | None:
+        """The app-level forms — the ones not reached by pointing at a row:
+        "newmap" is `a`, "resize" is `s`, "reword" is picking a text under `t`.
+        None when this tree's write adapter doesn't write one, or there is no
+        write adapter at all — either way the view renders the key's absence."""
+        return self.hack.writes.form(name) if self.hack.writes else None
 
     def sprite_hint(self, map_const: str, sprite: str) -> str:
-        """The sprite field's hint line: who plays this sprite, and whether they
-        can walk here.
-
-        *Who* is counted from every trainer already in the repo, the same way
-        `follows` is — see `hacks/prism/trainerstats.classes_for`. A class does not
-        say what it wears; only counting what is already there does.
-
-        *Whether they can walk* is measured the way `maplint.rules_sprites`
-        measures it, not guessed from the sprite's own type: an outdoor map
-        only ever loads its group's `OutdoorSprites` set, and only the sprites
-        that land inside VRAM table 1 there ever animate a walk cycle — the
-        ~9 the docstring in `hacks/prism/spritepack` explains. Indoor maps load
-        whatever their objects ask for, so nothing here bounds them.
-        """
+        """The sprite field's hint line: who plays this sprite, and whether
+        they can walk here. Measured from the repo by the write adapter — see
+        `hacks/prism/write.Writer.sprite_hint` for how prism counts it. "" on
+        a tree whose adapter has nothing to say, which renders as no hint."""
         sprite = sprite.strip()
-        if not sprite or not self.hack.writes:
+        if not sprite or self.hack.writes is None:
             return ""
-        who = trainerstats.classes_for(self.root, sprite)
-        text = f"worn by: {', '.join(who[:6])}" if who else "no trainer wears this sprite yet"
-
-        mapdef = self.ctx.map_defs.get(map_const)
-        if mapdef is None or not self.ctx.is_outdoor(map_const):
-            return text
-        sd = self.ctx.sprites
-        group = sd.outdoor_set(mapdef.group)
-        if sprite not in group:
-            name = sd.set_names.get(mapdef.group, "this group")
-            return f"{text} — not in {name}, this map's sprite set"
-        walkable = spritepack.walkable(sd, [sd.player_sprite(), *group])
-        return f"{text} — {'can walk here' if sprite in walkable else 'stands still here (table 2)'}"
+        return self.hack.writes.sprite_hint(map_const, sprite)
 
     def warm(self) -> None:
         """Read everything a form will want, before a form asks. A tree with no
         forms has nothing worth warming."""
-        if self.hack.writes:
-            offers.warm(self.root)
+        if self.hack.writes is not None:
+            self.hack.writes.warm()
 
     @property
     def _map_consts(self) -> tuple[str, ...]:
@@ -260,65 +233,22 @@ class Session:
 
         Empty on a read-only mount: the dim row draws, and offers nothing.
         """
-        if not self.hack.writes:
+        if self.hack.writes is None:
             return ()
-        return edits.ADDERS.get(kind, ())
-
-    def _header(self, label: str) -> eventheader.EventHeader:
-        try:
-            return eventheader.parse_map(self.root / f"maps/{label}.asm")
-        except (eventheader.UnparseableHeader, FileNotFoundError) as exc:
-            raise SessionError(str(exc)) from exc
-
-    def entry(self, label: str, ref: panels.Ref) -> eventheader.Entry:
-        """The event-header entry a Ref names, re-read from the file.
-
-        Re-read rather than remembered: a Ref is only as good as the file it came
-        from, and between drawing the table and pressing `d` the map may have been
-        written to. Reading it again is one file and costs nothing on a keypress —
-        and if the entry has moved, saying so beats deleting whatever is standing
-        in its place now.
-        """
-        self._writable()
-        return _entry_of(self._header(label), label, ref)
+        return self.hack.writes.adders(kind)
 
     def deletion(self, label: str, const: str, ref: panels.Ref) -> Action:
-        """The action `d` would run on this row.
+        """The action `d` would run on this row — the write adapter's answer.
 
         Raises :class:`SessionError` for the things that cannot be deleted, and
         says *why* — which beats an absent key, because the reason is the
         interesting part.
         """
         self._writable()
-        if ref.what == "map":
-            raise SessionError("deleting a whole map is not something this does.")
-
-        # A connection is not an entry in an event list, so it carries no handle
-        # — it is named by its direction, because a map has at most one each way.
-        if ref.what == "warp":
-            return content.RemoveWarp(const, index=str(ref.handle.index))
-        if ref.what == "connection":
-            return content.Disconnect(const, direction=ref.key)
-
-        # `entry` is not how the object is found — the handle is, and it came off
-        # the row. It is read to *name* the thing on the confirm screen, and
-        # re-read from the file rather than remembered, so a Ref that has gone
-        # stale says so instead of describing whatever is standing in its place.
-        #
-        # This is the difference between a description and an identity. Owsauri's
-        # game corner runs sixteen slot machines off one script and Saffron Gates
-        # has eight guards with one name between them; asking `removal` to find
-        # "the one called X" would refuse all twenty-four. You did not describe the
-        # thing you want gone — you pointed at it.
-        entry = _entry_of(self._header(label), label, ref)
-        y, x = entry.coords
-        # The handle is spelled out only here, into the form-shaped strings the
-        # action takes — the actions are the write half of the same adapter that
-        # minted it, so this is the handle going home, not the port reading it.
-        return content.Remove(
-            const, index=str(ref.handle.index), kind=ref.handle.kind.value,
-            label=entry.pointer or "",
-            y="" if y is None else str(y), x="" if x is None else str(x))
+        try:
+            return self.hack.writes.deletion(label, const, ref)
+        except Refused as exc:
+            raise SessionError(str(exc)) from exc
 
     def editor(self, label: str, const: str,
                ref: panels.Ref) -> tuple[type[Action], dict[str, str], dict[str, str]]:
@@ -328,19 +258,14 @@ class Session:
         an absent key tells you nothing, and the reason is the interesting part.
         """
         self._writable()
-        if (action := edits.EDITORS.get(ref.what)) is None:
-            raise SessionError(edits.NOT_YET.get(
-                ref.what, f"editing a {ref.what} is not wired up yet."))
+        # A map's header lives in files of the adapter's own choosing, and a
+        # couple of maps have one without having a script file at all — so the
+        # words are read only for a row that could have any.
+        said = [] if ref.what == "map" else self.texts(label)
         try:
-            # A map's header lives in two *other* files, and a couple of maps here
-            # have one without having a script file at all — the dark Mound floors
-            # borrow their neighbour's. So the words are read only for a row that
-            # could have any.
-            said = [] if ref.what == "map" else self.texts(label)
-            values, boxes = fill.prefill(self.root, label, const, ref, said)
-        except (objedit.EditError, FileNotFoundError) as exc:
+            return self.hack.writes.editor(label, const, ref, said)
+        except Refused as exc:
             raise SessionError(str(exc)) from exc
-        return action, values, boxes
 
     # -- the words ------------------------------------------------------------ #
     def texts(self, label: str) -> list[TextRef]:
@@ -550,7 +475,8 @@ class Session:
         self._found = None
         # A new map is a new entry in every list of maps, and a new NPC's flag is
         # a new entry in the list the forms offer.
-        offers.forget()
+        if self.hack.writes is not None:
+            self.hack.writes.forget()
         # And the files we just wrote are not "the repo moving under us" — they
         # are us. Without this the very next sweep would report our own edit as
         # drift, and the studio would spend its life telling you that you had just

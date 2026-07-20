@@ -24,10 +24,8 @@ from __future__ import annotations
 from rich.text import Text
 
 from .actions import Action
-from .content import EditText
 from .grid import MapGrid
 from .maplist import MapList
-from .resize import ResizeMap
 from .screens import Confirm, Findings, Form, History, Picker
 from .session import Draft, Preview, SessionError, TextRef
 from .status import Where
@@ -156,8 +154,12 @@ class Flow:
                          lambda i: None if i is None else self._reword(self._texts[i]))
 
     def _reword(self, text: TextRef) -> None:
+        if (form := self.session.form("reword")) is None:
+            self.notify("rewording text is not wired for this tree — "
+                        "the words are on screen to read", timeout=8)
+            return
         self.push_screen(
-            Form(EditText, self.session, self._const or "",
+            Form(form, self.session, self._const or "",
                  values={"label": text.label, "text": text.prose},
                  boxes={"text": text.box}),
             self._filled)
@@ -170,10 +172,12 @@ class Flow:
         doing it right means moving the block grid — and, at the top or left,
         every object's coordinates — with it. See `wiring/mapresize.py`.
         """
-        if self._const is None or self._wanted is None or not self._may_write():
+        form = self.session.form("resize")
+        if (form is None or self._const is None or self._wanted is None
+                or not self._may_write()):
             self.bell()
             return
-        self._open(ResizeMap)
+        self._open(form)
 
     # -- taking it back --------------------------------------------------------- #
     def action_undo(self) -> None:
