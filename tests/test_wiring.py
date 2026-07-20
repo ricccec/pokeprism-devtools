@@ -29,6 +29,7 @@ from pokeprism_devtools.hacks.prism import write as PW  # noqa: E402
 from pokeprism_devtools.shared.edits import apply_edits  # noqa: E402
 from pokeprism_devtools.wiring import connections as C, objedit as O  # noqa: E402
 from pokeprism_devtools.wiring import mapresize as MR  # noqa: E402
+from pokeprism_devtools.hacks.prism.resize import DIALECT as PRISM_RESIZE  # noqa: E402
 from pokeprism_devtools.wiring import removal as R, warpdel as WD  # noqa: E402
 from pokeprism_devtools.wiring import warps as W  # noqa: E402
 from pokeprism_devtools.wiring.scaffold import Object  # noqa: E402
@@ -319,9 +320,9 @@ def test_resize(tmp: Path) -> None:
     print("\ngrow bottom/right moves the grid and leaves every coordinate alone")
     root = fresh()
     original = (root / "maps/blk/Grove.ablk").read_bytes()
-    change = MR.resize(root, "GROVE", "bottom", "grow", 2)
+    change = MR.resize(root, "GROVE", "bottom", "grow", 2, dialect=PRISM_RESIZE)
     check("only the dims and the .ablk move — no maps/Grove.asm edit",
-          {e.path for e in change.changes} == {MR.DIMENSIONS, "maps/blk/Grove.ablk"},
+          {e.path for e in change.changes} == {PRISM_RESIZE.shape.path, "maps/blk/Grove.ablk"},
           str([e.path for e in change.changes]))
     blk = next(e for e in change.changes if e.path == "maps/blk/Grove.ablk")
     check("grown by the right count", len(blk.data) == 30, str(len(blk.data)))
@@ -336,15 +337,15 @@ def test_resize(tmp: Path) -> None:
     check("object coordinates are unchanged", header.warps[0].coords == (7, 3))
     check("the map file still round-trips byte-for-byte",
           header.to_text() == (root / "maps/Grove.asm").read_text())
-    dims_text = (root / MR.DIMENSIONS).read_text()
+    dims_text = (root / PRISM_RESIZE.shape.path).read_text()
     check("the dimension constant grew", "mapgroup GROVE, 6, 5" in dims_text, dims_text)
 
     print("\ngrow top shifts every coordinate down by 2 tiles per block")
     root = fresh()
-    change = MR.resize(root, "GROVE", "top", "grow", 1)
+    change = MR.resize(root, "GROVE", "top", "grow", 1, dialect=PRISM_RESIZE)
     check("this one touches the map file too",
           {e.path for e in change.changes}
-          == {MR.DIMENSIONS, "maps/blk/Grove.ablk", "maps/Grove.asm"})
+          == {PRISM_RESIZE.shape.path, "maps/blk/Grove.ablk", "maps/Grove.asm"})
     apply_edits(root, change.changes, dry_run=False)
     header = eh.parse_map(root / "maps/Grove.asm")
     check("the warp moved down 2 tiles", header.warps[0].coords == (9, 3),
@@ -358,7 +359,7 @@ def test_resize(tmp: Path) -> None:
 
     print("\ngrow left shifts every x the same way, and y not at all")
     root = fresh()
-    change = MR.resize(root, "GROVE", "left", "grow", 1)
+    change = MR.resize(root, "GROVE", "left", "grow", 1, dialect=PRISM_RESIZE)
     blk = next(e for e in change.changes if e.path == "maps/blk/Grove.ablk")
     check("the fill column is the border block", blk.data[0] == 0x63, hex(blk.data[0]))
     apply_edits(root, change.changes, dry_run=False)
@@ -374,7 +375,7 @@ def test_resize(tmp: Path) -> None:
     ):
         root = fresh()
         try:
-            MR.resize(root, "GROVE", edge, "shrink", blocks)
+            MR.resize(root, "GROVE", edge, "shrink", blocks, dialect=PRISM_RESIZE)
             check(f"shrinking {edge} under what's standing there is refused", False)
         except MR.EditError as exc:
             check(f"shrinking {edge} under what's standing there is refused",
@@ -383,7 +384,7 @@ def test_resize(tmp: Path) -> None:
     print("\nshrink refuses past the map's own extent")
     root = fresh()
     try:
-        MR.resize(root, "GROVE", "top", "shrink", 4)
+        MR.resize(root, "GROVE", "top", "shrink", 4, dialect=PRISM_RESIZE)
         check("shrinking a 4-block axis by 4 is refused", False)
     except MR.EditError as exc:
         check("shrinking a 4-block axis by 4 is refused",
@@ -392,7 +393,7 @@ def test_resize(tmp: Path) -> None:
     print("\na map whose .ablk is shared with another map's label refuses entirely")
     root = fresh()
     try:
-        MR.resize(root, "ALIAS_A", "top", "grow", 1)
+        MR.resize(root, "ALIAS_A", "top", "grow", 1, dialect=PRISM_RESIZE)
         check("a shared .ablk refuses the whole resize", False)
     except MR.EditError as exc:
         check("a shared .ablk refuses the whole resize",
@@ -401,17 +402,17 @@ def test_resize(tmp: Path) -> None:
     print("\ngrow N then shrink N from the same edge round-trips exactly")
     root = fresh()
     before_map = (root / "maps/Grove.asm").read_text()
-    before_dims = (root / MR.DIMENSIONS).read_text()
+    before_dims = (root / PRISM_RESIZE.shape.path).read_text()
     before_blk = (root / "maps/blk/Grove.ablk").read_bytes()
 
-    grown = MR.resize(root, "GROVE", "top", "grow", 2)
+    grown = MR.resize(root, "GROVE", "top", "grow", 2, dialect=PRISM_RESIZE)
     apply_edits(root, grown.changes, dry_run=False)
-    shrunk = MR.resize(root, "GROVE", "top", "shrink", 2)
+    shrunk = MR.resize(root, "GROVE", "top", "shrink", 2, dialect=PRISM_RESIZE)
     apply_edits(root, shrunk.changes, dry_run=False)
 
     check("the map file is back to byte-identical",
           (root / "maps/Grove.asm").read_text() == before_map)
-    check("so is the dimension line", (root / MR.DIMENSIONS).read_text() == before_dims)
+    check("so is the dimension line", (root / PRISM_RESIZE.shape.path).read_text() == before_dims)
     check("and the blocks", (root / "maps/blk/Grove.ablk").read_bytes() == before_blk)
 
 
@@ -490,10 +491,10 @@ def test_real_repo(tmp: Path) -> None:
 
     print("\nresizing a real map that now has a connection")
     before_resize = Counter((d.code, d.path) for d in maplint.run(LintContext(scratch)))
-    resized = MR.resize(scratch, "CASTRO_FOREST", "bottom", "grow", 1)
+    resized = MR.resize(scratch, "CASTRO_FOREST", "bottom", "grow", 1, dialect=PRISM_RESIZE)
     check("touches the dimension constant and the block grid",
           {e.path for e in resized.changes}
-          == {MR.DIMENSIONS, "maps/blk/CastroForest.ablk"},
+          == {PRISM_RESIZE.shape.path, "maps/blk/CastroForest.ablk"},
           str([e.path for e in resized.changes]))
     check("and warns that the connection may need a look",
           any("connection(s) may need review" in n for n in resized.notes),
