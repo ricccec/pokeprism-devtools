@@ -267,6 +267,36 @@ vanilla is a place it over-fit to the outlier we happened to build it around.
   identity, the top-of-file splice for polished (#2); the Diagnostics/text panes
   learn to render an undeclared capability as an absence (VWF, sprite-vram).
 
+  **Done, in four moves.** First the seam itself: `Hack.writes` was a bool and
+  is now the *write adapter* — prism's (`hacks/prism/write.py`) fronts the
+  machinery that was always prism's (the ADDERS registry, the editors and
+  their prefill, the offers caches, the deletion that spells a handle home),
+  and the session lost its last prism imports; a write adapter's "no" is
+  `mount.Refused`, the seam's word. The app-level forms follow — `a`, `s`,
+  reword and `b` ask for a capability and render its absence. Then the
+  `def_*` writer (`hacks/vanilla/write.py`), the mirror of prism's
+  eventheader minus the counts it doesn't need: the lists self-count (#3
+  dissolves — there is no byte to keep in step), and the care goes to named
+  identity instead (#1): the Nth `const` names the Nth `object_event`, so
+  removing a named object takes its const in the same splice and every later
+  name keeps pointing at its object; all 388 pokecrystal and 607
+  polishedcrystal maps round-trip to the byte. Then the mounts: both family
+  trees take the same writer — polished with its head anchor, stated as the
+  fork it is — and **deletion crosses the seam**, resolved by handing the
+  handle back (a const name resolved fresh at preview and again at apply),
+  with the orphaned script block a note rather than a silence, and the two
+  refusals with teeth saying why (a warp is positional repo-wide, a
+  connection has a neighbour's side). The head-splice risk (#2) is proven
+  the sharp way: delete through polished's head block and every byte below
+  it is untouched, and undo restores to the byte. Last the degradation the
+  doc asked for by name: the Diagnostics pane distinguishes "clean" (a
+  verdict) from "not applicable" (the absence of a judge) via
+  `Session.lints`, and the dialogue gutter is absent on a tree with no VWF
+  via `Session.measures` — capability reads, never a hack name. What Phase 4
+  deliberately does not claim: the family's *adders and editors* — the form
+  machinery is still prism's, and a family tree says so in sentences instead
+  of offering forms it would write wrong.
+
 ## The single sentence to keep
 
 We did not build a gen-2 port with a prism adapter under it; we built prism, and
