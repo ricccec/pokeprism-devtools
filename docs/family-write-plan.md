@@ -231,15 +231,15 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   writer that trainer and prop adders would ride, and the thing rewording
   needs too. It is one project, not three, and it is the natural Phase 8.
 
-  Left as a debt rather than paid: `hacks/vanilla/write.py` is 771 lines
-  against this repo's 500. It was 701 before this phase and the seam it wants
-  is clean — the `EventBlock` parser and splicer on one side, the `Writer`
-  adapter and its two delete actions on the other — but carving it is churn
-  across `mount`, `actions` and three test files, and it belongs in its own
-  commit rather than smuggled into a phase that just proved the module
-  correct on 9,257 entries. **Phase 7a took it to 787** and added a fifth
-  mount-declared fork to its constructor; the debt is now compounding rather
-  than static, and the carve should come before 7b adds a sixth.
+  Left as a debt by this phase and **paid before 7b**: `hacks/vanilla/write.py`
+  was 771 lines against this repo's 500, and 787 after 7a added a fifth
+  mount-declared fork — compounding rather than static. It carved at the seam
+  the debt note named: `.eventblock` holds the parser and the splicer (338
+  lines), `.write` the adapter, its records and its two delete actions (471).
+  Nothing moved but whole definitions — the split's code lines are the
+  original's, and the four differences are documentation the split made wrong.
+  It also removed a cycle: `.actions` imported `.write` only for the parser, so
+  the arrow the `Writer._forms` comment argued about does not exist any more.
 
 - **Phase 7 — split once surveyed, exactly as this line reserved the right
   to.** The plan bundled `newmap` and `resize` and asserted resize "stands on"

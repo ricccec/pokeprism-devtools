@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from ...studio.actions import ActionError
 
 if TYPE_CHECKING:                      # pragma: no cover
-    from .write import EventBlock
+    from .eventblock import EventBlock
 
 
 @dataclass(frozen=True)

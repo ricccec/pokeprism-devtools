@@ -42,7 +42,7 @@ from pathlib import Path
 from ...studio import panels
 from ...studio.actions import (FACINGS, FLAGS, MAPS, MOVEMENTS, PALETTES,
                                SPRITES, Action, ActionError, Field, Result)
-from . import write as w
+from . import eventblock as eb
 from .shapes import POLISHED_OBJECT, VANILLA_OBJECT, ObjectShape, prefill
 
 
@@ -99,7 +99,7 @@ class _Entry(Action):
         self.map = map_const
 
     # -- the file ------------------------------------------------------------- #
-    def _block(self, root: Path) -> tuple[w.EventBlock, str]:
+    def _block(self, root: Path) -> tuple[eb.EventBlock, str]:
         """This map's event block, freshly parsed. The label comes from the
         catalog rather than from the form: you picked a map, and the file it
         lives in is the tree's business, not a string anybody typed."""
@@ -108,11 +108,11 @@ class _Entry(Action):
         if label is None:
             raise ActionError(f"{self.map} is not a map in this tree.")
         try:
-            return w.parse_map(root / f"maps/{label}.asm", self.anchor), label
-        except (w.UnparseableEvents, panels.Unreadable) as exc:
+            return eb.parse_map(root / f"maps/{label}.asm", self.anchor), label
+        except (eb.UnparseableEvents, panels.Unreadable) as exc:
             raise ActionError(str(exc)) from exc
 
-    def _written(self, block: w.EventBlock, root: Path) -> Result:
+    def _written(self, block: eb.EventBlock, root: Path) -> Result:
         """The staged change. Unchanged text is no edit at all — an editor you
         opened, looked at and submitted should write nothing, and say so."""
         edit = block.to_edit(root, self.describe())
@@ -285,7 +285,7 @@ class AddNpc(_Entry):
                 "at two objects.")
         try:
             block.add_entry("object", self.shape.args(self.values), name=const)
-        except w.UnparseableEvents as exc:
+        except eb.UnparseableEvents as exc:
             raise ActionError(str(exc)) from exc
         return self._written(block, root)
 
@@ -308,7 +308,7 @@ class _Edit(_Entry):
     #: Which entry, carried from the row you pointed at and never from a box.
     FIXED = (Field("index", "Entry", kind="fixed"),)
 
-    def _target(self, block: w.EventBlock) -> int:
+    def _target(self, block: eb.EventBlock) -> int:
         index = self.integer("index")
         if block.entry_at(self.list_kind, index) is None:
             raise ActionError(

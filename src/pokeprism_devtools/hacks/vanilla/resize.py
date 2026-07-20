@@ -37,7 +37,7 @@ from ...shared.edits import Edit
 from ...wiring.mapresize import MapShape, Standing
 from ...wiring.objedit import EditError
 from . import read as r
-from . import write as w
+from . import eventblock as eb
 
 #: `map_const NAME, W, H` — width first. Measured, not assumed: PlayersHouse1F
 #: is `map_const …, 5, 4` and its .blk is exactly 20 bytes.
@@ -113,11 +113,11 @@ class FamilyResize:
     def standing(self, root: Path, label: str) -> list[Standing]:
         block = self._block(root, label)
         out = []
-        for kind in w.LIST_ORDER:
+        for kind in eb.LIST_ORDER:
             for entry in block.lists[kind].entries:
                 y, x = _int(entry.args, _Y), _int(entry.args, _X)
                 if y is not None and x is not None:
-                    out.append(Standing(w.LIST_MACROS[kind], y, x))
+                    out.append(Standing(eb.LIST_MACROS[kind], y, x))
         return out
 
     def shift(self, root: Path, const: str, dy: int,
@@ -125,7 +125,7 @@ class FamilyResize:
         label = self.label_of(root, const)
         block = self._block(root, label)
         moved = 0
-        for kind in w.LIST_ORDER:
+        for kind in eb.LIST_ORDER:
             for i, entry in enumerate(list(block.lists[kind].entries)):
                 y, x = _int(entry.args, _Y), _int(entry.args, _X)
                 if y is None or x is None:
@@ -137,10 +137,10 @@ class FamilyResize:
                     moved += 1
         return block.to_edit(root, f"{moved} coordinate(s) shifted"), moved
 
-    def _block(self, root: Path, label: str) -> w.EventBlock:
+    def _block(self, root: Path, label: str) -> eb.EventBlock:
         try:
-            return w.parse_map(root / f"maps/{label}.asm", self.anchor)
-        except w.UnparseableEvents as exc:
+            return eb.parse_map(root / f"maps/{label}.asm", self.anchor)
+        except eb.UnparseableEvents as exc:
             raise EditError(str(exc)) from exc
 
 

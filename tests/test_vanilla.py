@@ -812,6 +812,7 @@ def test_real_warp_deletion(root: Path, name: str, anchor: str, grammar,
         return
     print(f"\na warp comes out of the real {name}, and nothing else moves")
     import shutil
+    from pokeprism_devtools.hacks.vanilla import eventblock as EB
     from pokeprism_devtools.hacks.vanilla import write as VW
     from pokeprism_devtools.shared.edits import apply_edits
     from pokeprism_devtools.wiring import warpdel
@@ -823,7 +824,7 @@ def test_real_warp_deletion(root: Path, name: str, anchor: str, grammar,
         before = {p.relative_to(scratch).as_posix(): p.read_text(errors="replace")
                   for p in scratch.rglob("*.asm")}
 
-        block = VW.parse_map(scratch / f"maps/{label}.asm", anchor)
+        block = EB.parse_map(scratch / f"maps/{label}.asm", anchor)
         n = len(block.lists["warp"].entries)
         # Walk to a warp the tree lets go of: on a real map most warps are the
         # far side of somebody's door, and refusing those is the point.
@@ -869,7 +870,7 @@ def test_real_warp_deletion(root: Path, name: str, anchor: str, grammar,
         check("no file the deletion did not claim moved by a byte",
               moved == touched, str(sorted(moved - touched)[:5]))
         check("and the map it cut still parses, one warp shorter",
-              len(VW.parse_map(scratch / f"maps/{label}.asm",
+              len(EB.parse_map(scratch / f"maps/{label}.asm",
                                anchor).lists["warp"].entries) == n - 1)
 
 
@@ -885,7 +886,7 @@ def test_editing_round_trips(root: Path, name: str, anchor: str, shape) -> None:
     `BGEVENT_JUMPSTD` losing its grotto id.
     """
     from pokeprism_devtools.hacks.vanilla import actions as fa
-    from pokeprism_devtools.hacks.vanilla import write as VW
+    from pokeprism_devtools.hacks.vanilla import eventblock as EB
     print(f"\nevery entry in {name} survives being edited into itself")
     tail = {"warp": ("to_map", "their_warp"), "coord": ("scene", "script"),
             "bg": ("kind", "points_at")}
@@ -893,12 +894,12 @@ def test_editing_round_trips(root: Path, name: str, anchor: str, shape) -> None:
     moved: list[str] = []
     for path in sorted((root / "maps").glob("*.asm")):
         try:
-            probe = VW.parse_map(path, anchor)
+            probe = EB.parse_map(path, anchor)
         except Exception:
             continue
         for kind in ("warp", "coord", "bg", "object"):
             for i in range(len(probe.lists[kind].entries)):
-                block = VW.parse_map(path, anchor)
+                block = EB.parse_map(path, anchor)
                 entry = block.lists[kind].entries[i]
                 values = fa.prefill(block, kind, i, shape)
                 if kind == "object":

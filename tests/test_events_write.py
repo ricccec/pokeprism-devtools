@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the family's `def_*` event writer (`hacks/vanilla/write.py`).
+"""Tests for the family's `def_*` event writer (`hacks/vanilla/eventblock.py`).
 
 The contract under test is the one the module states: the file is held
 verbatim and mutations splice single lines, so an unmodified block
@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools.hacks.vanilla import write  # noqa: E402
+from pokeprism_devtools.hacks.vanilla import eventblock as eb  # noqa: E402
 
 FAILED = 0
 
@@ -98,11 +98,11 @@ CartText:
 """
 
 
-def _block(text: str, anchor: str) -> write.EventBlock:
+def _block(text: str, anchor: str) -> eb.EventBlock:
     with tempfile.TemporaryDirectory() as td:
         p = Path(td) / "Town.asm"
         p.write_text(text, encoding="utf-8")
-        return write.parse_map(p, anchor)
+        return eb.parse_map(p, anchor)
 
 
 # --------------------------------------------------------------------------- #
@@ -120,7 +120,7 @@ def test_round_trip() -> None:
 def test_parse_shape() -> None:
     print("\nthe parse sees the lists and the names")
     b = _block(_TAIL, "_MapEvents")
-    check("four lists", sorted(b.lists) == sorted(write.LIST_ORDER))
+    check("four lists", sorted(b.lists) == sorted(eb.LIST_ORDER))
     check("one warp, one bg, two objects, no coords",
           [len(b.lists[k].entries) for k in ("warp", "coord", "bg", "object")]
           == [1, 0, 1, 2])
@@ -200,7 +200,7 @@ def test_add() -> None:
     try:
         h.add_entry("object", ["1", "1", "X"], name="TOWNH_NEW")
         check("a partially-named list refuses a name", False)
-    except write.UnparseableEvents as exc:
+    except eb.UnparseableEvents as exc:
         check("a partially-named list refuses a name", "positional" in str(exc))
 
 
@@ -231,8 +231,8 @@ def test_real_trees() -> None:
         for p in sorted((root / "maps").glob("*.asm")):
             text = p.read_text(encoding="utf-8")
             try:
-                b = write.parse_text(text, p, anchor)
-            except write.UnparseableEvents:
+                b = eb.parse_text(text, p, anchor)
+            except eb.UnparseableEvents:
                 skipped += 1
                 continue
             total += 1
