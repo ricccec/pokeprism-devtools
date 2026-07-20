@@ -57,6 +57,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ...shared.constants import ConstSet
+from ...studio import actions
+from ...studio.actions import Field
 from ...wiring.mapnew import NewMap
 from ...wiring.mapresize import MapShape
 from ...wiring.placement import JOIN, MINT, Placement, banks, sections
@@ -66,12 +69,77 @@ from .resize import SHAPE
 SCRIPTS = "data/maps/scripts.asm"
 BLOCKS = "data/maps/blocks.asm"
 
-#: The `map` macro's arguments after the label, in order. Two lists, because
-#: the trees do not take the same ones — see the docstring.
-VANILLA_HEADER = ("tileset", "environment", "landmark", "music", "phone",
-                  "palette", "fishgroup")
-POLISHED_HEADER = ("tileset", "environment", "sign", "landmark", "music",
-                   "phone", "palette")
+#: The map environments, in the order `const_def 1` numbers them — and the two
+#: trees differ in exactly one slot: vanilla's fifth is the unused
+#: `ENVIRONMENT_5`, polished's is `ISOLATED`. Written down rather than read,
+#: for the reason prism's `PERMS` is: it is a bare `const` block in a file full
+#: of other bare `const` blocks, so there is no prefix to match on and a
+#: `ConstSet` would offer the palettes and the fishing groups alongside.
+VANILLA_ENVIRONMENTS = ("TOWN", "ROUTE", "INDOOR", "CAVE", "ENVIRONMENT_5",
+                        "GATE", "DUNGEON")
+POLISHED_ENVIRONMENTS = ("TOWN", "ROUTE", "INDOOR", "CAVE", "ISOLATED",
+                         "GATE", "DUNGEON")
+
+#: The `map` macro's arguments after the label, one :class:`Field` each, in the
+#: order the macro takes them. Two lists, because the trees do not take the
+#: same ones — polished has a location sign and no fishing group — and the
+#: order is load-bearing twice over: it is what `header_line` joins, and a
+#: missing argument shifts every argument after it by one and still assembles.
+VANILLA_FIELDS = (
+    Field("tileset", "Tileset", choices=actions.TILESETS),
+    Field("environment", "Environment", options=VANILLA_ENVIRONMENTS,
+          default="INDOOR",
+          help="which collision and encounter rules the map lives under"),
+    Field("landmark", "Landmark", choices=actions.LANDMARKS,
+          help="its own, usually — or the town it sits inside"),
+    Field("music", "Music", choices=actions.MUSIC),
+    Field("phone", "Phone service", options=("FALSE", "TRUE"), default="FALSE",
+          help="TRUE prevents phone calls here"),
+    Field("palette", "Palette", choices=actions.TIMES, default="PALETTE_AUTO",
+          help="PALETTE_AUTO follows the clock; PALETTE_DARK is a cave"),
+    Field("fishgroup", "Fish group", choices=actions.FISHGROUPS,
+          default="FISHGROUP_NONE"),
+)
+POLISHED_FIELDS = (
+    Field("tileset", "Tileset", choices=actions.TILESETS),
+    Field("environment", "Environment", options=POLISHED_ENVIRONMENTS,
+          default="INDOOR"),
+    Field("sign", "Location sign", choices=actions.SIGNS,
+          default="SIGN_BUILDING",
+          help="the plaque that slides in when you walk on — vanilla has none"),
+    Field("landmark", "Landmark", choices=actions.LANDMARKS,
+          help="no LANDMARK_ prefix in this tree — just OLIVINE_CITY"),
+    Field("music", "Music", choices=actions.MUSIC),
+    Field("phone", "Phone service", options=("0", "1"), default="0"),
+    Field("palette", "Palette", choices=actions.TIMES, default="PALETTE_AUTO"),
+)
+
+#: Where the `map` macro's named arguments get their constants — merged into
+#: `.write`'s CHOICES, and here because this form is what asks for them.
+#:
+#: The landmark prefix is a fork, and a near-silent one. Vanilla writes
+#: `LANDMARK_OLIVINE_CITY`; polished writes `OLIVINE_CITY` for the same place.
+#: Both files hold nothing but landmarks, so what differs is only whether the
+#: names carry the prefix — and reading polished through vanilla's entry
+#: returns *nothing at all* rather than failing, which a form renders as a
+#: plain text box. The same shape of miss as the `PAL_NPC_` macro fork.
+HEADER_SETS = {
+    actions.TILESETS: ConstSet("constants/tileset_constants.asm", "TILESET_"),
+    actions.MUSIC: ConstSet("constants/music_constants.asm", "MUSIC_"),
+    actions.TIMES: ConstSet("constants/map_data_constants.asm", "PALETTE_"),
+    actions.FISHGROUPS: ConstSet("constants/map_data_constants.asm",
+                                 "FISHGROUP_"),
+    actions.LANDMARKS: ConstSet("constants/landmark_constants.asm",
+                                "LANDMARK_"),
+}
+
+#: Polished's two forks: unprefixed landmarks, and a location sign vanilla's
+#: `map` macro does not take at all.
+POLISHED_HEADER_SETS = {
+    **HEADER_SETS,
+    actions.LANDMARKS: ConstSet("constants/landmark_constants.asm"),
+    actions.SIGNS: ConstSet("constants/map_data_constants.asm", "SIGN_"),
+}
 
 _VANILLA_TEMPLATE = """\
 {label}_MapScripts:
@@ -112,15 +180,34 @@ class FamilyNewMap:
 
     shape: MapShape = SHAPE
 
-    def __init__(self, *, blocks_placement, header_args: tuple[str, ...],
-                 template: str, block_suffix: str, blk_ext: str,
-                 incbin_ext: str) -> None:
+    def __init__(self, *, blocks_placement, blocks_kind: str,
+                 header_fields: tuple[Field, ...], template: str,
+                 block_suffix: str, blk_ext: str, incbin_ext: str) -> None:
         self._blocks = blocks_placement
-        self._args = header_args
+        self._blocks_kind = blocks_kind
+        self.header_fields = header_fields
         self._template = template
         self._suffix = block_suffix
-        self._ext = blk_ext
+        #: The extension the author's grid carries in this tree. Public
+        #: because the form's file list has to offer the same one the writer
+        #: will name — a list that offered `.ablk.lzp` would offer the build's
+        #: output, which nobody draws in.
+        self.blk_ext = blk_ext
         self._incbin = incbin_ext
+
+    @property
+    def header_args(self) -> tuple[str, ...]:
+        """The `map` macro's arguments, in order — the field names *are* the
+        argument list, so the form and the line it writes cannot disagree."""
+        return tuple(f.name for f in self.header_fields)
+
+    @property
+    def asks(self) -> tuple[str, ...]:
+        """Which blobs have a placement question. Answerable without reading
+        the tree, because the *shape* of the answer is the dialect's and only
+        the list of choices is the checkout's — which is what lets the form's
+        fields be decided before a root is in hand."""
+        return ("script", "blocks") if self._blocks_kind == JOIN else ("script",)
 
     # -- placement ------------------------------------------------------------ #
     def placements(self, root: Path) -> tuple[Placement, ...]:
@@ -136,7 +223,7 @@ class FamilyNewMap:
     def blk_name(self, label: str, src: Path) -> str:
         """Always this tree's own extension, never the source file's. A `.blk`
         dragged into a polished tree is still bytes the build must compress."""
-        return f"maps/{label}{self._ext}"
+        return f"maps/{label}{self.blk_ext}"
 
     def blocks_entry(self, label: str, blk_rel: str) -> list[str]:
         return [f"{label}{self._suffix}:",
@@ -146,7 +233,7 @@ class FamilyNewMap:
         return [f'INCLUDE "maps/{label}.asm"']
 
     def header_line(self, spec: NewMap) -> str:
-        args = ", ".join(self._arg(spec, name) for name in self._args)
+        args = ", ".join(self._arg(spec, name) for name in self.header_args)
         return f"\tmap {spec.label}, {args}"
 
     def attributes_line(self, spec: NewMap) -> str:
@@ -161,7 +248,7 @@ class FamilyNewMap:
         if not value:
             raise KeyError(
                 f"the `map` macro needs {name} — this tree takes "
-                f"{', '.join(self._args)}")
+                f"{', '.join(self.header_args)}")
         return value
 
 
@@ -182,13 +269,42 @@ def _polished_blocks(root: Path, pins: dict[str, int]) -> Placement:
                      convention="{label}_BlockData")
 
 
-VANILLA = FamilyNewMap(blocks_placement=_vanilla_blocks,
-                       header_args=VANILLA_HEADER,
+VANILLA = FamilyNewMap(blocks_placement=_vanilla_blocks, blocks_kind=JOIN,
+                       header_fields=VANILLA_FIELDS,
                        template=_VANILLA_TEMPLATE,
                        block_suffix="_Blocks", blk_ext=".blk", incbin_ext="")
 
-POLISHED = FamilyNewMap(blocks_placement=_polished_blocks,
-                        header_args=POLISHED_HEADER,
+POLISHED = FamilyNewMap(blocks_placement=_polished_blocks, blocks_kind=MINT,
+                        header_fields=POLISHED_FIELDS,
                         template=_POLISHED_TEMPLATE,
                         block_suffix="_BlockData", blk_ext=".ablk",
                         incbin_ext=".lzp")
+
+
+def offers(root: Path, dialect: FamilyNewMap, kind: str) -> list[str] | None:
+    """The new-map form's four answers that are not constant sets.
+
+    `None` means "not mine" — the caller falls through to its `ConstSet` map.
+    Here rather than in `.write` because every one of them is a fact about
+    *adding a map*: which sections exist, how many groups there are, and where
+    this tree's author keeps the grids they draw.
+    """
+    if kind in (actions.SCRIPT_SECTIONS, actions.BLOCK_SECTIONS):
+        from ...studio.mapadd import section_choices
+        return section_choices(dialect.placements(root), kind)
+    if kind == actions.GROUPS:
+        # A number, not a name — the only reason to offer a list of numbers is
+        # that nothing else on the form says how many there are.
+        text = (root / "constants/map_constants.asm").read_text()
+        n = sum(1 for ln in text.split("\n") if ln.strip().startswith("newgroup"))
+        return [str(i) for i in range(1, n + 1)]
+    if kind == actions.BLOCKS:
+        from ...studio.mapadd import grids
+        # `maps/`, not prism's `maps/blk/` — the family keeps its grids beside
+        # the map files. The suffix is this tree's own for the same reason
+        # `blk_name` uses it: polished draws `.ablk` and INCBINs the
+        # `.ablk.lzp` the build makes from it, and offering the compressed file
+        # would offer something no author ever edits.
+        return grids((root.parent / "polished-map", root / "maps", Path.cwd()),
+                     (dialect.blk_ext,))
+    return None

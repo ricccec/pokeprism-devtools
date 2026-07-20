@@ -121,25 +121,30 @@ def mount(root: Path) -> Hack:
         if anchor == "_MapScriptHeader":
             from .polished.read import Reader
             from .vanilla.actions import POLISHED_ADDERS, POLISHED_EDITORS
+            from .vanilla.newmap import POLISHED as POLISHED_NEWMAP
             from .vanilla.resize import polished as polished_resize
             from .vanilla.write import (POLISHED_CHOICES, POLISHED_WARPS,
                                         Writer)
             # The same writer vanilla mounts, holding the head anchor, the
             # larger warp grammar, its own constant-set map, its own forms and
-            # its own resize answers — the fork relation is real, so the code
-            # states it, exactly as the polished read adapter imports vanilla's
-            # parsers. All five arguments are forks measured by survey, never
-            # sniffed: polished opens a map file where vanilla closes it,
+            # its own resize and new-map answers — the fork relation is real,
+            # so the code states it, exactly as the polished read adapter
+            # imports vanilla's parsers. All six arguments are forks measured
+            # by survey, never sniffed: polished opens a map file where
+            # vanilla closes it,
             # counts warps with a `digmod` vanilla has never heard of, writes
             # its overworld palettes through a macro that leaves their names
             # out of the source, spells an `object_event` in twelve arguments
             # whose movement radius is the other way round, and indexes a map's
-            # blocks under `_BlockData:` where vanilla writes `_Blocks:`.
+            # blocks under `_BlockData:` where vanilla writes `_Blocks:`,
+            # and mints a section per map for a new map's blocks where vanilla
+            # joins one of three — so its new-map form asks one question fewer
+            # than vanilla's, over a different list of header arguments.
             return Hack("polished", Reader(root),
                         writes=Writer(root, anchor, POLISHED_WARPS,
                                       POLISHED_CHOICES,
                                       (POLISHED_ADDERS, POLISHED_EDITORS),
-                                      polished_resize()))
+                                      polished_resize(), POLISHED_NEWMAP))
         raise UnknownTree(
             f"{root} keeps map data under data/maps/ like the pokecrystal "
             "family, but no map file carries either family anchor "

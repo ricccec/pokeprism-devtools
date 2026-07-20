@@ -271,7 +271,58 @@ def test_falsify(tmp: Path) -> None:
           bool(agree(root)), agree(root))
 
 
+def test_seam() -> None:
+    """What the mounted tree hands the studio — the point of the whole phase.
+
+    The two forms must differ in the ways the trees do and in no other way, and
+    the crossing is the place that could quietly stop being true: a mount that
+    forgot to declare polished's dialect would hand it vanilla's form, which
+    renders perfectly and writes a `map` line with a fishing group where the
+    macro wants a palette.
+    """
+    print("\n== the seam ==")
+    from pokeprism_devtools.hacks import mount
+    from pokeprism_devtools.studio import actions
+
+    forms = {}
+    for name, root in (("vanilla", VANILLA), ("polished", POLISHED)):
+        if not root.exists():
+            print(f"  ({name} not checked out, skipped)")
+            return
+        hack = mount.mount(root)
+        form = hack.writes.form("newmap")
+        check(f"{name}: newmap crosses", form is not None)
+        forms[name] = (hack, form, [f.name for f in form.FIELDS])
+
+    (vh, _, vf), (ph, _, pf) = forms["vanilla"], forms["polished"]
+    check("vanilla's header asks for a fishing group and polished's does not",
+          "fishgroup" in vf and "fishgroup" not in pf)
+    check("polished's asks for a location sign and vanilla's does not",
+          "sign" in pf and "sign" not in vf)
+    check("vanilla asks where the blocks go; polished mints and so does not",
+          "blocks_section" in vf and "blocks_section" not in pf)
+    check("both ask where the script goes",
+          "script_section" in vf and "script_section" in pf)
+
+    # A field whose list is empty renders as free text, which for a section
+    # would silently accept a name that does not exist — so every offered
+    # field must have answers behind it.
+    for name, (hack, _, fields) in forms.items():
+        empty = [f.name for f in hack.writes.form("newmap").FIELDS
+                 if f.choices and not hack.writes.choices(f.choices, ())]
+        check(f"{name}: every field that promises a list has one",
+              not empty, f"empty: {empty}")
+
+    check("polished's landmarks lose the prefix, and are found anyway",
+          all(not c.startswith("LANDMARK_")
+              for c in ph.writes.choices(actions.LANDMARKS, ())[:5])
+          and len(ph.writes.choices(actions.LANDMARKS, ())) > 100)
+    check("a minted blob answers [] rather than a stub list",
+          ph.writes.choices(actions.BLOCK_SECTIONS, ()) == [])
+
+
 def main() -> int:
+    test_seam()
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         test_falsify(tmp)

@@ -20,6 +20,7 @@ from ...studio.actions import Action, ActionError, Result
 from ...wiring import warpdel
 from ...wiring.warpdel import BlindTable, DeadDoor, WarpGrammar, WarpMacro
 from ..mount import Refused
+from . import newmap
 from .eventblock import EventBlock, UnparseableEvents, parse_map
 
 #: How the family spells a warp reference, for :mod:`...wiring.warpdel`. The
@@ -88,6 +89,10 @@ CHOICES = {
     #: studio's field is still named `facings` after them; the family says
     #: `BGEVENT_*` and neither tree has ever heard of the other's spelling.
     actions.FACINGS: ConstSet("constants/script_constants.asm", "BGEVENT_"),
+    #: The map header's own vocabulary — tileset, landmark, music, palette,
+    #: fishing group — lives next door in `.newmap`, which is the thing that
+    #: asks for it.
+    **newmap.HEADER_SETS,
 }
 
 #: Polished's, forking in exactly one entry — and that entry is why `ConstSet`
@@ -103,6 +108,7 @@ POLISHED_CHOICES = {
     **CHOICES,
     actions.PALETTES: ConstSet("constants/sprite_data_constants.asm", "PAL_NPC_",
                                macro="ow_npc_pal_const"),
+    **newmap.POLISHED_HEADER_SETS,
 }
 
 # --------------------------------------------------------------------------- #
@@ -144,7 +150,7 @@ class Writer:
                  grammar: WarpGrammar = WARPS,
                  set_of: dict[str, ConstSet] | None = None,
                  forms: tuple[dict, dict] | None = None,
-                 resize=None) -> None:
+                 resize=None, adds=None) -> None:
         self.root = root
         self.anchor = anchor
         #: The fifth fork: how this tree answers a resize. Declared and not
@@ -152,6 +158,11 @@ class Writer:
         #: opens and says nothing about how its blocks are indexed — and the
         #: two trees spell that label differently. See `.resize`.
         self._resize = resize
+        #: The sixth fork: how this tree adds a map. Separate from `_resize`
+        #: even though both are "how this tree handles a map's shape", because
+        #: they diverge on the question that matters — a resized map keeps the
+        #: section it is already in, and a new one has to be put somewhere.
+        self._newmap = adds
         #: The fourth fork the mount declares: which dialect's actions these
         #: are, already stamped with its anchor and its `object_event` slot
         #: order. Resolved lazily rather than defaulted in the signature so
@@ -189,20 +200,25 @@ class Writer:
         return self._actions[0].get(kind, ())
 
     def form(self, name: str):
-        """`resize` crosses; `newmap` and `reword` do not yet.
+        """`resize` and `newmap` cross; `reword` is the text project.
 
-        The plan had resize standing on `newmap`, and the survey says it does
+        The plan had resize standing on `newmap`, and the survey said it does
         not: a resized map keeps whatever section it was already in, so resize
-        never asks the placement question that makes `newmap` hard. It is its
-        own capability and arrived first. `reword` is the text project.
+        never asks the placement question that makes `newmap` hard. They are
+        two capabilities and the cheap one arrived first.
 
-        The dialect is the one the mount declared, defaulting to vanilla's.
+        Each dialect is the one the mount declared, defaulting to vanilla's,
+        and each is resolved lazily for the reason `_forms` gives below.
         """
-        if name != "resize":
-            return None
-        from ...studio.resize import resize_for
-        from .resize import VANILLA
-        return resize_for(self._resize or VANILLA, "Family")
+        if name == "resize":
+            from ...studio.resize import resize_for
+            from .resize import VANILLA
+            return resize_for(self._resize or VANILLA, "Family")
+        if name == "newmap":
+            from ...studio.mapadd import newmap_for
+            d = self._newmap or newmap.VANILLA
+            return newmap_for(d, "Family", d.header_fields, d.asks)
+        return None
 
     def choices(self, kind: str, map_consts: tuple[str, ...],
                 values: dict[str, str] | None = None) -> list[str]:
@@ -214,12 +230,24 @@ class Writer:
         `CLASSES`), and its TMs are pasted together by `add_tm` at assembly
         time and appear nowhere in the source (`TMHMS`), which is the same trap
         prism's `studio/offers.py` documents. The map-header enums
-        (`TILESETS`, `LANDMARKS`, `MUSIC`) exist in these trees and stay unread
-        because nothing family-side asks yet: they belong to the new-map form,
-        which is Phase 7.
+        (`TILESETS`, `LANDMARKS`, `MUSIC`, `TIMES`, `FISHGROUPS`, `SIGNS`) are
+        read now, because the new-map form asks — and the landmarks are a fork
+        rather than a shared entry: vanilla writes `LANDMARK_OLIVINE_CITY`,
+        polished writes `OLIVINE_CITY`, and the prefix that filters one file
+        empties the other.
+
+        The two section kinds are the odd ones out and answer through the
+        placement record rather than a `ConstSet`: their answers are not
+        constants in a file but `SECTION` names. An empty list from them means
+        *this tree mints* rather than "nothing found" — a case the form never
+        reaches, since it drops the field for a minted blob, but answering it
+        the same way here keeps the two statements of it from disagreeing.
         """
         if kind == actions.MAPS:
             return list(map_consts)
+        if (offered := newmap.offers(
+                self.root, self._newmap or newmap.VANILLA, kind)) is not None:
+            return offered
         if (cs := self.set_of.get(kind)) is None:
             return []
         return list(read_set(self.root, cs))

@@ -87,6 +87,18 @@ GROUPS = "groups"
 #: not constants, and the only one whose list is read fresh every time it is asked:
 #: the file you want is nearly always the one you drew a minute ago.
 BLOCKS = "blocks"
+#: The location sign a map shows on entry — polished's `SIGN_BUILDING`. An
+#: argument of its `map` macro that vanilla's does not have at all, which is why
+#: the header's arguments are a declared list per tree and not one signature.
+SIGNS = "signs"
+#: The `SECTION`s a new map's script and blocks may go into, one kind each
+#: because the two blobs are placed independently and out of different files.
+#: The only kinds whose answers are neither constants nor paths but *places* —
+#: and, unlike every other kind here, the ones where an empty list means the
+#: tree mints rather than chooses, so the form drops the field. See
+#: `wiring/placement.py`.
+SCRIPT_SECTIONS = "script-sections"
+BLOCK_SECTIONS = "block-sections"
 
 
 class ActionError(RuntimeError):

@@ -400,10 +400,12 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
         check("measuring refuses with a sentence", False)
     except SessionError as exc:
         check("measuring refuses with a sentence", "vanilla" in str(exc))
-    check("newmap and reword are still absent",
-          all(s.form(n) is None for n in ("newmap", "reword")))
+    check("reword is still absent — it is the text project",
+          s.form("reword") is None)
     check("resize crosses, and carries the family's width-first shape",
           s.form("resize").dialect.shape.height_first is False)
+    check("newmap crosses too, asking this tree's own header arguments",
+          "fishgroup" in [f.name for f in s.form("newmap").FIELDS])
     # Editing an entry now crosses; editing the *map* does not, and the refusal
     # is the interesting half — an absent key would say nothing.
     action, values, _ = s.editor("TownA", "TOWN_A",

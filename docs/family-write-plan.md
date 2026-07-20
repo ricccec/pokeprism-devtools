@@ -21,7 +21,7 @@ phases:
 | ~~deleting a family warp~~ | **done** — crosses via a declared warp grammar | ~~5~~ |
 | ~~family `a` / `e` (adders, editors)~~ | **done** — four editors, three adders | ~~6~~ |
 | ~~family `s` (resize)~~ | **done** — crosses via a declared `MapShape` | ~~7a~~ |
-| family `a` on the map list (new map) | scaffold + placement unmodelled | **7b** |
+| ~~family `a` on the map list (new map)~~ | **done** — placement declared in three shapes, scaffold crosses | ~~7b~~ |
 
 Ordered smallest-risk-first, as before: 5 is a port of machinery that already
 exists for prism, 6 is the big lift, 7 stands on 6 — and 7 split in two once
@@ -334,6 +334,47 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   can overflow that bank, and knowing whether it will means measuring the
   section, which means building. That is the same reason `studio/newmap.py`
   declines to pack a bank inside a modal dialog.
+
+  **7b, second move — the scaffold.** `wiring/mapnew.py` writes the six files;
+  `hacks/vanilla/newmap.py` became the dialect holding the four spellings the
+  trees differ on. The danger it is built around is that two of those files are
+  **parallel arrays and nothing in either says so**: `map_const` assigns a map
+  its id by counting, `MapGroupPointers` is indexed by that id, so an insertion
+  anywhere but the end of a group renumbers every map below it — and the game
+  builds, with doors opening onto the wrong rooms. Both insertions go at the
+  end, together, and the test walks both files afterwards rather than checking
+  that the written lines look right.
+
+  `MapShape.line` mints the dimension line, so the transposing order has one
+  owner across read, rewrite and mint. A new map is its worst case: the grid and
+  the constant are written in the same breath from the same two numbers, so a
+  swap is perfectly self-consistent and produces a map that is sideways.
+
+  **The bug the tests agreed with.** Each of the four map data files closes its
+  *last* section with an explicit `ENDSECTION`, and the last section is exactly
+  what a numbered tree offers as its default — so every default-answer add
+  appended the map past the close, into no section at all, and the membership
+  check passed because it only stopped at the next `SECTION`. Found by reading
+  the generated file. Both the writer and the check now stop at `ENDSECTION`.
+
+  **7b, third move — the crossing.** `Writer.form("newmap")` answers, so `a`
+  works on a family tree, and the two forms differ in exactly the ways the trees
+  do: vanilla asks for a fishing group and where the blocks go, polished asks
+  for a location sign and does not ask about blocks at all, because it mints.
+  A minted blob's choice list is `[]` and the field is dropped — a field
+  offering one answer implies a decision that was never available. Two more
+  forks surfaced at the crossing: the landmark constants lose their `LANDMARK_`
+  prefix in polished (reading it with vanilla's record returns *nothing*, which
+  a form renders as a text box), and the environment enum differs in one slot —
+  vanilla's fifth is `ENVIRONMENT_5`, polished's is `ISOLATED`.
+
+  Not claimed: this form does not **sketch**. `studio/newmap.py` draws prism's
+  map on the grid while you type, which turns a mis-sized `.blk` into a picture
+  of the wrong shape rather than a message; that needs a family block renderer
+  to point at, and returning something that does not draw would be exactly the
+  absence Phase 4 built `absent()` to stop saying wrong. The check survives —
+  `wiring/mapnew.py` refuses a grid that is not `height x width` — it is told
+  rather than shown.
 
 What this plan still does not claim, and calls absences rather than debts:
 `plays` for family trees (build-and-replay is engine wiring, a different

@@ -65,19 +65,9 @@ def blocks(root: Path) -> list[str]:
     and the directory you started the studio from. Anything else you can still
     type — the list is an offer, and `Combo` never insisted on one.
     """
-    seen: dict[Path, float] = {}
-    for folder in (root.parent / "polished-map", root / "maps/blk", Path.cwd()):
-        try:
-            entries = list(folder.iterdir())
-        except OSError:            # not there, or not readable. Neither is an error.
-            continue
-        for f in entries:
-            # The same two suffixes the action will *check* the answer against —
-            # a list that offered a file the action then refused would be worse
-            # than no list at all.
-            if f.suffix.lower() in newmap.BLK_SUFFIXES and f.is_file():
-                seen.setdefault(f.resolve(), f.stat().st_mtime)
-    return [str(p) for p in sorted(seen, key=lambda p: -seen[p])]
+    from .mapadd import grids
+    return grids((root.parent / "polished-map", root / "maps/blk", Path.cwd()),
+                 newmap.BLK_SUFFIXES)
 
 
 def follows(root: Path, action: type[Action], changed: str,
