@@ -95,11 +95,8 @@ def mount(root: Path) -> Hack:
             from .vanilla.read import Reader
             return Hack("vanilla", Reader(root))
         if anchor == "_MapScriptHeader":
-            raise UnknownTree(
-                f"{root} is a polished-family checkout (its map files open "
-                "with the event block) — that read adapter is the last slice "
-                "of Phase 3 in docs/polished-crystal-feasibility.md and is "
-                "not built yet.")
+            from .polished.read import Reader
+            return Hack("polished", Reader(root))
         raise UnknownTree(
             f"{root} keeps map data under data/maps/ like the pokecrystal "
             "family, but no map file carries either family anchor "

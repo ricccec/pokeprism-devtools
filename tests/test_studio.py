@@ -482,22 +482,6 @@ def test_a_foreign_tree_is_refused_loudly(tmp: Path) -> None:
         check("and names both anchors", "_MapEvents" in str(exc)
               and "_MapScriptHeader" in str(exc), str(exc))
 
-    # Polished-shaped: the event block opens the map file. Its adapter is the
-    # last Phase 3 slice, and until it lands the refusal must say so.
-    pol = tmp / "polishedish"
-    (pol / "data/maps").mkdir(parents=True)
-    (pol / "maps").mkdir()
-    (pol / "data/maps/maps.asm").write_text(
-        "\tmap TownA, TILESET_JOHTO, TOWN, LANDMARK_A, MUSIC_A, FALSE, "
-        "PALETTE_AUTO, FISHGROUP_SHORE\n")
-    (pol / "maps/TownA.asm").write_text(
-        "TownA_MapScriptHeader:\n\tdef_scene_scripts\n")
-    try:
-        Session(pol)
-        check("Session refuses a polished tree, for now", False)
-    except hackmount.UnknownTree as exc:
-        check("Session refuses a polished tree, for now", True)
-        check("and points at the plan", "feasibility" in str(exc), str(exc))
 
 
 def test_an_object_past_the_count_is_still_shown(root: Path) -> None:

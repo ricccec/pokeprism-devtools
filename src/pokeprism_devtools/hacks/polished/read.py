@@ -1,17 +1,13 @@
-"""Vanilla's read adapter: a stock pokecrystal tree, in the seam's records.
+"""Polished's read adapter: what the fork changed, and only that.
 
-The catalog lives in three files and each fact is read from the one that
-owns it: `data/maps/attributes.asm` names the maps (label ↔ const, border,
-connections), `constants/map_constants.asm` sizes and groups them, and
-`data/maps/maps.asm` styles them (tileset, environment, landmark, music,
-palette, fish group). `data/maps/blocks.asm` says where each shape's bytes
-are. None of the five is optional in a checkout that builds, but every
-lookup here still degrades to a dash — a tree mid-edit is a tree you
-especially want to look at.
-
-Everything file-shaped is parsed once per mount through `lru_cache`;
-`shared.caches.clear` finds these caches by walking the imported modules, so
-a session reload drops them without this module knowing reloads exist.
+The catalog grammar polished kept — `map_attributes`, `connection`,
+`map_const` — is read by vanilla's parsers, imported. What is parsed here is
+what polished rewrote: the eight-arg `map` macro (a location sign where
+vanilla's landmark prefix was, no fish group), `_BlockData` labels over
+compressed `.ablk.lzp` INCBINs whose *plain* sibling holds the bytes,
+`wildmon` slots that may carry a form, roof constants that moved to
+`constants/tileset_constants.asm`, and a `roofs.pal` that packs morn/day,
+nite and eve onto one line per group.
 """
 
 from __future__ import annotations
@@ -22,35 +18,29 @@ from functools import lru_cache
 from pathlib import Path
 
 from ...studio import panels
+from ..vanilla.read import attrs, dims, label_of, lines
 from . import events, swatches
 
-_ATTR = re.compile(r"^\s*map_attributes\s+(\w+)\s*,\s*(\w+)\s*,\s*(\$\w+|\d+)")
-_CONN = re.compile(r"^\s*connection\s+(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(-?\d+)")
-#: Vanilla names its groups, polished's `newgroup` is bare — both count.
-_GROUP = re.compile(r"^\s*newgroup\b")
-_MAP_CONST = re.compile(r"^\s*map_const\s+(\w+)\s*,\s*(\d+)\s*,\s*(\d+)")
 _MAP = re.compile(r"^\s*map\s+(\w+)\s*,\s*(.+)")
-_BLOCKS_LABEL = re.compile(r"^(\w+)_Blocks:")
+_BLOCKS_LABEL = re.compile(r"^(\w+)_BlockData:")
 _INCBIN = re.compile(r'INCBIN\s+"([^"]+)"')
 _DB = re.compile(r"^\s*db\s+(\S+)")
 _ROOF_CONST = re.compile(r"^\s*const\s+(ROOF_\w+)")
+_ROOF_GFX = re.compile(r'RoofGFX::?\s+INCBIN\s+"([^"]+)"')
 _RGB = re.compile(r"^\s*RGB\s+([\d, ]+)")
-_WILDMON = re.compile(r"^\s*db\s+(\d+)\s*,\s*(\w+)")
+_WILDMON = re.compile(r"^\s*wildmon\s+(\d+)\s*,\s*(\w+)\s*,?\s*(\w+)?")
 
 
 class Reader:
-    """One pokecrystal tree, answering the studio's questions in the seam's
-    words. Read-only: `hacks.mount` declares no capability for it, so the
-    protocol's `measure` and `sketch` are honestly absent rather than
-    stubbed."""
+    """One polishedcrystal tree, answering the studio's questions in the
+    seam's words. Read-only, like vanilla — and like vanilla, `measure` and
+    `sketch` are honestly absent."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
 
     # -- the catalog --------------------------------------------------------- #
     def maps(self) -> dict[str, str]:
-        """label -> const, in `attributes.asm` order — the file that says a
-        map exists at all."""
         return {label: a.const for label, a in attrs(self.root).items()}
 
     def parses(self, const: str) -> bool:
@@ -58,9 +48,6 @@ class Reader:
         return label is not None and (self.root / f"maps/{label}.asm").exists()
 
     def connections(self, const: str) -> list[panels.Link]:
-        """The modern `connection` macro declares only the offset and lets
-        the assembler compute the rest, so the computed columns cross empty
-        and the table above the seam narrows to match."""
         label = label_of(self.root).get(const)
         a = attrs(self.root).get(label or "")
         return [panels.Link(direction=d, target=target, offset=offset)
@@ -84,19 +71,21 @@ class Reader:
             landmark=m.landmark if m else "—",
             music=m.music if m else "—",
             palette=m.palette if m else "—",
-            fishgroup=m.fishgroup if m else "—",
             phone=m.phone if m else "0",
             border_block=a.border if a else "—")
 
     def geometry(self, label: str) -> panels.Blocks:
-        const = attrs(self.root).get(label)
-        d = dims(self.root).get(const.const) if const else None
+        """The shape. The build INCBINs `maps/X.ablk.lzp`; the tracked,
+        editable bytes are the plain `maps/X.ablk` beside it, one byte per
+        block like any `.blk` — that sibling is what is read."""
+        a = attrs(self.root).get(label)
+        d = dims(self.root).get(a.const) if a else None
         rel = _blk(self.root).get(label)
         if d is None or rel is None:
             raise panels.Unreadable(
                 f"{label} is not in constants/map_constants.asm and "
                 "data/maps/blocks.asm both — it has no declared shape.")
-        path = self.root / rel
+        path = self.root / rel.removesuffix(".lzp")
         try:
             blocks = path.read_bytes()
         except FileNotFoundError as exc:
@@ -111,9 +100,9 @@ class Reader:
             swatches=swatches.for_tileset(self.root, m.tileset) if m else ())
 
     def wild(self, const: str) -> dict[str, dict[str, list[panels.WildMon]]]:
-        """Grass splits by time of day, water doesn't — seven slots ×3 and
-        three slots ×1, fixed by the engine. A map with no encounters is the
-        common case, not an error."""
+        """Same shape as the rest of the family — grass 7×3, water 3 — but a
+        slot is `wildmon level, SPECIES[, FORM]`: the form crosses when it is
+        written, and the column above the seam exists exactly then."""
         found: dict[str, dict[str, list[panels.WildMon]]] = {}
         for kind, rel in (("grass", "data/wild/johto_grass.asm"),
                           ("grass", "data/wild/kanto_grass.asm"),
@@ -130,16 +119,15 @@ class Reader:
         return found
 
     def roof(self, const: str) -> panels.Roof | None:
-        """The roof this map's group loads. Vanilla's `MapGroupRoofs` covers
-        every group and its comments agree with its engine, so the pathology
-        fields prism fills stay empty — absence, not luck."""
         d = dims(self.root).get(const)
         if d is None:
             return None
-        names, values, files = _roof_table(self.root)
+        names, values = _roof_table(self.root)
+        files = _roof_files(self.root)
         if d.group >= len(values):
             return panels.Roof(group=d.group, past_end=True,
-                               entries=len(values), colors=_roof_colors(self.root, d.group))
+                               entries=len(values),
+                               colors=_roof_colors(self.root, d.group))
         tiles = names.index(values[d.group]) if values[d.group] in names else None
         return panels.Roof(
             group=d.group, tiles=tiles,
@@ -153,74 +141,21 @@ class Reader:
 
 
 # --------------------------------------------------------------------------- #
-# the catalog files, each parsed once                                         #
+# what polished rewrote, each file parsed once                                #
 # --------------------------------------------------------------------------- #
 
 @dataclass(frozen=True)
-class Attr:
-    const: str
-    border: str
-    connections: tuple[tuple[str, str, int], ...]   # direction, target, offset
-
-
-@dataclass(frozen=True)
-class Dims:
-    group: int
-    map_id: int
-    width: int
-    height: int
-
-
-@dataclass(frozen=True)
 class _Style:
+    """The eight-arg `map` macro: a SIGN_* slot vanilla doesn't have, a bare
+    landmark, and no fish group anywhere — so `Attributes.fishgroup` keeps
+    its dash and the row above the seam says so honestly."""
     tileset: str
     environment: str
+    sign: str
     landmark: str
     music: str
     phone: str
     palette: str
-    fishgroup: str
-
-
-@lru_cache(maxsize=None)
-def attrs(root: Path) -> dict[str, _Attr]:
-    out: dict[str, _Attr] = {}
-    label, const, border = "", "", ""
-    conns: list[tuple[str, str, int]] = []
-
-    def flush() -> None:
-        if label:
-            out[label] = Attr(const, border, tuple(conns))
-
-    for raw in lines(root / "data/maps/attributes.asm"):
-        if m := _ATTR.match(raw):
-            flush()
-            label, const, border = m.group(1), m.group(2), m.group(3)
-            conns = []
-        elif m := _CONN.match(raw):
-            conns.append((m.group(1), m.group(3), int(m.group(4))))
-    flush()
-    return out
-
-
-@lru_cache(maxsize=None)
-def label_of(root: Path) -> dict[str, str]:
-    return {a.const: label for label, a in attrs(root).items()}
-
-
-@lru_cache(maxsize=None)
-def dims(root: Path) -> dict[str, _Dims]:
-    out: dict[str, _Dims] = {}
-    group = map_id = 0
-    for raw in lines(root / "constants/map_constants.asm"):
-        if _GROUP.match(raw):
-            group += 1
-            map_id = 0
-        elif m := _MAP_CONST.match(raw):
-            map_id += 1
-            out[m.group(1)] = Dims(group, map_id,
-                                    int(m.group(2)), int(m.group(3)))
-    return out
 
 
 @lru_cache(maxsize=None)
@@ -236,8 +171,6 @@ def _styles(root: Path) -> dict[str, _Style]:
 
 @lru_cache(maxsize=None)
 def _blk(root: Path) -> dict[str, str]:
-    """label -> the .blk path its `INCBIN` names. Several labels may stack on
-    one INCBIN — maps that share a shape — so pending labels drain together."""
     out: dict[str, str] = {}
     pending: list[str] = []
     for raw in lines(root / "data/maps/blocks.asm"):
@@ -252,65 +185,63 @@ def _blk(root: Path) -> dict[str, str]:
 
 @lru_cache(maxsize=None)
 def _wild_file(root: Path, rel: str) -> dict[str, list[panels.WildMon]]:
-    """Every map's slots in one wild file, in written order. The rates line
-    also matches `db N, M` shapes, so it is skipped by its `percent` word."""
     out: dict[str, list[panels.WildMon]] = {}
     current: list[panels.WildMon] | None = None
     for raw in lines(root / rel):
         s = raw.split(";")[0]
-        if "wildmons" in s:
-            if s.strip().startswith("def_"):
-                current = out.setdefault(s.strip().split()[-1], [])
-            else:
-                current = None
-        elif current is not None and "percent" not in s:
-            if m := _WILDMON.match(s):
-                current.append(panels.WildMon(int(m.group(1)), m.group(2)))
+        if "wildmons" in s and s.strip().startswith(("def_", "end_")):
+            current = (out.setdefault(s.strip().split()[-1], [])
+                       if s.strip().startswith("def_") else None)
+        elif current is not None and (m := _WILDMON.match(s)):
+            current.append(panels.WildMon(int(m.group(1)), m.group(2),
+                                          m.group(3) or ""))
     return out
 
 
 @lru_cache(maxsize=None)
-def _roof_table(root: Path) -> tuple[list[str], list[str], list[str]]:
-    """(ROOF_* names in ordinal order, MapGroupRoofs values by group,
-    roof tile files in ordinal order)."""
-    names: list[str] = []
+def _roof_table(root: Path) -> tuple[list[str], list[str]]:
+    """(ROOF_* names in ordinal order, MapGroupRoofs values by group). The
+    constants live with the tilesets now, the table kept its file."""
+    names = [m.group(1)
+             for raw in lines(root / "constants/tileset_constants.asm")
+             if (m := _ROOF_CONST.match(raw))]
     values: list[str] = []
-    files: list[str] = []
     in_groups = False
     for raw in lines(root / "data/maps/roofs.asm"):
-        if m := _ROOF_CONST.match(raw):
-            names.append(m.group(1))
-        elif raw.startswith("MapGroupRoofs"):
+        if raw.startswith("MapGroupRoofs"):
             in_groups = True
-        elif raw.startswith("Roofs"):
-            in_groups = False
+        elif in_groups and not raw.startswith(("\t", " ", ";")) and raw.strip():
+            break
         elif in_groups and (m := _DB.match(raw.split(";")[0])):
             values.append(m.group(1))
-        elif not in_groups and (m := _INCBIN.search(raw)):
-            files.append(m.group(1))
-    return names, values, files
+    return names, values
+
+
+@lru_cache(maxsize=None)
+def _roof_files(root: Path) -> list[str]:
+    """Roof tile files in ROOF_* order, from `gfx/misc.asm`'s `*RoofGFX`
+    INCBINs — polished compresses them, but the file it names is the file."""
+    return [m.group(1) for raw in lines(root / "gfx/misc.asm")
+            if (m := _ROOF_GFX.search(raw))]
 
 
 @lru_cache(maxsize=None)
 def _roof_pal(root: Path) -> list[tuple[str, ...]]:
-    """One (morn/day ×2, nite ×2) tuple per map group, in file order —
-    `roofs.pal` is indexed by *group*, unlike the tiles."""
-    colors: list[str] = []
+    """One (morn/day ×2, nite ×2) tuple per map group. Polished writes all
+    three times on one line — morn/day, nite, eve, two colors each — and the
+    seam's record wants the first four."""
+    out: list[tuple[str, ...]] = []
     for raw in lines(root / "gfx/tilesets/roofs.pal"):
         if m := _RGB.match(raw):
             vals = [int(v) for v in m.group(1).replace(",", " ").split()]
-            colors += ["#{:02x}{:02x}{:02x}".format(*(v * 255 // 31 for v in vals[i:i + 3]))
-                       for i in (0, 3) if len(vals) >= i + 3]
-    return [tuple(colors[i:i + 4]) for i in range(0, len(colors) - 3, 4)]
+            if len(vals) >= 12:
+                out.append(tuple(
+                    "#{:02x}{:02x}{:02x}".format(*(v * 255 // 31
+                                                   for v in vals[i:i + 3]))
+                    for i in (0, 3, 6, 9)))
+    return out
 
 
 def _roof_colors(root: Path, group: int) -> tuple[str, str, str, str] | None:
     pals = _roof_pal(root)
     return pals[group] if group < len(pals) else None
-
-
-def lines(path: Path) -> list[str]:
-    try:
-        return path.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
-        return []

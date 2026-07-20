@@ -21,10 +21,10 @@ from pathlib import Path
 from ...studio import panels
 
 #: bg_tiles.pal line order within each time-of-day section.
-_CLASSES = ("GRAY", "RED", "GREEN", "WATER", "YELLOW", "BROWN", "ROOF", "TEXT")
+CLASSES = ("GRAY", "RED", "GREEN", "WATER", "YELLOW", "BROWN", "ROOF", "TEXT")
 
 #: The tile indices of each swatch quadrant in a 4×4 metatile, reading order.
-_QUADS = ((0, 1, 4, 5), (2, 3, 6, 7), (8, 9, 12, 13), (10, 11, 14, 15))
+QUADS = ((0, 1, 4, 5), (2, 3, 6, 7), (8, 9, 12, 13), (10, 11, 14, 15))
 
 _RGB = re.compile(r"^\s*RGB\s+([\d, ]+)")
 _TILEPAL = re.compile(r"^\s*tilepal\s+\d+\s*,\s*(.+)")
@@ -42,14 +42,14 @@ def for_tileset(root: Path, tileset_const: str) -> tuple[panels.Swatch, ...]:
             "to color.")
     meta = meta_path.read_bytes()
     classes = _classes(root, name)
-    colors = _day_colors(root)
+    colors = day_colors(root)
     gray = colors.get("GRAY", (128, 128, 128))
 
     out: list[panels.Swatch] = []
     for b in range(len(meta) // 16):
         tiles = meta[b * 16:(b + 1) * 16]
         quads = []
-        for quad in _QUADS:
+        for quad in QUADS:
             rs = gs = bs = 0
             for q in quad:
                 cls = classes[tiles[q]] if tiles[q] < len(classes) else "GRAY"
@@ -101,7 +101,7 @@ def _included_map(root: Path, camel: str) -> Path | None:
 
 
 @lru_cache(maxsize=None)
-def _day_colors(root: Path) -> dict[str, tuple[int, int, int]]:
+def day_colors(root: Path) -> dict[str, tuple[int, int, int]]:
     """class name → its representative color: the second entry of its day
     palette, the mid-light hue a tile mostly shows. 5-bit → 8-bit."""
     path = root / "gfx/tilesets/bg_tiles.pal"
@@ -118,4 +118,4 @@ def _day_colors(root: Path) -> dict[str, tuple[int, int, int]]:
             vals = [int(v) for v in m.group(1).replace(",", " ").split()]
             if len(vals) >= 6:
                 day.append(tuple(v * 255 // 31 for v in vals[3:6]))
-    return dict(zip(_CLASSES, day))
+    return dict(zip(CLASSES, day))

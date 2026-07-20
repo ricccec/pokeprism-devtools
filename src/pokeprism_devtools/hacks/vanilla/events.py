@@ -66,10 +66,13 @@ class MapSource:
 _EVENT_MACROS = ("warp_event", "coord_event", "bg_event", "object_event")
 
 
-def parse(path: Path) -> MapSource:
+def parse(path: Path, anchor: str = "_MapEvents") -> MapSource:
     """Read one map file whole. Raises :class:`panels.Unreadable` when the
-    file is missing or has no `_MapEvents` anchor — a file this adapter
-    cannot honestly call a vanilla map."""
+    file is missing or lacks the family anchor — a file this adapter cannot
+    honestly call one of its maps. `anchor` is the one structural difference
+    inside the family: vanilla's `_MapEvents` tail, polished's
+    `_MapScriptHeader` head. The carving is otherwise identical, which is why
+    the polished adapter imports this function instead of forking it."""
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except FileNotFoundError as exc:
@@ -86,7 +89,7 @@ def parse(path: Path) -> MapSource:
 
         if m := _TOP_LABEL.match(raw):
             owner = m.group(1)
-            if owner.endswith("_MapEvents"):
+            if owner.endswith(anchor):
                 seen_anchor = True
             current = src.blocks.setdefault(
                 owner, Block(owner, owner, lineno, []))
@@ -116,8 +119,8 @@ def parse(path: Path) -> MapSource:
 
     if not seen_anchor:
         raise panels.Unreadable(
-            f"{path} has no _MapEvents block — the tail anchor every vanilla "
-            "map file ends with.")
+            f"{path} has no {anchor} block — the anchor every map file in "
+            "this dialect carries.")
     return src
 
 
@@ -134,34 +137,34 @@ def tables(path: Path) -> panels.MapTables:
 
     warps = []
     for i, args in enumerate(src.warp_events):
-        y, x = _yx(args)
-        _mark(marks, y, x, coords.WARP)
+        y, x = yx(args)
+        mark(marks, y, x, coords.WARP)
         warps.append(panels.Warp(
             handle=("warp", i), index=i, y=y, x=x,
-            to_map=_arg(args, 2), their_warp=_arg(args, 3)))
+            to_map=arg(args, 2), their_warp=arg(args, 3)))
 
     triggers = []
     for i, args in enumerate(src.coord_events):
-        y, x = _yx(args)
-        _mark(marks, y, x, coords.TRIGGER)
+        y, x = yx(args)
+        mark(marks, y, x, coords.TRIGGER)
         triggers.append(panels.Trigger(
             handle=("coord", i), index=i, y=y, x=x,
-            scene=_arg(args, 2), runs=_arg(args, 3)))
+            scene=arg(args, 2), runs=arg(args, 3)))
 
     signs: list[panels.Signpost] = []
     props: list[panels.Prop] = []
     for i, args in enumerate(src.bg_events):
-        y, x = _yx(args)
-        _mark(marks, y, x, coords.SIGN)
-        kind, target = _arg(args, 2), _arg(args, 3)
+        y, x = yx(args)
+        mark(marks, y, x, coords.SIGN)
+        kind, target = arg(args, 2), arg(args, 3)
         if kind == "BGEVENT_ITEM":
             # What the sign hides is on the `hiddenitem ITEM, FLAG` line in
             # the block it points at. It goes on the Objects tab: it is a
             # thing on the floor, however the engine files it.
-            hidden = _macro_args(src, target, "hiddenitem")
+            hidden = macro_args(src, target, "hiddenitem")
             props.append(panels.Prop(
                 handle=("bg", i), index=i, y=y, x=x, kind="hidden",
-                what=_arg(hidden, 0), qty="", flag=_arg(hidden, 1)))
+                what=arg(hidden, 0), qty="", flag=arg(hidden, 1)))
         else:
             signs.append(panels.Signpost(
                 handle=("bg", i), index=i, y=y, x=x,
@@ -169,11 +172,11 @@ def tables(path: Path) -> panels.MapTables:
 
     npcs: list[panels.Npc] = []
     trainers: list[panels.Trainer] = []
-    says = _says(src)
+    says = first_words(src)
     for i, args in enumerate(src.object_events):
         if len(args) < 13:
             continue
-        y, x = _yx(args)
+        y, x = yx(args)
         handle = src.names[i] if named else ("object", i)
         sprite = args[2].removeprefix("SPRITE_")
         objtype, sight, script, flag = args[9], args[10], args[11], args[12]
@@ -182,25 +185,25 @@ def tables(path: Path) -> panels.MapTables:
             # The flag that remembers you beat a trainer lives on the
             # `trainer CLASS, PARTY, FLAG, …` line, not on the object_event —
             # whose own flag says when he is on the map at all.
-            t = _macro_args(src, script, "trainer")
-            _mark(marks, y, x, coords.TRAINER)
+            t = macro_args(src, script, "trainer")
+            mark(marks, y, x, coords.TRAINER)
             trainers.append(panels.Trainer(
                 handle=handle, index=i, y=y, x=x, sprite=sprite,
-                cls=_arg(t, 0), party=_arg(t, 1), sight=sight,
-                flag=_arg(t, 2)))
+                cls=arg(t, 0), party=arg(t, 1), sight=sight,
+                flag=arg(t, 2)))
         elif objtype == "OBJECTTYPE_ITEMBALL":
-            ball = _macro_args(src, script, "itemball")
-            _mark(marks, y, x, coords.ITEM)
+            ball = macro_args(src, script, "itemball")
+            mark(marks, y, x, coords.ITEM)
             props.append(panels.Prop(
                 handle=handle, index=i, y=y, x=x, kind="itemball",
-                what=_arg(ball, 0) or script, qty=_arg(ball, 1), flag=flag))
-        elif tree := _macro_args(src, script, "fruittree"):
-            _mark(marks, y, x, coords.ITEM)
+                what=arg(ball, 0) or script, qty=arg(ball, 1), flag=flag))
+        elif tree := macro_args(src, script, "fruittree"):
+            mark(marks, y, x, coords.ITEM)
             props.append(panels.Prop(
                 handle=handle, index=i, y=y, x=x, kind="fruittree",
-                what=_arg(tree, 0), qty="", flag=flag))
+                what=arg(tree, 0), qty="", flag=flag))
         else:
-            _mark(marks, y, x, coords.PERSON)
+            mark(marks, y, x, coords.PERSON)
             npcs.append(panels.Npc(
                 handle=handle, index=i, y=y, x=x, sprite=sprite,
                 movement=args[3].removeprefix("SPRITEMOVEDATA_"),
@@ -220,12 +223,12 @@ def texts(path: Path) -> list[panels.TextRef]:
     in the same box, so everything is "speech" here."""
     src = parse(path)
     return [panels.TextRef(label=b.label, owner=b.owner, lineno=b.lineno,
-                           prose=prose, box="speech")
+                           prose=p, box="speech")
             for b in src.blocks.values()
-            if (prose := _prose(b.lines))]
+            if (p := prose(b.lines))]
 
 
-def _prose(lines: list[str]) -> str:
+def prose(lines: list[str]) -> str:
     out: list[str] = []
     for ln in lines:
         word, _, rest = ln.partition(" ")
@@ -240,14 +243,14 @@ def _prose(lines: list[str]) -> str:
     return "\n".join(out)
 
 
-def _says(src: MapSource) -> dict[str, str]:
+def first_words(src: MapSource) -> dict[str, str]:
     """`script label -> the first words it shows`, so an NPC's row can say
     what he says instead of the name of the block that says it. The walk is
     one hop: a script that `jumptext`s or `writetext`s a label shows that
     label's text; a pointer straight at a text block shows its own."""
     first: dict[str, str] = {}
     for name, b in src.blocks.items():
-        p = _prose(b.lines)
+        p = prose(b.lines)
         if p:
             first[name] = next(ln for ln in p.split("\n") if ln.strip())[:40]
     out: dict[str, str] = dict(first)
@@ -266,30 +269,30 @@ def _says(src: MapSource) -> dict[str, str]:
 # small readings                                                              #
 # --------------------------------------------------------------------------- #
 
-def _yx(args: list[str]) -> tuple[int | None, int | None]:
+def yx(args: list[str]) -> tuple[int | None, int | None]:
     """The (x, y) the macro wrote, turned around. An expression instead of a
     number leaves the axis None: the row exists, the grid can't point at it."""
-    return _int(_arg(args, 1)), _int(_arg(args, 0))
+    return to_int(arg(args, 1)), to_int(arg(args, 0))
 
 
-def _int(s: str) -> int | None:
+def to_int(s: str) -> int | None:
     try:
         return int(s, 0)
     except ValueError:
         return None
 
 
-def _arg(args: list[str] | None, i: int) -> str:
+def arg(args: list[str] | None, i: int) -> str:
     return args[i] if args and len(args) > i else ""
 
 
-def _mark(marks: dict[Tile, str], y: int | None, x: int | None,
+def mark(marks: dict[Tile, str], y: int | None, x: int | None,
           glyph: str) -> None:
     if y is not None and x is not None:
         marks[Tile(y=y, x=x)] = glyph
 
 
-def _macro_args(src: MapSource, label: str, macro: str) -> list[str] | None:
+def macro_args(src: MapSource, label: str, macro: str) -> list[str] | None:
     """The comma-split args of the first `macro` line in the block `label`
     names, or None — a pointer at nothing readable classifies as nothing."""
     b = src.blocks.get(label)
