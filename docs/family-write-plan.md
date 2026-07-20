@@ -20,10 +20,13 @@ phases:
 |---|---|---|
 | ~~deleting a family warp~~ | **done** — crosses via a declared warp grammar | ~~5~~ |
 | ~~family `a` / `e` (adders, editors)~~ | **done** — four editors, three adders | ~~6~~ |
-| family `a` on the map list (new map) | scaffold + bank placement unmodelled | **7** |
+| ~~family `s` (resize)~~ | **done** — crosses via a declared `MapShape` | ~~7a~~ |
+| family `a` on the map list (new map) | scaffold + placement unmodelled | **7b** |
 
 Ordered smallest-risk-first, as before: 5 is a port of machinery that already
-exists for prism, 6 is the big lift, 7 stands on 6.
+exists for prism, 6 is the big lift, 7 stands on 6 — and 7 split in two once
+surveyed, because resize turned out **not** to stand on newmap the way this
+plan assumed. See Phase 7 below.
 
 **Phase 5 is done, and the survey it opened with is why it was worth doing that
 way.** Three of the assumptions the plan below inherited from
@@ -234,24 +237,81 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   adapter and its two delete actions on the other — but carving it is churn
   across `mount`, `actions` and three test files, and it belongs in its own
   commit rather than smuggled into a phase that just proved the module
-  correct on 9,257 entries.
+  correct on 9,257 entries. **Phase 7a took it to 787** and added a fifth
+  mount-declared fork to its constructor; the debt is now compounding rather
+  than static, and the carve should come before 7b adds a sixth.
 
-- **Phase 7 — a new map, and where it may be put.** The last capability, and
-  the reason it is last: `NewMap` is a scaffold across many files *plus* the
-  one question the three trees answer three ways — **where does map data
-  go?** Prism answers with explicit banks (`romx.link`; the existing form
-  already lets you pin `$7C` or leave it floating — see `studio/newmap.py`'s
-  argued refusal to guess). The multi-hack finding on record says vanilla is
-  a bucket choice and polished floats — but polished ships a `layout.link`
-  too, so the survey re-measures rather than trusts. The model: placement is
-  a **declared answer from the write adapter** — the choices it offers
-  (banks / buckets / nothing) become a form field exactly when they exist,
-  a capability read, never a hack name. The scaffold itself is the family
-  new-map checklist (`data/maps/maps.asm`, `blocks.asm`'s INCBIN, the
-  constants, the attributes — surveyed per tree, the way vanilla's read
-  adapter was), and `resize` follows it (`wiring/mapresize`
-  generalized the way Phase 5 generalizes `warpdel`). This phase may split
-  once surveyed; it is the outer edge of the plan, not its foundation.
+- **Phase 7 — split once surveyed, exactly as this line reserved the right
+  to.** The plan bundled `newmap` and `resize` and asserted resize "stands on"
+  newmap. It does not: **a resized map keeps whatever section it was already
+  in**, so resize never asks the placement question that makes newmap hard.
+  They were two capabilities sharing a bullet, and the cheap one shipped
+  first.
+
+- **Phase 7a — family resize. Done.** `wiring/mapresize.py` keeps the geometry
+  (it is the same in every tree) and asks the tree everything else through a
+  `Dialect`; `hacks/prism/resize.py` and `hacks/vanilla/resize.py` hold the two
+  sets of answers. `Writer.form("resize")` crosses, so the `s` key exists on a
+  family tree.
+
+  **The finding, and it is the swapped movement radius again.** The dimension
+  macro takes its two numbers in the *opposite order* in each family:
+  prism's `mapgroup NAME, H, W` against the family's `map_const NAME, W, H`.
+  Measured rather than read off the macro comment — `PlayersHouse1F` is
+  `map_const …, 5, 4` and its `.blk` is exactly 20 bytes. So `MapShape` owns
+  the order and does *both* the read and the write of that line, because the
+  only way to guarantee they agree is to give them no chance to disagree.
+
+  **A byte count cannot catch that**, which is worth writing down: `h*w` is
+  `w*h`, so the obvious check — does the grid match the declared size — passes
+  under both readings and proves nothing. What discriminates is the things
+  *standing* on the map, since a coordinate knows which axis it is on. Under
+  the declared order 387/388 vanilla and 601/604 polished maps have every
+  entry in bounds; under the transposed order, 192 and 290. Half of every map
+  would have been mislocated, silently. The four maps that fit under neither
+  are real: they park objects off the grid on purpose, one at `y = -5`, which
+  is not a misparse.
+
+  Two more forks the survey caught. Polished indexes blocks under
+  `<Label>_BlockData:` where vanilla writes `<Label>_Blocks:` — so the dialect
+  is handed its tree's own `_blk` rather than deriving one from the anchor,
+  which does not imply it; before that fix polished resolved *zero* maps. And
+  polished INCBINs the compressed `.ablk.lzp` while the file a human draws is
+  the `.ablk` beside it, the same suffix-stripping prism does for `.lz`.
+
+  **The refusal that turned out to be the common case.** Both trees stack
+  several labels on one INCBIN, and vanilla does it constantly: 436 labels
+  against 302 INCBINs, so 157 of its 388 maps share a grid with a twin
+  (`NationalPark` and `NationalParkBugContest` are the same blocks). Resizing
+  one corrupts the other, whose dimension constant does not move with it.
+  Prism's resize already refused this; for the family it is not an edge guard
+  but roughly 40% of the tree. Final: 231 vanilla and 415 polished maps
+  resize, 157 and 191 refuse for sharing a grid, and **nothing refuses for any
+  other reason**.
+
+- **Phase 7b — a new map, and where it may be put.** The remaining half, and
+  the survey has already moved its foundation. The plan recorded "vanilla is a
+  bucket choice and polished floats"; both trees ship a `layout.link`, and the
+  answer differs **per blob kind, not per tree**:
+
+  | | scripts | blocks |
+  |---|---|---|
+  | vanilla | 25 `Map Scripts N` buckets, all 25 pinned | 3 `Map Blocks N` buckets, all 3 pinned |
+  | polished | 119 thematic sections, 11 pinned | 436 sections, one per map, none pinned |
+
+  So there are three placement *shapes*, not two: prism **pins a bank** (or
+  floats for `prism-mapfit`), vanilla **chooses an existing bucket** — twice,
+  and each bucket is already pinned, so the choice picks the bank implicitly —
+  and polished chooses a bucket for the script but **mints a new section** for
+  the blocks. The plan's model ("the choices it offers become a form field
+  exactly when they exist") survives but is one shape short: a declared list of
+  choices cannot express *mint a new one*. The record has to say what **kind**
+  of answer placement is per blob, not just enumerate options.
+
+  The scaffold is the easy half and nearly shared: `maps/<Label>.asm`,
+  `data/maps/{maps,blocks,attributes,scripts}.asm` and
+  `constants/map_constants.asm` in both trees, plus `scenes.asm` in vanilla
+  only. Placement is the entire fork.
 
 What this plan still does not claim, and calls absences rather than debts:
 `plays` for family trees (build-and-replay is engine wiring, a different

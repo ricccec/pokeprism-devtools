@@ -400,8 +400,10 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
         check("measuring refuses with a sentence", False)
     except SessionError as exc:
         check("measuring refuses with a sentence", "vanilla" in str(exc))
-    check("no app-level form exists",
-          all(s.form(n) is None for n in ("newmap", "resize", "reword")))
+    check("newmap and reword are still absent",
+          all(s.form(n) is None for n in ("newmap", "reword")))
+    check("resize crosses, and carries the family's width-first shape",
+          s.form("resize").dialect.shape.height_first is False)
     # Editing an entry now crosses; editing the *map* does not, and the refusal
     # is the interesting half — an absent key would say nothing.
     action, values, _ = s.editor("TownA", "TOWN_A",
@@ -1004,6 +1006,142 @@ def test_adding_an_entry(root: Path) -> None:
           "TownATeacherScript, -1" in written, written)
 
 
+def test_resizing_crosses(root: Path) -> None:
+    """TOWN_A is `map_const TOWN_A,  4, 3` — width 4, height 3, twelve blocks."""
+    print("\nresizing crosses the seam")
+    from pokeprism_devtools.hacks.vanilla.resize import VANILLA
+    from pokeprism_devtools.wiring import mapresize as MR
+
+    DIMS = "constants/map_constants.asm"
+    before = (root / DIMS).read_text()
+
+    change = MR.resize(root, "TOWN_A", "bottom", "grow", 1, dialect=VANILLA)
+    edits = {e.path: e for e in change.changes}
+    check("growing the bottom touches the constant and the grid, nothing else",
+          set(edits) == {DIMS, "maps/TownA.blk"}, str(sorted(edits)))
+    check("the grid grew by one row of width 4",
+          len(edits["maps/TownA.blk"].data) == 16,
+          str(len(edits["maps/TownA.blk"].data)))
+
+    line = [l for l in edits[DIMS].new_text.split("\n") if "TOWN_A" in l][0]
+    check("the dimension line keeps width first — 4 wide, now 4 tall",
+          line.strip().startswith("map_const TOWN_A,") and ", 4" in line
+          and line.rstrip().endswith("; 1"), line)
+    check("and its trailing comment and column padding survive",
+          line == "\tmap_const TOWN_A,  4, 4 ; 1", repr(line))
+
+    check("growing the bottom moves nothing, so no map file is rewritten",
+          "maps/TownA.asm" not in edits)
+
+    # Growing the *top* moves the origin: every coordinate shifts down 2 tiles.
+    change = MR.resize(root, "TOWN_A", "top", "grow", 1, dialect=VANILLA)
+    edits = {e.path: e for e in change.changes}
+    check("growing the top rewrites the map file too", "maps/TownA.asm" in edits)
+    moved = [l for l in edits["maps/TownA.asm"].new_text.split("\n")
+             if l.strip().startswith("warp_event ")]
+    check("the warp moved down two tiles and stayed in its column",
+          moved and moved[0].split()[1:3] == ["3,", "7,"], str(moved[:1]))
+    check("the shift is reported rather than done silently",
+          any("shifted" in n for n in change.notes), str(change.notes))
+
+    # Growing the left moves it the other way, and only in x.
+    change = MR.resize(root, "TOWN_A", "left", "grow", 1, dialect=VANILLA)
+    warp = [l for l in
+            {e.path: e for e in change.changes}["maps/TownA.asm"].new_text.split("\n")
+            if l.strip().startswith("warp_event ")][0]
+    check("growing the left moves the warp two columns and no rows",
+          warp.split()[1:3] == ["5,", "5,"], warp)
+
+    check("none of that touched the tree — a Change is a proposal",
+          (root / DIMS).read_text() == before)
+
+    print("\nand it refuses what it cannot do safely")
+    try:
+        MR.resize(root, "TOWN_A", "left", "shrink", 1, dialect=VANILLA)
+        check("shrinking onto something standing there refuses", False)
+    except MR.EditError as exc:
+        check("shrinking onto something standing there refuses",
+              "would remove" in str(exc), str(exc)[:70])
+    try:
+        MR.resize(root, "TOWN_A", "top", "shrink", 3, dialect=VANILLA)
+        check("shrinking a map out of existence refuses", False)
+    except MR.EditError as exc:
+        check("shrinking a map out of existence refuses",
+              "would leave nothing" in str(exc), str(exc)[:60])
+
+
+def test_shared_blocks_refuse(tmp: Path) -> None:
+    """The family stacks several labels on one INCBIN constantly — resizing one
+    of a pair would corrupt the other, whose dimension constant does not move."""
+    print("\ntwo maps sharing one grid refuse to be resized")
+    from pokeprism_devtools.hacks.vanilla.resize import VANILLA
+    from pokeprism_devtools.wiring import mapresize as MR
+
+    root = _fixture(tmp / "shared")
+    (root / "data/maps/blocks.asm").write_text(
+        'TownA_Blocks:\nHouseA_Blocks:\n\tINCBIN "maps/TownA.blk"\n')
+    from pokeprism_devtools.hacks.vanilla import read as r
+    r._blk.cache_clear()
+    try:
+        MR.resize(root, "TOWN_A", "bottom", "grow", 1, dialect=VANILLA)
+        check("a shared grid refuses the whole resize", False)
+    except MR.EditError as exc:
+        check("a shared grid refuses the whole resize, naming the twin",
+              "shared with HouseA" in str(exc), str(exc)[:70])
+    r._blk.cache_clear()
+
+
+def test_real_resize(name: str, dialect) -> None:
+    """The orientation check, on every real map.
+
+    A byte count cannot catch a transposed height and width, because `h*w` is
+    `w*h` — so the check that matters is whether the things standing on the map
+    fit inside it. They do under the declared order and mostly do not under the
+    transposed one, which is the whole argument for `MapShape` in one number.
+    """
+    root = Path.home() / "code/ricccec" / name
+    if not root.exists():
+        print(f"\n({name} not checked out — skipping)")
+        return
+    print(f"\nevery {name} map, against both readings of its dimension line")
+    from pokeprism_devtools.hacks.vanilla import read as r
+    from pokeprism_devtools.wiring.mapresize import MapShape
+
+    flipped = MapShape(dialect.shape.path, dialect.shape.macro, height_first=True)
+    fits = flips = maps = 0
+    resizable = shared = 0
+    for const, label in r.label_of(root).items():
+        try:
+            h, w = dialect.shape.read(root, const)
+        except Exception:
+            continue
+        try:
+            grid = dialect.read_grid(dialect.blk(root, label), h, w)
+            resizable += 1
+            if len(grid) != h * w:
+                check(f"{label} grid is h*w", False)
+        except Exception as exc:
+            if "shared with" in str(exc):
+                shared += 1
+            else:
+                check(f"{label} refuses for a reason we know", False, str(exc)[:60])
+        standing = dialect.standing(root, label)
+        if not standing:
+            continue
+        maps += 1
+        H, W = flipped.read(root, const)
+        fits += all(s.y < 2 * h and s.x < 2 * w for s in standing)
+        flips += all(s.y < 2 * H and s.x < 2 * W for s in standing)
+
+    check(f"{resizable} maps resize and {shared} refuse for sharing a grid — "
+          f"and nothing refuses for any other reason", True)
+    check("nearly every map's entries fit inside it as declared",
+          fits >= maps - 4, f"{fits}/{maps}")
+    check("but only about half fit under the transposed reading — the order "
+          "is load-bearing, not cosmetic",
+          flips < maps * 0.6, f"{flips}/{maps} would still fit")
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as d:
         root = _fixture(Path(d))
@@ -1016,6 +1154,8 @@ def main() -> int:
         test_the_session_degrades_to_absence(root)
         test_a_line_the_editor_will_not_rewrite(root)
         test_adding_an_entry(root)
+        test_resizing_crosses(root)
+        test_shared_blocks_refuse(Path(d))
         test_deletion_crosses_the_seam(root)
     # Its own tree: this fixture gives HouseA a map file, and the catalog test
     # above rests on HouseA *not* having one.
@@ -1034,6 +1174,10 @@ def main() -> int:
     test_editing_round_trips(Path.home() / "code/ricccec/polishedcrystal",
                              "polishedcrystal", "_MapScriptHeader",
                              FA.POLISHED_OBJECT)
+
+    from pokeprism_devtools.hacks.vanilla.resize import VANILLA, polished
+    test_real_resize("pokecrystal", VANILLA)
+    test_real_resize("polishedcrystal", polished())
 
     from pokeprism_devtools.hacks.vanilla import write as VW
     test_real_warp_deletion(Path.home() / "code/ricccec/pokecrystal", "pokecrystal",

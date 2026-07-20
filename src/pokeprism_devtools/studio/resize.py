@@ -22,6 +22,12 @@ from .actions import Action, ActionError, Field, Result
 class ResizeMap(Action):
     name = "resize"
     title = "Resize the map"
+    #: Which tree's answers the geometry runs against. A class attribute and
+    #: not an argument, because a form is built as `action(map_const,
+    #: **values)` and there is no third seat — the same reason
+    #: `hacks/vanilla/actions.py` stamps its dialect forks rather than passing
+    #: them. Overridden by `resize_for()` below.
+    dialect = None
     FIELDS = (
         Field("edge", "Edge", options=("top", "bottom", "left", "right"),
               help="which side of the map to change"),
@@ -46,7 +52,16 @@ class ResizeMap(Action):
         try:
             change = mapresize.resize(
                 root, self.map, self.text("edge"), self.text("mode") or "grow",
-                self.integer("blocks", 1), self.text("fill") or None)
+                self.integer("blocks", 1), self.text("fill") or None,
+                dialect=self.dialect)
         except mapresize.EditError as exc:
             raise ActionError(str(exc)) from exc
         return Result(change.summary, change.changes, change.notes)
+
+
+def resize_for(dialect, tag: str) -> type[ResizeMap]:
+    """This form, bound to one tree's answers. The form itself is dialect-free
+    — an edge, a mode and a count mean the same thing in every tree — so what
+    forks is only what it resizes *through*."""
+    return type(f"{tag}ResizeMap", (ResizeMap,),
+                {"dialect": dialect, "__doc__": ResizeMap.__doc__})

@@ -459,9 +459,15 @@ class Writer:
     def __init__(self, root: Path, anchor: str = "_MapEvents",
                  grammar: WarpGrammar = WARPS,
                  set_of: dict[str, ConstSet] | None = None,
-                 forms: tuple[dict, dict] | None = None) -> None:
+                 forms: tuple[dict, dict] | None = None,
+                 resize=None) -> None:
         self.root = root
         self.anchor = anchor
+        #: The fifth fork: how this tree answers a resize. Declared and not
+        #: derived from the anchor, because the anchor says where a map file
+        #: opens and says nothing about how its blocks are indexed — and the
+        #: two trees spell that label differently. See `.resize`.
+        self._resize = resize
         #: The fourth fork the mount declares: which dialect's actions these
         #: are, already stamped with its anchor and its `object_event` slot
         #: order. Resolved lazily rather than defaulted in the signature
@@ -498,11 +504,21 @@ class Writer:
         """
         return self._actions[0].get(kind, ())
 
-    def form(self, name: str) -> None:
-        """None for every app-level form: `newmap` is Phase 7, `resize` stands
-        on it, and `reword` is the text project. The view renders each as the
-        key not existing, which is the truth."""
-        return None
+    def form(self, name: str):
+        """`resize` crosses; `newmap` and `reword` do not yet.
+
+        The plan had resize standing on `newmap`, and the survey says it does
+        not: a resized map keeps whatever section it was already in, so resize
+        never asks the placement question that makes `newmap` hard. It is its
+        own capability and arrived first. `reword` is the text project.
+
+        The dialect is the one the mount declared, defaulting to vanilla's.
+        """
+        if name != "resize":
+            return None
+        from ...studio.resize import resize_for
+        from .resize import VANILLA
+        return resize_for(self._resize or VANILLA, "Family")
 
     def choices(self, kind: str, map_consts: tuple[str, ...],
                 values: dict[str, str] | None = None) -> list[str]:
