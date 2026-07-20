@@ -451,7 +451,13 @@ class Form(ModalScreen["Preview | Draft | None"]):
 
         The answer goes back into the box it came from, not into a panel that
         repeats the words underneath. See `screens/speech.py`.
+
+        On a tree that declares no text metrics there is nothing to measure
+        with, so the gutter is simply absent — the words are still yours to
+        type, the tile counts were never a promise this tree made.
         """
+        if not self._session.measures:
+            return
         for f in self._shown:
             if f.kind != "lines":
                 continue

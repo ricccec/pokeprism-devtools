@@ -208,6 +208,9 @@ class Flow:
         self._after_write()
 
     def action_findings(self) -> None:
+        if not self.session.lints:
+            self.notify("no linter reads this tree — there are no findings to list")
+            return
         if not self._linted:
             self.notify("still linting…")
             return

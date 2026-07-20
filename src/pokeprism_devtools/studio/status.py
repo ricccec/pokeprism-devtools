@@ -148,6 +148,14 @@ class Diagnostics(VerticalScroll):
         so for those 1.7 seconds this says so rather than saying "clean"."""
         self.query_one("#found", Static).update(Text("linting…", style="dim"))
 
+    def absent(self) -> None:
+        """No linter reads this tree, and that is a different sentence from
+        "clean". Clean is a verdict; this is the absence of a judge — the
+        template for how every undeclared capability shows up above the seam,
+        and the one the feasibility doc names for this pane."""
+        self.query_one("#found", Static).update(
+            Text("not applicable — no linter reads this tree", style="dim italic"))
+
     def show(self, found: list[Finding]) -> None:
         panel = self.query_one("#found", Static)
         if not found:

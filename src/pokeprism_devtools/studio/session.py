@@ -141,6 +141,20 @@ class Session:
                 f"this {self.hack.name} tree has no build-and-boot wiring — "
                 "the studio can show its maps, not play them.")
 
+    @property
+    def lints(self) -> bool:
+        """Whether any linter reads this tree. The panes ask before drawing:
+        a tree with no linter has *no findings to look for*, which is a
+        different sentence from "clean", and the pane must say the true one."""
+        return self.ctx is not None
+
+    @property
+    def measures(self) -> bool:
+        """Whether this tree can say how wide a line draws. The dialogue
+        gutter asks before measuring: on a tree with no text metrics the
+        gutter is absent, not wrong."""
+        return self.hack.measures
+
     # -- maps ---------------------------------------------------------------- #
     @property
     def maps(self) -> list[MapRef]:

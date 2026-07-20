@@ -161,7 +161,10 @@ class Studio(Flow, App):
 
     def on_mount(self) -> None:
         self.query_one(MapList).fill(self.session.maps)
-        self.query_one(Diagnostics).waiting()
+        if self.session.lints:
+            self.query_one(Diagnostics).waiting()
+        else:
+            self.query_one(Diagnostics).absent()
         self._lint()
         self._warm()
         self.set_interval(WATCH_SECONDS, self._sweep)
@@ -266,7 +269,9 @@ class Studio(Flow, App):
 
     def _show_diagnostics(self, const: str) -> None:
         panel = self.query_one(Diagnostics)
-        if self._linted:
+        if not self.session.lints:
+            panel.absent()
+        elif self._linted:
             panel.show(self.session.findings_for(const))
         else:
             panel.waiting()

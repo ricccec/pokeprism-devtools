@@ -384,6 +384,8 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
           ["Attributes", "NPCs", "Trainers", "Objects", "Warps", "Signposts",
            "Triggers", "Connections", "Roof", "Wild"])
     check("lint finds nothing because there is no linter", s.lint() == [])
+    check("and the panes can ask before drawing a verdict",
+          s.lints is False and s.measures is False)
     check("no tab offers to add", s.adders("NPC") == ())
     check("the sprite hint is silence", s.sprite_hint("TOWN_A", "SPRITE_TEACHER") == "")
     try:
