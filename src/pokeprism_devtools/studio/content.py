@@ -399,8 +399,13 @@ class RemoveWarp(_Placed):
         return f"remove warp #{self.integer('index') + 1} from {self.map}"
 
     def run(self, root: Path) -> Result:
+        # Splicing the entry out of prism's own map file is prism's job — only
+        # prism parses prism's event header — and `warpdel` fixes the repo
+        # behind it from a grammar prism declares. That split is exactly what
+        # lets the family reuse the rule through a grammar of its own.
+        from ..hacks.prism import write as prism_write
         try:
-            d = warpdel.delete_warp(root, self.map, self.integer("index"))
+            d = prism_write.delete_warp(root, self.map, self.integer("index"))
         except warpdel.WarpDelError as e:
             raise ActionError(str(e)) from e
         return Result(d.summary, d.changes, d.warnings)

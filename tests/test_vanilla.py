@@ -14,6 +14,7 @@ this repo, the same questions are asked of it too.
 from __future__ import annotations
 
 import sys
+from collections import Counter
 import tempfile
 from pathlib import Path
 
@@ -431,15 +432,183 @@ def test_deletion_crosses_the_seam(root: Path) -> None:
     check("a stale name refuses instead of guessing",
           _refused(s, "TownA", "TOWN_A", panels.Ref("trainer", "TOWNA_YOUNGSTER"),
                    "no longer"))
-    check("a warp refuses with the renumbering reason",
-          _refused(s, "TownA", "TOWN_A", panels.Ref("warp", ("warp", 0)),
-                   "renumbers"))
     check("a connection refuses with the neighbour reason",
           _refused(s, "TownA", "TOWN_A",
                    panels.Ref("connection", key="west"), "neighbour"))
 
     s.undo()
     check("undo puts the file back to the byte", src.read_text() == before)
+
+
+# --------------------------------------------------------------------------- #
+# warp deletion                                                               #
+# --------------------------------------------------------------------------- #
+
+#: TownA's five warps, and one neighbour holding every macro that counts into
+#: them. The numbers are chosen so each leg of the triad can be reached alone:
+#: nothing names warp #2 (a clean renumber across all three macros), #1 is what
+#: a door leads to, #3 what a `warpmod` re-points, #4 what an `elevfloor` lists,
+#: and #5 what polished's `digmod` names and vanilla's grammar cannot see.
+_TOWNA_WARPS = """\
+	def_warp_events
+	warp_event  3,  5, HOUSE_A, 1
+	warp_event  4,  5, HOUSE_A, 1
+	warp_event  5,  5, HOUSE_A, 1
+	warp_event  6,  5, HOUSE_A, 1
+	warp_event  7,  5, HOUSE_A, 1
+"""
+
+_HOUSE_A = """\
+	object_const_def
+
+HouseA_MapScripts:
+	def_scene_scripts
+
+	def_callbacks
+
+HouseAElevatorScript:
+	warpmod 3, TOWN_A
+	digmod 5, TOWN_A
+	end
+
+HouseAFloors:
+	elevfloor FLOOR_1F, 4, TOWN_A
+
+HouseA_MapEvents:
+	db 0, 0 ; filler
+
+	def_warp_events
+	warp_event  1,  1, TOWN_A, 1
+	warp_event  2,  1, TOWN_A, 3
+	warp_event  3,  1, TOWN_A, 5
+
+	def_coord_events
+
+	def_bg_events
+
+	def_object_events
+"""
+
+
+def _warp_fixture(tmp: Path) -> Path:
+    """The read fixture, plus the warps that make deletion interesting."""
+    root = _fixture(tmp)
+    src = root / "maps/TownA.asm"
+    src.write_text(src.read_text().replace(
+        "\tdef_warp_events\n\twarp_event  3,  5, HOUSE_A, 1\n", _TOWNA_WARPS))
+    (root / "maps/HouseA.asm").write_text(_HOUSE_A)
+    return root
+
+
+def test_warp_deletion_crosses(root: Path) -> None:
+    """The renumber/refuse triad, and the grammar proved to be data.
+
+    Prism's version of this test asserts a door whose destination was deleted
+    becomes a `dummy_warp`. The family's asserts it *refuses* — the dialect has
+    no dead door to write, and that difference is the whole reason the grammar
+    is a record rather than a constant.
+    """
+    print("\ndeleting a warp: the renumber crosses, the door goes nowhere, two refuse")
+    from pokeprism_devtools.hacks.vanilla import write as VW
+    from pokeprism_devtools.wiring import warpdel
+
+    house = root / "maps/HouseA.asm"
+    town = root / "maps/TownA.asm"
+    before_house, before_town = house.read_text(), town.read_text()
+
+    def refuse(index: int, grammar=VW.WARPS) -> str:
+        try:
+            VW.delete_warp(root, "TownA", "TOWN_A", index, grammar=grammar)
+            return ""
+        except warpdel.WarpDelError as exc:
+            return str(exc)
+
+    # -- the clean renumber: nothing names #2, so all three macros just move --- #
+    d = VW.delete_warp(root, "TownA", "TOWN_A", 1)
+    text = next(e.new_text for e in d.changes if e.path == "maps/HouseA.asm")
+    check("a warp_event that counted past the hole comes back one",
+          "warp_event  2,  1, TOWN_A, 2" in text, _warp_lines(text))
+    check("...and so does the one further down",
+          "warp_event  3,  1, TOWN_A, 4" in text, _warp_lines(text))
+    check("the warp that counted short of the hole does not move",
+          "warp_event  1,  1, TOWN_A, 1" in text)
+    check("a warpmod is renumbered too — it counts the same list",
+          "warpmod 2, TOWN_A" in text)
+    check("and an elevfloor, the macro prism has never heard of",
+          "elevfloor FLOOR_1F, 3, TOWN_A" in text)
+    check("the deletion says how many moved", d.renumbered == 4, str(d.renumbered))
+    check("nothing has been written yet",
+          house.read_text() == before_house and town.read_text() == before_town)
+
+    # -- every line the deletion did not claim is byte-identical ---------------- #
+    moved = [(a, b) for a, b in zip(before_house.split("\n"), text.split("\n"))
+             if a != b]
+    check("exactly the four counting lines changed, and nothing else",
+          len(moved) == 4, str(moved))
+
+    # -- a door to the deleted warp becomes the family's dead door -------------- #
+    # `warp_event x, y, NONE, -1` is byte-for-byte prism's `dummy_warp y, x`:
+    # GROUP_NONE and MAP_NONE are both 0, so `map_id NONE` emits `db 0, 0`.
+    dd = VW.delete_warp(root, "TownA", "TOWN_A", 0)
+    door_text = next(e.new_text for e in dd.changes if e.path == "maps/HouseA.asm")
+    check("a door leading to the deleted warp is sent nowhere, not deleted",
+          "warp_event  1,  1, NONE, -1" in door_text, _warp_lines(door_text))
+    check("...keeping its own place in HouseA's list, so nobody else moves",
+          sum(ln.strip().startswith("warp_event")
+              for ln in door_text.split("\n")) == 3)
+    check("...and its coordinates verbatim, padding and all",
+          "  1,  1, NONE" in door_text)
+    check("the deletion says so, and says what nowhere is really worth",
+          any("door to nowhere" in w and "backup warp" in w for w in dd.warnings),
+          str(dd.warnings[-1])[:100])
+
+    # -- the two macros with no dummy form ------------------------------------- #
+    check("a warpmod aimed at the deleted warp refuses",
+          "`warpmod`" in refuse(2), refuse(2)[:80])
+    check("an elevfloor aimed at it refuses too — the family's third surface",
+          "`elevfloor`" in refuse(3), refuse(3)[:80])
+
+    # -- the grammar is data: the same tree, two answers ------------------------ #
+    vanilla_text = text
+    dp = VW.delete_warp(root, "TownA", "TOWN_A", 1, grammar=VW.POLISHED_WARPS)
+    polished_text = next(e.new_text for e in dp.changes
+                         if e.path == "maps/HouseA.asm")
+    check("vanilla's grammar cannot see a digmod, so it leaves it alone",
+          "digmod 5, TOWN_A" in vanilla_text)
+    check("polished's grammar counts it, and pulls it back one",
+          "digmod 4, TOWN_A" in polished_text)
+    check("...which is the only line the two grammars disagree about",
+          sum(a != b for a, b in zip(vanilla_text.split("\n"),
+                                     polished_text.split("\n"))) == 1)
+    check("and polished warns about the table it cannot check",
+          any("grottoes.asm" in w for w in dp.warnings), str(dp.warnings))
+    check("...which vanilla, having no such table, does not",
+          not any("grottoes" in w for w in d.warnings))
+
+    # -- end to end, through the seam ------------------------------------------ #
+    s = Session(root)
+    act = s.deletion("TownA", "TOWN_A", panels.Ref("warp", ("warp", 1)))
+    check("the seam hands back an action, not a refusal",
+          "warp #2" in act.describe(), act.describe())
+    preview = s.preview(act)
+    check("the preview spans both files",
+          sorted(e.path for e in preview.edits)
+          == ["maps/HouseA.asm", "maps/TownA.asm"],
+          str([e.path for e in preview.edits]))
+    s.apply(preview)
+    check("TownA has one warp fewer",
+          sum(ln.strip().startswith("warp_event")
+              for ln in town.read_text().split("\n")) == 4)
+    check("and HouseA's counting lines followed it",
+          "warp_event  2,  1, TOWN_A, 2" in house.read_text())
+    s.undo()
+    check("undo restores both files to the byte",
+          house.read_text() == before_house and town.read_text() == before_town)
+
+
+def _warp_lines(text: str) -> str:
+    return " | ".join(ln.strip() for ln in text.split("\n")
+                      if "TOWN_A" in ln and ln.strip())
 
 
 def _refused(s: Session, label: str, const: str, ref, phrase: str) -> bool:
@@ -488,6 +657,81 @@ def test_real_tree() -> None:
           roof is not None and roof.tile_file == "gfx/tilesets/roofs/azalea.2bpp")
 
 
+def test_real_warp_deletion(root: Path, name: str, anchor: str, grammar,
+                            label: str, const: str) -> None:
+    """A warp out of a real tree, and the 2,000-odd files that must not move.
+
+    The fixture proves the rule; this proves the *scan* — that on a tree nobody
+    wrote for this test, the only lines that change are lines that count into
+    the map in question, and every one of the thousands that doesn't is
+    byte-identical.
+    """
+    if not (root / "data/maps/maps.asm").exists():
+        print(f"\n(no {name} checkout next door — skipping its real warps)")
+        return
+    print(f"\na warp comes out of the real {name}, and nothing else moves")
+    import shutil
+    from pokeprism_devtools.hacks.vanilla import write as VW
+    from pokeprism_devtools.shared.edits import apply_edits
+    from pokeprism_devtools.wiring import warpdel
+
+    with tempfile.TemporaryDirectory() as d:
+        scratch = Path(d) / name
+        shutil.copytree(root, scratch, ignore=shutil.ignore_patterns(
+            ".git", "build", "*.gbc", "*.gb", "*.o", "*.2bpp", "*.png"))
+        before = {p.relative_to(scratch).as_posix(): p.read_text(errors="replace")
+                  for p in scratch.rglob("*.asm")}
+
+        block = VW.parse_map(scratch / f"maps/{label}.asm", anchor)
+        n = len(block.lists["warp"].entries)
+        # Walk to a warp the tree lets go of: on a real map most warps are the
+        # far side of somebody's door, and refusing those is the point.
+        d_ = None
+        for i in range(n):
+            try:
+                d_ = VW.delete_warp(scratch, label, const, i, anchor, grammar)
+                break
+            except warpdel.WarpDelError:
+                continue
+        if d_ is None:
+            check(f"some warp of {label} can be deleted", False,
+                  f"all {n} refused — every one is led to, or named by a "
+                  f"macro with no dummy form")
+            return
+
+        touched = {e.path for e in d_.changes}
+        own = f"maps/{label}.asm"
+        check(f"the deletion touches {len(touched)} of {len(before)} .asm files",
+              len(touched) >= 1 and len(touched) < 40, str(sorted(touched)[:5]))
+
+        # By multiset, not by position: the splice shifts every line below it,
+        # so a line-for-line diff would call the whole tail of the cut file
+        # "changed". And the test has to read the lines that *went away* — a
+        # dead door stops naming the map, which is the entire point of it.
+        for e in d_.changes:
+            gone = Counter(before[e.path].split("\n")) - \
+                Counter(e.new_text.split("\n"))
+            claimed = [ln for ln in gone.elements() if const not in ln]
+            if e.path == own:
+                check(f"the only line to leave {own} without naming {const} "
+                      f"is the warp itself",
+                      len(claimed) == 1 and claimed[0].strip().startswith(
+                          "warp_event"), str(claimed))
+            else:
+                check(f"every line that changed in {e.path} named {const}",
+                      not claimed, str(claimed[:3]))
+
+        apply_edits(scratch, d_.changes, dry_run=False)
+        after = {p.relative_to(scratch).as_posix(): p.read_text(errors="replace")
+                 for p in scratch.rglob("*.asm")}
+        moved = {rel for rel in before if before[rel] != after.get(rel)}
+        check("no file the deletion did not claim moved by a byte",
+              moved == touched, str(sorted(moved - touched)[:5]))
+        check("and the map it cut still parses, one warp shorter",
+              len(VW.parse_map(scratch / f"maps/{label}.asm",
+                               anchor).lists["warp"].entries) == n - 1)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as d:
         root = _fixture(Path(d))
@@ -499,7 +743,18 @@ def main() -> int:
         test_texts(root)
         test_the_session_degrades_to_absence(root)
         test_deletion_crosses_the_seam(root)
+    # Its own tree: this fixture gives HouseA a map file, and the catalog test
+    # above rests on HouseA *not* having one.
+    with tempfile.TemporaryDirectory() as d:
+        test_warp_deletion_crosses(_warp_fixture(Path(d)))
     test_real_tree()
+
+    from pokeprism_devtools.hacks.vanilla import write as VW
+    test_real_warp_deletion(Path.home() / "code/ricccec/pokecrystal", "pokecrystal",
+                            "_MapEvents", VW.WARPS, "AzaleaTown", "AZALEA_TOWN")
+    test_real_warp_deletion(Path.home() / "code/ricccec/polishedcrystal",
+                            "polishedcrystal", "_MapScriptHeader",
+                            VW.POLISHED_WARPS, "AzaleaTown", "AZALEA_TOWN")
 
     print()
     if FAILED:

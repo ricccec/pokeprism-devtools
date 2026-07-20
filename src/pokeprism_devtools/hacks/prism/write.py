@@ -30,8 +30,62 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ...wiring import warpdel
+from ...wiring.warpdel import DeadDoor, WarpGrammar, WarpMacro
 from ..mount import Refused
-from . import eventheader, spritepack, trainerstats
+from . import eventheader, mapsource, spritepack, trainerstats
+
+#: How prism spells a warp reference. Two macros and no more: nothing else in
+#: `macros/` takes a warp id and `data/` does not mention warps at all, so a scan
+#: of these two is exhaustive — a claim that holds for prism and, as the family
+#: adapter's own record records, for nobody else.
+#:
+#: `dummy_warp y, x` emits `db -1, 0, 0`, and it is tempting to read that as
+#: "group 0, map 0, nowhere". It is not: `CopyWarpData` (home/map.asm:172) sees
+#: the -1 and takes the warp, the group *and* the map from `wBackupWarpNumber`,
+#: so those two zeroes are never read. A dead door lands on stale state rather
+#: than nowhere — see :class:`~...wiring.warpdel.DeadDoor`. The spelling is kept
+#: because it is what prism ships and what its maps already contain; the
+#: family's `warp_event x, y, NONE, -1` assembles to the very same bytes.
+WARPS = WarpGrammar(
+    macros=(WarpMacro("warp_def", at=2, at_map=3, door=True),
+            WarpMacro("warpmod", at=0, at_map=1)),
+    dead_door=DeadDoor("dummy_warp", keeps=(0, 1)),
+)
+
+
+def delete_warp(root: Path, map_const: str, index: int) -> warpdel.Deletion:
+    """Take warp #(index+1) out of `map_const`, and fix the whole repo behind it.
+
+    The half that is prism's — find the map file, parse its event header, count
+    its warps, splice the entry out — and then :mod:`..wiring.warpdel` with
+    prism's :data:`WARPS` grammar for the half that is every tree's. The family
+    adapter has the mirror of this function over its own parser, which is the
+    whole point of the grammar being data.
+    """
+    label = {c: l for l, c in mapsource.header_pairs(root)}.get(map_const)
+    if label is None:
+        raise warpdel.WarpDelError(f"{map_const} is not a wired map")
+
+    path = root / "maps" / f"{label}.asm"
+    try:
+        header = eventheader.parse_map(path)
+    except (eventheader.UnparseableHeader, FileNotFoundError) as exc:
+        raise warpdel.WarpDelError(
+            f"{map_const}'s event header can't be read, so its warps can't be "
+            f"counted: {exc}") from exc
+
+    warps = header.warps
+    if not 0 <= index < len(warps):
+        raise warpdel.WarpDelError(
+            f"{map_const} has {len(warps)} warp{'s' if len(warps) != 1 else ''}, "
+            f"so there is no warp #{index + 1} to delete")
+
+    y, x = warps[index].coords
+    header.remove_entry(eventheader.ListKind.WARPS, index)
+    return warpdel.delete_warp(root, map_const, index, WARPS,
+                               own_rel=f"maps/{label}.asm",
+                               spliced=header.to_text(), where=f"({y}, {x})")
 
 
 def _entry_of(header: eventheader.EventHeader, label: str,

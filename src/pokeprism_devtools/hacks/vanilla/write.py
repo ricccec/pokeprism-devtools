@@ -48,6 +48,8 @@ from pathlib import Path
 from ...shared.edits import Edit
 from ...studio import panels
 from ...studio.actions import Action, ActionError, Result
+from ...wiring import warpdel
+from ...wiring.warpdel import BlindTable, DeadDoor, WarpGrammar, WarpMacro
 from ..mount import Refused
 
 #: The four lists, in the order every map file writes them. The key is the
@@ -56,6 +58,46 @@ from ..mount import Refused
 LIST_MACROS = {"warp": "warp_event", "coord": "coord_event",
                "bg": "bg_event", "object": "object_event"}
 LIST_ORDER = tuple(LIST_MACROS)
+
+#: How the family spells a warp reference, for :mod:`...wiring.warpdel`. The
+#: survey that produced this record is the reason Phase 5 was a port and not a
+#: copy: prism's two macros are three here, and neither tree has prism's
+#: `dummy_warp`.
+#:
+#: * ``warp_event x, y, MAP, n`` — the coordinates turn and the seats move, which
+#:   is the whole reason the grammar is data.
+#: * ``warpmod n, MAP`` — the one macro the family spells exactly as prism does.
+#: * ``elevfloor FLOOR, n, MAP`` — an elevator's floor list. Prism has no such
+#:   macro; both family trees use it (14 rows in vanilla, 17 in polished), and
+#:   missing it would have left every elevator quietly off by one.
+#:
+#: The dead door took the longest to find, because the family has no
+#: `dummy_warp` and the obvious conclusion — that it therefore cannot spell one
+#: — is wrong. Both trees ``DEF GROUP_NONE`` and ``DEF MAP_NONE`` to 0, and
+#: ``map_id NONE`` emits ``db 0, 0``, so ``warp_event x, y, NONE, -1`` assembles
+#: to the very five bytes prism's ``dummy_warp y, x`` does. It is the same door
+#: to nowhere, spelled in the family's own declared constants rather than in a
+#: macro prism invented — and, as :class:`~...wiring.warpdel.DeadDoor` records,
+#: "nowhere" is a weaker promise than either dialect's comments claim.
+WARPS = WarpGrammar(
+    macros=(WarpMacro("warp_event", at=3, at_map=2, door=True),
+            WarpMacro("warpmod", at=0, at_map=1),
+            WarpMacro("elevfloor", at=1, at_map=2)),
+    dead_door=DeadDoor("warp_event", keeps=(0, 1), extra=("NONE", "-1")),
+)
+
+#: Polished's, which forks the macro set as it forks everything else: it adds
+#: `digmod` (Dig's exit, two uses), and it keeps hidden-grotto return warps in
+#: `data/` as bare numbers whose map is named nowhere on the line — a table this
+#: scan cannot see and will not guess at, so it is declared and warned about.
+POLISHED_WARPS = WarpGrammar(
+    macros=WARPS.macros + (WarpMacro("digmod", at=0, at_map=1),),
+    dead_door=WARPS.dead_door,
+    blind=(BlindTable(
+        "data/events/hidden_grottoes/grottoes.asm",
+        "each row's warp belongs to the map its HIDDENGROTTO_* constant is "
+        "named after, and a naming convention is not a reference"),),
+)
 
 _DEF_RE = re.compile(r"^\s*def_(warp|coord|bg|object)_events\b")
 _MACRO_RE = re.compile(r"^\s*(?P<macro>\w+)\s+(?P<args>.*?)\s*(?:;.*)?$")
@@ -334,18 +376,29 @@ class Writer:
     class with its head anchor, the same way its read adapter imports
     vanilla's parsers: the fork relation is real, so the code states it.
 
-    **Deletion is the write that crosses today.** It is the operation the
-    seam's whole identity story was built for — a handle resolved by handing
-    it back, the const list kept in step — and the one whose blast radius is
-    a single file. Everything else answers with honest absence: no adders,
-    no forms, no choices, and an `editor` that refuses with the reason. Each
-    of those is a declared hole in this object, not a capability the session
-    could ever misread — the protocol is `hacks/mount.py`'s docstring.
+    **Deletion is the write that crosses today**, now including warps. Removing
+    an entry is the operation the seam's whole identity story was built for — a
+    handle resolved by handing it back, the const list kept in step — and for
+    everything but a warp its blast radius is a single file. A warp's is the
+    repo, and it crosses through :data:`WARPS`: the rule and the scan live in
+    `wiring/warpdel`, this dialect's spelling of them is a record, and the one
+    thing the dialect cannot do (spell a door to nowhere) is a refusal that
+    names the doors rather than a silence.
+
+    Everything else answers with honest absence: no adders, no forms, no
+    choices, and an `editor` that refuses with the reason. Each of those is a
+    declared hole in this object, not a capability the session could ever
+    misread — the protocol is `hacks/mount.py`'s docstring.
     """
 
-    def __init__(self, root: Path, anchor: str = "_MapEvents") -> None:
+    def __init__(self, root: Path, anchor: str = "_MapEvents",
+                 grammar: WarpGrammar = WARPS) -> None:
         self.root = root
         self.anchor = anchor
+        #: Which warp macros this tree writes — the family's, or polished's
+        #: larger set. Declared by the mount beside the anchor, for the same
+        #: reason: both are forks the code states rather than sniffs.
+        self.grammar = grammar
 
     # -- what a form may offer: nothing, honestly ---------------------------- #
     def adders(self, kind: str) -> tuple:
@@ -378,13 +431,7 @@ class Writer:
 
     # -- what a selected row can do ------------------------------------------- #
     def deletion(self, label: str, const: str, ref):
-        """The action `d` would run on this row — or the reason there isn't one.
-
-        A warp is refused for the same reason prism's needs `wiring/warpdel`:
-        `warp_event x, y, MAP, N` names the destination's warp *by position*,
-        so removing one pulls every door in the repo that counted past it off
-        by a step. Saying so beats doing the easy half of it.
-        """
+        """The action `d` would run on this row — or the reason there isn't one."""
         from ..mount import Refused
         if ref.what == "map":
             raise Refused("deleting a whole map is not something this does.")
@@ -392,15 +439,13 @@ class Writer:
             raise Refused(
                 "removing a connection means rewriting the neighbour's side "
                 "too — not wired for this dialect yet.")
-        if ref.what == "warp":
-            raise Refused(
-                "removing a warp renumbers this map's warp list, and every "
-                "warp_event in the repo that names a warp here by position "
-                "would count past the hole — that bookkeeping is not wired "
-                "for this dialect yet.")
 
         block = parse_map(self.root / f"maps/{label}.asm", self.anchor)
         kind, index = _resolve(block, label, ref)
+        if ref.what == "warp":
+            return RemoveWarp(label, const, self.anchor, self.grammar,
+                              index=str(index))
+
         entry = block.lists[kind].entries[index]
         y, x = _shown_coords(entry.args)
         return Remove(label, self.anchor,
@@ -440,8 +485,78 @@ def _shown_coords(args: list[str]) -> tuple[str, str]:
     return y, x
 
 
+def delete_warp(root: Path, label: str, map_const: str, index: int,
+                anchor: str = "_MapEvents",
+                grammar: WarpGrammar = WARPS) -> warpdel.Deletion:
+    """Take warp #(index+1) out of `label`, and fix the whole repo behind it.
+
+    The mirror of prism's :func:`..prism.write.delete_warp` over the family's
+    own parser: this half is the dialect's — find the map file, splice the entry
+    out of its ``def_warp_events`` list — and :mod:`...wiring.warpdel` does the
+    half that is every tree's, from the grammar handed to it. Neither function
+    is a copy of the other; the rule they share lives in one place and each
+    tree's spelling of it is a record.
+    """
+    path = root / f"maps/{label}.asm"
+    try:
+        block = parse_map(path, anchor)
+    except (UnparseableEvents, panels.Unreadable) as exc:
+        raise warpdel.WarpDelError(
+            f"{map_const}'s event block can't be read, so its warps can't be "
+            f"counted: {exc}") from exc
+
+    warps = block.lists["warp"].entries
+    if not 0 <= index < len(warps):
+        raise warpdel.WarpDelError(
+            f"{map_const} has {len(warps)} warp{'s' if len(warps) != 1 else ''}, "
+            f"so there is no warp #{index + 1} to delete")
+
+    y, x = _shown_coords(warps[index].args)
+    block.remove_entry("warp", index)
+    return warpdel.delete_warp(root, map_const, index, grammar,
+                               own_rel=f"maps/{label}.asm",
+                               spliced=block.to_text(),
+                               where=f"({y}, {x})" if y else "")
+
+
+class RemoveWarp(Action):
+    """A warp is the one deletion whose blast radius is not one map file.
+
+    Its destination is a *position* in the destination map's warp list, so
+    every door in the repo that counted its way past this one has to be pulled
+    back a step — and in this dialect three different macros do that counting.
+    The preview shows every file that touches, which for a busy map is a dozen;
+    that is not the preview being noisy, it is the true cost of the operation.
+
+    Unlike prism's, this one can refuse *after* you have pointed at it: a door
+    that led here has nowhere to go in a dialect with no `dummy_warp`, and the
+    refusal names the doors so they can be repointed first.
+    """
+    name = "remove warp"
+    title = "Remove a warp"
+
+    def __init__(self, label: str, map_const: str, anchor: str,
+                 grammar: WarpGrammar, **values: str) -> None:
+        super().__init__(**values)
+        self.label = label
+        self.map = map_const
+        self.anchor = anchor
+        self.grammar = grammar
+
+    def describe(self) -> str:
+        return f"remove warp #{self.integer('index') + 1} from {self.map}"
+
+    def run(self, root: Path) -> Result:
+        try:
+            d = delete_warp(root, self.label, self.map, self.integer("index"),
+                            self.anchor, self.grammar)
+        except warpdel.WarpDelError as e:
+            raise ActionError(str(e)) from e
+        return Result(d.summary, d.changes, d.warnings)
+
+
 class Remove(Action):
-    """Take one entry out of a map — the family's whole write vocabulary today.
+    """Take one entry out of a map — the family's other write today.
 
     `name`/`kind`+`index` say **which** entry, and the rest only says what to
     call it on the confirm screen. A named object is found by its const at

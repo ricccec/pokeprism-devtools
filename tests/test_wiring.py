@@ -25,6 +25,7 @@ from pokeprism_devtools import maplint  # noqa: E402
 from pokeprism_devtools.maplint import rules_geometry  # noqa: E402
 from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
 from pokeprism_devtools.hacks.prism import eventheader as eh # noqa: E402
+from pokeprism_devtools.hacks.prism import write as PW  # noqa: E402
 from pokeprism_devtools.shared.edits import apply_edits  # noqa: E402
 from pokeprism_devtools.wiring import connections as C, objedit as O  # noqa: E402
 from pokeprism_devtools.wiring import mapresize as MR  # noqa: E402
@@ -529,7 +530,7 @@ def test_deleting(root: Path, before: Counter) -> None:
     # The same rule the editor rests on, one layer down: an editor that cannot
     # leave a warp alone cannot be trusted to renumber one.
     dirty = [rel for rel, was in WD._sources(root).items()
-             if WD._renumber(was, "CASTRO_FOREST", 9999) != (was, 0, [])]
+             if WD._renumber(was, "CASTRO_FOREST", 9999, PW.WARPS) != (was, 0, [])]
     check("a renumber for a warp that does not exist rewrites nothing",
           not dirty, str(dirty[:3]))
 
@@ -542,7 +543,7 @@ def test_deleting(root: Path, before: Counter) -> None:
     check("Route62's new warp points at CastroForest's last warp",
           aimed == len(was_castro), f"{aimed} vs {len(was_castro)}")
 
-    d = WD.delete_warp(root, "CASTRO_FOREST", 0)
+    d = PW.delete_warp(root, "CASTRO_FOREST", 0)
     paths = [e.path for e in d.changes]
     check("one file, one edit — even the map that is both cut and renumbered",
           len(paths) == len(set(paths)), str(paths))
@@ -563,7 +564,7 @@ def test_deleting(root: Path, before: Counter) -> None:
     # -- a door that led to the deleted warp is dummied, not deleted ------------ #
     # Deleting it would renumber *that* map's warps and cascade the problem
     # outward, one map at a time. A dead door holds its slot; the caller is told.
-    d2 = WD.delete_warp(root, "ROUTE_62", len(now_route) - 1)
+    d2 = PW.delete_warp(root, "ROUTE_62", len(now_route) - 1)
     castro_after = eh.parse_text(
         next(e.new_text for e in d2.changes if e.path == "maps/CastroForest.asm"),
         root / "maps/CastroForest.asm").warps
@@ -582,7 +583,7 @@ def test_deleting(root: Path, before: Counter) -> None:
     dyn = [i for i, e in enumerate(warps("PokecenterBackroom"))
            if e.macro == "warp_def" and eh.as_int(e.args[2]) == -1]
     check("PokecenterBackroom still has its two dynamic warps", len(dyn) == 2, str(dyn))
-    d3 = WD.delete_warp(root, "POKECENTER_BACKROOM", 1)
+    d3 = PW.delete_warp(root, "POKECENTER_BACKROOM", 1)
     after = eh.parse_text(
         next(e.new_text for e in d3.changes if e.path == "maps/PokecenterBackroom.asm"),
         root / "maps/PokecenterBackroom.asm").warps
@@ -674,7 +675,7 @@ def _refusals(root: Path) -> None:
     kept = victim.read_text()
     victim.write_text(aimed.sub(r"\1 A_CONST\3", kept, count=1))
     try:
-        WD.delete_warp(root, "CAPER_RIDGE", 0)
+        PW.delete_warp(root, "CAPER_RIDGE", 0)
         check("an unreadable warp_to refuses the whole deletion", False)
     except WD.WarpDelError as exc:
         check("an unreadable warp_to refuses the whole deletion",
@@ -687,7 +688,7 @@ def _refusals(root: Path) -> None:
     was = script.read_text()
     script.write_text(f"{was}\nCaperRidgeElevator:\n\twarpmod 1, CAPER_RIDGE\n")
     try:
-        WD.delete_warp(root, "CAPER_RIDGE", 0)
+        PW.delete_warp(root, "CAPER_RIDGE", 0)
         check("a warpmod aimed at the deleted warp refuses the deletion", False)
     except WD.WarpDelError as exc:
         check("a warpmod aimed at the deleted warp refuses the deletion",
@@ -695,7 +696,7 @@ def _refusals(root: Path) -> None:
 
     # But one that merely counted *past* it is renumbered like any other reference.
     script.write_text(f"{was}\nCaperRidgeElevator:\n\twarpmod 3, CAPER_RIDGE\n")
-    d = WD.delete_warp(root, "CAPER_RIDGE", 0)
+    d = PW.delete_warp(root, "CAPER_RIDGE", 0)
     text = next(e.new_text for e in d.changes if e.path == "maps/CaperRidge.asm")
     check("a warpmod that counted past the hole is pulled back one",
           "warpmod 2, CAPER_RIDGE" in text)

@@ -37,6 +37,30 @@ class Const:
     value: int
 
 
+def as_int(s: str) -> int | None:
+    """The number an argument denotes — decimal, `$hex`, `%binary` — or None if it
+    is a symbol or an expression.
+
+    Public because "is this the same number, written differently?" is a question
+    anyone *rewriting* an entry must ask, and `int(s, 0)` cannot answer it: rgbasm
+    spells hex `$b`, not `0xb`, and two thirds of prism's warps are written that
+    way. An editor that got this wrong would reformat the lot.
+
+    Shared rather than prism's, because it is rgbasm's syntax and not any one
+    dialect's: every gen-2 tree writes its numbers this way, so every adapter and
+    every piece of `wiring/` may read them without importing a hack to do it.
+    """
+    s = s.strip()
+    try:
+        if s.startswith("$"):
+            return int(s[1:], 16)
+        if s.startswith("%"):
+            return int(s[1:], 2)
+        return int(s, 10)
+    except ValueError:
+        return None
+
+
 _CONST_DEF_RE = re.compile(r"^\s*const_def(?:\s+(-?\d+|\$[0-9a-fA-F]+))?\s*$")
 _CONST_VALUE_RE = re.compile(r"^\s*const_value\s*=\s*(-?\d+|\$[0-9a-fA-F]+)\s*$")
 _CONST_RE = re.compile(r"^\s*const\s+([A-Za-z_][A-Za-z0-9_]*)\s*$")

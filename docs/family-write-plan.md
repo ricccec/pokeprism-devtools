@@ -18,43 +18,64 @@ phases:
 
 | Refusal today | Why it refuses | Phase |
 |---|---|---|
-| deleting a family warp | renumbers the repo; no family `warpdel` | **5** |
+| ~~deleting a family warp~~ | **done** — crosses via a declared warp grammar | ~~5~~ |
 | family `a` / `e` (adders, editors) | form machinery is still prism's | **6** |
 | family `a` on the map list (new map) | scaffold + bank placement unmodelled | **7** |
 
 Ordered smallest-risk-first, as before: 5 is a port of machinery that already
 exists for prism, 6 is the big lift, 7 stands on 6.
 
-- **Phase 5 — family warp deletion.** The surprise that makes this a port
-  rather than a research project: vanilla has `warpmod` too
-  (pokecrystal `macros/scripts/events.asm:390`), so the family has the same
-  two-surface story `wiring/warpdel.py` proves for prism — a warp is indexed
-  by `warp_event`'s last argument (a door on some map arriving here) and by
-  `warpmod` (a script re-pointing a dummy warp), and nothing else. The
-  renumber rule is dialect-free (`n > k → n−1`; `n == k` → the door leads
-  nowhere, told by name; `n < k` untouched; unreadable → refuse, naming the
-  line). The *grammar* is not: `warp_def y, x, n, MAP` vs
-  `warp_event x, y, MAP, n` — the argument seats move and the coordinates
-  turn.
+**Phase 5 is done, and the survey it opened with is why it was worth doing that
+way.** Three of the assumptions the plan below inherited from
+`wiring/warpdel`'s docstring turned out to be false, and each one would have
+been a silent corruption:
 
-  Three moves. **First the survey**, per family tree, because polished forks
-  macros freely: confirm the two surfaces are the whole surface in vanilla
-  *and* polished (grep the macro files the way the feasibility doc counted
-  maps), and find each tree's dead-door idiom — prism writes `dummy_warp`,
-  never a bare `-1`, for reasons its docstring argues; the family's
-  equivalent must be found, not assumed. **Then the generalization**:
-  `wiring/warpdel` keeps the rule and the repo scan; the adapter hands it a
-  declared *warp grammar* record (macro name, which seat is the warp number,
-  which is the map, the dead-door spelling) — grammar crosses the seam as
-  data, `wiring/` stays hack-blind, and prism's grammar becomes the first
-  record instead of the hard-coded case. **Then the writer**: the family
-  `Writer.deletion` stops refusing `"warp"` and returns a `RemoveWarp`-shaped
-  action; the refusal sentence about renumbering comes out of the code and
-  this row comes out of the table above. Tests mirror prism's: fixture trees
-  for the renumber/dead-door/refuse triad, then the real trees — delete a
-  warp, assert every line the deletion did not claim is byte-identical, and
-  undo restores to the byte. Connection deletion is *not* this phase: the
-  neighbour's-side refusal stands.
+* **"Two macros are the whole surface."** They are prism's whole surface, not
+  the family's. The family also counts warps in `elevfloor FLOOR, n, MAP` (14
+  rows in vanilla, 17 in polished), and polished adds `digmod n, MAP`. Missing
+  `elevfloor` would have left every elevator in both trees quietly off by one.
+* **"`data/` does not mention warps."** True of prism and vanilla. Polished
+  keeps hidden-grotto return warps in `data/events/hidden_grottoes/grottoes.asm`
+  as bare numbers whose map is named nowhere on the line — only inferable from
+  the naming convention on a constant in another file. That is not a reference
+  a scan can follow, so it is declared as a `BlindTable` and every polished
+  deletion warns, naming it. A guess would have been worse than a warning.
+* **"`dummy_warp` means group 0, map 0, *nowhere*."** It does not, in either
+  dialect. `CopyWarpData` (pokecrystal `home/map.asm:331`, prism
+  `home/map.asm:172` — the same code) sees `warp_to == -1` and takes the warp
+  number, the group **and** the map from `wBackupWarpNumber`; prism's trailing
+  `0, 0` is never read. A dead door lands on stale state, not nowhere, and
+  neither dialect has an encoding for nowhere at all. Prism's spelling is kept
+  because it is what ships, and its docstring now says what it actually does.
+
+The family's dead door therefore had to be *found*, exactly as this plan
+insisted — and it exists: both trees `DEF GROUP_NONE` and `DEF MAP_NONE` to 0,
+so `warp_event x, y, NONE, -1` assembles to the very bytes `dummy_warp` does.
+Verified with `rgbasm` rather than by reading macros: `07 04 ff 00 00`. Had we
+concluded "no `dummy_warp` macro, therefore no dead door", family warp deletion
+would have refused on **all 8** of AzaleaTown's warps — gen-2 warps are paired,
+so every town warp is some building's exit destination — and the phase would
+have shipped a capability nobody could use.
+
+What crossed: `wiring/warpdel` keeps the rule and the repo scan and knows no
+hack's name; the grammar (macros, seats, dead-door spelling, blind tables) is a
+`WarpGrammar` record each adapter declares, with prism's now the first record
+rather than the hard-coded case. `as_int` moved to `shared/` — reading an
+rgbasm number is rgbasm's business, not prism's — which was the last thing
+`wiring/` imported a hack for. Tested on fixtures for the renumber / dead-door /
+refuse triad, and on both real trees: delete a warp, and every line the deletion
+did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
+
+- **Phase 5 — family warp deletion. Done**, in the three moves it planned —
+  survey, generalization, writer — with the survey's findings recorded above,
+  because it found more than it expected to. The renumber rule was
+  dialect-free as predicted (`n > k → n−1`; `n == k` → the door goes nowhere,
+  told by name; `n < k` untouched; unreadable → refuse, naming the line); the
+  grammar was not, and is now data. What did *not* generalize is the
+  refusal for a macro with no dead form: `warpmod`, `elevfloor` and `digmod`
+  aimed at the deleted warp still refuse, naming the lines, because there is
+  no dummy form of any of them. Connection deletion was not this phase and is
+  not: the neighbour's-side refusal stands.
 
 - **Phase 6 — family adders and editors.** The mechanics are done
   (`EventBlock.add_entry` / `replace_entry`); what is missing is everything
