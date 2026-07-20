@@ -29,13 +29,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..hacks.prism.actions import AddWarp, Connect
 from ..hacks.prism.eventflags import FlagError
 from ..hacks.prism.trainerparty import TrainerPartyError
 from ..wiring import mapedit, objedit, props, warps
 from ..wiring.scaffold import ScaffoldError
 from ..wiring.text import TextError
 from .actions import (FISHGROUPS, LANDMARKS, MAPS, MUSIC, PERMISSIONS, TILESETS,
-                      TIMES, Action, ActionError, AddWarp, Connect, Field, Result)
+                      TIMES, Action, ActionError, Field, Result)
 from .content import (BOULDER, HIDDEN, ITEMBALL, ROCK, TMHM, TREE, AddNpc,
                       AddProp, AddSignpost, AddTrainer, _Placed)
 
