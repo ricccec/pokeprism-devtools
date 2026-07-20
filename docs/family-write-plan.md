@@ -297,7 +297,7 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   | | scripts | blocks |
   |---|---|---|
   | vanilla | 25 `Map Scripts N` buckets, all 25 pinned | 3 `Map Blocks N` buckets, all 3 pinned |
-  | polished | 119 thematic sections, 11 pinned | 436 sections, one per map, none pinned |
+  | polished | 119 thematic sections, 9 pinned | 436 sections, one per map, none pinned |
 
   So there are three placement *shapes*, not two: prism **pins a bank** (or
   floats for `prism-mapfit`), vanilla **chooses an existing bucket** — twice,
@@ -312,6 +312,28 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   `data/maps/{maps,blocks,attributes,scripts}.asm` and
   `constants/map_constants.asm` in both trees, plus `scenes.asm` in vanilla
   only. Placement is the entire fork.
+
+  **7b, first move — placement modelled and measured.** `wiring/placement.py`
+  holds the three shapes as `PIN`/`JOIN`/`MINT` plus the two readers they stand
+  on, and `hacks/vanilla/newmap.py` declares the family's answers. Re-measuring
+  corrected this section twice. The **9** above was **11**: eleven section names
+  in polished's `layout.link` contain the word "Scripts", and two of them
+  (`Phone Scripts`, `Phone Scripts 2`) are not map script sections at all — the
+  honest number intersects the link script with `data/maps/scripts.asm`. And
+  "both trees ship a `layout.link`" understated it: the link script is the
+  **only** place either tree records a bank. All 583 `SECTION` lines in the
+  four map data files are a bare `ROMX` — as, in fact, are all 3,840 in both
+  trees — so a reader that looked at the asm would conclude nothing is pinned
+  anywhere, and would be wrong about all 28 of vanilla's buckets.
+
+  The refusal this move adds: a `JOIN` tree will not mint. A fourth
+  `Map Blocks 4` is spelled like the three sections it is named after and does
+  not behave like them, because `layout.link` does not name it — so it is
+  refused with the list of what may be joined instead, rather than created.
+  What stays a *note* and not a check is bank headroom: joining a pinned bucket
+  can overflow that bank, and knowing whether it will means measuring the
+  section, which means building. That is the same reason `studio/newmap.py`
+  declines to pack a bank inside a modal dialog.
 
 What this plan still does not claim, and calls absences rather than debts:
 `plays` for family trees (build-and-replay is engine wiring, a different
