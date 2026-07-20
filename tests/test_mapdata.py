@@ -242,8 +242,20 @@ def test_real_repo() -> None:
     check("EVENT_1 == 1 (the file's own naming confirms the counter origin)",
           ef.by_name.get("EVENT_1") == 1, str(ef.by_name.get("EVENT_1")))
     check("EVENT_7 == 7", ef.by_name.get("EVENT_7") == 7)
-    check("the 823 reserved skip slots are found", ef.free_slots == 823,
-          str(ef.free_slots))
+    # Not a pinned count. `free_slots` was asserted == 823 here, which is the
+    # number of unallocated `skip`s the repo happened to have the day this was
+    # written — and allocating a flag is the most ordinary thing an author
+    # does, so the assertion failed on the tree's own progress rather than on
+    # a bug (16 skips became named Mt. Ember flags, and the check said 807).
+    # What the parser is actually answerable for is the accounting: every slot
+    # is either a named flag or a skip, and the counter starts at start_value,
+    # so the three have to close on NUM_EVENTS. That holds however many are
+    # allocated, and it fails the moment `skips` are miscounted — which is the
+    # bug the pinned number was standing in for.
+    check("every slot is accounted for: flags + skips + origin == NUM_EVENTS",
+          len(ef.flags) + ef.free_slots + ef.start_value == ef.num_events,
+          f"{len(ef.flags)} + {ef.free_slots} + {ef.start_value} "
+          f"!= {ef.num_events}")
     check("NUM_EVENTS is declared in the file", eventflags.declares_num_events(ef.lines))
     check("round-trip byte-identical",
           ef.to_text() == (root / "constants/event_flags.asm").read_text())
