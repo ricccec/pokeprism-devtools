@@ -23,19 +23,30 @@ model of one.
 Each action declares its fields, so the TUI builds its own form and its own
 autocomplete from that declaration and knows nothing about NPCs or connections.
 
-Here: the base class, and the two actions that wire one map to *another*. The
-ones that put something inside a single map are in :mod:`.content`, and adding a
-whole map is in :mod:`.newmap`.
+Here: **the base, and nothing but the base.** The rule, stated once because
+every adapter depends on it — *adapters import this module; this module imports
+no adapter.* It held loosely until the family needed to write: a family action
+importing `Action` used to drag prism in through the side door, because the two
+map-to-map actions living here reached into `wiring/`, which is prism's. They
+have moved home to :mod:`..hacks.prism.actions`; the actions that put something
+inside one prism map are in :mod:`.content`, and adding a whole prism map is in
+:mod:`.newmap`.
+
+What stays is what every hack can say: the field vocabulary, the three records a
+form is built from, and the base class. The vocabulary in particular is *names*,
+not answers — `choices=ITEMS` says which sort of thing a box wants, and whether
+this tree can enumerate that sort is the write adapter's `choices()` to answer.
+A hack with no fruit trees answers `[]` for :data:`TREES` and the field degrades
+to free text, which is why naming a kind here commits nobody to having one.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
-from ..hacks.prism.blockdata import BlockData
 from ..shared.edits import Edit
-from ..wiring import connections, scaffold, warps
 from .panels import Ref
 
 #: A field's `choices` names a set of constants the session can enumerate; the
@@ -199,12 +210,20 @@ class Action:
         """
         return None
 
-    def sketch(self, root: Path) -> BlockData | None:
+    def sketch(self, root: Path) -> Any:
         """The blocks this action would put on the grid, from a half-filled form.
 
         Only :class:`~.newmap.NewMap` has anything to draw: it is the one action
         whose subject doesn't exist yet, so it is the one action you cannot check
         by looking at the map. Everything else acts *on* a map already on screen.
+
+        Untyped on purpose, and it is the one hole the carve leaves. The only
+        caller is the *read* adapter of the same hack that shipped the action
+        (`hacks/prism/read.Reader.sketch`), which turns what comes back into a
+        neutral `panels.Blocks` before the studio sees it. So the value is one
+        adapter handing itself its own record, and naming prism's `BlockData`
+        here to say so would be the base importing an adapter to describe a
+        journey it is not on.
 
         Raises :class:`ActionError` for a form that isn't ready, which is not a
         failure — it is what the panel says instead of a picture.
@@ -248,75 +267,3 @@ class Action:
         if not pages:
             raise ActionError(f"{name} can't be empty — the script has to say something")
         return pages
-
-    def obj(self) -> scaffold.Object:
-        y, x = self.coords()
-        return scaffold.Object(
-            sprite=self.text("sprite"), y=y, x=x,
-            movement=self.text("movement") or "SPRITEMOVEDATA_STANDING_DOWN",
-            palette=self.text("palette") or "PAL_OW_RED",
-        )
-
-
-# --------------------------------------------------------------------------- #
-# wiring                                                                      #
-# --------------------------------------------------------------------------- #
-
-class Connect(Action):
-    name = "connect"
-    title = "Connect a neighbouring map"
-    FIELDS = (
-        Field("b", "Neighbour", choices=MAPS, help="the map on the other side"),
-        Field("direction", "Direction", choices=DIRECTIONS,
-              help="which side of THIS map the neighbour sits on"),
-        Field("offset", "Offset", kind="int", default="0",
-              help="how far the neighbour slides along the shared edge, in blocks"),
-    )
-
-    def __init__(self, a: str, **values: str) -> None:
-        super().__init__(**values)
-        self.a = a
-
-    def describe(self) -> str:
-        return (f"connect {self.text('b')} {self.text('direction')} of {self.a} "
-                f"at offset {self.text('offset')}")
-
-    def run(self, root: Path) -> Result:
-        try:
-            edit, conns = connections.connect(
-                root, self.a, self.text("direction"), self.text("b"), self.integer("offset"))
-        except connections.WiringError as e:
-            raise ActionError(str(e)) from e
-        return Result(edit.detail, [edit] if edit.changed else [],
-                      [] if edit.changed else ["already connected — nothing to do"])
-
-
-class AddWarp(Action):
-    name = "warp"
-    title = "Add a warp (both ways)"
-    FIELDS = (
-        Field("y", "Y here", kind="int", help="where you step in on THIS map"),
-        Field("x", "X here", kind="int"),
-        Field("b", "Destination", choices=MAPS),
-        Field("by", "Y there", kind="int", help="where you come out"),
-        Field("bx", "X there", kind="int"),
-    )
-
-    def __init__(self, a: str, **values: str) -> None:
-        super().__init__(**values)
-        self.a = a
-
-    def describe(self) -> str:
-        return (f"warp {self.a} ({self.text('y')}, {self.text('x')}) <-> "
-                f"{self.text('b')} ({self.text('by')}, {self.text('bx')})")
-
-    def run(self, root: Path) -> Result:
-        try:
-            edits, (wa, wb) = warps.add_paired_warp(
-                root, self.a, self.coords(), self.text("b"), self.coords("by", "bx"))
-        except warps.WarpError as e:
-            raise ActionError(str(e)) from e
-        return Result(
-            f"{self.a} warp #{wa.index} <-> {self.text('b')} warp #{wb.index}",
-            [e for e in edits if e.changed],
-        )

@@ -623,6 +623,131 @@ def _refused(s: Session, label: str, const: str, ref, phrase: str) -> bool:
 # the real tree, when it is around                                            #
 # --------------------------------------------------------------------------- #
 
+def test_the_base_imports_no_adapter() -> None:
+    """The rule Phase 6 was carved for: adapters import the base, the base
+    imports no adapter.
+
+    Asserted statically, over the module's own import lines, because the
+    runtime version of this question cannot be asked — importing
+    `studio.actions` runs `studio/__init__`, which imports `session`, which
+    imports `maplint`, which is written against prism. That chain is real and
+    predates this phase; what the carve fixed is the *direct* one, and a static
+    check is what distinguishes them.
+    """
+    import ast
+    print("\nthe neutral base stays neutral")
+    src = Path(__file__).resolve().parent.parent / "src/pokeprism_devtools"
+    tree = ast.parse((src / "studio/actions.py").read_text())
+    deps = []
+    for n in ast.walk(tree):
+        if isinstance(n, ast.ImportFrom):
+            deps.append("." * n.level + (n.module or ""))
+        elif isinstance(n, ast.Import):
+            deps += [a.name for a in n.names]
+    bad = [d for d in deps if "hacks" in d or "wiring" in d]
+    check("studio/actions.py imports no adapter and no wiring", not bad, str(bad))
+    check("it still exports what a family action needs",
+          all(hasattr(__import__(
+              "pokeprism_devtools.studio.actions", fromlist=["x"]), n)
+              for n in ("Action", "ActionError", "Field", "Result", "ITEMS")))
+
+
+def test_reading_a_declared_const_set() -> None:
+    """`ConstSet` over the four spellings a gen-2 tree actually uses."""
+    from pokeprism_devtools.shared.constants import ConstSet, read_set
+    print("\na declared constant set is read in whatever way it is spelled")
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "constants").mkdir()
+        (root / "constants/s.asm").write_text(
+            "\tconst_def\n"
+            "\tconst PAL_NPC_RED   ; 0\n"
+            "\tconst PAL_NPC_BLUE  ; 1\n"
+            "\tconst OTHER_THING\n"
+            "DEF PAL_NPC_DEFAULT EQU 0\n"
+            "MACRO ow_npc_pal_const\n"
+            "\tconst PAL_NPC_\\1\n"
+            "ENDM\n"
+            "\tow_npc_pal_const GREEN\n"
+            "\tow_npc_pal_const YELLOW\n"
+            "PURGE PAL_NPC_YELLOW\n")
+
+        plain = read_set(root, ConstSet("constants/s.asm", "PAL_NPC_"))
+        check("`const` lines are read, and the prefix filters",
+              plain == ("PAL_NPC_BLUE", "PAL_NPC_DEFAULT", "PAL_NPC_RED"), str(plain))
+
+        viamacro = read_set(root, ConstSet("constants/s.asm", "PAL_NPC_",
+                                           macro="ow_npc_pal_const"))
+        check("a macro's argument becomes a name, prefix pasted on",
+              "PAL_NPC_GREEN" in viamacro, str(viamacro))
+        check("and the longhand member survives alongside it — the union is "
+              "what polished's PAL_NPC_DEFAULT needs",
+              "PAL_NPC_DEFAULT" in viamacro)
+        check("a PURGEd name is not offered, in either mode",
+              "PAL_NPC_YELLOW" not in viamacro and "PAL_NPC_YELLOW" not in plain)
+        check("the macro's own body is not mistaken for a definition",
+              not any(n.rstrip("_").endswith("PAL_NPC") or n == "PAL_NPC_"
+                      for n in viamacro), str(viamacro))
+        check("a file that isn't there is an empty set, not a crash",
+              read_set(root, ConstSet("constants/nope.asm")) == ())
+
+
+def test_real_choices(root: Path, name: str) -> None:
+    """What the family offers, checked against what its maps actually use.
+
+    The assertion that matters, and the one that caught a wrong prefix twice:
+    every constant a real map file writes must be a constant the form would
+    have offered. A set read from the wrong file, or under the prefix the tree
+    *defines* rather than the one it *uses*, still returns a plausible list —
+    it just has none of the right names in it, and nothing but this comparison
+    says so.
+    """
+    import re
+    if not (root / "data/maps/maps.asm").exists():
+        print(f"\n(no {name} checkout next door — skipping its choices)")
+        return
+    print(f"\n{name}: every constant its maps use is a constant it offers")
+    from pokeprism_devtools.studio import actions
+
+    hack = hackmount.mount(root)
+    consts = tuple(hack.reads.maps().values())
+    patterns = {
+        actions.SPRITES:   r"\bSPRITE_[A-Z0-9_]+\b",
+        actions.MOVEMENTS: r"\bSPRITEMOVEDATA_[A-Z0-9_]+\b",
+        actions.PALETTES:  r"\bPAL_NPC_[A-Z0-9_]+\b",
+        actions.FACINGS:   r"\bBGEVENT_[A-Z0-9_]+\b",
+        actions.FLAGS:     r"\bEVENT_[A-Z0-9_]+\b",
+    }
+    used: dict[str, set[str]] = {k: set() for k in patterns}
+    for f in (root / "maps").glob("*.asm"):
+        for line in f.read_text(errors="replace").split("\n"):
+            s = line.strip()
+            if not s.startswith(("object_event", "bg_event", "coord_event",
+                                 "warp_event")):
+                continue
+            for kind, pat in patterns.items():
+                used[kind] |= set(re.findall(pat, s))
+
+    for kind, seen in used.items():
+        offered = set(hack.writes.choices(kind, consts))
+        missing = sorted(seen - offered)
+        check(f"every {kind[:-1] if kind.endswith('s') else kind} in use is offered",
+              not missing and bool(seen),
+              f"{len(seen)} used, {len(offered)} offered"
+              + (f", MISSING {missing[:5]}" if missing else ""))
+
+    check("maps are offered from the catalog it was handed",
+          hack.writes.choices(actions.MAPS, consts) == list(consts))
+    check("a kind this dialect cannot enumerate is empty, not invented",
+          hack.writes.choices(actions.PARTIES, consts) == []
+          and hack.writes.choices(actions.CLASSES, consts) == [])
+    hack.writes.warm()
+    hack.writes.forget()
+    check("warm and forget both run, and forget really drops the cache",
+          hack.writes.choices(actions.SPRITES, consts) == sorted(
+              set(hack.writes.choices(actions.SPRITES, consts))))
+
+
 def test_real_tree() -> None:
     root = Path.home() / "code/ricccec/pokecrystal"
     if not (root / "data/maps/maps.asm").exists():
@@ -747,7 +872,12 @@ def main() -> int:
     # above rests on HouseA *not* having one.
     with tempfile.TemporaryDirectory() as d:
         test_warp_deletion_crosses(_warp_fixture(Path(d)))
+    test_the_base_imports_no_adapter()
+    test_reading_a_declared_const_set()
     test_real_tree()
+    test_real_choices(Path.home() / "code/ricccec/pokecrystal", "pokecrystal")
+    test_real_choices(Path.home() / "code/ricccec/polishedcrystal",
+                      "polishedcrystal")
 
     from pokeprism_devtools.hacks.vanilla import write as VW
     test_real_warp_deletion(Path.home() / "code/ricccec/pokecrystal", "pokecrystal",

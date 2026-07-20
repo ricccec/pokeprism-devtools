@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -59,6 +60,109 @@ def as_int(s: str) -> int | None:
         return int(s, 10)
     except ValueError:
         return None
+
+
+#: `const NAME`, `NAME EQU x`, `NAME = x`, `NAME EQUS "…"` — every way a name is
+#: bound at file scope. Values are irrelevant to :func:`names`; only existence is.
+_NAME_RE = re.compile(r"^\s*const\s+([A-Za-z_]\w*)\s*(?:;.*)?$")
+#: The optional `DEF` is modern rgbds and is not decoration: polished writes
+#: `DEF PAL_NPC_DEFAULT EQU 0` where prism writes `NAME EQU 0`, so without it a
+#: real constant goes unread. Still anchored hard at column zero, because these
+#: are *file-scope* bindings — the same spelling indented is a macro body, where
+#: the name is `PAL_NPC_\1` and reading it yields the fragment `PAL_NPC_`.
+_DEF_RE = re.compile(r"^(?:DEF\s+)?([A-Za-z_]\w*)\s+(?:EQU|EQUS|=)\s")
+
+
+@dataclass(frozen=True)
+class ConstSet:
+    """Where one set of constants lives, and how this tree spells it.
+
+    Declared by each write adapter, read by :func:`read_set`, so that "which
+    file, which prefix, which spelling" crosses the seam as data — the same
+    shape `wiring/warpdel.WarpGrammar` takes, and for the same reason.
+
+    `macro` is the part a survey had to find rather than assume. Most trees
+    write a set as plain `const PAL_OW_RED` lines. Polished writes its
+    overworld palettes as `ow_npc_pal_const RED`, a macro that pastes the
+    prefix on at assembly time — so the names *do not appear in the source at
+    all*, and a scan for `const PAL_OW_` finds only the macro's own body and
+    reports an empty set with a straight face. That is the worst kind of wrong
+    here: an empty list is indistinguishable from "this field is free text", so
+    the palette box would have quietly stopped suggesting anything on exactly
+    one of the three trees.
+    """
+    rel: str
+    prefix: str = ""
+    #: A macro whose single argument names the constant, `prefix` pasted on.
+    #: Empty means the names are written out as `const` lines.
+    macro: str = ""
+
+
+@lru_cache(maxsize=64)
+def read_set(root: Path, cs: ConstSet) -> tuple[str, ...]:
+    """Every name in one declared set, sorted. Empty for a file that isn't there,
+    which is an answer — a tree without the file has none of that thing."""
+    path = root / cs.rel
+    if not path.exists():
+        return ()
+    found = {n for n in names(root, cs.rel) if n.startswith(cs.prefix)}
+    if cs.macro:
+        # Union, not replacement: a file that generates most of a set through a
+        # macro may still spell one member out longhand, and polished's
+        # `DEF PAL_NPC_DEFAULT EQU 0` is exactly that member.
+        pat = re.compile(rf"^\s*{re.escape(cs.macro)}\s+([A-Za-z_]\w*)\s*(?:;.*)?$")
+        found |= {cs.prefix + m.group(1)
+                  for line in path.read_text(errors="replace").split("\n")
+                  if (m := pat.match(line))}
+    return tuple(sorted(found - _purged(path)))
+
+
+def _purged(path: Path) -> frozenset[str]:
+    """Names this file hands back to the assembler with `PURGE`.
+
+    A small thing that would have shipped a wrong list: polished's
+    `sprite_data_constants.asm` ends with `PURGE PAL_OW_YELLOW, PAL_OW_WHITE`,
+    so those two symbols do not survive the file that appears to define them.
+    Offering a constant the assembler will then reject is the one failure
+    `studio/offers.py` calls worse than offering no list at all.
+    """
+    out: set[str] = set()
+    for line in path.read_text(errors="replace").split("\n"):
+        if m := re.match(r"^\s*PURGE\s+(.+?)\s*(?:;.*)?$", line):
+            out |= {n.strip() for n in m.group(1).split(",") if n.strip()}
+    return frozenset(out)
+
+
+@lru_cache(maxsize=32)
+def names(root: Path, rel: str) -> frozenset[str]:
+    """Every constant name defined in one constants file.
+
+    Shared rather than any adapter's, for the reason `as_int` is: this is rgbasm
+    binding a name at file scope, and every gen-2 tree does it the same way. What
+    differs per tree is *which file and which prefix*, which is why those are a
+    :class:`ConstSet` an adapter declares and not an argument baked in here.
+    """
+    path = root / rel
+    if not path.exists():
+        return frozenset()
+
+    out: set[str] = set()
+    for line in path.read_text(errors="replace").split("\n"):
+        if m := _NAME_RE.match(line):
+            out.add(m.group(1))
+        elif m := _DEF_RE.match(line):
+            out.add(m.group(1))
+    return frozenset(out)
+
+
+def with_prefix(root: Path, rel: str, prefix: str) -> frozenset[str]:
+    return frozenset(n for n in names(root, rel) if n.startswith(prefix))
+
+
+def suggest(name: str, known: frozenset[str], limit: int = 3) -> list[str]:
+    """The closest few real names, for an error message that helps."""
+    import difflib
+    return difflib.get_close_matches(name, known, n=limit, cutoff=0.6)
 
 
 _CONST_DEF_RE = re.compile(r"^\s*const_def(?:\s+(-?\d+|\$[0-9a-fA-F]+))?\s*$")

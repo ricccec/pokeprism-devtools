@@ -58,6 +58,22 @@ class _Placed(Action):
             notes.append(f"allocated {s.flag}")
         return Result(s.summary, s.changes, notes)
 
+    def obj(self) -> scaffold.Object:
+        """The four fields every body on a prism map has, out of the form.
+
+        Down here rather than on `Action` because a `scaffold.Object` is prism's
+        `person_event`, defaults and all: the family's `object_event` takes a
+        different count of arguments in a different order, and polished's takes
+        twelve. Every caller descends from this class, so the move cost nothing
+        and bought the base its freedom from `wiring/`.
+        """
+        y, x = self.coords()
+        return scaffold.Object(
+            sprite=self.text("sprite"), y=y, x=x,
+            movement=self.text("movement") or "SPRITEMOVEDATA_STANDING_DOWN",
+            palette=self.text("palette") or "PAL_OW_RED",
+        )
+
 
 _BODY = (
     Field("sprite", "Sprite", choices=SPRITES, default="SPRITE_GRAMPS"),

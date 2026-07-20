@@ -45,8 +45,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from ...shared.constants import ConstSet, read_set
 from ...shared.edits import Edit
-from ...studio import panels
+from ...studio import actions, panels
 from ...studio.actions import Action, ActionError, Result
 from ...wiring import warpdel
 from ...wiring.warpdel import BlindTable, DeadDoor, WarpGrammar, WarpMacro
@@ -98,6 +99,49 @@ POLISHED_WARPS = WarpGrammar(
         "each row's warp belongs to the map its HIDDENGROTTO_* constant is "
         "named after, and a naming convention is not a reference"),),
 )
+
+#: What a family form may offer, by the field vocabulary `studio/actions.py`
+#: names. The keys are field *kinds*, not answers: naming one here says this
+#: dialect can enumerate that sort of thing, and a kind absent from this map
+#: answers `[]`, which the form renders as a plain text box.
+#:
+#: Both trees keep all six in the same six files — the survey checked rather
+#: than assumed, since Phase 5's `elevfloor` was exactly this question answered
+#: wrong. The event flags are the one set that is a *suggestion* rather than a
+#: bound: see `studio/offers.py` on why holding you to the list would mean the
+#: only NPCs you could gate are the gated ones.
+CHOICES = {
+    actions.SPRITES: ConstSet("constants/sprite_constants.asm", "SPRITE_"),
+    actions.MOVEMENTS: ConstSet("constants/map_object_constants.asm",
+                                "SPRITEMOVEDATA_"),
+    #: `PAL_NPC_*`, and the prefix is the whole finding. Prism's objects wear
+    #: `PAL_OW_RED`; both family trees define a `PAL_OW_*` set *and never put
+    #: one on an object_event* — all 1,466 vanilla and 2,161 polished object
+    #: lines name a `PAL_NPC_*`. Offering the `PAL_OW_` set would have been a
+    #: palette field that suggested only constants the maps never use.
+    actions.PALETTES: ConstSet("constants/sprite_data_constants.asm", "PAL_NPC_"),
+    actions.ITEMS: ConstSet("constants/item_constants.asm"),
+    actions.FLAGS: ConstSet("constants/event_flags.asm", "EVENT_"),
+    #: The family's signpost kinds. Prism calls these `SIGNPOST_*` and the
+    #: studio's field is still named `facings` after them; the family says
+    #: `BGEVENT_*` and neither tree has ever heard of the other's spelling.
+    actions.FACINGS: ConstSet("constants/script_constants.asm", "BGEVENT_"),
+}
+
+#: Polished's, forking in exactly one entry — and that entry is why `ConstSet`
+#: carries a `macro` field at all. Vanilla writes `const PAL_NPC_RED`; polished
+#: writes `ow_npc_pal_const RED`, one macro that defines both the `PAL_OW_` and
+#: the `PAL_NPC_` name and lets rgbasm paste the prefix on, so neither appears
+#: in the source. Reading polished with vanilla's record does not fail loudly —
+#: it returns **one** palette, `PAL_NPC_DEFAULT`, the only member written out
+#: longhand. A near-empty list is indistinguishable from "this field is free
+#: text", so the palette box would have quietly stopped suggesting anything on
+#: exactly one tree out of three. Measured, not assumed.
+POLISHED_CHOICES = {
+    **CHOICES,
+    actions.PALETTES: ConstSet("constants/sprite_data_constants.asm", "PAL_NPC_",
+                               macro="ow_npc_pal_const"),
+}
 
 _DEF_RE = re.compile(r"^\s*def_(warp|coord|bg|object)_events\b")
 _MACRO_RE = re.compile(r"^\s*(?P<macro>\w+)\s+(?P<args>.*?)\s*(?:;.*)?$")
@@ -392,15 +436,20 @@ class Writer:
     """
 
     def __init__(self, root: Path, anchor: str = "_MapEvents",
-                 grammar: WarpGrammar = WARPS) -> None:
+                 grammar: WarpGrammar = WARPS,
+                 set_of: dict[str, ConstSet] | None = None) -> None:
         self.root = root
         self.anchor = anchor
         #: Which warp macros this tree writes — the family's, or polished's
         #: larger set. Declared by the mount beside the anchor, for the same
         #: reason: both are forks the code states rather than sniffs.
         self.grammar = grammar
+        #: Where this tree keeps each constant set a form may offer. The third
+        #: fork the mount declares, and the third one a survey found rather
+        #: than a rule predicted — see :data:`POLISHED_CHOICES`.
+        self.set_of = CHOICES if set_of is None else set_of
 
-    # -- what a form may offer: nothing, honestly ---------------------------- #
+    # -- what a form may offer ----------------------------------------------- #
     def adders(self, kind: str) -> tuple:
         return ()
 
@@ -409,20 +458,62 @@ class Writer:
 
     def choices(self, kind: str, map_consts: tuple[str, ...],
                 values: dict[str, str] | None = None) -> list[str]:
-        return []
+        """The constants a family field of this kind will accept.
+
+        An unknown kind is `[]` — free text, not an error — and that is the
+        honest answer for most of the vocabulary here rather than a stub. This
+        tree has no trainer classes the studio can roster (`PARTIES`,
+        `CLASSES`), and its TMs are pasted together by `add_tm` at assembly
+        time and appear nowhere in the source (`TMHMS`), which is the same trap
+        prism's `studio/offers.py` documents. The map-header enums
+        (`TILESETS`, `LANDMARKS`, `MUSIC`) exist in these trees and stay unread
+        because nothing family-side asks yet: they belong to the new-map form,
+        which is Phase 7.
+        """
+        if kind == actions.MAPS:
+            return list(map_consts)
+        if (cs := self.set_of.get(kind)) is None:
+            return []
+        return list(read_set(self.root, cs))
 
     def follows(self, action, changed: str,
                 values: dict[str, str]) -> dict[str, str]:
+        """Nothing follows from anything here, and that is a measurement.
+
+        Prism's one rule fills the sprite and palette a trainer class usually
+        wears, and it does that by *counting* every trainer in the repo — see
+        `hacks/prism/trainerstats.py`, which exists because no rule was ever
+        going to produce `SPRITE_BUENA` for a `SKIER`. The family's forms have
+        no class field to hang that off, so there is nothing to suggest, and an
+        invented suggestion would be worse than an empty one.
+        """
         return {}
 
     def sprite_hint(self, map_const: str, sprite: str) -> str:
+        """No hint, honestly.
+
+        Prism answers this with two facts, and the family can supply neither.
+        *Who wears this sprite* is counted off prism's trainer tables. *Whether
+        they can walk here* is `maplint`'s VRAM-table measurement, and the
+        linter is written against prism — `Hack.ctx` is None for these trees,
+        which is the same absence the Diagnostics pane already renders. A hint
+        assembled from half the facts would read as authoritative, so the field
+        gets no hint line at all rather than a misleading one.
+        """
         return ""
 
     def warm(self) -> None:
-        pass
+        """Read the constant sets off the UI thread, so the first form to open
+        does not pay for 2,254 event flags while you look at an empty box."""
+        for cs in self.set_of.values():
+            read_set(self.root, cs)
 
     def forget(self) -> None:
-        pass
+        """Something was written: a new flag is a new name the next form must
+        offer. `read_set` is an `lru_cache` on a module function, so
+        `shared/caches.py` finds it too — this is belt and braces, and the belt
+        is the one that gets tested."""
+        read_set.cache_clear()
 
     def editor(self, label: str, const: str, ref, said: list):
         raise Refused(

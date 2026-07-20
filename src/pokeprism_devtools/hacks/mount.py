@@ -120,15 +120,19 @@ def mount(root: Path) -> Hack:
             return Hack("vanilla", Reader(root), writes=Writer(root))
         if anchor == "_MapScriptHeader":
             from .polished.read import Reader
-            from .vanilla.write import POLISHED_WARPS, Writer
-            # The same writer vanilla mounts, holding the head anchor and the
-            # larger warp grammar — the fork relation is real, so the code
-            # states it, exactly as the polished read adapter imports vanilla's
-            # parsers. Both arguments are forks measured by survey: polished
-            # opens a map file where vanilla closes it, and polished counts
-            # warps with a `digmod` vanilla has never heard of.
+            from .vanilla.write import (POLISHED_CHOICES, POLISHED_WARPS,
+                                        Writer)
+            # The same writer vanilla mounts, holding the head anchor, the
+            # larger warp grammar and its own constant-set map — the fork
+            # relation is real, so the code states it, exactly as the polished
+            # read adapter imports vanilla's parsers. All three arguments are
+            # forks measured by survey, never sniffed: polished opens a map
+            # file where vanilla closes it, counts warps with a `digmod`
+            # vanilla has never heard of, and writes its overworld palettes
+            # through a macro that leaves their names out of the source.
             return Hack("polished", Reader(root),
-                        writes=Writer(root, anchor, POLISHED_WARPS))
+                        writes=Writer(root, anchor, POLISHED_WARPS,
+                                      POLISHED_CHOICES))
         raise UnknownTree(
             f"{root} keeps map data under data/maps/ like the pokecrystal "
             "family, but no map file carries either family anchor "

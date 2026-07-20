@@ -81,23 +81,66 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   (`EventBlock.add_entry` / `replace_entry`); what is missing is everything
   between a keypress and them: fields, choices, prefill. Four moves.
 
-  **First the carve, because the base is entangled.** The Form screen builds
-  itself from `Field` declarations and is hack-neutral — but
-  `studio/actions.py` houses `Field`/`Action`/`Result`/`ActionError`
-  *alongside* prism imports (`hacks.prism.blockdata`, `wiring.warps`) and the
-  prism constant caches (`CLASSES`, `FACINGS`, `FLAGS`, `ITEMS`, `MOVEMENTS`,
-  `PALETTES`) that `content.py` and `prefill.py` read. Today a family action
-  importing the base drags prism in through the side door — tolerable for
-  Phase 4's `Remove`, wrong as a foundation. Split: the neutral base keeps
-  the module and its name; prism's residents (its actions, its caches) move
-  home to the prism adapter. The rule stated once: **adapters import the
-  base; the base imports no adapter.**
+  **The carve is done.** `studio/actions.py` now imports no adapter and no
+  `wiring/`: `Connect` and `AddWarp` moved to `hacks/prism/actions.py` (both
+  ride prism-only wiring), and `Action.obj()` moved down to
+  `content._Placed`, since a `scaffold.Object` *is* prism's `person_event`
+  and every caller already descended from that class. The base keeps the
+  field vocabulary, `Field`/`Action`/`Result`/`ActionError`, and nothing
+  else. The rule, stated once: **adapters import the base; the base imports
+  no adapter** — now guarded by a static test over the module's own import
+  lines rather than by intent.
 
-  **Then family choices.** `Writer.choices`/`follows` answer `[]`/`{}` today.
-  The family's constant sets read from its own files — sprites, items,
-  event flags, movement types, the survey says exactly which
-  `constants/*.asm` — cached the way `offers` caches, dropped by `forget()`.
-  This is also where `sprite_hint` earns a family answer or an honest `""`.
+  One correction to what this plan assumed: the six names it called "prism
+  constant caches" (`CLASSES`, `FACINGS`, …) are not caches and are not
+  prism's. They are field *kind* tags — `choices=ITEMS` says what sort of
+  thing a box wants — and the answers were always the write adapter's
+  `choices()` to give. So they stayed in the base, which is what let the
+  family declare its own sets against the same vocabulary. Naming a kind
+  commits nobody to having one: a tree that cannot enumerate it answers `[]`
+  and the field degrades to free text.
+
+  Deferred, and named rather than quietly left: the *package* chain
+  `studio/__init__` → `session` → `maplint` → prism still loads prism for
+  any family tree. It predates this phase, it is a startup cost rather than
+  a correctness bug (nothing branches on a hack name), and unpicking it
+  means making `maplint`'s module-level `ALL_RULES` lazy — a change to the
+  linter's shape, not to the seam.
+
+  **Family choices are done, and the survey earned its keep a fourth time.**
+  `Writer.choices` now answers six kinds off the tree's own
+  `constants/*.asm`, declared as a `ConstSet` record per kind exactly the way
+  `WarpGrammar` is declared — `read_set` in `shared/` knows the rgbasm
+  spellings, the adapter knows which file and which prefix, and polished
+  overrides the one entry it forks. `names`/`with_prefix` moved from
+  `hacks/prism/consts.py` to `shared/constants.py` for the reason `as_int`
+  did in Phase 5: binding a name at file scope is rgbasm's business.
+
+  Three things a plausible reading would have got wrong, each caught by
+  comparing the offered set against what 995 real map files actually write:
+
+  * **The prefix was wrong for both trees.** Both define a `PAL_OW_*` set and
+    neither ever puts one on an `object_event` — all 1,466 vanilla and 2,161
+    polished object lines name a `PAL_NPC_*`. The palette field would have
+    offered a complete, plausible list of constants the maps never use.
+  * **Polished writes its palettes through a macro.** `ow_npc_pal_const RED`
+    pastes both `PAL_OW_RED` and `PAL_NPC_RED` on at assembly time, so
+    neither name is in the source; scanning for `const PAL_NPC_` finds only
+    `PAL_NPC_DEFAULT`. A near-empty list is indistinguishable from "this
+    field is free text", so the box would have gone quiet on one tree of
+    three. Hence `ConstSet.macro`, and hence the union with the longhand
+    members rather than a replacement of them.
+  * **`PURGE` un-defines two of them.** Polished's file ends
+    `PURGE PAL_OW_YELLOW, PAL_OW_WHITE`, so those symbols do not survive the
+    file that appears to define them — and offering a constant the assembler
+    will reject is the one failure `studio/offers.py` calls worse than
+    offering no list at all.
+
+  Also: `names()` was missing modern `DEF NAME EQU 0` entirely, which is how
+  polished spells file-scope bindings. `follows` and `sprite_hint` stay empty
+  and the emptiness is argued, not stubbed — prism's answers are *counted*
+  off trainer tables and measured by `maplint`, and the family has neither, so
+  half an answer that reads as authoritative is worse than none.
 
   **Then the actions**: one Add and one Edit per kind, riding the existing
   splice methods, declaring their own `Field`s. Named identity is the part
