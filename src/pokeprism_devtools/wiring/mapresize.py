@@ -83,6 +83,18 @@ class MapShape:
         raise EditError(
             f"{const} has no `{self.macro}` line in {self.path}")
 
+    def line(self, const: str, height: int, width: int) -> str:
+        """The dimension line for a map that does not have one yet.
+
+        Here rather than in `wiring/mapnew.py` for the reason the class exists:
+        a *new* map is the one place a transposed height and width would not
+        even contradict the grid it was measured from, since both are being
+        written at once from the same two numbers. Three callers, one order.
+        """
+        first, second = ((height, width) if self.height_first
+                         else (width, height))
+        return f"\t{self.macro} {const}, {first}, {second}"
+
     def rewrite(self, root: Path, const: str, height: int, width: int) -> Edit:
         """The dimension line, renumbered. Keeps the line's own spacing and any
         trailing comment — the family aligns these into columns and writes a map
