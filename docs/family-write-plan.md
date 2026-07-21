@@ -23,7 +23,7 @@ phases:
 | ~~family `s` (resize)~~ | **done** — crosses via a declared `MapShape` | ~~7a~~ |
 | ~~family `a` on the map list (new map)~~ | **done** — placement declared in three shapes, scaffold crosses | ~~7b~~ |
 | family scaffolding (the block an entry line points at) | in progress — flag allocator and vanilla's item ball done | 8 |
-| the seam is a docstring, so nothing enforces it | not started — the contract has no type and no conformance test | 9 |
+| the seam is a docstring, so nothing enforces it | done — four Protocols and one battery across all three adapters (9a, 9b); counting the `hacks.prism` leak (9c) not started | 9 |
 
 Ordered smallest-risk-first, as before: 5 is a port of machinery that already
 exists for prism, 6 is the big lift, 7 stands on 6 — and 7 split in two once
@@ -392,9 +392,13 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
 
 - **Phase 9 — the seam is a docstring. Give it a type and a battery.**
 
+  *9a and 9b are done — see the status note at the end of this section. What
+  follows is the argument as it stood before they were run, kept because the
+  battery confirmed it rather than contradicting it.*
+
   Every phase above this one widened a contract that nothing checks. `mount()`
-  returns a `Hack` whose `reads` and `writes` are annotated `Any`; the eleven
-  read methods and eight write methods exist only as prose at the top of
+  returns a `Hack` whose `reads` and `writes` are annotated `Any`; the read and
+  write methods exist only as prose at the top of
   `hacks/mount.py`. There is no base class, no `Protocol`, and no test that
   asks two adapters the same question. The three `Reader` classes are unrelated
   implementations that happen to agree, and `hacks/polished/read.py` agrees
@@ -441,14 +445,51 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   as a list with a reason each, so the debt is a number rather than a feeling.
   Paying it is a later phase and probably several.
 
-  **When to run it.** There is a real argument for putting 9a and 9b *before*
-  the rest of Phase 8 rather than after: every remaining block writer —
-  fruittree, hiddenitem, two trainers — adds surface to a contract nothing
-  enforces, and the conformance battery is cheapest to write while the protocol
-  is still small. The argument the other way is that Phase 8's remaining
-  writers are all vanilla-side and mostly do not touch the read protocol at
-  all. Ordered after 8 here because that is the call that was made; the
-  reversal costs nothing but a decision.
+  **When to run it.** There was a real argument for putting 9a and 9b *before*
+  the rest of Phase 8: every remaining block writer — fruittree, hiddenitem,
+  two trainers — adds surface to a contract nothing enforces, and the
+  conformance battery is cheapest to write while the protocol is still small.
+  The argument the other way was that Phase 8's remaining writers are all
+  vanilla-side and mostly do not touch the read protocol. **The first was
+  chosen**: 9a and 9b ran first, and the rest of Phase 8 now lands against a
+  checked seam.
+
+  **Status: 9a and 9b done. 9c not started.**
+
+  Four protocols, not two. The prose claimed eleven read methods; there are
+  **nine that every adapter owes**, plus two that are optional and gated on a
+  declared capability, so they became protocols of their own: `Measures`
+  (`measure`, `measures=True` only) and `Sketches` (`sketch`, reachable only
+  from an action whose `sketches` is set). Folding those two into `Reads` would
+  have made the family adapters non-conforming for correctly not having them —
+  the absence is the design, so the type has to be able to say so. `Writes` is
+  nine methods as described. All four are `runtime_checkable`, and `panels` is
+  imported under `TYPE_CHECKING` so a tree probe still pays for no studio
+  import.
+
+  **The battery found the three adapters already in agreement** — every method
+  present, every parameter list identical, every answer in the seam's records.
+  That is the good outcome and it is worth stating plainly: the seam was
+  *informal*, not *violated*. What Phase 9 changes is not the code's behaviour
+  but what happens the next time someone adds a method — which is now a named
+  failure in `tests/test_seam.py` rather than a pane exploding third.
+
+  Two things the battery deliberately does not do. It does not compare **return
+  annotations**: under `from __future__ import annotations` they are strings,
+  and `vanilla.Writer.editor` declares none at all, so comparing text would
+  fail on agreement and pass on a lie — it calls the methods and checks the
+  records instead. And it does not check **values**: what Route 29 contains is
+  `test_vanilla.py`'s business, and duplicating it here would make the seam
+  test fail every time a tree is updated.
+
+  `test_falsified` is the half that took the work. Five wrong adapters, each
+  caught: a missing method, a renamed parameter, a parameter added, a parameter
+  that gained a default, and — the one that matters — a reader that passes
+  every name check while answering `None` to everything, which is exactly the
+  adapter that mounts, draws an empty studio, and blames the repo. Writing it
+  also exposed that the record checks *crashed* on that last stub instead of
+  reporting it; a wrong record is now one `FAIL` and a battery that keeps
+  going.
 
 What this plan still does not claim, and calls absences rather than debts:
 `plays` for family trees (build-and-replay is engine wiring, a different
