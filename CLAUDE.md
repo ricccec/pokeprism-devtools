@@ -9,10 +9,40 @@
 - ALWAYS read a file before editing it
 - NEVER commit secrets, credentials, or .env files
 - NEVER add a `Co-Authored-By` trailer to user commits unless this project's `.claude/settings.json` has `attribution.commit` set (#2078). The Claude Code Bash tool may suggest one in its default commit-message template — ignore it. `Co-Authored-By` is semantic authorship attribution under git/GitHub convention; the tool is the facilitator, not a co-author.
-- Keep source files under 500 lines. This does not apply to tests: a test file
-  grows one case at a time and splitting it to hit a number costs more than it
-  saves.
+- Keep source files small — see **File size** below for what the numbers mean
+- Name functions with verbs. A function *does* something; a name that is a noun
+  is usually a value that has not admitted it yet.
 - Validate input at system boundaries
+
+## File size
+
+Size is a proxy for responsibility count, and that is the thing actually being
+measured. **One file holds one or two responsibilities**, which in practice
+lands around **~150 LOC**.
+
+- **Over 250 LOC** is a smell, not a violation: it usually means responsibilities
+  have been stuffed in together. Read it as a prompt to look, not as a failure.
+- **Up to ~500 LOC** is fine for a file or two in the codebase, but each one
+  needs a reason that survives being said out loud. "It grew" is not one.
+- When a cluster of related responsibilities piles up, **give each file one or
+  two and put the files in a folder** whose name says what domain they share.
+  The folder name is the explanation; if it can't be named, the grouping is
+  wrong.
+- **Tests are exempt.** A test file grows one case at a time, and splitting it
+  to hit a number costs more than it saves. Let them be as big as they need.
+
+## Commit style
+
+- **Imperative mood.** "Add", not "Added" or "Adds" — the subject completes the
+  sentence "this commit will…".
+- **Subject under 50 characters**, first line.
+- **The body explains *why*.** What was wrong with the previous state, and how
+  this change fixes it. What changed is already in the diff; what the diff can
+  never show is what was broken and what it cost.
+- **The scope is a module, package, feature, or component** — a name that will
+  still mean something in a year. **Never a phase number or a plan name.**
+  Plans are throwaway specs; git history is not, and `feat(9a,9b)` is unreadable
+  the moment the plan it referenced is gone.
 
 ## Agent Comms (SendMessage-First Coordination)
 
