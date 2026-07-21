@@ -23,7 +23,7 @@ phases:
 | ~~family `s` (resize)~~ | **done** — crosses via a declared `MapShape` | ~~7a~~ |
 | ~~family `a` on the map list (new map)~~ | **done** — placement declared in three shapes, scaffold crosses | ~~7b~~ |
 | family scaffolding (the block an entry line points at) | in progress — flag allocator and vanilla's item ball done | 8 |
-| the seam is a docstring, so nothing enforces it | done — four Protocols and one battery across all three adapters (9a, 9b); counting the `hacks.prism` leak (9c) not started | 9 |
+| the seam is a docstring, so nothing enforces it | done — four Protocols and one battery across all three adapters (9a, 9b), and the `hacks.prism` leak counted (9c): 8 `wiring/` modules of real debt, the rest misfiled or declared | 9 |
 
 Ordered smallest-risk-first, as before: 5 is a port of machinery that already
 exists for prism, 6 is the big lift, 7 stands on 6 — and 7 split in two once
@@ -436,14 +436,10 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   adapter that has not implemented it, in one file, by name.
 
   **9c — the leak the type will make visible.** `wiring/` is not the
-  hack-agnostic layer this plan's second rule describes: ten of its sixteen
-  modules import `hacks.prism` directly, as do seven of ten in `maplint/` and
-  one genuine case in `studio/` (`grid.py`, for `swatches.tile_color`). The
-  modules built since the seam — `regions`, `flagalloc`, `blocks`, and the
-  `Dialect`-shaped `mapresize` / `mapnew` / `placement` — are clean; the older
-  ones predate it. This move does not fix them. It *counts* them, in one place,
-  as a list with a reason each, so the debt is a number rather than a feeling.
-  Paying it is a later phase and probably several.
+  hack-agnostic layer this plan's second rule describes. This move does not fix
+  that. It *counts* it, in one place, as a list with a reason each, so the debt
+  is a number rather than a feeling. Paying it is a later phase and probably
+  several. **Done — the census is below.**
 
   **When to run it.** There was a real argument for putting 9a and 9b *before*
   the rest of Phase 8: every remaining block writer — fruittree, hiddenitem,
@@ -454,7 +450,7 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   chosen**: 9a and 9b ran first, and the rest of Phase 8 now lands against a
   checked seam.
 
-  **Status: 9a and 9b done. 9c not started.**
+  **Status: Phase 9 done.**
 
   Four protocols, not two. The prose claimed eleven read methods; there are
   **nine that every adapter owes**, plus two that are optional and gated on a
@@ -490,6 +486,76 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   also exposed that the record checks *crashed* on that last stub instead of
   reporting it; a wrong record is now one `FAIL` and a battery that keeps
   going.
+
+  **The census (9c).** Every `import` of `hacks.prism` outside `hacks/prism/`
+  and the mount: **33 files**. The numbers this plan carried before measuring
+  were wrong in both directions, and the shape was wrong too — so what follows
+  is the count *and* the correction.
+
+  | package | this plan said | measured | of |
+  |---|---|---|---|
+  | `wiring/` | 10 | **8** | 16 |
+  | `maplint/` | 7 | 7 | 10 |
+  | `studio/` | 1 (`grid.py`) | **6** | 22 |
+  | `shared/` | clean | 0 | 11 |
+  | the prism-only CLIs | not counted | **12** | — |
+
+  The `wiring/` overcount was prose mentions counted as imports. The `studio/`
+  undercount is the one that mattered, and chasing it is what produced the real
+  finding below.
+
+  **Four kinds of leak, and only one of them is debt.**
+
+  1. **Not a leak — prism-only tools (12 files).** `dev_server/` (4),
+     `gfx_view`, `map_inspect`, `map_new`, `map_show`, `mapfit` (2), `mapview`,
+     `metatiles`. These are CLIs written against prism and they never claimed
+     otherwise; `prism-dev` patches a prism save and boots a prism ROM. The two
+     the studio reaches — `dev_server` from `play.py` and `session.py` — are
+     behind `plays`, which is the seam working, not leaking.
+
+  2. **Not a leak — the linter (7 files).** All of `maplint/` is written
+     against prism, and the seam already declares it: `ctx` is `None` for every
+     other tree and the session lints exactly when `ctx` is not `None`. This is
+     declared absence, the same category as `measures`. Porting the rules is a
+     project, not a debt.
+
+  3. **Misfiled, not leaking (5 files).** `studio/content.py`, `edits.py`,
+     `offers.py`, `prefill.py`, `newmap.py` are **prism's write adapter**, and
+     `hacks/prism/write.py` imports all five back — `write.py`'s own docstring
+     names them. They import prism because they *are* prism. Five of the six
+     `studio/` hits are this, and the fix is a move into `hacks/prism/`, not a
+     decoupling. Until then the package boundary reads as a seam violation and
+     is not one, which is worse than the violation would be.
+
+  4. **The actual debt — `wiring/` (8 of 16).** `objedit`, `scaffold`, `props`,
+     `removal`, `warps`, `connections`, `mapedit`, `text` each pull prism
+     parsers (`consts`, `eventheader`, `mapsource`, `spritesets`,
+     `trainerparty`, `dialogue`, …). The modules built since the seam —
+     `regions`, `flagalloc`, `blocks`, `mapresize`, `mapnew`, `placement` — are
+     clean, as the rule intends; the older ones predate it.
+
+  Plus one genuine studio-layer leak: **`studio/grid.py`** → `prism.swatches`
+  for `tile_color`. That function is a pure renderer over data the session
+  already read, so it is tree-agnostic in behaviour and merely filed under the
+  wrong package; it wants moving to `shared/`.
+
+  **What the debt actually costs today, measured rather than assumed.** The
+  family adapters do reach category 4: `vanilla/resize.py` imports
+  `wiring.objedit`, and `vanilla/newmap.py` imports `wiring.mapnew`, which
+  imports `objedit` in turn — so **mounting a vanilla or polished tree loads
+  the prism parser stack**. But what they take across is `EditError`,
+  `MapShape`, `Standing` and `NewMap` — exception types and geometry
+  dataclasses — and none of those prism modules does file I/O at import time.
+  No prism *logic* runs for a family tree. The leak is real, inert, and pays
+  for itself in module load only.
+
+  So the honest total is not 33. It is **8 modules of real debt plus 6 files in
+  the wrong package**, and the seam holds everywhere the studio actually
+  crosses it. The reason to fix category 4 is not that it breaks today — it is
+  that `EditError` and `MapShape` are the thin end: the field-index constants
+  next door (`S_X`, `W_Y`) encode prism's `person_event` layout, and the first
+  family caller that reaches for one of *those* will get a wrong answer rather
+  than a crash.
 
 What this plan still does not claim, and calls absences rather than debts:
 `plays` for family trees (build-and-replay is engine wiring, a different
