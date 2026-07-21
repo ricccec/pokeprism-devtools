@@ -26,101 +26,34 @@ prevent, one column further along. Hence :class:`ObjectShape`: the slot order is
 declared per dialect and the form is built from the declaration, so the fork is
 data the mount hands over rather than a branch anybody writes twice.
 
-What does **not** cross here, and why it is an absence rather than a gap:
-adding a trainer or a prop. Their entry line is the small half — the real
-content is a `trainer` / `itemball` / `fruittree` / `hiddenitem` block written
-beside it, which is family scaffolding and the same project rewording is.
-`add_entry` splices one line; a line pointing at a block nobody wrote does not
-assemble, so the adder that would write one refuses by name instead.
+**The item ball is the first adder that writes a block.** Everything else here
+splices one line into one list. :class:`AddItemball` writes two lines into the
+scripts region as well, allocates an event flag in a second file, and mints
+three names that have to agree with each other — and it is vanilla's alone,
+because polished spells the same object as three extra `object_event`
+arguments with no block anywhere. That is declared in :data:`VANILLA_ONLY`
+rather than branched on, the same way the slot order is.
+
+What still does **not** cross, and why it is an absence rather than a gap:
+adding a trainer. Its entry line is the small half — the real content is a
+`trainer` block plus the two texts it names, and the shape of those texts is
+not yet pinned down in polished, where a `generictrainer`'s seen and beaten
+text sit hundreds of lines from the block that uses them. A generated block
+that guessed at that would assemble and then misbehave, which is worse than a
+tab whose Add row says nothing.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
-from ...studio import panels
-from ...studio.actions import (FACINGS, FLAGS, MAPS, MOVEMENTS, PALETTES,
-                               SPRITES, Action, ActionError, Field, Result)
+from ...studio.actions import FACINGS, MAPS, ActionError, Field, Result
+from ...wiring import regions
 from . import eventblock as eb
+from .entry import OBJECT_FIELDS
+from .entry import Entry as _Entry
+from .itemball import AddItemball
 from .shapes import POLISHED_OBJECT, VANILLA_OBJECT, ObjectShape, prefill
-
-
-#: The boxes an `object_event` slot gets, by slot name. Built into a form in
-#: the dialect's own order, so neither tree is offered the other's columns —
-#: a `time` box on vanilla would write a valid number into an hour limit.
-_OBJECT_FIELDS: dict[str, Field] = {
-    "y": Field("y", "Y", kind="int"),
-    "x": Field("x", "X", kind="int"),
-    "sprite": Field("sprite", "Sprite", choices=SPRITES, default="SPRITE_GRAMPS"),
-    "movement": Field("movement", "Movement", choices=MOVEMENTS,
-                      default="SPRITEMOVEDATA_STANDING_DOWN"),
-    "radius_y": Field("radius_y", "Radius Y", kind="int", default="0",
-                      help="tiles it wanders up and down; 0 stays put"),
-    "radius_x": Field("radius_x", "Radius X", kind="int", default="0"),
-    "h1": Field("h1", "From hour", kind="int", default="-1",
-                help="-1, -1 means always. Otherwise 0-23."),
-    "h2": Field("h2", "To hour", kind="int", default="-1"),
-    "time": Field("time", "Time of day", default="-1",
-                  help="-1 is always; else MORN, DAY and/or NITE"),
-    "palette": Field("palette", "Palette", choices=PALETTES,
-                     default="PAL_NPC_RED"),
-    "type": Field("type", "Type", default="OBJECTTYPE_SCRIPT",
-                  help="what the engine does when you press A on it"),
-    "sight": Field("sight", "Sight", kind="int", default="0",
-                   help="only OBJECTTYPE_TRAINER reads this"),
-    "script": Field("script", "Points at", default="",
-                    help="a label already in this file — this form writes the "
-                         "line, not the block it names"),
-    "flag": Field("flag", "Event flag", choices=FLAGS, default="-1",
-                  help="-1 is always there; a flag gates them on it"),
-}
-
-
-class _Entry(Action):
-    """One line in one of the four lists, on the map you are looking at.
-
-    The two dialect forks arrive as class attributes rather than as arguments,
-    because the form builds its action with `cls(map_const, **values)` and has
-    nowhere to put a third thing. :func:`fork` stamps them on, once per
-    dialect, from what the mount declared — so this class never learns a hack's
-    name and never asks the tree which one it is.
-    """
-
-    #: `_MapEvents` for vanilla's tail block, `_MapScriptHeader` for polished's
-    #: head. The same parameter `events.parse` takes, for the same reason.
-    anchor = "_MapEvents"
-    shape = VANILLA_OBJECT
-    #: Which of the four lists this action's line lives in.
-    list_kind = "object"
-
-    def __init__(self, map_const: str, **values: str) -> None:
-        super().__init__(**values)
-        self.map = map_const
-
-    # -- the file ------------------------------------------------------------- #
-    def _block(self, root: Path) -> tuple[eb.EventBlock, str]:
-        """This map's event block, freshly parsed. The label comes from the
-        catalog rather than from the form: you picked a map, and the file it
-        lives in is the tree's business, not a string anybody typed."""
-        from .read import label_of
-        label = label_of(root).get(self.map)
-        if label is None:
-            raise ActionError(f"{self.map} is not a map in this tree.")
-        try:
-            return eb.parse_map(root / f"maps/{label}.asm", self.anchor), label
-        except (eb.UnparseableEvents, panels.Unreadable) as exc:
-            raise ActionError(str(exc)) from exc
-
-    def _written(self, block: eb.EventBlock, root: Path) -> Result:
-        """The staged change. Unchanged text is no edit at all — an editor you
-        opened, looked at and submitted should write nothing, and say so."""
-        edit = block.to_edit(root, self.describe())
-        return Result(edit.detail, [edit] if edit.changed else [],
-                      [] if edit.changed else ["unchanged — nothing to write"])
-
-    def _where(self) -> str:
-        return f"({self.text('y')}, {self.text('x')})"
 
 
 # --------------------------------------------------------------------------- #
@@ -266,7 +199,7 @@ class AddNpc(_Entry):
     @classmethod
     def fields_for(cls, values: dict[str, str]) -> tuple[Field, ...]:
         return (cls._CONST,) + tuple(
-            _OBJECT_FIELDS[s] for s in cls.shape.slots if s in _OBJECT_FIELDS)
+            OBJECT_FIELDS[s] for s in cls.shape.slots if s in _OBJECT_FIELDS)
 
     def describe(self) -> str:
         who = self.text("const") or self.text("sprite")
@@ -408,7 +341,7 @@ class EditObject(_Edit):
     @classmethod
     def fields_for(cls, values: dict[str, str]) -> tuple[Field, ...]:
         return cls.FIXED + tuple(
-            _OBJECT_FIELDS[s] for s in cls.shape.slots if s in _OBJECT_FIELDS)
+            OBJECT_FIELDS[s] for s in cls.shape.slots if s in _OBJECT_FIELDS)
 
     def describe(self) -> str:
         return (f"{self.text('sprite') or 'object'} #"
@@ -438,14 +371,23 @@ class EditObject(_Edit):
 # --------------------------------------------------------------------------- #
 
 #: What the tab-foot "Add new…" row opens, keyed by the word the tab carries in
-#: `Tab.adds`. Trainers and objects are *absent*, and the absence is the honest
-#: answer rather than an oversight: both need a script block written beside the
-#: entry line, and `add_entry` splices lines. See this module's docstring.
+#: `Tab.adds`. The four lines-only adders, shared by both dialects. Trainers
+#: are still absent and still honestly so — see this module's docstring.
 ADDERS: dict[str, tuple[type[_Entry], ...]] = {
     "NPC": (AddNpc,),
     "warp": (AddWarp,),
     "signpost": (AddSignpost,),
     "trigger": (AddTrigger,),
+}
+
+#: And the adders that are one dialect's only. The item ball is vanilla's alone
+#: because in polished it is not a block at all: polished bakes the item and
+#: the quantity into three extra `object_event` arguments (`itemball_event`),
+#: so there is nothing to point at and nothing to write beside the line. Same
+#: object on screen, different half of the file — which is exactly the sort of
+#: difference that has to be declared here rather than branched on down there.
+VANILLA_ONLY: dict[str, tuple[type[_Entry], ...]] = {
+    "object": (AddItemball,),
 }
 
 #: And what `e` opens, keyed by the **list** the entry lives in rather than by
@@ -458,7 +400,10 @@ EDITORS: dict[str, type[_Edit]] = {
 }
 
 
-def fork(anchor: str, shape: ObjectShape, tag: str) -> tuple[dict, dict]:
+def fork(anchor: str, shape: ObjectShape, tag: str, *,
+         layout: regions.Layout = regions.VANILLA,
+         extra: dict[str, tuple[type[_Entry], ...]] | None = None,
+         ) -> tuple[dict, dict]:
     """This dialect's actions: the same classes, stamped with its two forks.
 
     Subclasses rather than arguments because the form builds an action as
@@ -469,19 +414,22 @@ def fork(anchor: str, shape: ObjectShape, tag: str) -> tuple[dict, dict]:
     """
     def stamp(cls: type) -> type:
         return type(f"{tag}{cls.__name__}", (cls,),
-                    {"anchor": anchor, "shape": shape,
+                    {"anchor": anchor, "shape": shape, "layout": layout,
                      "__doc__": cls.__doc__})
-    return ({k: tuple(stamp(c) for c in v) for k, v in ADDERS.items()},
+    adders = {**ADDERS, **(extra or {})}
+    return ({k: tuple(stamp(c) for c in v) for k, v in adders.items()},
             {k: stamp(c) for k, c in EDITORS.items()})
 
 
-VANILLA_ADDERS, VANILLA_EDITORS = fork("_MapEvents", VANILLA_OBJECT, "Vanilla")
+VANILLA_ADDERS, VANILLA_EDITORS = fork("_MapEvents", VANILLA_OBJECT, "Vanilla",
+                                       layout=regions.VANILLA,
+                                       extra=VANILLA_ONLY)
 POLISHED_ADDERS, POLISHED_EDITORS = fork("_MapScriptHeader", POLISHED_OBJECT,
-                                         "Polished")
+                                         "Polished", layout=regions.POLISHED)
 
 
 #: Re-exported so a caller needing both the forms and the records they were
 #: built from has one import. The records themselves live in `.shapes`.
 __all__ = ["ObjectShape", "VANILLA_OBJECT", "POLISHED_OBJECT", "prefill",
-           "VANILLA_ADDERS", "VANILLA_EDITORS",
+           "AddItemball", "VANILLA_ADDERS", "VANILLA_EDITORS",
            "POLISHED_ADDERS", "POLISHED_EDITORS", "fork"]

@@ -387,13 +387,14 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
     check("lint finds nothing because there is no linter", s.lint() == [])
     check("and the panes can ask before drawing a verdict",
           s.lints is False and s.measures is False)
-    # Three tabs offer to add and two do not, and the two are the measured
-    # absence: a trainer's and a prop's entry line points at a block that has
-    # to be written beside it, and `add_entry` splices lines.
+    # Four tabs offer to add and one does not. Objects joined the four when the
+    # item ball got a block writer; a trainer's entry line still points at a
+    # block nobody writes, and that absence is measured rather than pending.
     check("the addable tabs offer one form each",
-          all(len(s.adders(k)) == 1 for k in ("NPC", "warp", "signpost")))
-    check("trainers and objects still offer nothing, having no block writer",
-          s.adders("trainer") == () and s.adders("object") == ())
+          all(len(s.adders(k)) == 1
+              for k in ("NPC", "warp", "signpost", "object")))
+    check("trainers still offer nothing, having no block writer",
+          s.adders("trainer") == ())
     check("the sprite hint is silence", s.sprite_hint("TOWN_A", "SPRITE_TEACHER") == "")
     try:
         s.measure("Hello.")

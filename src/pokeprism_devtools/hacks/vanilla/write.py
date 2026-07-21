@@ -189,13 +189,13 @@ class Writer:
     def adders(self, kind: str) -> tuple:
         """What the tab-foot "Add new…" row opens.
 
-        Three of the four lists are here; trainers and props are not, and the
-        absence is measured rather than pending. Their entry line points at a
-        `trainer` / `itemball` / `fruittree` / `hiddenitem` block, and writing
-        blocks is family scaffolding — the project rewording is, and the one
-        Phase 6 said it would not claim. An adder that spliced the line alone
-        would produce a map that does not assemble, which is worse than a tab
-        whose Add row says nothing.
+        All four lists are here, plus the item ball — the first adder that
+        writes the block its entry line points at rather than requiring one to
+        already exist. Trainers are still absent and the absence is still
+        measured rather than pending: a `trainer` block names two texts, and an
+        adder that guessed at their shape would produce a map that assembles
+        and then misbehaves, which is worse than a tab whose Add row says
+        nothing.
         """
         return self._actions[0].get(kind, ())
 

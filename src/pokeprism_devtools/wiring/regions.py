@@ -246,6 +246,25 @@ def append(root: Path, rel: str, region: str, block: list[str], *,
     place that moves nothing above it.
     """
     text = (root / rel).read_text()
+    out = spliced(text, region, block, layout=layout)
+    return Edit(path=rel, changed=out != text, base=text, new_text=out,
+                detail=detail or f"{len(block)} lines into {region}")
+
+
+def spliced(text: str, region: str, block: list[str], *,
+            layout: Layout) -> str:
+    """:func:`append`'s answer as *text*, for a caller with more than one write
+    to make to the same file.
+
+    Adding an item ball is two writes to one map file — this block, and the
+    `object_event` line pointing at it — and they cannot be two
+    :class:`~.edits.Edit`s. An `Edit` carries the whole file plus the text it
+    was derived from, and `apply_edits` refuses the second of two edits built
+    off the same base rather than let one silently drop the other. That refusal
+    is right and this is the way past it: splice the block in memory, hand the
+    result to the parser that adds the entry line, and let the *entry* writer
+    produce the single Edit whose base is still what is on disk.
+    """
     found = spans(text, layout)
     if region not in found:
         raise RegionError(f"no region named {region!r}")
@@ -270,5 +289,4 @@ def append(root: Path, rel: str, region: str, block: list[str], *,
     out = "\n".join(new)
     if text.endswith("\n"):
         out += "\n"
-    return Edit(path=rel, changed=out != text, base=text, new_text=out,
-                detail=detail or f"{len(block)} lines into {region}")
+    return out
