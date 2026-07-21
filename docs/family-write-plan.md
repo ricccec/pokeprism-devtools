@@ -22,6 +22,8 @@ phases:
 | ~~family `a` / `e` (adders, editors)~~ | **done** — four editors, three adders | ~~6~~ |
 | ~~family `s` (resize)~~ | **done** — crosses via a declared `MapShape` | ~~7a~~ |
 | ~~family `a` on the map list (new map)~~ | **done** — placement declared in three shapes, scaffold crosses | ~~7b~~ |
+| family scaffolding (the block an entry line points at) | in progress — flag allocator and vanilla's item ball done | 8 |
+| the seam is a docstring, so nothing enforces it | not started — the contract has no type and no conformance test | 9 |
 
 Ordered smallest-risk-first, as before: 5 is a port of machinery that already
 exists for prism, 6 is the big lift, 7 stands on 6 — and 7 split in two once
@@ -375,6 +377,78 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   absence Phase 4 built `absent()` to stop saying wrong. The check survives —
   `wiring/mapnew.py` refuses a grid that is not `height x width` — it is told
   rather than shown.
+
+- **Phase 8 — family scaffolding. In progress.** The block an entry line points
+  at, which is what Phase 6 named as the reason trainers and props have no
+  adder. Two moves landed: `wiring/flagalloc.py`, because the family's
+  `event_flags.asm` is *bucketed* (`const_def`, `const_next` jumps, and a
+  `const_skip [N]` directive that is not prism's `const skip` placeholder-name)
+  and prism's allocator raises on the first `const_def` it sees; then vanilla's
+  item ball, the smallest block there is — `wiring/blocks.py` for the three
+  names that have to agree, `hacks/vanilla/itemball.py` for the composition.
+  Remaining: vanilla `fruittree` and `hiddenitem`, then trainers in both trees,
+  which are blocked on pinning down what polished's `generictrainer` does with
+  its trailing unlabeled text body.
+
+- **Phase 9 — the seam is a docstring. Give it a type and a battery.**
+
+  Every phase above this one widened a contract that nothing checks. `mount()`
+  returns a `Hack` whose `reads` and `writes` are annotated `Any`; the eleven
+  read methods and eight write methods exist only as prose at the top of
+  `hacks/mount.py`. There is no base class, no `Protocol`, and no test that
+  asks two adapters the same question. The three `Reader` classes are unrelated
+  implementations that happen to agree, and `hacks/polished/read.py` agrees
+  mostly because it imports vanilla's parsers rather than because anything made
+  it.
+
+  What that costs is not hypothetical, it is just deferred. A fourth adapter —
+  or a fifth method added to the protocol for a sixth phase — fails by *mounting
+  successfully* and then breaking on whichever pane asks the missing question
+  third. The failure is far from its cause, at runtime, in the view layer, and
+  the error names a pane rather than an adapter. Phase 4 built `absent()` so
+  that a capability a tree does not have degrades to absence instead of a
+  crash; that machinery only works on capabilities the seam *knows about*, and
+  right now the seam knows about whatever the last adapter happened to write.
+
+  Three moves, in this order:
+
+  **9a — the contract becomes a type.** Turn the two docstring protocols into
+  `typing.Protocol` classes in `hacks/mount.py` — `Reads` and `Writes` — and
+  annotate `Hack.reads: Reads` and `Hack.writes: Writes | None`. Structural, not
+  nominal: no adapter inherits anything, nothing changes at runtime, and the
+  fork relation between vanilla and polished stays exactly as it is. The
+  docstring stays too, because a `Protocol` says *what* and the prose says
+  *why* — `tables()` raising `panels.Unreadable` rather than returning `None`
+  is a decision, not a signature.
+
+  **9b — one battery, every adapter.** A single conformance test that mounts
+  each tree and asks all three the same questions, replacing the overlap
+  between `test_vanilla.py` and `test_polished.py` — which today cover similar
+  ground by coincidence, not by construction. It checks shapes and record
+  types, not values: that `maps()` answers a dict of str to str, that
+  `tables()` returns a `panels.MapTables` or raises `Unreadable`, that a
+  declared capability's method exists and an undeclared one's absence is
+  honest. The point is that adding a method to the protocol should break every
+  adapter that has not implemented it, in one file, by name.
+
+  **9c — the leak the type will make visible.** `wiring/` is not the
+  hack-agnostic layer this plan's second rule describes: ten of its sixteen
+  modules import `hacks.prism` directly, as do seven of ten in `maplint/` and
+  one genuine case in `studio/` (`grid.py`, for `swatches.tile_color`). The
+  modules built since the seam — `regions`, `flagalloc`, `blocks`, and the
+  `Dialect`-shaped `mapresize` / `mapnew` / `placement` — are clean; the older
+  ones predate it. This move does not fix them. It *counts* them, in one place,
+  as a list with a reason each, so the debt is a number rather than a feeling.
+  Paying it is a later phase and probably several.
+
+  **When to run it.** There is a real argument for putting 9a and 9b *before*
+  the rest of Phase 8 rather than after: every remaining block writer —
+  fruittree, hiddenitem, two trainers — adds surface to a contract nothing
+  enforces, and the conformance battery is cheapest to write while the protocol
+  is still small. The argument the other way is that Phase 8's remaining
+  writers are all vanilla-side and mostly do not touch the read protocol at
+  all. Ordered after 8 here because that is the call that was made; the
+  reversal costs nothing but a decision.
 
 What this plan still does not claim, and calls absences rather than debts:
 `plays` for family trees (build-and-replay is engine wiring, a different
