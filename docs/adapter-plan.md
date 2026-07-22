@@ -1,8 +1,14 @@
 # One frontend, many romhacks — a sketch, not a commitment
 
-Nothing here is scheduled. This is written down so that the decisions we take
-while finishing `prism-studio` don't quietly foreclose it, and so that the
+Almost nothing here is scheduled. This is written down so that the decisions we
+take while finishing `prism-studio` don't quietly foreclose it, and so that the
 argument doesn't have to be reconstructed from memory the day it comes up.
+
+**One piece is now being built** — see "The mount, made pluggable". Not because
+the protocol argument was settled (it isn't; "Why not now" still holds), but
+because `mount()` had accumulated enough hack-specific construction that
+splitting it raised the registry question early, and the answer turned out to
+cost about a day. The frontend split remains a sketch. The *registry* is real.
 
 ## The idea
 
@@ -121,6 +127,12 @@ Cheap, and worth doing on its own merits:
    `grid.py`, not to the adapter. The line is not "which package"; it is who
    opens the source tree.
 
+   The leak census in `family-write-plan.md` flags `studio/grid.py` importing
+   `hacks.prism.swatches`, which is not a contradiction of this rule but of
+   where the function is *filed*: `tile_color` takes blocks and swatches as
+   plain data and opens nothing, so it is hack-agnostic renderer code living in
+   a hack's package. It belongs in `shared/`. The rule above stands unchanged.
+
    The Python UI then becomes hack-agnostic inside this repo, with no new process
    and no protocol, and the day the protocol is written it is a serialization of
    `Session` rather than an act of invention.
@@ -130,6 +142,97 @@ Cheap, and worth doing on its own merits:
 3. **Make the studio an optional extra** (`pip install pokeprism-devtools[studio]`).
    Three lines, and it gets the whole benefit the repo split was going to buy:
    people who want the tools don't pay for the GUI.
+
+## The mount, made pluggable
+
+This is item 1 continued, and the first thing above that is actually scheduled.
+
+**What was wrong.** `hacks/mount.py` grew into two jobs and then a third. It
+declares the contract (four protocols, `Hack`, `Refused`), it recognises which
+tree it is looking at, *and* it constructs each adapter — the polished branch
+alone imports six symbols from vanilla and hand-wires them into vanilla's
+`Writer` under a twelve-line comment about how the fork differs. That comment is
+polished's knowledge, sitting in the one file that is supposed to know only
+names. The rule was "only the mount knows hack names"; the file had quietly
+started knowing hack *behaviour*.
+
+**The shape.**
+
+- `hacks/seam.py` — the four protocols, `Hack`, `Refused`. The contract, and
+  provably free of hack names: a `grep` for one returning nothing is the rule
+  made checkable rather than merely stated. `tests/test_seam.py` already tests
+  exactly this half and nothing else, which is the responsibility announcing
+  itself a phase before the split.
+- `hacks/mount.py` — discovery, the claim loop, `UnknownTree`. Nothing else.
+- `hacks/<name>/claim.py` — one per hack: *do I recognise this tree, and if so,
+  build me*.
+
+**Every hack recognises itself.** There is no family concept and no shared
+recogniser. An earlier draft of this section proposed a `hacks/family.py` owning
+the pokecrystal anchor probe, on the grounds that vanilla and polished are
+discriminated by the same read. That was wrong, and wrong in a way worth
+recording: it invents a third category between "a hack" and "hack-agnostic",
+and a third-party adapter shipped by someone else can never join it. Vanilla
+asks whether map files here end with `_MapEvents`; polished asks whether they
+open with `_MapScriptHeader`; neither needs to know the other exists to answer.
+
+Where a hack genuinely builds on another — polished forks vanilla, and already
+imports its parsers and its `Writer` — **the dependency is declared in the
+dependent hack**, never hoisted into a shared middle. That relation is real and
+the code should state it; what it must not do is become structure that only
+in-tree hacks can use. What lands in `shared/` is the plumbing with no opinion:
+*read the first map file listed in `data/maps/maps.asm`*. No anchor, no name.
+
+**Partial recognition belongs to the hack that partially recognised.** A
+`claims()` returns the built `Hack`, or nothing, or a near-miss with a reason.
+The near-miss is what keeps `UnknownTree` actionable — "unknown" is not, and a
+loop over silent `None`s can say nothing better. A pokecrystal checkout with an
+unfamiliar anchor now yields both near-misses side by side rather than one
+committee-authored sentence, which is more useful *and* needs no shared concept
+to produce.
+
+**Registration is entry points.** Not a hard-coded tuple, and not `iter_modules`
+over `hacks/` either — the goal is that a hack developer packages an adapter and
+a user `pip install`s it, and a directory scan can only ever find what already
+ships in this repo. `pyproject.toml` already uses the mechanism for
+`[project.scripts]`:
+
+```toml
+[project.entry-points."pokeprism_devtools.hacks"]
+prism    = "pokeprism_devtools.hacks.prism.claim"
+```
+
+The three in-tree hacks register through the identical path a third party would.
+That is the only way we learn whether the plugin seam works before somebody else
+is depending on it. A `--hack-path` override covers the case entry points serve
+badly: an adapter author iterating on their own tree who doesn't want to
+reinstall between runs.
+
+**Claim modules stay thin.** Discovery imports every registered hack to ask it,
+where the old branchy `mount()` imported exactly one. With three hacks that is
+noise; with thirty installed adapters it is the difference between importing
+thirty parsers and importing thirty predicates. So `claim.py` imports no
+`Reader`, no `Writer`, no linter at module level — the adapter is pulled in
+inside the branch that actually claims. (The old worry that discovery costs a
+bare `--version` was overstated: `iter_modules` and entry-point enumeration
+don't import, and `--version` never calls `mount()`.)
+
+**Ambiguity is an error, not a race.** Collect every claim rather than taking
+the first. Two hacks claiming one tree is a bug in one of them, and "coral and
+prism both claim this repo, here are both" beats whichever happened to sort
+first winning silently. Sorting by name buys stable messages, not correctness.
+
+**Third-party code now runs inside the mount.** `Refused` and `UnknownTree` stop
+being the only failure modes the moment an adapter we didn't write can raise
+anything at all. Each `claims()` is isolated so one broken adapter degrades to
+"this adapter failed to answer, here's why" instead of taking discovery down
+with it. This is new surface the current design doesn't have, and it belongs in
+the change rather than after the first crash.
+
+**Two costs, accepted.** Vanilla and polished each read `maps.asm` and the first
+map file independently — two small reads where there was one, and no probe cache
+until something measures slow. And a tree that no adapter claims now costs one
+import per installed hack before it fails.
 
 ## The experiment that would actually settle it
 
