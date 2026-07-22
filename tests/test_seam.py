@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One battery, every adapter — the conformance test for `hacks/mount.py`.
+"""One battery, every adapter — the conformance test for `hacks/seam.py`.
 
 Until now the seam was a docstring. Three adapters were written against it and
 all three happen to agree, but nothing said so: `test_vanilla.py` and
@@ -46,6 +46,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools.hacks import mount as m  # noqa: E402
+from pokeprism_devtools.hacks import seam  # noqa: E402
 from pokeprism_devtools.studio import panels  # noqa: E402
 
 TREES = {"prism": "pokeprism", "vanilla": "pokecrystal",
@@ -84,7 +85,7 @@ def tried(fn) -> bool:
         _failures, _quiet = before, False
 
 
-def mounted() -> dict[str, m.Hack]:
+def mounted() -> dict[str, seam.Hack]:
     """Every tree on this machine, mounted once. A tree that isn't checked out
     is skipped loudly — a battery that silently covers one adapter is worse
     than no battery, because the report still says "all ok"."""
@@ -126,18 +127,18 @@ def conforms(obj, proto: type, who: str) -> None:
               want == got, f"declared {want}, found {got}")
 
 
-def test_surface(hacks: dict[str, m.Hack]) -> None:
+def test_surface(hacks: dict[str, seam.Hack]) -> None:
     say("surface — what every adapter owes")
 
     for name, hack in hacks.items():
-        check(f"{name} is a Reads", isinstance(hack.reads, m.Reads))
-        conforms(hack.reads, m.Reads, f"{name}.reads")
+        check(f"{name} is a Reads", isinstance(hack.reads, seam.Reads))
+        conforms(hack.reads, seam.Reads, f"{name}.reads")
 
         if hack.writes is None:
             check(f"{name} mounts read-only, so nothing is owed", True)
         else:
-            check(f"{name} is a Writes", isinstance(hack.writes, m.Writes))
-            conforms(hack.writes, m.Writes, f"{name}.writes")
+            check(f"{name} is a Writes", isinstance(hack.writes, seam.Writes))
+            conforms(hack.writes, seam.Writes, f"{name}.writes")
 
     say("surface — the optional two, against the declared capability")
     for name, hack in hacks.items():
@@ -146,9 +147,9 @@ def test_surface(hacks: dict[str, m.Hack]) -> None:
         # gates on the flag, so the method would never be reached and the
         # capability would be a lie in the other direction.
         check(f"{name} measures={hack.measures} matches its adapter",
-              isinstance(hack.reads, m.Measures) == hack.measures)
+              isinstance(hack.reads, seam.Measures) == hack.measures)
         if hack.measures:
-            conforms(hack.reads, m.Measures, f"{name}.reads")
+            conforms(hack.reads, seam.Measures, f"{name}.reads")
 
         draws = any(cls.sketches
                     for kind in ("NPC", "warp", "signpost", "object",
@@ -159,11 +160,11 @@ def test_surface(hacks: dict[str, m.Hack]) -> None:
             for n in ("newmap", "resize", "reword") if hack.writes
             and hack.writes.form(n) is not None)
         check(f"{name} sketches exactly when one of its forms draws",
-              isinstance(hack.reads, m.Sketches) == draws,
+              isinstance(hack.reads, seam.Sketches) == draws,
               f"forms draw={draws}, adapter has sketch="
-              f"{isinstance(hack.reads, m.Sketches)}")
+              f"{isinstance(hack.reads, seam.Sketches)}")
         if draws:
-            conforms(hack.reads, m.Sketches, f"{name}.reads")
+            conforms(hack.reads, seam.Sketches, f"{name}.reads")
 
 
 # -- the records ----------------------------------------------------------- #
@@ -176,7 +177,7 @@ def readable(reads) -> tuple[str, str]:
     raise AssertionError("no map in this tree parses at all")
 
 
-def test_records(hacks: dict[str, m.Hack]) -> None:
+def test_records(hacks: dict[str, seam.Hack]) -> None:
     say("records — the nine answers, in the seam's types")
 
     for name, hack in hacks.items():
@@ -240,7 +241,7 @@ def test_records(hacks: dict[str, m.Hack]) -> None:
               and all(isinstance(x, panels.TextRef) for x in tx))
 
 
-def test_unreadable(hacks: dict[str, m.Hack]) -> None:
+def test_unreadable(hacks: dict[str, seam.Hack]) -> None:
     say("records — the refusal is part of the protocol")
 
     # `tables` and `geometry` are the two that may fail, and the protocol says
@@ -287,11 +288,11 @@ def test_falsified() -> None:
 
     def rejects(what: str, obj) -> None:
         check(f"{what} is caught",
-              tried(lambda: conforms(obj, m.Reads, "stub")),
+              tried(lambda: conforms(obj, seam.Reads, "stub")),
               "the battery accepted an adapter it should have refused")
 
     check("the control conforms",
-          not tried(lambda: conforms(_Fine(), m.Reads, "control")),
+          not tried(lambda: conforms(_Fine(), seam.Reads, "control")),
           "the control is broken, so nothing below proves anything")
 
     class Missing(_Fine):
@@ -315,13 +316,13 @@ def test_falsified() -> None:
     # every question with `None` — which is exactly the adapter that mounts,
     # draws an empty studio, and blames the repo.
     check("an adapter with the right names and the wrong records is caught",
-          tried(lambda: test_records({"stub": m.Hack("stub", _Fine())})),
+          tried(lambda: test_records({"stub": seam.Hack("stub", _Fine())})),
           "test_records accepted a reader that answers None to everything")
 
     # And the presence check on its own is not enough — this is why `conforms`
     # exists alongside `isinstance`.
     check("isinstance alone would have accepted the renamed parameter",
-          isinstance(Renamed(), m.Reads),
+          isinstance(Renamed(), seam.Reads),
           "runtime_checkable got stricter; the comment above is now wrong")
 
 

@@ -41,7 +41,8 @@ from pathlib import Path
 from .. import maplint
 from ..dev_server import playtest as devplay
 from ..maplint.diagnostics import Diagnostic, Severity
-from ..hacks.mount import Refused, mount
+from ..hacks.mount import mount
+from ..hacks.seam import Refused
 from ..shared import caches, world
 from ..shared.edits import StaleEdit, apply_edits
 from . import panels, play, reader, undo
