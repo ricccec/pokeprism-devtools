@@ -52,6 +52,7 @@ from ...wiring import regions
 from . import eventblock as eb
 from .entry import OBJECT_FIELDS
 from .entry import Entry as _Entry
+from .fruittree import AddFruittree
 from .itemball import AddItemball
 from .shapes import POLISHED_OBJECT, VANILLA_OBJECT, ObjectShape, prefill
 
@@ -386,8 +387,11 @@ ADDERS: dict[str, tuple[type[_Entry], ...]] = {
 #: so there is nothing to point at and nothing to write beside the line. Same
 #: object on screen, different half of the file — which is exactly the sort of
 #: difference that has to be declared here rather than branched on down there.
+#: The fruit tree is here for the same reason: polished has no `fruit_trees.asm`
+#: and spells the tree as `fruittree_event` object arguments, so its block and
+#: its two-file id table are vanilla's and nothing else's.
 VANILLA_ONLY: dict[str, tuple[type[_Entry], ...]] = {
-    "object": (AddItemball,),
+    "object": (AddItemball, AddFruittree),
 }
 
 #: And what `e` opens, keyed by the **list** the entry lives in rather than by
@@ -431,5 +435,5 @@ POLISHED_ADDERS, POLISHED_EDITORS = fork("_MapScriptHeader", POLISHED_OBJECT,
 #: Re-exported so a caller needing both the forms and the records they were
 #: built from has one import. The records themselves live in `.shapes`.
 __all__ = ["ObjectShape", "VANILLA_OBJECT", "POLISHED_OBJECT", "prefill",
-           "AddItemball", "VANILLA_ADDERS", "VANILLA_EDITORS",
+           "AddItemball", "AddFruittree", "VANILLA_ADDERS", "VANILLA_EDITORS",
            "POLISHED_ADDERS", "POLISHED_EDITORS", "fork"]

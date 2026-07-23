@@ -111,11 +111,15 @@ def test_block() -> None:
 
 
 def test_dialects() -> None:
-    """Polished spells an item ball as three extra `object_event` arguments,
-    with no block anywhere — so the adder that writes a block must not be on
-    offer there. This is the seam working: one declaration, not a branch."""
-    print("dialects — the adder is vanilla's, and only vanilla's")
-    check("vanilla offers the item ball", len(fa.VANILLA_ADDERS["object"]) == 1)
+    """Polished spells both an item ball and a fruit tree as extra
+    `object_event` arguments, with no block and no table anywhere — so the two
+    adders that write a block must not be on offer there. This is the seam
+    working: one declaration, not a branch."""
+    print("dialects — the block adders are vanilla's, and only vanilla's")
+    offered = {c.__name__.removeprefix("Vanilla")
+               for c in fa.VANILLA_ADDERS["object"]}
+    check("vanilla offers the item ball and the fruit tree",
+          offered == {"AddItemball", "AddFruittree"}, str(offered))
     check("polished does not", fa.POLISHED_ADDERS.get("object") is None)
     check("both still offer the four line-only adders",
           all(k in fa.VANILLA_ADDERS and k in fa.POLISHED_ADDERS
