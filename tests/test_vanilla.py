@@ -387,15 +387,16 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
     check("lint finds nothing because there is no linter", s.lint() == [])
     check("and the panes can ask before drawing a verdict",
           s.lints is False and s.measures is False)
-    # NPC, warp and signpost offer one form each. The object tab offers two —
-    # the item ball and the fruit tree — because both write a block an object
-    # points at, and each is a different block. A trainer's entry line still
-    # points at a block nobody writes, and that absence is measured, not pending.
+    # NPC, warp and signpost offer one form each. The object tab offers three —
+    # the item ball, the fruit tree and the hidden item — because each writes a
+    # block an entry points at, and each is a different block. (The hidden item
+    # reads onto this tab though its line is a bg_event.) A trainer's entry line
+    # still points at a block nobody writes, and that absence is measured.
     check("the line-only tabs offer one form each",
           all(len(s.adders(k)) == 1
               for k in ("NPC", "warp", "signpost")))
-    check("the object tab offers both block writers, item ball and fruit tree",
-          len(s.adders("object")) == 2)
+    check("the object tab offers three block writers: ball, tree, hidden item",
+          len(s.adders("object")) == 3)
     check("trainers still offer nothing, having no block writer",
           s.adders("trainer") == ())
     check("the sprite hint is silence", s.sprite_hint("TOWN_A", "SPRITE_TEACHER") == "")

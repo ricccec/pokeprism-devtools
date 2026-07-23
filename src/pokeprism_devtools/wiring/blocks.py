@@ -80,6 +80,21 @@ def camel(name: str) -> str:
                    for p in name.split("_") if p)
 
 
+def plain_camel(name: str) -> str:
+    """`FULL_HEAL` -> `FullHeal`, `PP_UP` -> `PpUp` — title-case, acronyms and all.
+
+    The sibling of :func:`camel`, and it exists because the two disagree in the
+    tree. An item ball's label writes `PP_UP` as `PPUp` (see :data:`ACRONYMS`),
+    but a hidden item's label writes the same item `PpUp` — `CeladonCityHiddenPpUp`
+    and `Route45HiddenPpUp`, the only two acronym items among the hidden-item
+    labels, and both plain. So a hidden item cannot borrow :func:`camel`: reusing
+    it would spell a `PPUp` that no `hiddenitem` block in the tree contains. Two
+    features, written by different hands, that never agreed on the casing — and
+    the label rule for each is measured against its own, not reasoned from one.
+    """
+    return "".join(p.capitalize() for p in name.split("_") if p)
+
+
 def labels(text: str) -> set[str]:
     """Every top-level label in one file."""
     return {m.group(1) for line in text.split("\n") if (m := _LABEL.match(line))}
@@ -198,3 +213,25 @@ def fruittree(label: str, tree_id: str) -> list[str]:
     the reference resolve.
     """
     return [f"{label}:", f"{INDENT}fruittree {tree_id}"]
+
+
+def hiddenitem(label: str, item: str, flag: str) -> list[str]:
+    """The whole block a `BGEVENT_ITEM` sign points at: a label and one
+    `hiddenitem` naming the item and the flag that remembers it was taken.
+
+    Two lines, like an item ball — but the flag lives *here*, in the block, and
+    not on the entry line the way a ball's does. A ball is an `object_event`
+    whose last argument is its flag; a hidden item is a `bg_event` with no flag
+    column of its own, so the byte that gates it sits inside `hiddenitem`
+    instead. That is why this adder allocates a flag like the item ball does yet
+    writes it into the body rather than the line.
+
+    The argument order is the whole reason a round-trip guards this writer. The
+    macro is `dwb \\2, \\1` — flag word then item byte, the two *transposed* on
+    the way to the ROM — but the source line is `hiddenitem ITEM, FLAG`,
+    item first. Copying the byte order into the source would write
+    `hiddenitem FLAG, ITEM` on every one, which assembles (both are constants)
+    and hands the engine an item id where the flag belongs. 85 lines in the tree
+    are `item, flag`; this writes the 86th the same way.
+    """
+    return [f"{label}:", f"{INDENT}hiddenitem {item}, {flag}"]

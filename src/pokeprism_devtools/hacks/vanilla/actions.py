@@ -53,6 +53,7 @@ from . import eventblock as eb
 from .entry import OBJECT_FIELDS
 from .entry import Entry as _Entry
 from .fruittree import AddFruittree
+from .hiddenitem import AddHiddenitem
 from .itemball import AddItemball
 from .shapes import POLISHED_OBJECT, VANILLA_OBJECT, ObjectShape, prefill
 
@@ -138,9 +139,10 @@ class AddSignpost(_Entry):
     `BGEVENT_READ`, a text label for polished's `BGEVENT_JUMPTEXT`, a std
     script for `BGEVENT_JUMPSTD` — and the form does not try to tell them
     apart, because all three are a name already in the tree either way. What it
-    will not offer is a hidden item: `BGEVENT_ITEM + NUGGET` needs a
-    `hiddenitem` block on vanilla, and the adder that writes blocks does not
-    exist yet.
+    will not offer is a hidden item: `BGEVENT_ITEM` needs a `hiddenitem` block
+    and a flag written beside its line, which is a whole adder's worth of work —
+    `AddHiddenitem`, on the Objects tab, where the item reads back. This form
+    writes one line and sends a hidden item there.
     """
     name = "signpost"
     title = "Add a signpost"
@@ -161,9 +163,10 @@ class AddSignpost(_Entry):
         kind = self.text("kind") or "BGEVENT_READ"
         if kind.startswith("BGEVENT_ITEM"):
             raise ActionError(
-                "a hidden item needs a hiddenitem block written beside its "
-                "line, and writing script blocks is not wired for this "
-                "dialect yet. Its line alone would not assemble.")
+                "a hidden item needs a hiddenitem block and a flag written "
+                "beside its line — its line alone would not assemble. Add it "
+                "from the Objects tab, where 'Add a hidden item' writes all "
+                "three.")
         if not self.text("points_at"):
             raise ActionError("a signpost that points at nothing assembles "
                               "into a jump to address zero")
@@ -389,9 +392,12 @@ ADDERS: dict[str, tuple[type[_Entry], ...]] = {
 #: difference that has to be declared here rather than branched on down there.
 #: The fruit tree is here for the same reason: polished has no `fruit_trees.asm`
 #: and spells the tree as `fruittree_event` object arguments, so its block and
-#: its two-file id table are vanilla's and nothing else's.
+#: its two-file id table are vanilla's and nothing else's. The hidden item too:
+#: polished bakes it into the `bg_event` (`BGEVENT_ITEM + NUGGET`) with no
+#: `hiddenitem` block to write, so vanilla's block-and-flag adder has nothing to
+#: cross the seam to.
 VANILLA_ONLY: dict[str, tuple[type[_Entry], ...]] = {
-    "object": (AddItemball, AddFruittree),
+    "object": (AddItemball, AddFruittree, AddHiddenitem),
 }
 
 #: And what `e` opens, keyed by the **list** the entry lives in rather than by
@@ -435,5 +441,5 @@ POLISHED_ADDERS, POLISHED_EDITORS = fork("_MapScriptHeader", POLISHED_OBJECT,
 #: Re-exported so a caller needing both the forms and the records they were
 #: built from has one import. The records themselves live in `.shapes`.
 __all__ = ["ObjectShape", "VANILLA_OBJECT", "POLISHED_OBJECT", "prefill",
-           "AddItemball", "AddFruittree", "VANILLA_ADDERS", "VANILLA_EDITORS",
-           "POLISHED_ADDERS", "POLISHED_EDITORS", "fork"]
+           "AddItemball", "AddFruittree", "AddHiddenitem", "VANILLA_ADDERS",
+           "VANILLA_EDITORS", "POLISHED_ADDERS", "POLISHED_EDITORS", "fork"]
