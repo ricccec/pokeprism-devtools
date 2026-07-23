@@ -215,6 +215,104 @@ def fruittree(label: str, tree_id: str) -> list[str]:
     return [f"{label}:", f"{INDENT}fruittree {tree_id}"]
 
 
+def dialogue_body(pages: list[list[str]]) -> list[str]:
+    """Dialogue as the family's text engine reads it: `text` opens the first
+    box, `line` is its second row and `cont` each row after, `para` opens a
+    fresh box, and `done` ends the whole thing.
+
+    The family opener is `text` where prism's is `ctxt` — the one thing that
+    keeps this from being `scaffold._text_body`, and the reason a trainer block
+    cannot borrow prism's dialogue formatter. A blank line is written before
+    each fresh `para` box the way both family trees space their paragraphs.
+    """
+    if not pages or not any(pages):
+        raise BlockError("a trainer with nothing to say — dialogue needs a line")
+    out: list[str] = []
+    for p, lines in enumerate(pages):
+        if not lines:
+            raise BlockError("a textbox with no lines in it")
+        for i, line in enumerate(lines):
+            if '"' in line:
+                # rgbasm ends the string at the first unescaped quote, so a line
+                # carrying one would spill into the next argument and the map
+                # would not assemble. Refuse it here rather than write it.
+                raise BlockError(
+                    f"{line!r} has a double-quote in it, which would close the "
+                    "string early — the map would not assemble")
+            if p > 0 and i == 0:
+                out.append("")
+            macro = ("text" if p == 0 else "para") if i == 0 else \
+                    ("line" if i == 1 else "cont")
+            out.append(f'{INDENT}{macro} "{line}"')
+    out.append(f"{INDENT}done")
+    return out
+
+
+def trainer_block(label: str, cls: str, party: str, flag: str, *,
+                  seen_label: str, defeated_label: str, after_label: str,
+                  seen: list[list[str]], defeated: list[list[str]],
+                  after: list[list[str]]) -> list[str]:
+    """The whole of a vanilla `OBJECTTYPE_TRAINER` block, the native way.
+
+    333 of 333 pokecrystal trainers name their seen and beaten texts as
+    **global** labels and hang a local `.AfterScript` off the seventh macro
+    argument, whose 291-of-331 body is the six-line post-battle one-liner below.
+    Emitting local `.SeenText` labels instead — the shape polished uses — would
+    make every trainer this writes the first of its kind in the tree, the same
+    "visibly not one of the 333" tell the item ball's `, 1` and the `PPUp`
+    casing exist to avoid. So the three texts are global blocks the caller has
+    minted unique names for, and this formats them beside the script.
+
+    The loss text (the macro's sixth argument, shown when the *player* loses) is
+    `0` in all 333 — the engine has a default — and the family form does not ask
+    for one, so it is written literally.
+    """
+    return [
+        f"{label}:",
+        f"{INDENT}trainer {cls}, {party}, {flag}, {seen_label}, "
+        f"{defeated_label}, 0, .AfterScript",
+        "",
+        ".AfterScript:",
+        f"{INDENT}endifjustbattled",
+        f"{INDENT}opentext",
+        f"{INDENT}writetext {after_label}",
+        f"{INDENT}waitbutton",
+        f"{INDENT}closetext",
+        f"{INDENT}end",
+        "",
+        f"{seen_label}:", *dialogue_body(seen),
+        "",
+        f"{defeated_label}:", *dialogue_body(defeated),
+        "",
+        f"{after_label}:", *dialogue_body(after),
+    ]
+
+
+def generictrainer_block(label: str, cls: str, party: str, flag: str, *,
+                         seen: list[list[str]], defeated: list[list[str]],
+                         after: list[list[str]]) -> list[str]:
+    """The whole of a polished `OBJECTTYPE_GENERICTRAINER` block, self-contained.
+
+    The shape 593 of 593 polished generic trainers take, and the one prism's
+    `scaffold._trainer_block` renders identically: the macro names two local
+    texts, the talk-again text falls through directly beneath it, and the seen
+    and beaten texts follow as local labels. Polished genuinely writes local
+    labels here (190 of the 593), so unlike vanilla the self-contained block is
+    a shape already in its tree — which is why the two dialects fork rather than
+    sharing one formatter.
+    """
+    return [
+        f"{label}:",
+        f"{INDENT}generictrainer {cls}, {party}, {flag}, .SeenText, .BeatenText",
+        "",
+        *dialogue_body(after),
+        "",
+        ".SeenText:", *dialogue_body(seen),
+        "",
+        ".BeatenText:", *dialogue_body(defeated),
+    ]
+
+
 def hiddenitem(label: str, item: str, flag: str) -> list[str]:
     """The whole block a `BGEVENT_ITEM` sign points at: a label and one
     `hiddenitem` naming the item and the flag that remembers it was taken.
