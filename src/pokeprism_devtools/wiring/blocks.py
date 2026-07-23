@@ -183,3 +183,18 @@ def itemball(label: str, item: str, quantity: int = 1) -> list[str]:
             "and the bag caps a stack at 99")
     args = item if quantity == 1 else f"{item}, {quantity}"
     return [f"{label}:", f"{INDENT}itemball {args}"]
+
+
+def fruittree(label: str, tree_id: str) -> list[str]:
+    """The whole block a fruit-tree object points at: a label and one
+    `fruittree` naming the tree's id.
+
+    Two lines, exactly like an item ball, and for the same reason it is worth
+    crossing the seam early — the body is a macro call and everything hard is in
+    the names. The one difference is where the hard part lives: an item ball's
+    three names are all in the map file, but a fruit tree's `tree_id` is a
+    `FRUITTREE_` constant that indexes a table in a *different* file, so this
+    formatter only spells the reference and `wiring/fruittrees.py` owns making
+    the reference resolve.
+    """
+    return [f"{label}:", f"{INDENT}fruittree {tree_id}"]
