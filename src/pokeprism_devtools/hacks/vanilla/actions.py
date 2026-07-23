@@ -34,13 +34,14 @@ because polished spells the same object as three extra `object_event`
 arguments with no block anywhere. That is declared in :data:`VANILLA_ONLY`
 rather than branched on, the same way the slot order is.
 
-What still does **not** cross, and why it is an absence rather than a gap:
-adding a trainer. Its entry line is the small half — the real content is a
-`trainer` block plus the two texts it names, and the shape of those texts is
-not yet pinned down in polished, where a `generictrainer`'s seen and beaten
-text sit hundreds of lines from the block that uses them. A generated block
-that guessed at that would assemble and then misbehave, which is worse than a
-tab whose Add row says nothing.
+**The trainer is the first adder that writes a block in *both* trees.** Its
+entry line is the small half; the content is a battle block plus the texts it
+names — and those texts sit differently in each tree, so the block forks where
+the item ball's did not. That fork lives in :mod:`.trainer` as two subclasses,
+one registered per dialect, and it was pinned down by measuring all 333 vanilla
+and 593 polished trainers rather than guessed at. It is reuse-only, mirroring
+prism's own form: you place a party that exists, and the flag it allocates is
+`EVENT_<MAP>_TRAINER`, never a beat flag two placements would share.
 """
 
 from __future__ import annotations
@@ -56,6 +57,7 @@ from .fruittree import AddFruittree
 from .hiddenitem import AddHiddenitem
 from .itemball import AddItemball
 from .shapes import POLISHED_OBJECT, VANILLA_OBJECT, ObjectShape, prefill
+from .trainer import GenericTrainer, Trainer
 
 
 # --------------------------------------------------------------------------- #
@@ -375,8 +377,9 @@ class EditObject(_Edit):
 # --------------------------------------------------------------------------- #
 
 #: What the tab-foot "Add new…" row opens, keyed by the word the tab carries in
-#: `Tab.adds`. The four lines-only adders, shared by both dialects. Trainers
-#: are still absent and still honestly so — see this module's docstring.
+#: `Tab.adds`. The four lines-only adders, shared by both dialects. The trainer
+#: is not here: it writes a block that forks between the trees, so it is
+#: registered per dialect in the two `fork` calls below, not in this shared map.
 ADDERS: dict[str, tuple[type[_Entry], ...]] = {
     "NPC": (AddNpc,),
     "warp": (AddWarp,),
@@ -431,15 +434,22 @@ def fork(anchor: str, shape: ObjectShape, tag: str, *,
             {k: stamp(c) for k, c in EDITORS.items()})
 
 
+#: The trainer, forked. Both trees have it — the first block adder that does —
+#: but each writes its own macro and `OBJECTTYPE_*`, so the dialect gets its own
+#: subclass here rather than a shared entry in :data:`ADDERS`. Keyed "trainer",
+#: the word the Trainers tab carries in `Tab.adds`.
 VANILLA_ADDERS, VANILLA_EDITORS = fork("_MapEvents", VANILLA_OBJECT, "Vanilla",
                                        layout=regions.VANILLA,
-                                       extra=VANILLA_ONLY)
+                                       extra={**VANILLA_ONLY,
+                                              "trainer": (Trainer,)})
 POLISHED_ADDERS, POLISHED_EDITORS = fork("_MapScriptHeader", POLISHED_OBJECT,
-                                         "Polished", layout=regions.POLISHED)
+                                         "Polished", layout=regions.POLISHED,
+                                         extra={"trainer": (GenericTrainer,)})
 
 
 #: Re-exported so a caller needing both the forms and the records they were
 #: built from has one import. The records themselves live in `.shapes`.
 __all__ = ["ObjectShape", "VANILLA_OBJECT", "POLISHED_OBJECT", "prefill",
-           "AddItemball", "AddFruittree", "AddHiddenitem", "VANILLA_ADDERS",
-           "VANILLA_EDITORS", "POLISHED_ADDERS", "POLISHED_EDITORS", "fork"]
+           "AddItemball", "AddFruittree", "AddHiddenitem", "Trainer",
+           "GenericTrainer", "VANILLA_ADDERS", "VANILLA_EDITORS",
+           "POLISHED_ADDERS", "POLISHED_EDITORS", "fork"]

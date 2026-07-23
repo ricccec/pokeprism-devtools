@@ -35,6 +35,7 @@ from pokeprism_devtools.studio.actions import ActionError  # noqa: E402
 from pokeprism_devtools.wiring import blocks as B  # noqa: E402
 
 VANILLA = Path.home() / "code/ricccec/pokecrystal"
+POLISHED = Path.home() / "code/ricccec/polishedcrystal"
 
 _failures = 0
 
@@ -253,6 +254,146 @@ def test_falsified() -> None:
           "placement check is not testing placement")
 
 
+def test_trainer_blocks() -> None:
+    """The two trainer dialects and the dialogue body they share. Vanilla names
+    three global texts and hangs a local `.AfterScript`; polished inlines all
+    three as locals with the after-line falling through beneath the macro — the
+    shapes measured from all 333 vanilla and 593 polished trainers."""
+    print("the trainer block — two dialects over one dialogue body")
+    seen, beaten, after = [["Hi!"]], [["I lost."]], [["Bye.", "See ya."]]
+
+    v = B.trainer_block("Foo", "BUG_CATCHER", "AL", "EVENT_X",
+                        seen_label="FooSeen", defeated_label="FooBeaten",
+                        after_label="FooAfter", seen=seen, defeated=beaten,
+                        after=after)
+    check("vanilla names the two texts on the macro line, loss literal 0",
+          v[1] == "\ttrainer BUG_CATCHER, AL, EVENT_X, FooSeen, FooBeaten, "
+                  "0, .AfterScript", v[1])
+    check("vanilla writes the three texts as global blocks",
+          all(f"{lbl}:" in v for lbl in ("FooSeen", "FooBeaten", "FooAfter")))
+    at = v.index(".AfterScript:")
+    check("vanilla's after-battle line is the measured six-command body",
+          [ln.strip() for ln in v[at + 1:at + 7]]
+          == ["endifjustbattled", "opentext", "writetext FooAfter",
+              "waitbutton", "closetext", "end"], str(v[at + 1:at + 7]))
+
+    p = B.generictrainer_block("Foo", "BUG_CATCHER", "AL", "EVENT_X",
+                               seen=seen, defeated=beaten, after=after)
+    check("polished names two locals on the macro line, no loss/after slots",
+          p[1] == "\tgenerictrainer BUG_CATCHER, AL, EVENT_X, .SeenText, "
+                  ".BeatenText", p[1])
+    check("polished's after-line falls through directly beneath the macro",
+          p[3] == '\ttext "Bye."', p[3])
+    check("polished inlines the seen and beaten texts as locals",
+          ".SeenText:" in p and ".BeatenText:" in p)
+
+    body = B.dialogue_body([["a", "b", "c", "d"], ["e"]])
+    check("dialogue is text/line/cont, a blank + para for a fresh box, one done",
+          body == ['\ttext "a"', '\tline "b"', '\tcont "c"', '\tcont "d"', '',
+                   '\tpara "e"', '\tdone'], str(body))
+    try:
+        B.dialogue_body([['he said "hi"']])
+        check("a double-quote in a line is refused", False, "it was accepted")
+    except B.BlockError as exc:
+        check("a double-quote in a line is refused", "double-quote" in str(exc))
+    try:
+        B.dialogue_body([])
+        check("empty dialogue is refused", False, "it was accepted")
+    except B.BlockError as exc:
+        check("empty dialogue is refused", "needs a line" in str(exc))
+
+
+def test_trainer_dialects() -> None:
+    """The trainer is the first block adder real on *both* trees, so unlike the
+    item ball it is registered per dialect — each writes its own macro and
+    `OBJECTTYPE_*`. One declaration per tree, not a branch."""
+    print("the trainer forks per dialect — one macro each, registered per tree")
+    v, p = fa.VANILLA_ADDERS["trainer"], fa.POLISHED_ADDERS["trainer"]
+    check("both trees offer exactly one trainer adder", len(v) == 1 and len(p) == 1)
+    check("vanilla writes OBJECTTYPE_TRAINER", v[0].objtype == "OBJECTTYPE_TRAINER")
+    check("polished writes OBJECTTYPE_GENERICTRAINER",
+          p[0].objtype == "OBJECTTYPE_GENERICTRAINER")
+    check("the layout is stamped per dialect, not shared",
+          v[0].layout is not p[0].layout)
+    check("and the stamped names read as the dialect",
+          v[0].__name__ == "VanillaTrainer"
+          and p[0].__name__ == "PolishedGenericTrainer",
+          f"{v[0].__name__} / {p[0].__name__}")
+
+
+def test_trainer_round_trip() -> None:
+    """Generate a trainer into a real map on each tree and read it back.
+
+    The check a formatter test cannot make: the file comes back with one more
+    object that the reader carves as a trainer of the class and party asked for,
+    a fresh beaten flag, and a battle block the object's pointer resolves to —
+    which, since the reader walks from the object line to that block to find the
+    class, is also the proof the block landed on the right side of the header.
+    """
+    print("a trainer into a real map, both trees, read back")
+    import tempfile
+
+    from pokeprism_devtools.hacks.polished import events as pe
+    from pokeprism_devtools.hacks.vanilla import events as ve
+    cases = [(VANILLA, fa.VANILLA_ADDERS["trainer"][0], ve, "_MapEvents"),
+             (POLISHED, fa.POLISHED_ADDERS["trainer"][0], pe, "_MapScriptHeader")]
+    for root, add, reader, anchor in cases:
+        rel = "maps/AzaleaGym.asm"
+        if not (root / rel).exists():
+            check(f"{root.name} present", False, str(root))
+            continue
+        result = add("AZALEA_GYM", cls="BUG_CATCHER", party="AL",
+                     sprite="SPRITE_BUG_CATCHER", y="4", x="5",
+                     movement="SPRITEMOVEDATA_STANDING_DOWN", sight="3",
+                     seen="Our eyes met!", defeated="I lost.",
+                     after="Well fought.").run(root)
+        edit = next(e for e in result.edits if e.path == rel)
+        before = eb.parse_map(root / rel, anchor)
+        block = eb.parse_text(edit.new_text, root / rel, anchor)
+        check(f"{root.name}: one more object, other lists unmoved",
+              len(block.lists["object"].entries)
+              == len(before.lists["object"].entries) + 1
+              and all(len(block.lists[k].entries)
+                      == len(before.lists[k].entries)
+                      for k in ("warp", "coord", "bg")))
+        check(f"{root.name}: a beaten flag was allocated",
+              any(e.path.endswith("event_flags.asm") for e in result.edits))
+
+        d = Path(tempfile.mkdtemp())
+        tmp = d / rel
+        tmp.parent.mkdir(parents=True)
+        tmp.write_text(edit.new_text)
+        tr = reader.tables(tmp).trainers[-1]
+        check(f"{root.name}: reads back as BUG_CATCHER / AL",
+              tr.cls == "BUG_CATCHER" and tr.party == "AL", f"{tr.cls}/{tr.party}")
+        check(f"{root.name}: with the fresh EVENT_AZALEA_GYM_TRAINER flag, sight 3",
+              tr.flag == "EVENT_AZALEA_GYM_TRAINER" and tr.sight == "3",
+              f"{tr.flag} / {tr.sight}")
+
+
+def test_trainer_reuse_only() -> None:
+    """Reuse-only, the way prism's own form is: a party the class does not have
+    is refused before a byte is written, and the refusal names the roster file
+    rather than silently writing a `trainer` line the assembler would reject."""
+    print("reuse-only — a party that isn't the class's is refused")
+    if not (VANILLA / "maps/AzaleaGym.asm").exists():
+        check("vanilla present", False, str(VANILLA))
+        return
+    add = fa.VANILLA_ADDERS["trainer"][0]
+    try:
+        add("AZALEA_GYM", cls="BUG_CATCHER", party="NOT_A_PARTY",
+            seen="a", defeated="b", after="c").run(VANILLA)
+        check("an invented party is refused", False, "it was accepted")
+    except ActionError as exc:
+        check("an invented party is refused, naming the roster",
+              "no party" in str(exc) and "trainer_constants" in str(exc),
+              str(exc))
+    result = add("AZALEA_GYM", cls="BUG_CATCHER", party="AL", y="4", x="5",
+                 seen="a", defeated="b", after="c").run(VANILLA)
+    check("a real party is accepted and writes a map edit",
+          any(e.path.startswith("maps/") for e in result.edits))
+
+
 if __name__ == "__main__":
     test_names()
     test_block()
@@ -260,5 +401,9 @@ if __name__ == "__main__":
     test_real()
     test_second_ball()
     test_falsified()
+    test_trainer_blocks()
+    test_trainer_dialects()
+    test_trainer_round_trip()
+    test_trainer_reuse_only()
     print(f"\n{'FAILURES: ' + str(_failures) if _failures else 'all ok'}")
     sys.exit(1 if _failures else 0)

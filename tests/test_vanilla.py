@@ -390,15 +390,16 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
     # NPC, warp and signpost offer one form each. The object tab offers three —
     # the item ball, the fruit tree and the hidden item — because each writes a
     # block an entry points at, and each is a different block. (The hidden item
-    # reads onto this tab though its line is a bg_event.) A trainer's entry line
-    # still points at a block nobody writes, and that absence is measured.
+    # reads onto this tab though its line is a bg_event.) The Trainers tab now
+    # offers one too: a trainer's entry line points at a battle block, and this
+    # dialect writes it — the first block adder real on both trees.
     check("the line-only tabs offer one form each",
           all(len(s.adders(k)) == 1
               for k in ("NPC", "warp", "signpost")))
     check("the object tab offers three block writers: ball, tree, hidden item",
           len(s.adders("object")) == 3)
-    check("trainers still offer nothing, having no block writer",
-          s.adders("trainer") == ())
+    check("trainers now offer one, a block writer that forks per dialect",
+          len(s.adders("trainer")) == 1)
     check("the sprite hint is silence", s.sprite_hint("TOWN_A", "SPRITE_TEACHER") == "")
     try:
         s.measure("Hello.")
@@ -761,9 +762,16 @@ def test_real_choices(root: Path, name: str) -> None:
 
     check("maps are offered from the catalog it was handed",
           hack.writes.choices(actions.MAPS, consts) == list(consts))
-    check("a kind this dialect cannot enumerate is empty, not invented",
+    # Trainer classes and parties now roster from constants/trainer_constants.asm,
+    # both dialects' shared home for them. PARTIES narrows to the class already
+    # chosen, so it is empty until one is — the one kind here that depends.
+    classes = hack.writes.choices(actions.CLASSES, consts)
+    check("trainer classes are rostered, not empty",
+          bool(classes) and "BUG_CATCHER" in classes, f"{len(classes)} classes")
+    check("parties are empty until a class is chosen, then that class's own",
           hack.writes.choices(actions.PARTIES, consts) == []
-          and hack.writes.choices(actions.CLASSES, consts) == [])
+          and "AL" in hack.writes.choices(actions.PARTIES, consts,
+                                           {"cls": "BUG_CATCHER"}))
     hack.writes.warm()
     hack.writes.forget()
     check("warm and forget both run, and forget really drops the cache",

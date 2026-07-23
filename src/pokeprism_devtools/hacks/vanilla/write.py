@@ -17,7 +17,7 @@ from pathlib import Path
 from ...shared.constants import ConstSet, read_set
 from ...studio import actions, panels
 from ...studio.actions import Action, ActionError, Result
-from ...wiring import warpdel
+from ...wiring import trainerroster, warpdel
 from ...wiring.warpdel import BlindTable, DeadDoor, WarpGrammar, WarpMacro
 from ..seam import Refused
 from . import newmap
@@ -130,14 +130,15 @@ class Writer:
     thing the dialect cannot do (spell a door to nowhere) is a refusal that
     names the doors rather than a silence.
 
-    **Editing crosses for all four lists, adding for three of them.** An
-    editor rewrites one line in place, which moves nothing and renumbers
-    nothing, so it is safe wherever the line already parses; an adder appends
-    one, which is safe exactly when the line it appends needs no script block
-    written beside it. Trainers and props need one, so they have no adder and
-    the tab's Add row says nothing rather than producing a map that will not
-    assemble. See `.actions` for the slot orders, which fork between the two
-    trees in four columns and swap the movement radius between two of them.
+    **Editing crosses for all four lists, adding for every tab.** An editor
+    rewrites one line in place, which moves nothing and renumbers nothing, so it
+    is safe wherever the line already parses. An adder appends a line, and the
+    ones that also write the script block it points at — the item ball, fruit
+    tree and hidden item on vanilla, and the trainer on both trees — mint the
+    block, the names and the flag that go with it. See `.actions` for the slot
+    orders, which fork between the two trees in four columns and swap the
+    movement radius between two of them, and `.trainer` for the block that forks
+    too.
 
     What is left is a declared hole rather than a capability the session could
     misread: of the three app-level forms `form()` answers only `resize` — new
@@ -189,13 +190,11 @@ class Writer:
     def adders(self, kind: str) -> tuple:
         """What the tab-foot "Add new…" row opens.
 
-        All four lists are here, plus the item ball — the first adder that
-        writes the block its entry line points at rather than requiring one to
-        already exist. Trainers are still absent and the absence is still
-        measured rather than pending: a `trainer` block names two texts, and an
-        adder that guessed at their shape would produce a map that assembles
-        and then misbehaves, which is worse than a tab whose Add row says
-        nothing.
+        All four lists are here, plus the block-writing adders: the item ball,
+        fruit tree and hidden item on vanilla alone, and the trainer on both
+        trees — the first adder that writes a block which itself forks between
+        the dialects. Which of those `self._actions` holds is the fork the mount
+        stamped; this method only looks the tab's word up in it.
         """
         return self._actions[0].get(kind, ())
 
@@ -225,11 +224,14 @@ class Writer:
         """The constants a family field of this kind will accept.
 
         An unknown kind is `[]` — free text, not an error — and that is the
-        honest answer for most of the vocabulary here rather than a stub. This
-        tree has no trainer classes the studio can roster (`PARTIES`,
-        `CLASSES`), and its TMs are pasted together by `add_tm` at assembly
-        time and appear nowhere in the source (`TMHMS`), which is the same trap
-        prism's `studio/offers.py` documents. The map-header enums
+        honest answer for most of the vocabulary here rather than a stub. The
+        trainer classes and their parties are rostered from
+        `constants/trainer_constants.asm` (`CLASSES`, `PARTIES`), the file both
+        dialects declare them in — `PARTIES` depends on the class already
+        chosen, the one kind here whose answers narrow as another field is
+        filled. What stays unrostered are the TMs, pasted together by `add_tm`
+        at assembly time and appearing nowhere in the source (`TMHMS`), the same
+        trap prism's `studio/offers.py` documents. The map-header enums
         (`TILESETS`, `LANDMARKS`, `MUSIC`, `TIMES`, `FISHGROUPS`, `SIGNS`) are
         read now, because the new-map form asks — and the landmarks are a fork
         rather than a shared entry: vanilla writes `LANDMARK_OLIVINE_CITY`,
@@ -245,6 +247,11 @@ class Writer:
         """
         if kind == actions.MAPS:
             return list(map_consts)
+        if kind == actions.CLASSES:
+            return trainerroster.classes(self.root)
+        if kind == actions.PARTIES:
+            cls = (values or {}).get("cls", "").strip()
+            return trainerroster.parties(self.root, cls) if cls else []
         if (offered := newmap.offers(
                 self.root, self._newmap or newmap.VANILLA, kind)) is not None:
             return offered
