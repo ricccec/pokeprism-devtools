@@ -41,50 +41,23 @@ def mount(root: Path) -> Hack:
     straight face. An error that names the tree beats a session that swears
     the repo has no maps in it.
 
-    Imports run inside the branches: mounting a prism tree is what pulls in
-    the linter, and a CLI that only probes pays for no adapter at all.
+    Imports run inside the branches: recognition is the mount's job, but
+    building the adapter is the hack's, so each branch defers to its
+    `hacks/<name>/claim` module — mounting a prism tree is what pulls in the
+    linter, and a CLI that only probes pays for no reader, writer or linter.
     """
     if all((root / rel).exists() for rel in _PRISM_LAYOUT):
-        from ..maplint.context import LintContext
-        from .prism.read import Reader
-        from .prism.write import Writer
-        ctx = LintContext(root)
-        return Hack("prism", Reader(root, ctx), ctx=ctx,
-                    writes=Writer(root, ctx), plays=True, measures=True)
+        from .prism.claim import build
+        return build(root)
 
     if (root / "data/maps/maps.asm").exists():
         anchor = _family_anchor(root)
         if anchor == "_MapEvents":
-            from .vanilla.read import Reader
-            from .vanilla.write import Writer
-            return Hack("vanilla", Reader(root), writes=Writer(root))
+            from .vanilla.claim import build
+            return build(root)
         if anchor == "_MapScriptHeader":
-            from .polished.read import Reader
-            from .vanilla.actions import POLISHED_ADDERS, POLISHED_EDITORS
-            from .vanilla.newmap import POLISHED as POLISHED_NEWMAP
-            from .vanilla.resize import polished as polished_resize
-            from .vanilla.write import (POLISHED_CHOICES, POLISHED_WARPS,
-                                        Writer)
-            # The same writer vanilla mounts, holding the head anchor, the
-            # larger warp grammar, its own constant-set map, its own forms and
-            # its own resize and new-map answers — the fork relation is real,
-            # so the code states it, exactly as the polished read adapter
-            # imports vanilla's parsers. All six arguments are forks measured
-            # by survey, never sniffed: polished opens a map file where
-            # vanilla closes it,
-            # counts warps with a `digmod` vanilla has never heard of, writes
-            # its overworld palettes through a macro that leaves their names
-            # out of the source, spells an `object_event` in twelve arguments
-            # whose movement radius is the other way round, and indexes a map's
-            # blocks under `_BlockData:` where vanilla writes `_Blocks:`,
-            # and mints a section per map for a new map's blocks where vanilla
-            # joins one of three — so its new-map form asks one question fewer
-            # than vanilla's, over a different list of header arguments.
-            return Hack("polished", Reader(root),
-                        writes=Writer(root, anchor, POLISHED_WARPS,
-                                      POLISHED_CHOICES,
-                                      (POLISHED_ADDERS, POLISHED_EDITORS),
-                                      polished_resize(), POLISHED_NEWMAP))
+            from .polished.claim import build
+            return build(root)
         raise UnknownTree(
             f"{root} keeps map data under data/maps/ like the pokecrystal "
             "family, but no map file carries either family anchor "
