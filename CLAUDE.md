@@ -10,8 +10,15 @@
 - NEVER commit secrets, credentials, or .env files
 - NEVER add a `Co-Authored-By` trailer to user commits unless this project's `.claude/settings.json` has `attribution.commit` set (#2078). The Claude Code Bash tool may suggest one in its default commit-message template — ignore it. `Co-Authored-By` is semantic authorship attribution under git/GitHub convention; the tool is the facilitator, not a co-author.
 - Keep source files small — see **File size** below for what the numbers mean
-- Name functions with verbs. A function *does* something; a name that is a noun
-  is usually a value that has not admitted it yet.
+- Name functions with a verb **and its object** — say what the function does
+  *to what*. A function *does* something; a name that is a noun (`registered`,
+  `config`) is usually a value that has not admitted it yet. But a bare verb
+  (`discover`, `process`, `handle`, `run`) is barely better: it passes a shallow
+  "is it a verb?" check and still tells the reader nothing. The test that
+  matters: reading the name alone, could someone answer *what does this return or
+  change?* `get_registered_hacks` passes; `discover` does not. When a verb needs
+  no object because the object is the whole module (`mount`, `build`), that is
+  fine — the object is implied, not missing.
 - Validate input at system boundaries
 
 ## File size
