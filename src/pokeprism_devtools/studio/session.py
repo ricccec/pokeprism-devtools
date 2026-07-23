@@ -83,14 +83,15 @@ class StaleWorld(SessionError):
 class Session:
     """One repo, open for editing."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, hack_path: Path | None = None) -> None:
         # The seam's own gate, not just the CLI's: a headless caller that points
         # a Session at a tree no adapter recognises gets an error naming the
         # tree, rather than a session that swears the repo has no maps in it.
         # `mount` is also where every question about *which hack this is* stops:
         # from here down, the session reads through `self.hack.reads` and
         # branches only on the capabilities the mount declared.
-        self.hack = mount(root)
+        self._hack_path = hack_path  # a `--hack-path` adapter, re-used on re-read
+        self.hack = mount(root, hack_path)
         self.root = root
         # The linter's context, for the hack the linter is written against.
         # None means "this tree has no linter", and every lint answer is [].
@@ -522,8 +523,9 @@ class Session:
         """
         caches.clear()          # which finds `offers._index` too, by discovery
         # Mounted afresh: the adapter's own state (the linter's context among
-        # it) was derived from the old tree, and a re-read is a re-mount.
-        self.hack = mount(self.root)
+        # it) was derived from the old tree, and a re-read is a re-mount —
+        # through the same `--hack-path` override the session opened with.
+        self.hack = mount(self.root, self._hack_path)
         self.ctx = self.hack.ctx
         self._found = None
         # The stamp is taken now and the repo is re-read lazily, on the next

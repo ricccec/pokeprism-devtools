@@ -1,99 +1,146 @@
 """Which hack is this tree. **The mount point.**
 
-This is the one module allowed to know hack names — what a hack must *answer*
-once mounted is `seam.py`, which knows none. The split is not filing: the seam
-is a contract that outlives any hack in this repo, the mount is a list of the
-hacks that happen to be here today, and the two change for unrelated reasons.
+This is the one module allowed to know that hacks exist at all — and it knows
+them only as a registry of names it asks in turn, never by branching on one.
+What a hack must *answer* once mounted is `seam.py`, which knows no names; how a
+hack recognises its own tree is `hacks/<name>/claim.py`, which knows only its
+own. This module owns the space between: discover the registered adapters, ask
+each whether it claims this tree, and turn the answers into one mounted
+:class:`~.seam.Hack` or one :class:`UnknownTree` that says why none did.
 
-A tree is recognised by its **layout**, not by any name it might carry: the
-file a hack cannot function without is the file that identifies it. Prism keeps
-its secondary map headers in `maps/second_map_headers.asm`; the pokecrystal
-family keeps everything under `data/maps/`, and within the family, polished is
-the one whose map scripts start with the event block (`_MapScriptHeader:` at
-the head) where vanilla ends with it (`_MapEvents:` at the tail).
+Recognition is inverted on purpose. An earlier mount recognised every tree
+itself — a prism-layout check, then a family-anchor probe that knew both
+vanilla's `_MapEvents` tail and polished's `_MapScriptHeader` head. That probe
+was shared knowledge no third-party adapter could join or correct, a third
+category between "a hack" and "hack-agnostic". Now each hack answers for itself:
+`claims(root)` returns the built adapter, nothing, or a :class:`NearMiss` with a
+reason, and this loop only counts the claims and collects the reasons.
 
-What the mount returns is a :class:`~.seam.Hack`: a name for sentences, a read
-adapter, a write adapter, and the declared capabilities. A capability the
-adapter does not declare degrades to *absence* above the seam — never a crash,
-and never an `if <hack name>`.
+Registration is entry points (`[project.entry-points."pokeprism_devtools.hacks"]`
+in `pyproject.toml`), so the three in-tree hacks register through the identical
+path a `pip install`ed third-party adapter would — the only way to learn whether
+the plugin seam works before someone depends on it. `--hack-path` (`hack_path`
+here) loads one more from a file, for an author iterating on a tree who would
+rather not reinstall between runs.
 """
 
 from __future__ import annotations
 
-import re
+import importlib.metadata
+import importlib.util
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from .seam import Hack
 
+_GROUP = "pokeprism_devtools.hacks"
+
 
 class UnknownTree(RuntimeError):
-    """No adapter recognises this tree's layout. The message names what was
-    found instead, because "unknown" is not actionable and "this looks like a
-    pokecrystal checkout" is."""
+    """No registered adapter claimed this tree. The message gathers what each
+    one *looked for*, because "unknown" is not actionable and "no map file ends
+    with _MapEvents, and no maps/second_map_headers.asm either" is."""
 
 
-def mount(root: Path) -> Hack:
-    """The adapter for this tree, or :class:`UnknownTree`, loudly.
+@dataclass(frozen=True)
+class NearMiss:
+    """A hack's "almost": it looked at this tree, did not claim it, and this is
+    why. Owned by the hack that produced it — the reason is that hack's own words
+    about its own layout — and collected here only to build an
+    :class:`UnknownTree` when nothing claims. `hack` names the speaker, so two
+    near-misses read as two voices rather than one committee-authored sentence."""
+    hack: str
+    reason: str
+
+
+def mount(root: Path, hack_path: Path | None = None) -> Hack:
+    """The adapter that claims this tree, or :class:`UnknownTree`, loudly.
 
     Loud on purpose, and measured: before this gate existed, five of the eight
     prism parsers failed *silently* on a pokecrystal checkout (`None`, `[]`,
     `{}`), so the studio opened on one and reported an empty repo with a
-    straight face. An error that names the tree beats a session that swears
-    the repo has no maps in it.
+    straight face. An error that names the tree beats a session that swears the
+    repo has no maps in it.
 
-    Imports run inside the branches: recognition is the mount's job, but
-    building the adapter is the hack's, so each branch defers to its
-    `hacks/<name>/claim` module — mounting a prism tree is what pulls in the
-    linter, and a CLI that only probes pays for no reader, writer or linter.
+    Every registered adapter is asked, not just the first to match: two hacks
+    claiming one tree is a bug in one of them, and saying so beats letting
+    whichever sorted first win in silence. Each is asked inside its own
+    `try`/`except`, because the moment an adapter this repo did not write can run
+    here it can also raise — and one broken adapter should degrade to a
+    near-miss, not take discovery down with it.
     """
-    if all((root / rel).exists() for rel in _PRISM_LAYOUT):
-        from .prism.claim import build
-        return build(root)
+    claimed: list[Hack] = []
+    missed: list[NearMiss] = []
+    for name, load in _get_registered_hacks(hack_path):
+        try:
+            answer = load()(root)
+        except Exception as exc:  # a third-party adapter is now in the loop
+            missed.append(NearMiss(
+                name, f"could not answer: {type(exc).__name__}: {exc}"))
+            continue
+        if isinstance(answer, Hack):
+            claimed.append(answer)
+        elif isinstance(answer, NearMiss):
+            missed.append(answer)
 
-    if (root / "data/maps/maps.asm").exists():
-        anchor = _family_anchor(root)
-        if anchor == "_MapEvents":
-            from .vanilla.claim import build
-            return build(root)
-        if anchor == "_MapScriptHeader":
-            from .polished.claim import build
-            return build(root)
+    if len(claimed) == 1:
+        return claimed[0]
+    if len(claimed) > 1:
+        names = ", ".join(sorted(h.name for h in claimed))
         raise UnknownTree(
-            f"{root} keeps map data under data/maps/ like the pokecrystal "
-            "family, but no map file carries either family anchor "
-            "(_MapEvents at the tail, _MapScriptHeader at the head), so no "
-            "adapter can claim it.")
-
-    missing = ", ".join(rel for rel in _PRISM_LAYOUT if not (root / rel).exists())
-    raise UnknownTree(
-        f"{root} is not a gen-2 map source layout these tools know "
-        f"({missing} missing, and no data/maps/ either).")
+            f"{root} is claimed by more than one adapter ({names}). Two hacks "
+            "recognising one tree is a bug in one of them, so discovery stops "
+            "here rather than mount whichever happened to sort first.")
+    raise UnknownTree(_explain_no_claim(root, missed))
 
 
-#: The two files every prism map parser starts from. Their *presence* is what
-#: makes a tree prism-shaped; every other gen-2 hack keeps these facts elsewhere.
-_PRISM_LAYOUT = ("maps/second_map_headers.asm",
-                 "constants/map_dimension_constants.asm")
+def _explain_no_claim(root: Path, missed: list[NearMiss]) -> str:
+    """The message when nothing claimed: every near-miss, by hack, sorted for a
+    stable read. Empty only when no adapter is registered at all, which is its
+    own kind of broken and says so instead of blaming the tree."""
+    if not missed:
+        return (f"no adapter is registered under the {_GROUP!r} entry-point "
+                f"group, so nothing could even look at {root} — the install is "
+                "incomplete (reinstall the package).")
+    reasons = "; ".join(f"{m.hack} {m.reason}"
+                        for m in sorted(missed, key=lambda m: m.hack))
+    return f"{root} is a tree no adapter claims: {reasons}."
 
 
-def _family_anchor(root: Path) -> str:
-    """Which event-block anchor the first listed map file carries. Within the
-    pokecrystal family this is the one structural difference the mount needs:
-    vanilla ends a map file with `<Label>_MapEvents:`, polished opens it with
-    `<Label>_MapScriptHeader:`. "" when no map file can be probed at all."""
-    listing = re.compile(r"^\s*map\s+(\w+)\s*,")
-    try:
-        lines = (root / "data/maps/maps.asm").read_text(encoding="utf-8")
-    except OSError:
-        return ""
-    for m in map(listing.match, lines.splitlines()):
-        if m is None:
-            continue
-        src = root / f"maps/{m.group(1)}.asm"
-        if not src.exists():
-            continue
-        text = src.read_text(encoding="utf-8", errors="replace")
-        for anchor in ("_MapEvents", "_MapScriptHeader"):
-            if f"{m.group(1)}{anchor}:" in text:
-                return anchor
-    return ""
+def _get_registered_hacks(
+        hack_path: Path | None) -> list[tuple[str, Callable[[], Callable]]]:
+    """Each registered adapter as `(name, load)`, sorted by name for stable
+    messages. `load()` imports the adapter and returns its `claims` — deferred,
+    so enumerating the registry imports no reader, writer or linter, only the
+    predicate that gets asked. A `--hack-path` override replaces the entry point
+    of the same name, which is how an author iterates on `prism` without
+    reinstalling over the installed one."""
+    reg: dict[str, Callable[[], Callable]] = {}
+    for ep in importlib.metadata.entry_points(group=_GROUP):
+        reg[ep.name] = lambda ep=ep: getattr(ep.load(), "claims")
+    if hack_path is not None:
+        name, load = _load_hack_from_path(Path(hack_path))
+        reg[name] = load
+    return sorted(reg.items())
+
+
+def _load_hack_from_path(path: Path) -> tuple[str, Callable[[], Callable]]:
+    """A `--hack-path` adapter, loaded from a file rather than the registry: the
+    `claim.py` inside a directory, or the file itself, named for its package so
+    an override of `prism` replaces prism. Loaded this way it has no package to
+    hang a relative import on, so the module must reach the seam by its installed
+    name (`pokeprism_devtools.hacks.seam`) — the contract a third-party adapter
+    keeps anyway."""
+    claim = path / "claim.py" if path.is_dir() else path
+    name = claim.parent.name if claim.name == "claim.py" else claim.stem
+
+    def load() -> Callable:
+        spec = importlib.util.spec_from_file_location(f"_hack_path_{name}", claim)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"{claim} is not an importable Python module")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return getattr(module, "claims")
+
+    return name, load

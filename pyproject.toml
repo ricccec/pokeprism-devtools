@@ -33,5 +33,16 @@ prism-newmap  = "pokeprism_devtools.map_new:main"
 prism-maplint = "pokeprism_devtools.maplint:main"
 prism-studio  = "pokeprism_devtools.studio:main"
 
+# The mount discovers adapters through this group, so the three in-tree hacks
+# register the same way a pip-installed third-party adapter would — the only way
+# to learn whether the plugin seam holds before someone depends on it. Each value
+# is the hack's claim module; the mount reads `claims(root)` off it. Editing this
+# needs a reinstall to take effect (`pip install -e .`) — entry points live in
+# the dist metadata, not the source.
+[project.entry-points."pokeprism_devtools.hacks"]
+prism    = "pokeprism_devtools.hacks.prism.claim"
+vanilla  = "pokeprism_devtools.hacks.vanilla.claim"
+polished = "pokeprism_devtools.hacks.polished.claim"
+
 [tool.setuptools.packages.find]
 where = ["src"]

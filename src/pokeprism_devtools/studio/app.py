@@ -111,9 +111,9 @@ class Studio(Flow, App):
         Binding("q", "quit", "Quit", show=False),
     ]
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, hack_path: Path | None = None) -> None:
         super().__init__()
-        self.session = Session(root)
+        self.session = Session(root, hack_path)
         #: The map the user last asked for. A slower load that lands after it has
         #: moved on is dropped — otherwise arrowing down the list leaves you looking
         #: at whichever map happened to finish last.
@@ -504,17 +504,20 @@ def main(argv: list[str] | None = None) -> int:
         prog="prism-studio",
         description="Author a map: see it, see what's on it, see what's wrong with it.")
     ap.add_argument("--root", type=Path, default=None, help="the pokeprism repo")
+    ap.add_argument("--hack-path", type=Path, default=None, dest="hack_path",
+                    help="a claim.py (or its directory) to mount alongside the "
+                         "installed adapters — for authoring one without a reinstall")
     args = ap.parse_args(argv)
 
     try:
         root = args.root or paths.repo_root()
         # Mounted once here for the *error*: an unrecognisable tree should be
         # refused on stderr, before a full-screen TUI has repainted the
-        # terminal. The session mounts its own.
-        hackmount.mount(root)
+        # terminal. The session mounts its own, through the same override.
+        hackmount.mount(root, args.hack_path)
     except (paths.RepoNotFound, hackmount.UnknownTree) as exc:
         print(f"prism-studio: {exc}", file=sys.stderr)
         return 2
 
-    Studio(root).run()
+    Studio(root, args.hack_path).run()
     return 0
