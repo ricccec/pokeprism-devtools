@@ -669,12 +669,16 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
 
   **What the phase did not claim, and named rather than left silent.** The item
   balls classify as item-ball props, because the shorthand carries its own
-  `OBJECTTYPE_ITEMBALL`; the fruit trees, cut trees, boulders and wild mons read
+  `OBJECTTYPE_ITEMBALL`; ~~the fruit trees, cut trees, boulders and wild mons read
   as NPCs, because they expand to `OBJECTTYPE_COMMAND`/`_POKEMON` objects and the
-  reader treats every command-object as one — the long form would read the same.
-  They are visible and correctly indexed, which is the phase; reclassifying a
-  floor shorthand into a prop kind is a reading refinement over *all* command
-  objects, not just these, and is left for its own change. The census that drove
+  reader treats every command-object as one~~ **done for the floor objects** —
+  the reader now reads the command word, not just the type byte: `fruittree`
+  and the three `jumpstd` obstacles (`cuttree`, `strengthboulder`, `smashrock`)
+  read as props (`fruittree`/`cuttree`/`boulder`/`rock`), while the nurse's and
+  clerk's `jumpstd`, and every `jumptextfaceplayer`, stay people. It is a reading
+  over *all* command objects, so a hand-written long `object_event` with the same
+  command reads the same. Wild mons stay NPCs on purpose: an `OBJECTTYPE_POKEMON`
+  is an encounter you battle, not a thing lying on the floor. The census that drove
   the phase is now a plain `check()` in `tests/test_polished.py`
   (`test_reader_sees_every_item_ball`), counting the raw source independent of
   the reader so it stays honest whether the reader over- or under-counts.

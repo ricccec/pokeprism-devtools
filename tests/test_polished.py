@@ -235,6 +235,46 @@ def test_the_head_of_file_events(root: Path) -> None:
                   for r in rows))
 
 
+def test_floor_shorthands_read_as_props() -> None:
+    """A cut tree, the two boulders and a fruit tree are things on the floor,
+    not people — but each expands to an `OBJECTTYPE_COMMAND` object exactly like
+    an NPC that `jumptextfaceplayer`s, so the type byte cannot tell them apart.
+    The reader reads the command instead: `fruittree` and the three `jumpstd`
+    obstacles land in props; the nurse's `jumpstd pokecenternurse`, a command
+    object too, stays a person — the guard that a command is not a prop by type.
+    """
+    from pokeprism_devtools.hacks.polished import events as pe
+    src = (
+        "Grove_MapScriptHeader:\n"
+        "\tdef_scene_scripts\n\n\tdef_callbacks\n\n\tdef_warp_events\n\n"
+        "\tdef_coord_events\n\n\tdef_bg_events\n\n\tdef_object_events\n"
+        "\tcuttree_event  3,  4, EVENT_GROVE_CUT_TREE\n"
+        "\tstrengthboulder_event  5,  6\n"
+        "\tsmashrock_event  7,  8, EVENT_GROVE_ROCK\n"
+        "\tfruittree_event  9, 10, FRUITTREE_GROVE, BERRY, PAL_NPC_ENV_WHITE\n"
+        "\tpc_nurse_event 11, 12\n")
+    print("\nthe floor shorthands read as props, the nurse stays a person")
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "Grove.asm"
+        path.write_text(src)
+        t = pe.tables(path)
+
+    check("four floor props surface, one of each shorthand",
+          {p.kind for p in t.props} == {"cuttree", "boulder", "rock", "fruittree"},
+          str(sorted(p.kind for p in t.props)))
+    tree = next((p for p in t.props if p.kind == "fruittree"), None)
+    check("the fruit tree is named by the tree it is",
+          tree is not None and tree.what == "FRUITTREE_GROVE",
+          tree.what if tree else "no fruittree prop")
+    rock = next((p for p in t.props if p.kind == "rock"), None)
+    check("the smash rock reads back at its tile, its flag the last arg",
+          rock is not None and (rock.y, rock.x, rock.flag) == (8, 7, "EVENT_GROVE_ROCK"),
+          str((rock.y, rock.x, rock.flag)) if rock else "no rock prop")
+    check("the nurse is still a person — a command is not a prop by its type",
+          len(t.npcs) == 1 and t.npcs[0].sprite == "BOWING_NURSE",
+          str([n.sprite for n in t.npcs]))
+
+
 def test_the_catalog_and_geometry(root: Path) -> None:
     print("\nwhat polished kept reads through vanilla's parsers")
     r = hackmount.mount(root).reads
@@ -464,13 +504,18 @@ def test_real_tree() -> None:
 
     t = r.tables("AzaleaTown")
     # Eleven long-form objects, plus two `pokemon_event` and one `fruittree_event`
-    # the reader was blind to before Phase 10 — fourteen objects, all now on the
-    # Objects tab. They land among the NPCs because a shorthand that expands to an
-    # OBJECTTYPE_COMMAND or _POKEMON object reads as one, exactly as the long form
-    # would; the item ball is the shorthand that carries its own object type.
-    check("Azalea's fourteen objects and eight warps — the shorthands surface",
-          len(t.npcs) == 14 and len(t.warps) == 8,
+    # the reader was blind to before Phase 10 — fourteen objects, all on the
+    # Objects tab. Thirteen are people: three `jumptextfaceplayer` command
+    # objects, eight scripted NPCs and the two wild mons a `pokemon_event` reads
+    # as. The fruit tree is not a person — it reads as a prop off its `fruittree`
+    # command, filed with the balls, the same reading a long `object_event` with
+    # that command would get.
+    check("Azalea's fourteen objects and eight warps — thirteen people, one tree",
+          len(t.npcs) == 13 and len(t.warps) == 8,
           f"{len(t.npcs)} npcs, {len(t.warps)} warps")
+    check("the fruit tree reads as a prop, named by the tree it is",
+          any(p.kind == "fruittree" and p.what == "FRUITTREE_AZALEA_TOWN"
+              for p in t.props))
     check("the hidden FULL_HEAL is inline and found",
           any(p.kind == "hidden" and p.what == "FULL_HEAL" for p in t.props))
 
@@ -494,6 +539,7 @@ def main() -> int:
         root = _fixture(Path(d))
         test_the_mount_tells_the_family_apart(root)
         test_the_head_of_file_events(root)
+        test_floor_shorthands_read_as_props()
         test_the_catalog_and_geometry(root)
         test_wild_forms_and_roof(root)
         test_the_session_sees_no_name(root)

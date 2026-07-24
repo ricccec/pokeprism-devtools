@@ -39,6 +39,17 @@ ANCHOR = "_MapScriptHeader"
 _TRAINER_MACROS = {"OBJECTTYPE_TRAINER": "trainer",
                    "OBJECTTYPE_GENERICTRAINER": "generictrainer"}
 
+#: The `jumpstd` predefineds that mark a thing on the floor rather than a person,
+#: and the prop kind each reads as. A cut tree and the two boulders are command
+#: objects exactly like an NPC that `jumptextfaceplayer`s — the type byte says
+#: `OBJECTTYPE_COMMAND` for all of them — so only the command tells them apart.
+#: Reading over the command, not the shorthand, means a hand-written long
+#: `object_event` carrying the same `jumpstd` reads as a prop too, not just the
+#: `cuttree_event` shorthand it usually came from.
+_FLOOR_STD = {"cuttree": "cuttree",
+              "strengthboulder": "boulder",
+              "smashrock": "rock"}
+
 
 def tables(path: Path) -> panels.MapTables:
     """One map's events, carved into the six lists the tabs draw."""
@@ -106,18 +117,30 @@ def tables(path: Path) -> panels.MapTables:
                 what=args[10], qty=args[11] if len(args) >= 13 else "",
                 flag=flag))
         elif objtype == "OBJECTTYPE_COMMAND":
-            # The object *is* its command: jumptextfaceplayer straight at a
-            # text label, no script block in between to hop through.
-            mark(marks, y, x, coords.PERSON)
-            npcs.append(panels.Npc(
-                handle=handle, index=i, y=y, x=x, sprite=sprite,
-                movement=movement, says=says.get(args[10], args[10]),
-                flag=flag))
-        elif tree := macro_args(src, args[10], "fruittree"):
-            mark(marks, y, x, coords.ITEM)
-            props.append(panels.Prop(
-                handle=handle, index=i, y=y, x=x, kind="fruittree",
-                what=arg(tree, 0), qty="", flag=flag))
+            command, argument = args[9], args[10]
+            if command == "fruittree":
+                # `fruittree TREE, ITEM`: the object is the tree, a thing on the
+                # floor the player harvests — a prop, filed by the tree it is.
+                mark(marks, y, x, coords.ITEM)
+                props.append(panels.Prop(
+                    handle=handle, index=i, y=y, x=x, kind="fruittree",
+                    what=argument, qty="", flag=flag))
+            elif (floor := _FLOOR_STD.get(argument)) is not None:
+                # `jumpstd cuttree|strengthboulder|smashrock`: an obstacle the
+                # player clears, on the Objects tab beside the balls and trees.
+                mark(marks, y, x, coords.ITEM)
+                props.append(panels.Prop(
+                    handle=handle, index=i, y=y, x=x, kind=floor,
+                    what="", qty="", flag=flag))
+            else:
+                # The object *is* its command: jumptextfaceplayer straight at a
+                # text label, or a nurse or clerk `jumpstd` — a person either
+                # way, no script block in between to hop through.
+                mark(marks, y, x, coords.PERSON)
+                npcs.append(panels.Npc(
+                    handle=handle, index=i, y=y, x=x, sprite=sprite,
+                    movement=movement, says=says.get(argument, argument),
+                    flag=flag))
         else:
             script = args[10]
             mark(marks, y, x, coords.PERSON)
