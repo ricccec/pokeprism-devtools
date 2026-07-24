@@ -1,6 +1,6 @@
 """The map, on screen, with a cursor you can move.
 
-Every colour here comes from :func:`..hacks.prism.swatches.tile_color` and every
+Every colour here comes from :func:`..shared.swatches.tile_color` and every
 letter from :func:`..shared.coords.glyph_cells` — the same two functions
 `prism-map --grid` draws with. That is deliberate: a second implementation that
 agreed with the first today would disagree with it by P4, and the whole point of
@@ -26,8 +26,7 @@ from textual.strip import Strip
 # The pure renderer: given block ids and resolved colours, which cell gets which
 # colour and which letter. It opens nothing — the geometry it draws was read by
 # `Session.load` and handed over as plain data.
-from ..hacks.prism import swatches
-from ..shared import coords
+from ..shared import coords, swatches
 from .session import MapGeometry
 
 #: The foreground paints the top half of the cell, the background the bottom —
