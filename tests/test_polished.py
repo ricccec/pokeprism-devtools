@@ -392,9 +392,10 @@ def test_real_item_adders() -> None:
     check("its flag is a fresh EVENT_..._HIDDEN_ the file defines", defined2)
 
 
-# Every ball macro that expands to an OBJECTTYPE_ITEMBALL object. The reader
-# collects only the four base event macros, so it sees a ball only when the
-# source spells it out as a raw object_event; each shorthand below is invisible.
+# Every ball macro that expands to an OBJECTTYPE_ITEMBALL object. The reader now
+# expands each of these to the object_event it assembles to, so it sees a ball
+# whether the source spells it long or reaches for one of these shorthands; this
+# tuple is the oracle the census counts the raw source with, independent of it.
 _BALL_SHORTHANDS = ("itemball_event", "keyitemball_event", "tmhmball_event")
 
 
@@ -409,19 +410,19 @@ def _raw_item_balls(text: str) -> tuple[int, int]:
 
 
 def test_reader_sees_every_item_ball() -> None:
-    """The reader should surface every item ball that exists — but today it only
-    parses raw object_events and is blind to the itemball_event shorthand the
-    tree overwhelmingly prefers. No existing test caught this: the fixtures write
-    balls long (the form the reader reads), and the real-tree assertions take
-    their expected counts FROM the reader, so a dropped ball moves no number
-    anyone checks. This cross-check breaks that circularity by counting the raw
-    source. It is an xfail until the reader learns to expand the shorthands (and,
-    with them, the 19 maps whose object handles the skipped balls misalign)."""
+    """The reader surfaces every item ball that exists — long form and shorthand
+    alike. It was blind to the `itemball_event` shorthand the tree overwhelmingly
+    prefers until the parser learned to expand it (Phase 10); no earlier test
+    caught the gap, because the fixtures write balls long (the form the reader
+    read) and the real-tree assertions took their expected counts FROM the
+    reader, so a dropped ball moved no number anyone checked. This cross-check
+    counts the raw source, independent of the reader, so it stays honest whether
+    the reader over- or under-counts."""
     root = Path.home() / "code/ricccec/polishedcrystal"
     if not (root / "data/maps/maps.asm").exists():
         print("\n(no polishedcrystal checkout — skipping the item-ball census)")
         return
-    print("\nthe reader should see every item ball the source spells out")
+    print("\nthe reader sees every item ball the source spells out")
     r = hackmount.mount(root).reads
 
     reader_total = longform_total = shorthand_total = maps_with_gap = 0
@@ -437,21 +438,17 @@ def test_reader_sees_every_item_ball() -> None:
         if seen != longform + shorthand:
             maps_with_gap += 1
 
-    # Control (a hard check): the long form the reader DOES read must never be
-    # undercounted. If this fails the reader broke on its own dialect — a real
-    # regression, not the known shorthand gap the xfail below records.
-    check("every long-form object_event ITEMBALL is surfaced",
-          reader_total == longform_total,
-          f"reader {reader_total} vs long-form {longform_total}")
-
-    # The gap: the reader should equal the RAW total (long + shorthand). It
-    # doesn't, short by exactly the shorthand count. Recorded as xfail so the day
-    # the reader expands shorthands, its closure prints XPASS and gets noticed.
-    expected_gap(
-        "the reader surfaces every item ball in the tree, shorthand included",
-        reader_total == longform_total + shorthand_total,
-        f"sees {reader_total}/{longform_total + shorthand_total} balls; "
-        f"{shorthand_total} shorthand balls invisible across {maps_with_gap} maps")
+    # The census: the reader must surface exactly the balls the raw source has,
+    # long and shorthand together. Equality catches a drop and an over-count
+    # alike; the per-map tally localises either to the map it happened on. The
+    # shorthand count is the bulk of the tree, so this is mostly a test that the
+    # parser's expansion (`hacks/polished/shorthand`) fires on every map.
+    check("every item ball is surfaced, shorthand included",
+          reader_total == longform_total + shorthand_total,
+          f"reader {reader_total} vs source {longform_total} long "
+          f"+ {shorthand_total} shorthand")
+    check("and no single map hides one",
+          maps_with_gap == 0, f"{maps_with_gap} maps disagree")
 
 
 def test_real_tree() -> None:
@@ -466,8 +463,14 @@ def test_real_tree() -> None:
     check("the catalog outgrew the base game", len(r.maps()) > 500)
 
     t = r.tables("AzaleaTown")
-    check("Azalea's eleven people and eight warps",
-          len(t.npcs) == 11 and len(t.warps) == 8)
+    # Eleven long-form objects, plus two `pokemon_event` and one `fruittree_event`
+    # the reader was blind to before Phase 10 — fourteen objects, all now on the
+    # Objects tab. They land among the NPCs because a shorthand that expands to an
+    # OBJECTTYPE_COMMAND or _POKEMON object reads as one, exactly as the long form
+    # would; the item ball is the shorthand that carries its own object type.
+    check("Azalea's fourteen objects and eight warps — the shorthands surface",
+          len(t.npcs) == 14 and len(t.warps) == 8,
+          f"{len(t.npcs)} npcs, {len(t.warps)} warps")
     check("the hidden FULL_HEAL is inline and found",
           any(p.kind == "hidden" and p.what == "FULL_HEAL" for p in t.props))
 

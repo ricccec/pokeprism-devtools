@@ -15,6 +15,11 @@ owns is what polished changed about the entries themselves:
   the kind expression, no `hiddenitem` block to walk to.
 * A trainer is either a `trainer` or a `generictrainer` block — same three
   leading args, different macro — and the object's type says which.
+* Objects are spelled two ways: the long `object_event`, and ten convenience
+  macros each assembling to one — item balls, fruit trees, boulders, a wild
+  mon. `parse` is handed `..shorthand.SHORTHANDS` so it expands each in place,
+  and the object list carries all of them, in the engine order the object
+  consts number by. Vanilla writes none, so it hands `parse` nothing.
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ from ...shared.coords import Tile
 from ...studio import panels
 from ..vanilla.events import (MapSource, arg, first_words, macro_args, mark,
                               parse, prose, yx)
+from .shorthand import SHORTHANDS
 
 ANCHOR = "_MapScriptHeader"
 
@@ -36,7 +42,7 @@ _TRAINER_MACROS = {"OBJECTTYPE_TRAINER": "trainer",
 
 def tables(path: Path) -> panels.MapTables:
     """One map's events, carved into the six lists the tabs draw."""
-    src = parse(path, anchor=ANCHOR)
+    src = parse(path, anchor=ANCHOR, expand=SHORTHANDS)
     marks: dict[Tile, str] = {}
     named = len(src.names) == len(src.object_events)
 

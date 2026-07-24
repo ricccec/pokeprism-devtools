@@ -25,6 +25,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from ...shared import coords
 from ...shared.coords import Tile
@@ -66,13 +67,25 @@ class MapSource:
 _EVENT_MACROS = ("warp_event", "coord_event", "bg_event", "object_event")
 
 
-def parse(path: Path, anchor: str = "_MapEvents") -> MapSource:
+def parse(path: Path, anchor: str = "_MapEvents",
+          expand: dict[str, Callable[[list[str]], list[str]]] | None = None
+          ) -> MapSource:
     """Read one map file whole. Raises :class:`panels.Unreadable` when the
     file is missing or lacks the family anchor — a file this adapter cannot
     honestly call one of its maps. `anchor` is the one structural difference
     inside the family: vanilla's `_MapEvents` tail, polished's
     `_MapScriptHeader` head. The carving is otherwise identical, which is why
-    the polished adapter imports this function instead of forking it."""
+    the polished adapter imports this function instead of forking it.
+
+    `expand` is the second fork, and it is polished's alone: a map of a
+    convenience macro to the function that turns its args into the
+    ``object_event`` args it assembles to. Vanilla passes none — it writes no
+    shorthand — and polished passes `..polished.shorthand.SHORTHANDS`, so an
+    ``itemball_event`` or a ``fruittree_event`` lands in ``object_events`` at its
+    file position, counted in the same engine order the object consts number by.
+    Without it the seven-hundred-odd shorthands in the tree are silently dropped,
+    which is exactly what they were until this argument existed."""
+    expand = expand or {}
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except FileNotFoundError as exc:
@@ -116,6 +129,13 @@ def parse(path: Path, anchor: str = "_MapEvents") -> MapSource:
         if word in _EVENT_MACROS:
             args = [a.strip() for a in rest.split(",")]
             getattr(src, word + "s").append(args)
+        elif word in expand:
+            # A convenience macro that assembles to one object_event: expand it
+            # in place so the object list stays in engine order — the order the
+            # object consts are numbered by, and the reason a skipped shorthand
+            # would slide every later const onto the wrong object.
+            args = [a.strip() for a in rest.split(",")]
+            src.object_events.append(expand[word](args))
 
     if not seen_anchor:
         raise panels.Unreadable(

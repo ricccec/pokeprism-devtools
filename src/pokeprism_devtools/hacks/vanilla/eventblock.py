@@ -209,7 +209,13 @@ class EventBlock:
         """
         entry = self.lists[kind].entries[index]
         _, semi, comment = entry.raw.partition(";")
-        line = format_entry(LIST_MACROS[kind], args)
+        # `entry.macro`, not the list's canonical macro: a polished object list
+        # holds convenience macros (`itemball_event`, `smashrock_event`) that
+        # are object entries but are not spelled `object_event`. Rewriting one —
+        # a resize shifting its coordinates, say — must re-emit *that* macro, not
+        # slide its few args into a malformed twelve-column `object_event`. For a
+        # plain entry `entry.macro` is the canonical macro, so nothing else moves.
+        line = format_entry(entry.macro, args)
         self.lines[entry.lineno] = f"{line} ;{comment}" if semi else line
         self._reparse()
 
@@ -319,25 +325,29 @@ def _parse_lines(label: str | None, path: Path, lines: list[str],
 
 
 def _entries_after(lines: list[str], def_lineno: int, kind: str) -> list[Entry]:
-    """The entry lines under one ``def_*`` line: this list's macro until the
-    block ends. No count decides where the list ends — the lines do, which in
-    this dialect is also exactly what the assembler counts.
+    """The entry lines under one ``def_*`` line, until the block ends. No count
+    decides where the list ends — the lines do, which in this dialect is also
+    exactly what the assembler counts: every entry macro in a ``def_*`` block
+    bumps that block's self-count, so every entry macro is one entry.
 
-    A *convenience macro* is skipped rather than treated as the end. Polished's
-    object block interleaves ``object_event`` with shorthands that expand to one
-    — ``itemball_event``, ``smashrock_event``, ``strengthboulder_event`` and
-    kin — and stopping at the first one made this parser see four objects where
-    :func:`..events.parse` (which collects every ``object_event`` line in the
-    file) sees seven, on 89 of the 607 polished maps. The two disagreeing meant
-    an append landed after the wrong line and, worse, mis-said whether the const
-    list was full — so a name could be minted onto a list that was not, sliding
-    every later const onto the wrong object. Skipping the shorthands keeps this
-    enumeration identical to the reader's, which is what makes an appended entry
-    and an edited-by-index one target the object the studio is showing.
+    For the object list that means the *convenience macros* count too. Polished's
+    object block interleaves ``object_event`` with shorthands that each assemble
+    to exactly one — ``itemball_event``, ``smashrock_event``, ``pokemon_event``
+    and kin — and every one is an object the ROM has and the object consts number
+    past. An earlier writer stopped at the first shorthand (four objects where
+    the reader saw seven, on 89 of 607 maps); its successor *skipped* them, which
+    matched a reader that dropped them too. Now the reader expands them
+    (:func:`..events.parse`, `..polished.shorthand`), so this enumeration keeps
+    step by counting each shorthand as the object it is — held under its own
+    macro, because :meth:`EventBlock.replace_entry` must re-emit it as written,
+    and refused by the object editor's slot-count guard rather than rewritten
+    into a twelve-column line. Vanilla writes no shorthand, so its object block
+    is unchanged; the other three lists have no shorthand form, so a non-matching
+    macro there still ends them.
 
-    The block still ends at the blank line every ``def_*`` list closes with, or
-    at a label or ``object_const_def`` (neither of which matches a macro with
-    arguments) — never at a shorthand mid-list.
+    The block ends at the blank line every ``def_*`` list closes with, or at a
+    label or ``object_const_def`` (neither of which matches a macro with
+    arguments).
     """
     legal = LIST_MACROS[kind]
     entries: list[Entry] = []
@@ -351,9 +361,10 @@ def _entries_after(lines: list[str], def_lineno: int, kind: str) -> list[Entry]:
         m = _MACRO_RE.match(line)
         if not m:
             break                        # a label or bare directive ends it
-        if m.group("macro") != legal:
-            continue                     # a convenience macro expanding to this kind
-        entries.append(Entry(macro=legal,
+        macro = m.group("macro")
+        if macro != legal and kind != "object":
+            continue                     # only the object list has shorthands
+        entries.append(Entry(macro=macro,
                              args=[a.strip() for a in m.group("args").split(",")],
                              lineno=j, raw=line))
     return entries

@@ -1157,13 +1157,15 @@ def test_real_resize(name: str, dialect) -> None:
     check(f"{resizable} maps resize and {shared} refuse for sharing a grid — "
           f"and nothing refuses for any other reason", True)
     # The handful that do not fit the declared grid are objects in the
-    # connection-overflow region — an NPC or trainer placed off the edge so it
-    # appears when you stand on the adjoining map (Route 4's ACE_TRAINER at
-    # x=68 on a w=33 map, tied to EVENT_BEAT_BLUE). Polished interleaves those
-    # after item balls in the object block, so counting them at all depended on
-    # the splicer no longer stopping at the first convenience macro.
+    # connection-overflow region — placed off the edge on purpose so they appear
+    # when you stand on the adjoining map (Route 4's ACE_TRAINER at x=68 on a
+    # w=33 map, tied to EVENT_BEAT_BLUE). Fifteen maps carry one, up from eight:
+    # the seven new ones are *shorthand* objects — a `smashrock_event` off
+    # Olivine's east edge, an `itemball_event` past Route 35 Coast's south — that
+    # the reader was blind to until it learned to expand them (Phase 10), and
+    # that are as legitimately off-grid as the long-form ones always were.
     check("nearly every map's entries fit inside it as declared",
-          fits >= maps - 8, f"{fits}/{maps}")
+          fits >= maps - 15, f"{fits}/{maps}")
     check("but only about half fit under the transposed reading — the order "
           "is load-bearing, not cosmetic",
           flips < maps * 0.6, f"{flips}/{maps} would still fit")
