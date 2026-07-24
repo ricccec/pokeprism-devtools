@@ -932,10 +932,15 @@ def test_editing_round_trips(root: Path, name: str, anchor: str, shape) -> None:
                 total += 1
                 if block.to_text() == before:
                     continue
-                # Only `format_entry`'s two-column padding may differ, and only
-                # on the line that was edited. Anything else is a lost argument.
+                # Only whitespace may differ, and only on the line that was
+                # edited: `format_entry`'s two-column padding, or a source line's
+                # own oddity normalised away — one polished object_event writes a
+                # tab hard against the comma (`3\t,`), which `.split()` would read
+                # as a phantom extra token. Comparing with every run of
+                # whitespace removed keeps that a padding difference while still
+                # catching a genuinely lost or reordered argument.
                 was, now = entry.raw, block.lines[entry.lineno]
-                if was.split() == now.split():
+                if "".join(was.split()) == "".join(now.split()):
                     shifted += 1
                 else:
                     moved.append(f"{path.name} {kind}#{i}: {was!r} -> {now!r}")
@@ -1151,8 +1156,14 @@ def test_real_resize(name: str, dialect) -> None:
 
     check(f"{resizable} maps resize and {shared} refuse for sharing a grid — "
           f"and nothing refuses for any other reason", True)
+    # The handful that do not fit the declared grid are objects in the
+    # connection-overflow region — an NPC or trainer placed off the edge so it
+    # appears when you stand on the adjoining map (Route 4's ACE_TRAINER at
+    # x=68 on a w=33 map, tied to EVENT_BEAT_BLUE). Polished interleaves those
+    # after item balls in the object block, so counting them at all depended on
+    # the splicer no longer stopping at the first convenience macro.
     check("nearly every map's entries fit inside it as declared",
-          fits >= maps - 4, f"{fits}/{maps}")
+          fits >= maps - 8, f"{fits}/{maps}")
     check("but only about half fit under the transposed reading — the order "
           "is load-bearing, not cosmetic",
           flips < maps * 0.6, f"{flips}/{maps} would still fit")

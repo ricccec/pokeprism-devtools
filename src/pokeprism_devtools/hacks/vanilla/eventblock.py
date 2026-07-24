@@ -319,19 +319,40 @@ def _parse_lines(label: str | None, path: Path, lines: list[str],
 
 
 def _entries_after(lines: list[str], def_lineno: int, kind: str) -> list[Entry]:
-    """The entry lines under one ``def_*`` line: this list's macro until
-    anything else. No count decides where the list ends — the lines do, which
-    in this dialect is also exactly what the assembler counts."""
+    """The entry lines under one ``def_*`` line: this list's macro until the
+    block ends. No count decides where the list ends — the lines do, which in
+    this dialect is also exactly what the assembler counts.
+
+    A *convenience macro* is skipped rather than treated as the end. Polished's
+    object block interleaves ``object_event`` with shorthands that expand to one
+    — ``itemball_event``, ``smashrock_event``, ``strengthboulder_event`` and
+    kin — and stopping at the first one made this parser see four objects where
+    :func:`..events.parse` (which collects every ``object_event`` line in the
+    file) sees seven, on 89 of the 607 polished maps. The two disagreeing meant
+    an append landed after the wrong line and, worse, mis-said whether the const
+    list was full — so a name could be minted onto a list that was not, sliding
+    every later const onto the wrong object. Skipping the shorthands keeps this
+    enumeration identical to the reader's, which is what makes an appended entry
+    and an edited-by-index one target the object the studio is showing.
+
+    The block still ends at the blank line every ``def_*`` list closes with, or
+    at a label or ``object_const_def`` (neither of which matches a macro with
+    arguments) — never at a shorthand mid-list.
+    """
     legal = LIST_MACROS[kind]
     entries: list[Entry] = []
     for j in range(def_lineno + 1, len(lines)):
         line = lines[j]
         s = line.strip()
-        if not s or s.startswith(";"):
-            continue
+        if not s:
+            break                        # the blank line that closes the list
+        if s.startswith(";"):
+            continue                     # a comment, still inside the block
         m = _MACRO_RE.match(line)
-        if not m or m.group("macro") != legal:
-            break
+        if not m:
+            break                        # a label or bare directive ends it
+        if m.group("macro") != legal:
+            continue                     # a convenience macro expanding to this kind
         entries.append(Entry(macro=legal,
                              args=[a.strip() for a in m.group("args").split(",")],
                              lineno=j, raw=line))
