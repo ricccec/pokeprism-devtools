@@ -574,13 +574,14 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
      declared absence, the same category as `measures`. Porting the rules is a
      project, not a debt.
 
-  3. **Misfiled, not leaking (5 files).** `studio/content.py`, `edits.py`,
-     `offers.py`, `prefill.py`, `newmap.py` are **prism's write adapter**, and
+  3. **Misfiled, not leaking (5 files) — now moved.** `content.py`, `edits.py`,
+     `offers.py`, `prefill.py`, `newmap.py` were **prism's write adapter**, and
      `hacks/prism/write.py` imports all five back — `write.py`'s own docstring
-     names them. They import prism because they *are* prism. Five of the six
-     `studio/` hits are this, and the fix is a move into `hacks/prism/`, not a
-     decoupling. Until then the package boundary reads as a seam violation and
-     is not one, which is worse than the violation would be.
+     named them. They import prism because they *are* prism. Five of the six
+     `studio/` hits were this, and the fix was a move into `hacks/prism/`, not a
+     decoupling — **done**: they now sit beside `write.py`. The import graph did
+     not change, only the spelling of the paths, so no cycle appeared; the
+     package boundary no longer reads as a seam violation it never was.
 
   4. **The actual debt — `wiring/` (8 of 16).** `objedit`, `scaffold`, `props`,
      `removal`, `warps`, `connections`, `mapedit`, `text` each pull prism
@@ -589,10 +590,13 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
      `regions`, `flagalloc`, `blocks`, `mapresize`, `mapnew`, `placement` — are
      clean, as the rule intends; the older ones predate it.
 
-  Plus one genuine studio-layer leak: **`studio/grid.py`** → `prism.swatches`
-  for `tile_color`. That function is a pure renderer over data the session
-  already read, so it is tree-agnostic in behaviour and merely filed under the
-  wrong package; it wants moving to `shared/`.
+  Plus one genuine studio-layer leak, **now closed**: `studio/grid.py` reached
+  into `prism.swatches` for `tile_color`. That function is a pure renderer over
+  data the session already read — tree-agnostic in behaviour, merely filed under
+  the wrong package — so it and the `Rgb`/`Swatch` types moved to
+  `shared/swatches.py` (re-exported from `prism/swatches.py` for the prism-only
+  callers). `grid.py` now imports no parser at all, which the studio-seam AST
+  guard confirms.
 
   **What the debt actually costs today, measured rather than assumed.** The
   family adapters do reach category 4: `vanilla/resize.py` imports
@@ -604,9 +608,10 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   No prism *logic* runs for a family tree. The leak is real, inert, and pays
   for itself in module load only.
 
-  So the honest total is not 33. It is **8 modules of real debt plus 6 files in
-  the wrong package**, and the seam holds everywhere the studio actually
-  crosses it. The reason to fix category 4 is not that it breaks today — it is
+  So the honest total is not 33. With the 6 misfiled files moved home, it is
+  **8 modules of real debt** (category 4) — and the seam holds everywhere the
+  studio actually crosses it. The reason to fix category 4 is not that it breaks
+  today — it is
   that `EditError` and `MapShape` are the thin end: the field-index constants
   next door (`S_X`, `W_Y`) encode prism's `person_event` layout, and the first
   family caller that reaches for one of *those* will get a wrong answer rather
