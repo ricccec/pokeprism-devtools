@@ -24,11 +24,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..hacks.prism import eventheader as eh
-from ..wiring import mapedit, objedit, props
+from . import eventheader as eh
+from ...wiring import mapedit, objedit, props
 from .content import HIDDEN, ITEMBALL, TMHM, TREE
-from .model import TextRef
-from .panels import Ref
+from ...studio.model import TextRef
+from ...studio.panels import Ref
 
 
 def prefill(root: Path, label: str, const: str, ref: Ref,

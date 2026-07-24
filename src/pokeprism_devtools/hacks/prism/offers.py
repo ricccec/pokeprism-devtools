@@ -26,11 +26,12 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from ..hacks.prism import (
+from . import (
     consts, eventflags, maps as maps_mod, spritesets, trainerparty, trainerstats)
-from ..wiring import connections, props, scaffold
-from . import actions, newmap
-from .actions import Action
+from ...wiring import connections, props, scaffold
+from . import newmap
+from ...studio import actions
+from ...studio.actions import Action
 
 
 def for_kind(root: Path, kind: str, maps: tuple[str, ...],
@@ -65,7 +66,7 @@ def blocks(root: Path) -> list[str]:
     and the directory you started the studio from. Anything else you can still
     type — the list is an offer, and `Combo` never insisted on one.
     """
-    from .mapadd import grids
+    from ...studio.mapadd import grids
     return grids((root.parent / "polished-map", root / "maps/blk", Path.cwd()),
                  newmap.BLK_SUFFIXES)
 

@@ -1,8 +1,9 @@
 """The actions that put something *in* a map: people, props, signs, words.
 
-Split from :mod:`.actions`, which keeps the base class and the two actions that
-wire maps to each other. The line between them is the one the tabs already draw:
-a connection or a warp is about two maps, and everything here is about one.
+Split from the base class in :mod:`...studio.actions`; the two actions that wire
+maps to each other live in the sibling :mod:`.actions` beside this. The line
+between them is the one the tabs already draw: a connection or a warp is about
+two maps, and everything here is about one.
 
 The interesting one is :class:`AddProp`. An item ball, a TM ball, a fruit tree, a
 hidden item, a rock and a boulder are one thing to a person and six things to the
@@ -24,14 +25,14 @@ import re
 
 from pathlib import Path
 
-from ..hacks.prism import eventmodel, trainerstats
-from ..hacks.prism.eventflags import FlagError
-from ..hacks.prism.eventheader import ListKind
-from ..wiring import connections, props, removal, scaffold, warpdel
+from . import eventmodel, trainerstats
+from .eventflags import FlagError
+from .eventheader import ListKind
+from ...wiring import connections, props, removal, scaffold, warpdel
 # By name, not by module: `Action.text()` is a method, and `text.reword(...)`
 # sitting next to `self.text("label")` in the same three lines is a trap.
-from ..wiring.text import TextError, reword
-from .actions import (CLASSES, FACINGS, FLAGS, ITEMS, MOVEMENTS, PALETTES,
+from ...wiring.text import TextError, reword
+from ...studio.actions import (CLASSES, FACINGS, FLAGS, ITEMS, MOVEMENTS, PALETTES,
                       PARTIES, SPRITES, TMHMS, TREES, Action, ActionError,
                       Field, Result)
 
@@ -419,7 +420,7 @@ class RemoveWarp(_Placed):
         # prism parses prism's event header — and `warpdel` fixes the repo
         # behind it from a grammar prism declares. That split is exactly what
         # lets the family reuse the rule through a grammar of its own.
-        from ..hacks.prism import write as prism_write
+        from . import write as prism_write
         try:
             d = prism_write.delete_warp(root, self.map, self.integer("index"))
         except warpdel.WarpDelError as e:

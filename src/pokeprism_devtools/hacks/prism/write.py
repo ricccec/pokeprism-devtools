@@ -2,9 +2,11 @@
 
 This is the write half of the adapter whose read half is :mod:`.read` — the
 object `hacks.mount` hands `Session` as ``Hack.writes``. The machinery it
-fronts already existed and already lived on the prism side of every argument
-(`wiring/`, `studio/content`, `studio/edits`, `studio/offers` — each one full
-of prism macros and prism constants); what this module adds is the *door*: one
+fronts already existed and belongs on the prism side of every argument
+(`wiring/`, and its sibling `.content` / `.edits` / `.offers` / `.prefill` /
+`.newmap` — each one full of prism macros and prism constants, and moved here
+out of `studio/` where they only ever read as a seam violation); what this
+module adds is the *door*: one
 object, constructed only by the mount, through which the session asks every
 question about changing the tree. A hack that answers differently ships a
 different object, and the session never learns which one it is holding.
@@ -109,7 +111,7 @@ class Writer:
 
     # -- what a form may offer ------------------------------------------------ #
     def adders(self, kind: str) -> tuple:
-        from ...studio import edits
+        from . import edits
         return edits.ADDERS.get(kind, ())
 
     def form(self, name: str):
@@ -117,8 +119,8 @@ class Writer:
         `newmap` is `a`, `resize` is `s`, `reword` is picking a text under `t`.
         None for a name this adapter does not write, which the view renders as
         the key not existing."""
-        from ...studio.content import EditText
-        from ...studio.newmap import NewMap
+        from .content import EditText
+        from .newmap import NewMap
         from ...studio.resize import resize_for
         from .resize import DIALECT
         return {"newmap": NewMap, "resize": resize_for(DIALECT, "Prism"),
@@ -126,12 +128,12 @@ class Writer:
 
     def choices(self, kind: str, map_consts: tuple[str, ...],
                 values: dict[str, str] | None = None) -> list[str]:
-        from ...studio import offers
+        from . import offers
         return offers.for_kind(self.root, kind, map_consts, values)
 
     def follows(self, action, changed: str,
                 values: dict[str, str]) -> dict[str, str]:
-        from ...studio import offers
+        from . import offers
         return offers.follows(self.root, action, changed, values)
 
     def sprite_hint(self, map_const: str, sprite: str) -> str:
@@ -165,12 +167,12 @@ class Writer:
 
     def warm(self) -> None:
         """Read everything a form will want, before a form asks."""
-        from ...studio import offers
+        from . import offers
         offers.warm(self.root)
 
     def forget(self) -> None:
         """Something was written: the constants a form offers may have grown."""
-        from ...studio import offers
+        from . import offers
         offers.forget()
 
     # -- what a selected row can do ------------------------------------------- #
@@ -187,7 +189,7 @@ class Writer:
         The mirror of :meth:`deletion`, and like it, it refuses by *explaining* —
         an absent key tells you nothing, and the reason is the interesting part.
         """
-        from ...studio import edits, prefill as fill
+        from . import edits, prefill as fill
         from ...wiring import objedit
         if (action := edits.EDITORS.get(ref.what)) is None:
             raise Refused(edits.NOT_YET.get(
@@ -205,7 +207,7 @@ class Writer:
         and says *why* — which beats an absent key, because the reason is the
         interesting part.
         """
-        from ...studio import content
+        from . import content
         if ref.what == "map":
             raise Refused("deleting a whole map is not something this does.")
 
