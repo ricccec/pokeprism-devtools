@@ -33,16 +33,16 @@ from pokeprism_devtools.hacks.prism import (blocksrc, eventheader,
 from pokeprism_devtools.shared import coords, paths
 from pokeprism_devtools.studio import Session, panels
 from pokeprism_devtools.studio.actions import ITEMS, ActionError
-from pokeprism_devtools.studio.content import (BOULDER, HIDDEN, ITEMBALL,
+from pokeprism_devtools.hacks.prism.content import (BOULDER, HIDDEN, ITEMBALL,
                                                PROP_KINDS, TMHM, TREE, AddNpc,
                                                AddProp, AddSignpost, AddTrainer)
 from pokeprism_devtools.studio.app import Studio
 from pokeprism_devtools.studio.combo import Combo
-from pokeprism_devtools.studio.edits import (EditMap, EditNpc, EditProp,
+from pokeprism_devtools.hacks.prism.edits import (EditMap, EditNpc, EditProp,
                                              EditWarp)
 from pokeprism_devtools.studio.grid import MapGrid
 from pokeprism_devtools.studio.maplist import MapList
-from pokeprism_devtools.studio.newmap import NewMap
+from pokeprism_devtools.hacks.prism.newmap import NewMap
 from pokeprism_devtools.studio.screens import Confirm, Findings, Form, History, Picker
 from pokeprism_devtools.studio.screens.speech import Dialogue
 from pokeprism_devtools.studio.status import Banner, Where
@@ -1899,7 +1899,7 @@ class TestChoices(unittest.TestCase):
         forms, so a new field on one of those arrives on the other for free — and a
         new field on an *edit* form arrives with nothing behind it at all.
         """
-        from pokeprism_devtools.studio.edits import ADDERS, EDITORS
+        from pokeprism_devtools.hacks.prism.edits import ADDERS, EDITORS
         every = ({a for group in ADDERS.values() for a in group}
                  | set(EDITORS.values()) | {NewMap})
         for action in every:

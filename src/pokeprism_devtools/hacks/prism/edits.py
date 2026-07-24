@@ -29,13 +29,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..hacks.prism.actions import AddWarp, Connect
-from ..hacks.prism.eventflags import FlagError
-from ..hacks.prism.trainerparty import TrainerPartyError
-from ..wiring import mapedit, objedit, props, warps
-from ..wiring.scaffold import ScaffoldError
-from ..wiring.text import TextError
-from .actions import (FISHGROUPS, LANDMARKS, MAPS, MUSIC, PERMISSIONS, TILESETS,
+from .actions import AddWarp, Connect
+from .eventflags import FlagError
+from .trainerparty import TrainerPartyError
+from ...wiring import mapedit, objedit, props, warps
+from ...wiring.scaffold import ScaffoldError
+from ...wiring.text import TextError
+from ...studio.actions import (FISHGROUPS, LANDMARKS, MAPS, MUSIC, PERMISSIONS, TILESETS,
                       TIMES, Action, ActionError, Field, Result)
 from .content import (BOULDER, HIDDEN, ITEMBALL, ROCK, TMHM, TREE, AddNpc,
                       AddProp, AddSignpost, AddTrainer, _Placed)
@@ -324,7 +324,7 @@ class EditMap(Action):
         — the same rule `objedit` keeps on the bytes.
         """
         from . import newmap
-        from ..hacks.prism import consts
+        from . import consts
 
         out = []
         if new["permission"] != was["permission"] \

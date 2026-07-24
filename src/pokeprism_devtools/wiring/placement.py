@@ -39,7 +39,7 @@ What follows from that, and is a note rather than a check: joining a *pinned*
 bucket puts the blob in a bank someone already decided is full enough to name,
 so the failure mode is `rgblink` overflowing that specific bank. Knowing whether
 it will means measuring the section, and measuring means building — minutes,
-not keystrokes, which is the same reason `studio/newmap.py` refuses to pack a
+not keystrokes, which is the same reason `hacks/prism/newmap.py` refuses to pack a
 bank inside a modal dialog. This module reports what it can see and does not
 guess at what it cannot.
 

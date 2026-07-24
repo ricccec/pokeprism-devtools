@@ -20,7 +20,7 @@ for its blocks, so there is no placement to choose and the form simply does not
 have the field. A field offering exactly one answer is worse than no field: it
 implies a decision that was never available.
 
-This form does not sketch. `studio/newmap.py` draws prism's map on the grid
+This form does not sketch. `hacks/prism/newmap.py` draws prism's map on the grid
 while you are still typing, and that is worth having here too — a `.blk` that
 is not `height x width` becomes a picture of the wrong shape rather than an
 error message. It is not claimed yet because it needs a family block renderer
