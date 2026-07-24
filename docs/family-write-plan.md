@@ -24,7 +24,7 @@ phases:
 | ~~family `a` on the map list (new map)~~ | **done** — placement declared in three shapes, scaffold crosses | ~~7b~~ |
 | ~~family scaffolding (the block an entry line points at)~~ | **done** — four block writers (itemball, fruittree, hiddenitem; trainer in both trees), plus polished's line-only item adders and the splicer fix they needed | ~~8~~ |
 | the seam is a docstring, so nothing enforces it | done — four Protocols and one battery across all three adapters (9a, 9b), and the `hacks.prism` leak counted (9c): 8 `wiring/` modules of real debt, the rest misfiled or declared | 9 |
-| the reader reads four macros, so polished's shorthand objects are invisible | open — 551 objects the studio never sees; a standing xfail marks it | 10 |
+| ~~the reader reads four macros, so polished's shorthand objects are invisible~~ | **done** — the parser expands ten convenience macros; 657 objects now surface, the writer counts them in step, and the census xfail flipped to a check | ~~10~~ |
 
 Ordered smallest-risk-first, as before: 5 is a port of machinery that already
 exists for prism, 6 is the big lift, 7 stands on 6 — and 7 split in two once
@@ -380,7 +380,7 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   rather than shown.
 
 - **Phase 8 — family scaffolding. Done** for the block writers it enumerated;
-  what stays is the read gap they exposed (Phase 10) and the residue named at
+  the read gap they exposed was closed in Phase 10, and the residue is named at
   the end. The block an entry line points at is what Phase 6 named as the reason
   trainers and props have no adder. It opened with `wiring/flagalloc.py`, because
   the family's `event_flags.asm` is *bucketed* (`const_def`, `const_next` jumps,
@@ -430,18 +430,20 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
     `object_event` lines and stopped at the first convenience macro, so on **89
     of 607 polished maps** the writer saw fewer objects than the reader — a
     latent corruption in the shipped trainer/NPC append and in resize's `shift`
-    (Route 4's `ACE_TRAINER` never moved). It now skips shorthands and stops at
-    the true block end, so write and read object counts agree on all 995 maps.
+    (Route 4's `ACE_TRAINER` never moved). It skipped shorthands and stopped at
+    the true block end, so write and read object counts agreed on all 995 maps —
+    on the object_event-only view. Phase 10 moved both parsers to the whole-object
+    view instead: `_entries_after` now *counts* the shorthands rather than
+    skipping them, in step with a reader that expands them.
   * **Polished item and hidden-item line-adders** (`feat(itemball)`, `5c3069e`,
     in `hacks/vanilla/polisheditem.py`). Polished spells these on the object line
     itself — no block — so the adders splice a line and nothing else: the ball is
     a raw 13-argument `object_event … OBJECTTYPE_ITEMBALL, PLAYEREVENT_ITEMBALL,
     item, qty, flag`, written **long rather than as `itemball_event`** because
-    only the long form reads back today. That last clause is the whole of Phase
-    10: the writer is faithful and the round-trip is green, but writing long to
-    stay legible to the reader is a workaround for a reader that cannot yet read
-    the tree's own idiom. `tests/test_polished.py` now carries that gap as a
-    standing xfail rather than a sentence.
+    only the long form read back at the time. Phase 10 closed that reader gap —
+    the shorthand reads back now too — so the long form is a legibility choice
+    the writer is free to keep rather than a workaround it is forced into; the
+    round-trip stays green either way.
 
 - **Phase 9 — the seam is a docstring. Give it a type and a battery.**
 
@@ -610,48 +612,67 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   family caller that reaches for one of *those* will get a wrong answer rather
   than a crash.
 
-- **Phase 10 — the reader's four-macro vocabulary.** Not planned and not a
-  write refusal; found by censusing Phase 8's item ball against the real trees,
-  and recorded here because the census left a standing xfail pointing straight
-  at it. `hacks/vanilla/events.py` reads exactly four macros — `warp_event`,
-  `coord_event`, `bg_event`, `object_event` — and silently drops every other
-  line. Gen-2 also spells objects with seven convenience macros that expand to
-  `object_event`s at assembly time — `itemball_event`, `keyitemball_event`,
-  `tmhmball_event`, `fruittree_event`, `smashrock_event`,
-  `strengthboulder_event`, `cuttree_event` — and the parser sees none of them.
+- **Phase 10 — the reader's four-macro vocabulary. Done**, and the survey that
+  opened it corrected the plan twice before a line was written. Not a write
+  refusal; found by censusing Phase 8's item ball against the real trees, and it
+  left a standing xfail pointing straight at it. `hacks/vanilla/events.py` read
+  exactly four macros — `warp_event`, `coord_event`, `bg_event`, `object_event`
+  — and silently dropped every other line. Gen-2 spells objects with convenience
+  macros that expand to an `object_event` at assembly time, and the plan said
+  *seven* — `itemball_event` and kin. **There are ten.** `maps.asm` also defines
+  `pokemon_event`, `pc_nurse_event` and `mart_clerk_event`, and the parser was
+  blind to those too, so the real gap was larger than the phase it was written
+  into.
 
-  **It reads vanilla whole, and the gap is polished's alone.** Vanilla writes no
+  **It reads vanilla whole, and the gap was polished's alone.** Vanilla writes no
   shorthand at all: its 178 item balls are a long-form
   `object_event … OBJECTTYPE_ITEMBALL` beside an `itemball` block — exactly what
   the Phase 8 writer mints and exactly what the reader reads. The compact idiom
-  is polished's, and so is the blindness: **551 shorthand object lines the
-  reader never sees** — 346 balls, 54 fruit trees, 59 smash rocks, 35 strength
-  boulders, 57 cut trees. The census puts a sharper number on the balls alone:
-  the reader surfaces **9 of the 355** the source spells out, with 346 invisible
-  across 165 maps.
+  is polished's, and so was the blindness — **not 551 objects but 657**: 346
+  balls, 54 fruit trees, 59 smash rocks, 35 strength boulders, 57 cut trees, and
+  the 106 the plan's seven-macro count missed (67 wild mons, 26 nurses, 13
+  clerks). The item-ball census is the sharp one: the reader surfaced **9 of 355**
+  before and **355 of 355** after.
 
-  **It is more than a display gap, but the second half is subtler than it
-  looks.** Assumption #1 of the feasibility ledger is that object identity is a
-  positional index, counted in file order over *all* the objects the engine
-  sees. A skipped shorthand ahead of a read object desynchronises the reader's
-  object list from the engine's, so the const *name* the reader would hang on
-  object N — and any new const the studio mints for it — belongs to a different
-  object. Today that is mostly latent, not live: `events.tables` trusts const
-  names only when `len(names) == len(object_events)` and otherwise falls back to
-  bare `("object", i)` handles, and the write splicer was taught to skip
-  shorthands too (`fix(eventblock)`, `f2ab585`), so reader and writer agree on
-  the object_event view and an edit lands on the line the studio pointed at. The
-  live failure is the invisibility; the handle drift is the reason the fix
-  cannot stop at "show them" and must count them in engine order. Teaching the
-  parser to expand the seven macros closes both halves at once — the objects the
-  studio cannot see, and the index it counts them by.
+  **The fix is one vocabulary, declared once and handed to both parsers.**
+  `hacks/polished/shorthand.py` holds the ten expansions — each transcribed from
+  the macro body it mirrors, checkable slot for slot, because a guessed column
+  feeds the same classifier the long form does. `events.parse` takes an `expand`
+  map and, on a shorthand line, appends the `object_event` it assembles to *in
+  file order*; vanilla passes nothing, polished passes `SHORTHANDS`. That closes
+  the display half. The subtler half is handle drift: object identity is a
+  positional index counted over *all* the engine's objects, so a shorthand ahead
+  of a read object slides the const *name* the reader hangs on object N onto a
+  different object. Expanding in file order closes that half too — but only if
+  the **writer** counts the same way, and here the phase had to undo its own
+  Phase 8 fix.
 
-  The census is already in `tests/test_polished.py` as an xfail
-  (`test_reader_sees_every_item_ball`, committed `60177b8`), guarded by a hard
-  control on the long form the reader *does* read so the path that works cannot
-  regress unnoticed. It is built to flip to XPASS the day the vocabulary grows,
-  so the phase announces its own completion rather than needing to be
-  remembered.
+  **The writer had to move with the reader, and this was the trap.** `f2ab585`
+  taught `eventblock._entries_after` to *skip* shorthands so the splicer's object
+  count matched a reader that dropped them — the two agreed on a count that was
+  wrong by 657. Now that the reader expands them, the writer counts them: each
+  shorthand is one object entry, held under its own macro so `replace_entry`
+  re-emits `itemball_event`, not a malformed twelve-column `object_event`. Reader
+  and writer agree again, this time on the *whole* object list, on all 89 of the
+  interleaved maps. Two consequences fell out, both benign and both tested: the
+  object editor already refuses a line whose slot count is not the dialect's
+  twelve, so a shorthand edit refuses rather than corrupts (689 polished object
+  lines refuse in the round-trip, up from 22); and resize's `shift` now moves
+  shorthand coordinates too, so its off-grid census rose 8 → 15 maps — the seven
+  new ones a `smashrock_event` or `itemball_event` placed in a connection-overflow
+  region, as legitimately off-grid as the long-form ones always were.
+
+  **What the phase did not claim, and named rather than left silent.** The item
+  balls classify as item-ball props, because the shorthand carries its own
+  `OBJECTTYPE_ITEMBALL`; the fruit trees, cut trees, boulders and wild mons read
+  as NPCs, because they expand to `OBJECTTYPE_COMMAND`/`_POKEMON` objects and the
+  reader treats every command-object as one — the long form would read the same.
+  They are visible and correctly indexed, which is the phase; reclassifying a
+  floor shorthand into a prop kind is a reading refinement over *all* command
+  objects, not just these, and is left for its own change. The census that drove
+  the phase is now a plain `check()` in `tests/test_polished.py`
+  (`test_reader_sees_every_item_ball`), counting the raw source independent of
+  the reader so it stays honest whether the reader over- or under-counts.
 
 What this plan still does not claim, and calls absences rather than debts:
 `plays` for family trees (build-and-replay is engine wiring, a different
