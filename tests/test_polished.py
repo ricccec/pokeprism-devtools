@@ -13,6 +13,7 @@ the same questions are asked of it too.
 
 from __future__ import annotations
 
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -24,6 +25,8 @@ from pokeprism_devtools.studio import panels  # noqa: E402
 from pokeprism_devtools.studio.session import Session  # noqa: E402
 
 FAILED = 0
+KNOWN_GAP = 0
+CLOSED_GAP = 0
 
 
 def check(label: str, cond: bool, detail: str = "") -> None:
@@ -31,6 +34,25 @@ def check(label: str, cond: bool, detail: str = "") -> None:
     print(f"  [{'OK  ' if cond else 'FAIL'}] {label}{f' — {detail}' if detail else ''}")
     if not cond:
         FAILED += 1
+
+
+def expected_gap(label: str, invariant_holds: bool, detail: str = "") -> None:
+    """Assert an invariant we WANT but don't yet meet — an xfail by hand.
+
+    The harness has no pytest, so a known gap can't be marked and skipped; it
+    would just turn the suite red and get muted. Instead this states the correct
+    invariant and, while it fails, records it as a known gap without touching
+    FAILED. The day the invariant starts holding, it prints XPASS loudly so the
+    gap's closure is noticed and the line gets promoted to a real check().
+    """
+    global KNOWN_GAP, CLOSED_GAP
+    if invariant_holds:
+        CLOSED_GAP += 1
+        print(f"  [XPASS] {label} — gap closed; promote this to check()"
+              f"{f' — {detail}' if detail else ''}")
+    else:
+        KNOWN_GAP += 1
+        print(f"  [XFAIL] {label} — known gap{f': {detail}' if detail else ''}")
 
 
 _MAP_FILE = """\
@@ -370,6 +392,68 @@ def test_real_item_adders() -> None:
     check("its flag is a fresh EVENT_..._HIDDEN_ the file defines", defined2)
 
 
+# Every ball macro that expands to an OBJECTTYPE_ITEMBALL object. The reader
+# collects only the four base event macros, so it sees a ball only when the
+# source spells it out as a raw object_event; each shorthand below is invisible.
+_BALL_SHORTHANDS = ("itemball_event", "keyitemball_event", "tmhmball_event")
+
+
+def _raw_item_balls(text: str) -> tuple[int, int]:
+    """Balls actually in a map's source: (long form, shorthand). The long form is
+    what the reader reads; the shorthand is what it drops. This counts the source
+    TEXT, not the reader, so it can catch what the reader silently omits."""
+    longform = len(re.findall(r"^\s*object_event\b.*OBJECTTYPE_ITEMBALL", text, re.M))
+    shorthand = sum(len(re.findall(rf"^\s*{m}\b", text, re.M))
+                    for m in _BALL_SHORTHANDS)
+    return longform, shorthand
+
+
+def test_reader_sees_every_item_ball() -> None:
+    """The reader should surface every item ball that exists — but today it only
+    parses raw object_events and is blind to the itemball_event shorthand the
+    tree overwhelmingly prefers. No existing test caught this: the fixtures write
+    balls long (the form the reader reads), and the real-tree assertions take
+    their expected counts FROM the reader, so a dropped ball moves no number
+    anyone checks. This cross-check breaks that circularity by counting the raw
+    source. It is an xfail until the reader learns to expand the shorthands (and,
+    with them, the 19 maps whose object handles the skipped balls misalign)."""
+    root = Path.home() / "code/ricccec/polishedcrystal"
+    if not (root / "data/maps/maps.asm").exists():
+        print("\n(no polishedcrystal checkout — skipping the item-ball census)")
+        return
+    print("\nthe reader should see every item ball the source spells out")
+    r = hackmount.mount(root).reads
+
+    reader_total = longform_total = shorthand_total = maps_with_gap = 0
+    for name in r.maps():
+        src = root / "maps" / f"{name}.asm"
+        if not src.exists():
+            continue
+        longform, shorthand = _raw_item_balls(src.read_text())
+        seen = sum(1 for p in r.tables(name).props if p.kind == "itemball")
+        reader_total += seen
+        longform_total += longform
+        shorthand_total += shorthand
+        if seen != longform + shorthand:
+            maps_with_gap += 1
+
+    # Control (a hard check): the long form the reader DOES read must never be
+    # undercounted. If this fails the reader broke on its own dialect — a real
+    # regression, not the known shorthand gap the xfail below records.
+    check("every long-form object_event ITEMBALL is surfaced",
+          reader_total == longform_total,
+          f"reader {reader_total} vs long-form {longform_total}")
+
+    # The gap: the reader should equal the RAW total (long + shorthand). It
+    # doesn't, short by exactly the shorthand count. Recorded as xfail so the day
+    # the reader expands shorthands, its closure prints XPASS and gets noticed.
+    expected_gap(
+        "the reader surfaces every item ball in the tree, shorthand included",
+        reader_total == longform_total + shorthand_total,
+        f"sees {reader_total}/{longform_total + shorthand_total} balls; "
+        f"{shorthand_total} shorthand balls invisible across {maps_with_gap} maps")
+
+
 def test_real_tree() -> None:
     root = Path.home() / "code/ricccec/polishedcrystal"
     if not (root / "data/maps/maps.asm").exists():
@@ -414,8 +498,13 @@ def main() -> int:
         test_polished_offers_the_item_adders(root)
     test_real_tree()
     test_real_item_adders()
+    test_reader_sees_every_item_ball()
 
     print()
+    if CLOSED_GAP:
+        print(f"{CLOSED_GAP} known gap(s) now hold (XPASS) — promote to check()")
+    if KNOWN_GAP:
+        print(f"{KNOWN_GAP} known gap(s) still open (xfail), not counted as failures")
     if FAILED:
         print(f"{FAILED} check(s) FAILED")
         return 1
