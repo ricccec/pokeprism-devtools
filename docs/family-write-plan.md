@@ -22,8 +22,9 @@ phases:
 | ~~family `a` / `e` (adders, editors)~~ | **done** — four editors, three adders | ~~6~~ |
 | ~~family `s` (resize)~~ | **done** — crosses via a declared `MapShape` | ~~7a~~ |
 | ~~family `a` on the map list (new map)~~ | **done** — placement declared in three shapes, scaffold crosses | ~~7b~~ |
-| family scaffolding (the block an entry line points at) | in progress — flag allocator and vanilla's item ball done | 8 |
+| ~~family scaffolding (the block an entry line points at)~~ | **done** — four block writers (itemball, fruittree, hiddenitem; trainer in both trees), plus polished's line-only item adders and the splicer fix they needed | ~~8~~ |
 | the seam is a docstring, so nothing enforces it | done — four Protocols and one battery across all three adapters (9a, 9b), and the `hacks.prism` leak counted (9c): 8 `wiring/` modules of real debt, the rest misfiled or declared | 9 |
+| the reader reads four macros, so polished's shorthand objects are invisible | open — 551 objects the studio never sees; a standing xfail marks it | 10 |
 
 Ordered smallest-risk-first, as before: 5 is a port of machinery that already
 exists for prism, 6 is the big lift, 7 stands on 6 — and 7 split in two once
@@ -378,17 +379,69 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   `wiring/mapnew.py` refuses a grid that is not `height x width` — it is told
   rather than shown.
 
-- **Phase 8 — family scaffolding. In progress.** The block an entry line points
-  at, which is what Phase 6 named as the reason trainers and props have no
-  adder. Two moves landed: `wiring/flagalloc.py`, because the family's
-  `event_flags.asm` is *bucketed* (`const_def`, `const_next` jumps, and a
-  `const_skip [N]` directive that is not prism's `const skip` placeholder-name)
-  and prism's allocator raises on the first `const_def` it sees; then vanilla's
-  item ball, the smallest block there is — `wiring/blocks.py` for the three
-  names that have to agree, `hacks/vanilla/itemball.py` for the composition.
-  Remaining: vanilla `fruittree` and `hiddenitem`, then trainers in both trees,
-  which are blocked on pinning down what polished's `generictrainer` does with
-  its trailing unlabeled text body.
+- **Phase 8 — family scaffolding. Done** for the block writers it enumerated;
+  what stays is the read gap they exposed (Phase 10) and the residue named at
+  the end. The block an entry line points at is what Phase 6 named as the reason
+  trainers and props have no adder. It opened with `wiring/flagalloc.py`, because
+  the family's `event_flags.asm` is *bucketed* (`const_def`, `const_next` jumps,
+  and a `const_skip [N]` directive that is not prism's `const skip`
+  placeholder-name) and prism's allocator raises on the first `const_def` it
+  sees; then the four blocks, smallest first, each with the trap that reading a
+  generated diff caught:
+
+  * **Item ball** (`a6c3e5e`) — `wiring/blocks.py` for the three names that have
+    to agree, `hacks/vanilla/itemball.py` for the composition. The label is
+    `<file stem><item camelised>` 178/178 but `HP_UP` is `HPUp` (four acronyms
+    stay upper); the const takes the **file stem** (`ROUTE29`), not the map
+    constant (`ROUTE_29`), and getting it wrong mints a name unique *because* it
+    is wrong.
+  * **Fruit tree** (`be67605`) — the block points *out of the map*:
+    `fruittree FRUITTREE_ROUTE_29`'s 1-based ordinal in `script_constants.asm`
+    **is** the row index into `data/items/fruit_trees.asm`, so the id lives
+    across two files that must stay in step; `wiring/fruittrees.py` appends
+    const and row together or refuses. Flag is `-1` — a tree regrows, there is
+    no event to allocate.
+  * **Hidden item** (`213a2ac`) — the first adder whose *line* splices into a
+    list other than the one it reads onto: it shows on the Objects tab as a Prop
+    but its line is a `bg_event`. The `hiddenitem` macro is `dwb \2, \1`
+    (flag,item transposed to ROM) while the source is `hiddenitem ITEM, FLAG`
+    item-first, on all 85 — copying the byte order hands the engine an item id
+    where the flag belongs.
+  * **Trainer** (`016b1b4`) — the first block adder real in **both** trees, and
+    the `generictrainer` blocker that stalled it is cleared. A 593-call polished
+    sweep and a 333-call vanilla sweep found the two dialects want **different**
+    shapes: vanilla names its three texts globally with a local `.AfterScript`
+    (333/333), polished carries a self-contained inline after-body plus local
+    `.SeenText`/`.BeatenText` (which is prism's shape). So each dialect writes
+    its own — `trainer_block` and `generictrainer_block` in `wiring/blocks.py`,
+    one `wiring/trainerroster.py` reader serving both (both cite a party by
+    named constant, not prism's ordinal). Reuse an existing class+party, never
+    mint one; the beat flag is allocated fresh per placement
+    (`EVENT_<MAP>_TRAINER`), not the binding-looking `EVENT_BEAT_CLASS_PARTY`.
+    Because the bodies are authored prose, the round-trip check is structural
+    (parses back to a `Trainer` with the right flag/group/id/texts), not
+    byte-identity.
+
+  Then the two writes the enumeration did *not* foresee, both polished-side and
+  both forced by the shorthand idiom the item-ball census named:
+
+  * **The splicer counted objects wrong** (`fix(eventblock)`, `f2ab585`).
+    `eventblock._entries_after` read the object list as *consecutive*
+    `object_event` lines and stopped at the first convenience macro, so on **89
+    of 607 polished maps** the writer saw fewer objects than the reader — a
+    latent corruption in the shipped trainer/NPC append and in resize's `shift`
+    (Route 4's `ACE_TRAINER` never moved). It now skips shorthands and stops at
+    the true block end, so write and read object counts agree on all 995 maps.
+  * **Polished item and hidden-item line-adders** (`feat(itemball)`, `5c3069e`,
+    in `hacks/vanilla/polisheditem.py`). Polished spells these on the object line
+    itself — no block — so the adders splice a line and nothing else: the ball is
+    a raw 13-argument `object_event … OBJECTTYPE_ITEMBALL, PLAYEREVENT_ITEMBALL,
+    item, qty, flag`, written **long rather than as `itemball_event`** because
+    only the long form reads back today. That last clause is the whole of Phase
+    10: the writer is faithful and the round-trip is green, but writing long to
+    stay legible to the reader is a workaround for a reader that cannot yet read
+    the tree's own idiom. `tests/test_polished.py` now carries that gap as a
+    standing xfail rather than a sentence.
 
 - **Phase 9 — the seam is a docstring. Give it a type and a battery.**
 
@@ -556,6 +609,49 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   next door (`S_X`, `W_Y`) encode prism's `person_event` layout, and the first
   family caller that reaches for one of *those* will get a wrong answer rather
   than a crash.
+
+- **Phase 10 — the reader's four-macro vocabulary.** Not planned and not a
+  write refusal; found by censusing Phase 8's item ball against the real trees,
+  and recorded here because the census left a standing xfail pointing straight
+  at it. `hacks/vanilla/events.py` reads exactly four macros — `warp_event`,
+  `coord_event`, `bg_event`, `object_event` — and silently drops every other
+  line. Gen-2 also spells objects with seven convenience macros that expand to
+  `object_event`s at assembly time — `itemball_event`, `keyitemball_event`,
+  `tmhmball_event`, `fruittree_event`, `smashrock_event`,
+  `strengthboulder_event`, `cuttree_event` — and the parser sees none of them.
+
+  **It reads vanilla whole, and the gap is polished's alone.** Vanilla writes no
+  shorthand at all: its 178 item balls are a long-form
+  `object_event … OBJECTTYPE_ITEMBALL` beside an `itemball` block — exactly what
+  the Phase 8 writer mints and exactly what the reader reads. The compact idiom
+  is polished's, and so is the blindness: **551 shorthand object lines the
+  reader never sees** — 346 balls, 54 fruit trees, 59 smash rocks, 35 strength
+  boulders, 57 cut trees. The census puts a sharper number on the balls alone:
+  the reader surfaces **9 of the 355** the source spells out, with 346 invisible
+  across 165 maps.
+
+  **It is more than a display gap, but the second half is subtler than it
+  looks.** Assumption #1 of the feasibility ledger is that object identity is a
+  positional index, counted in file order over *all* the objects the engine
+  sees. A skipped shorthand ahead of a read object desynchronises the reader's
+  object list from the engine's, so the const *name* the reader would hang on
+  object N — and any new const the studio mints for it — belongs to a different
+  object. Today that is mostly latent, not live: `events.tables` trusts const
+  names only when `len(names) == len(object_events)` and otherwise falls back to
+  bare `("object", i)` handles, and the write splicer was taught to skip
+  shorthands too (`fix(eventblock)`, `f2ab585`), so reader and writer agree on
+  the object_event view and an edit lands on the line the studio pointed at. The
+  live failure is the invisibility; the handle drift is the reason the fix
+  cannot stop at "show them" and must count them in engine order. Teaching the
+  parser to expand the seven macros closes both halves at once — the objects the
+  studio cannot see, and the index it counts them by.
+
+  The census is already in `tests/test_polished.py` as an xfail
+  (`test_reader_sees_every_item_ball`, committed `60177b8`), guarded by a hard
+  control on the long form the reader *does* read so the path that works cannot
+  regress unnoticed. It is built to flip to XPASS the day the vocabulary grows,
+  so the phase announces its own completion rather than needing to be
+  remembered.
 
 What this plan still does not claim, and calls absences rather than debts:
 `plays` for family trees (build-and-replay is engine wiring, a different
