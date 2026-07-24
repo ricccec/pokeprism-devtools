@@ -304,6 +304,72 @@ def test_deletion_splices_the_head(root: Path) -> None:
           src.read_text() == before)
 
 
+def test_polished_offers_the_item_adders(root: Path) -> None:
+    print("\npolished's Objects tab offers a ball and a hidden item of its own")
+    s = Session(root)
+    adders = s.adders("object")
+    by = {a.name: a for a in adders}
+    check("two line-only adders, no block between them",
+          set(by) == {"itemball", "hiddenitem"}, str(set(by)))
+    check("the ball's line is an object, the hidden item's a bg — the tab it "
+          "reads onto is not the list its line lives in",
+          by["itemball"].list_kind == "object"
+          and by["hiddenitem"].list_kind == "bg")
+    check("both carry polished's head anchor, not vanilla's tail",
+          all(a.anchor == "_MapScriptHeader" for a in adders))
+
+
+def test_real_item_adders() -> None:
+    root = Path.home() / "code/ricccec/polishedcrystal"
+    if not (root / "data/maps/maps.asm").exists():
+        print("\n(no polishedcrystal checkout — skipping the item-adder round-trip)")
+        return
+    print("\nthe polished item ball and hidden item round-trip on the real tree")
+    import shutil
+
+    from pokeprism_devtools.hacks.polished import events as pe
+    from pokeprism_devtools.hacks.vanilla import actions as fa
+    from pokeprism_devtools.shared.edits import apply_edits
+    ball, hidden = fa.POLISHED_ADDERS["object"]
+
+    def run_into(mapfile, action, kind, want):
+        with tempfile.TemporaryDirectory() as d:
+            tree = Path(d)
+            shutil.copytree(root, tree, dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns(".git"))
+            res = action.run(tree)
+            apply_edits(tree, res.edits, dry_run=False)
+            t = pe.tables(tree / f"maps/{mapfile}.asm")
+            got = [p for p in t.props if p.kind == kind and p.what == want]
+            flags = (tree / "constants/event_flags.asm").read_text()
+            return res, got, bool(got) and got[0].flag in flags
+
+    # BurnedTower1F interleaves an item ball and a smashrock among its objects —
+    # exactly the block the splicer used to stop reading early. The new ball must
+    # land after the real last object_event, not mid-list where it would steal a
+    # const, and it must read back at the coordinates it was given.
+    res, got, defined = run_into(
+        "BurnedTower1F",
+        ball("BURNED_TOWER_1F", y="5", x="6", item="MAX_REVIVE", quantity="1"),
+        "itemball", "MAX_REVIVE")
+    check("an item ball reads back with its item, quantity and coords",
+          bool(got) and got[0].qty == "1" and (got[0].y, got[0].x) == (5, 6),
+          str([(p.what, p.qty, p.y, p.x) for p in got]))
+    check("its flag is a fresh EVENT_ the flag file now defines", defined)
+    check("it writes two files — the map and the flag file",
+          sorted(e.path for e in res.edits)
+          == ["constants/event_flags.asm", "maps/BurnedTower1F.asm"])
+
+    res2, got2, defined2 = run_into(
+        "BeautifulBeach",
+        hidden("BEAUTIFUL_BEACH", y="7", x="8", item="NUGGET"),
+        "hidden", "NUGGET")
+    check("a hidden item reads back inline, BGEVENT_ITEM + what at its tile",
+          bool(got2) and (got2[0].y, got2[0].x) == (7, 8),
+          str([(p.what, p.y, p.x) for p in got2]))
+    check("its flag is a fresh EVENT_..._HIDDEN_ the file defines", defined2)
+
+
 def test_real_tree() -> None:
     root = Path.home() / "code/ricccec/polishedcrystal"
     if not (root / "data/maps/maps.asm").exists():
@@ -345,7 +411,9 @@ def main() -> int:
         test_wild_forms_and_roof(root)
         test_the_session_sees_no_name(root)
         test_deletion_splices_the_head(root)
+        test_polished_offers_the_item_adders(root)
     test_real_tree()
+    test_real_item_adders()
 
     print()
     if FAILED:

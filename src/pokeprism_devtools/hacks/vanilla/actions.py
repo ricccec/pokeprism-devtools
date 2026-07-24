@@ -32,7 +32,9 @@ scripts region as well, allocates an event flag in a second file, and mints
 three names that have to agree with each other — and it is vanilla's alone,
 because polished spells the same object as three extra `object_event`
 arguments with no block anywhere. That is declared in :data:`VANILLA_ONLY`
-rather than branched on, the same way the slot order is.
+rather than branched on, the same way the slot order is. Polished's own ball and
+hidden item — line-only, the item baked in — are the mirror of it in
+:data:`POLISHED_ONLY`, written by :mod:`.polisheditem`.
 
 **The trainer is the first adder that writes a block in *both* trees.** Its
 entry line is the small half; the content is a battle block plus the texts it
@@ -56,6 +58,7 @@ from .entry import Entry as _Entry
 from .fruittree import AddFruittree
 from .hiddenitem import AddHiddenitem
 from .itemball import AddItemball
+from .polisheditem import AddPolishedHiddenitem, AddPolishedItemball
 from .shapes import POLISHED_OBJECT, VANILLA_OBJECT, ObjectShape, prefill
 from .trainer import GenericTrainer, Trainer
 
@@ -398,9 +401,21 @@ ADDERS: dict[str, tuple[type[_Entry], ...]] = {
 #: its two-file id table are vanilla's and nothing else's. The hidden item too:
 #: polished bakes it into the `bg_event` (`BGEVENT_ITEM + NUGGET`) with no
 #: `hiddenitem` block to write, so vanilla's block-and-flag adder has nothing to
-#: cross the seam to.
+#: cross the seam to. What is vanilla's alone here is the *block writer*, not the
+#: object — polished offers its own ball and hidden item from :data:`POLISHED_ONLY`,
+#: line-only where these write a block.
 VANILLA_ONLY: dict[str, tuple[type[_Entry], ...]] = {
     "object": (AddItemball, AddFruittree, AddHiddenitem),
+}
+
+#: And polished's, the mirror image: the same two objects on screen — a ball on
+#: the floor and a hidden item — but baked into the line itself, so each is one
+#: `object_event` or `bg_event` with no block. Declared here rather than
+#: branched on for the same reason `VANILLA_ONLY` is: what a tree does *not*
+#: point a line at is as much a dialect fact as what it does. See
+#: :mod:`.polisheditem`.
+POLISHED_ONLY: dict[str, tuple[type[_Entry], ...]] = {
+    "object": (AddPolishedItemball, AddPolishedHiddenitem),
 }
 
 #: And what `e` opens, keyed by the **list** the entry lives in rather than by
@@ -444,12 +459,14 @@ VANILLA_ADDERS, VANILLA_EDITORS = fork("_MapEvents", VANILLA_OBJECT, "Vanilla",
                                               "trainer": (Trainer,)})
 POLISHED_ADDERS, POLISHED_EDITORS = fork("_MapScriptHeader", POLISHED_OBJECT,
                                          "Polished", layout=regions.POLISHED,
-                                         extra={"trainer": (GenericTrainer,)})
+                                         extra={**POLISHED_ONLY,
+                                                "trainer": (GenericTrainer,)})
 
 
 #: Re-exported so a caller needing both the forms and the records they were
 #: built from has one import. The records themselves live in `.shapes`.
 __all__ = ["ObjectShape", "VANILLA_OBJECT", "POLISHED_OBJECT", "prefill",
-           "AddItemball", "AddFruittree", "AddHiddenitem", "Trainer",
+           "AddItemball", "AddFruittree", "AddHiddenitem",
+           "AddPolishedItemball", "AddPolishedHiddenitem", "Trainer",
            "GenericTrainer", "VANILLA_ADDERS", "VANILLA_EDITORS",
            "POLISHED_ADDERS", "POLISHED_EDITORS", "fork"]

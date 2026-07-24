@@ -114,14 +114,19 @@ def test_block() -> None:
 def test_dialects() -> None:
     """Polished spells an item ball, a fruit tree and a hidden item all as
     inline `object_event`/`bg_event` arguments, with no block and no table
-    anywhere — so the three adders that write a block must not be on offer
-    there. This is the seam working: one declaration, not a branch."""
-    print("dialects — the block adders are vanilla's, and only vanilla's")
+    anywhere — so the three adders that write a *block* are vanilla's alone.
+    Polished offers its own two on the same tab, line-only where vanilla's write
+    a block: a ball and a hidden item, but no fruit tree (it has no
+    `fruit_trees.asm` to point an id into). This is the seam working: two
+    declarations, `VANILLA_ONLY` and `POLISHED_ONLY`, not a branch."""
+    print("dialects — the block adders are vanilla's, the line ones fork")
     offered = {c.__name__.removeprefix("Vanilla")
                for c in fa.VANILLA_ADDERS["object"]}
     check("vanilla offers the item ball, the fruit tree and the hidden item",
           offered == {"AddItemball", "AddFruittree", "AddHiddenitem"}, str(offered))
-    check("polished does not", fa.POLISHED_ADDERS.get("object") is None)
+    polished = {c.name for c in fa.POLISHED_ADDERS.get("object", ())}
+    check("polished offers its own ball and hidden item, line-only, no fruit tree",
+          polished == {"itemball", "hiddenitem"}, str(polished))
     check("both still offer the four line-only adders",
           all(k in fa.VANILLA_ADDERS and k in fa.POLISHED_ADDERS
               for k in ("NPC", "warp", "signpost", "trigger")))
