@@ -48,7 +48,7 @@ from typing import Protocol
 
 from ..shared import coords
 from ..shared.edits import Edit
-from .objedit import Change, EditError
+from .editvocab import Change, EditError
 
 EDGES = ("top", "bottom", "left", "right")
 MODES = ("grow", "shrink")

@@ -53,7 +53,7 @@ from typing import Protocol
 
 from ..shared.edits import Edit
 from .mapresize import MapShape
-from .objedit import Change, EditError
+from .editvocab import Change, EditError
 from .placement import Placement, Section
 
 #: The two spellings of a map's name, and why both are given rather than one

@@ -19,8 +19,8 @@ from pathlib import Path
 from ..hacks.prism import eventheader as eh, mapsource
 from ..shared.edits import Edit
 from ..hacks.prism.eventheader import ListKind
-from .objedit import (W_MAP, W_TO, W_X, W_Y, Change, MapEdit, same,
-                      spliced)
+from .editvocab import Change, same, spliced
+from .objedit import W_MAP, W_TO, W_X, W_Y, MapEdit
 
 
 class WarpError(RuntimeError):

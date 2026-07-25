@@ -12,9 +12,8 @@ from pathlib import Path
 
 from ...shared.edits import Edit
 from ...wiring.mapresize import MapShape, Standing
-from ...wiring.objedit import (MapEdit, S_X, S_Y, T_X, T_Y, W_X, W_Y, X, Y,
-                               spliced)
-from ...wiring.objedit import EditError
+from ...wiring.objedit import MapEdit, S_X, S_Y, T_X, T_Y, W_X, W_Y, X, Y
+from ...wiring.editvocab import EditError, spliced
 from . import blocksrc, eventheader as eh, mapsource
 
 #: `mapgroup NAME, H, W` — height first. See `wiring/mapresize`'s docstring for
