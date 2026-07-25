@@ -42,9 +42,9 @@ import re
 
 from pathlib import Path
 
-from ..hacks.prism import mapsource
-from ..shared.edits import Edit
-from .editvocab import Change, EditError, same
+from . import mapsource
+from ...shared.edits import Edit
+from ...wiring.editvocab import Change, EditError, same
 
 PRIMARY = "maps/map_headers.asm"
 SECONDARY = "maps/second_map_headers.asm"

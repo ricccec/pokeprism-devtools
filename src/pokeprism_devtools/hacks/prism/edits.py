@@ -32,9 +32,9 @@ from pathlib import Path
 from .actions import AddWarp, Connect
 from .eventflags import FlagError
 from .trainerparty import TrainerPartyError
-from ...wiring import mapedit, objedit, props, warps
-from ...wiring.scaffold import ScaffoldError
-from ...wiring.text import TextError
+from . import mapedit, objedit, props, warps
+from .scaffold import ScaffoldError
+from .text import TextError
 from ...studio.actions import (FISHGROUPS, LANDMARKS, MAPS, MUSIC, PERMISSIONS, TILESETS,
                       TIMES, Action, ActionError, Field, Result)
 from .content import (BOULDER, HIDDEN, ITEMBALL, ROCK, TMHM, TREE, AddNpc,

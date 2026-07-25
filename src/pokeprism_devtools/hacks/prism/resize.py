@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ...shared.edits import Edit
 from ...wiring.mapresize import MapShape, Standing
-from ...wiring.objedit import MapEdit, S_X, S_Y, T_X, T_Y, W_X, W_Y, X, Y
+from .objedit import MapEdit, S_X, S_Y, T_X, T_Y, W_X, W_Y, X, Y
 from ...wiring.editvocab import EditError, spliced
 from . import blocksrc, eventheader as eh, mapsource
 

@@ -28,9 +28,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..hacks.prism import (
+from . import (
     consts, eventheader as eh, eventflags, mapsource, spritesets, trainerparty)
-from ..shared.edits import Edit
+from ...shared.edits import Edit
 
 #: Bit 3 of the person_event palette nibble is OAM_PRIORITY (gbhw.asm) — the
 #: object draws *behind* BG tiles, which is how NPCs stand in doorways or behind
