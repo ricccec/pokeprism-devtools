@@ -30,13 +30,13 @@ from __future__ import annotations
 
 import re
 
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..hacks.prism import (
     consts, dialogue, eventheader as eh, mapsource, spritesets, trainercite,
     trainerparty)
 from ..shared.edits import Edit
+from .editvocab import Change, EditError, palette_of, repainted, same, spliced
 from .scaffold import INDENT, Object, ScaffoldError, allocate_flag, require
 
 #: Where a `person_event`'s arguments live. The flag is deliberately absent: it is
@@ -60,88 +60,9 @@ T_Y, T_X = 1, 2
 #: The engine reads "no flag here" as -1, and a fruit tree's is always that.
 ALWAYS = "-1"
 
-#: The palette argument is not just a palette. `8 + PAL_OW_BLUE` draws the body
-#: *behind* the background layer — and so does `PAL_OW_PLAYER + 8`, which is the
-#: same thing written the other way round, and a few objects carry a bare number
-#: with no palette name in it at all. The form asks about the colour and has never
-#: asked about any of the rest, so the rest is carried across untouched: find the
-#: name, swap the name, leave the arithmetic where it was. See :func:`_palette`.
-_PAL_RE = re.compile(r"\bPAL_OW_\w+")
-
 _TRAINER_RE = re.compile(
     r"^(?P<head>\s*trainer\s+)(?P<args>.*?)(?P<comment>\s*;.*)?$")
 _LABEL_RE = re.compile(r"^(\w+):")
-
-
-class EditError(RuntimeError):
-    """This thing cannot be changed the way you asked. Carries a message meant
-    for a human, as the rest of the wiring layer's errors do."""
-
-
-@dataclass
-class Change:
-    """Everything one edit touches. Apply the edits together or not at all."""
-    summary: str
-    edits: list[Edit] = field(default_factory=list)
-    notes: list[str] = field(default_factory=list)
-
-    @property
-    def changes(self) -> list[Edit]:
-        return [e for e in self.edits if e.changed]
-
-
-def same(old: str, new: object) -> bool:
-    """Is this argument being *changed*, or merely restated?
-
-    Not string equality, and that distinction is the difference between an editor
-    and a reformatter. Two thirds of the warps in this repo write their
-    coordinates in hex — `warp_def $18, $19, …` — and a form shows you `24` and
-    hands back `24`, which is the same number and a different eleven characters.
-    Believe the characters and moving one NPC rewrites a thousand warp lines.
-    """
-    old, new = old.strip(), str(new).strip()
-    if old == new:
-        return True
-    a, b = eh.as_int(old), eh.as_int(new)
-    return a is not None and a == b
-
-
-def spliced(entry: eh.Entry, changed: dict[int, object]) -> list[str]:
-    """The entry's arguments with only these replaced, the rest verbatim.
-
-    The rule the whole module rests on, and it is stronger than it looks: an
-    argument not named here comes back as the *source text* that was there — the
-    expression, the constant, the hex, the spacing somebody chose. And an argument
-    that *is* named here, but whose value did not actually move, comes back the
-    same way (see :func:`same`). So an edit is a promise about everything it did
-    not change, and the round-trip test is a test of that promise.
-    """
-    args = list(entry.args)
-    for i, value in changed.items():
-        if not -len(args) <= i < len(args):
-            raise EditError(
-                f"a {entry.macro} has {len(args)} arguments, so there is nothing "
-                f"at {i} — this map's entry is not the shape the editor expects.")
-        if not same(args[i], value):
-            args[i] = str(value).strip()
-    return args
-
-
-def repainted(arg: str, palette: str) -> str:
-    """A palette argument with a new colour in it, and everything else where it
-    was — the `8 +`, the `+ 8`, the spacing."""
-    if palette == palette_of(arg):
-        return arg
-    m = _PAL_RE.search(arg)
-    return f"{arg[:m.start()]}{palette}{arg[m.end():]}" if m else palette
-
-
-def palette_of(arg: str) -> str:
-    """The palette name out of an argument that may be arithmetic. What the form
-    is shown, and what it hands back. An argument with no name in it — a bare `0` —
-    is its own answer, and the form will show it and write it straight back."""
-    m = _PAL_RE.search(arg)
-    return m.group(0) if m else arg.strip()
 
 
 class MapEdit:
