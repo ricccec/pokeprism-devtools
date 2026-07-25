@@ -647,10 +647,12 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   that moved home in category 3. The import graph does not change, so no cycle
   appears; only the spelling of the paths does. CLI-extractability survives it —
   a `prism-objedit` CLI wraps `hacks/prism/objedit` as readily as `wiring/` — so
-  `keep-mechanics-cli-extractable` is honoured, not spent. **Not yet done**: the
-  chosen shape is recorded here; the safe first step is extracting the
-  vocabulary (which alone severs the `vanilla/newmap → wiring.mapnew → objedit`
-  import-load leak) before the relocation follows.
+  `keep-mechanics-cli-extractable` is honoured, not spent. **Done (2026-07-25).**
+  Step 1 extracted the vocabulary into `wiring/editvocab.py` and severed the
+  `vanilla/newmap → wiring.mapnew → objedit` import-load leak; step 2 relocated
+  all eight modules into `hacks/prism/`. `wiring/` now imports `hacks.prism`
+  nowhere, and the seam has no known structural debt left. See `STATE.md`, "The
+  last engineering item — paid".
 
 - **Phase 10 — the reader's four-macro vocabulary. Done**, and the survey that
   opened it corrected the plan twice before a line was written. Not a write

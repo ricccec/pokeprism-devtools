@@ -39,9 +39,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..hacks.prism import maps, mapsource
-from ..hacks.prism.blobsizes import SECONDARY_PER_CONNECTION
-from ..shared.edits import Edit
+from . import maps, mapsource
+from .blobsizes import SECONDARY_PER_CONNECTION
+from ...shared.edits import Edit
 
 _REL = "maps/second_map_headers.asm"
 

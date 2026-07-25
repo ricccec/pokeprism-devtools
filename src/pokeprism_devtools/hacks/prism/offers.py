@@ -28,7 +28,7 @@ from pathlib import Path
 
 from . import (
     consts, eventflags, maps as maps_mod, spritesets, trainerparty, trainerstats)
-from ...wiring import connections, props, scaffold
+from . import connections, props, scaffold
 from . import newmap
 from ...studio import actions
 from ...studio.actions import Action

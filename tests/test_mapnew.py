@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from pokeprism_devtools.hacks.vanilla import newmap as NM  # noqa: E402
 from pokeprism_devtools.shared.edits import apply_edits  # noqa: E402
 from pokeprism_devtools.wiring import mapnew as MN  # noqa: E402
-from pokeprism_devtools.wiring.objedit import EditError  # noqa: E402
+from pokeprism_devtools.wiring.editvocab import EditError  # noqa: E402
 
 VANILLA = Path.home() / "code/ricccec/pokecrystal"
 POLISHED = Path.home() / "code/ricccec/polishedcrystal"

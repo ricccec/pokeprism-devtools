@@ -25,7 +25,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import eventheader as eh
-from ...wiring import mapedit, objedit, props
+from . import mapedit, objedit, props
 from .content import HIDDEN, ITEMBALL, TMHM, TREE
 from ...studio.model import TextRef
 from ...studio.panels import Ref

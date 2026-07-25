@@ -190,7 +190,7 @@ class Writer:
         an absent key tells you nothing, and the reason is the interesting part.
         """
         from . import edits, prefill as fill
-        from ...wiring import objedit
+        from . import objedit
         if (action := edits.EDITORS.get(ref.what)) is None:
             raise Refused(edits.NOT_YET.get(
                 ref.what, f"editing a {ref.what} is not wired up yet."))

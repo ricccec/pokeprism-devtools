@@ -9,7 +9,7 @@ plans it replaces as a status source are journey logs and stay as history:
 - `family-write-plan.md` — the family write story. Phases 5–10.
 
 Read those for *why* a thing is shaped the way it is. Read this for *what shape
-it is in*. When a phase closes or the open item below is paid, update this file
+it is in*. When a phase closes or an engineering item is paid, update this file
 first.
 
 ## The seam, as it exists
@@ -46,41 +46,46 @@ round-trip to the byte on all real maps. Their blanks in the matrix are the
 **absences by design** below — one permanent, the rest deferred — not gaps. One
 of the deferred, family dialogue-overflow linting, is wanted next.
 
-## The one open engineering item
+## The last engineering item — paid (2026-07-25)
 
-**Phase 9c, category 4 — relocate the prism-bound `wiring/` modules home.**
+**Phase 9c, category 4 — relocate the prism-bound `wiring/` modules home. Done.**
+`wiring/` no longer imports `hacks.prism` at all: the last wrong-direction edge
+in the tree is gone.
 
-**Step 1 of 2 — the vocabulary split — is done (2026-07-25).** The dialect-free
-editing vocabulary — `EditError`, `Change`, `same`, `spliced`, `palette_of`,
-`repainted` — now lives in `wiring/editvocab.py`, a module with no `hacks.prism`
-import (`same` takes `as_int` from `shared/constants`; `spliced` types its entry
-with a structural `Spliceable` Protocol, naming no hack's `Entry`). `objedit`
-keeps the prism-bound editor and imports the vocabulary back. Every prism-free
-consumer — `mapnew`, `mapresize`, `placement`, `mapedit`, `vanilla/resize` — was
-repointed at `editvocab`, so the `vanilla/newmap → wiring.mapnew → objedit`
-import-load leak is severed: `mapnew`, `mapresize`, and `placement` now load
-**zero** prism modules, and `objedit` is off the family write path. (Mounting a
-*family* tree still loads prism, but through `studio → session → mount`
-discovering every hack — the mount's job by design, not a wiring-layer leak.)
+**Step 1 — the vocabulary split.** The dialect-free editing vocabulary —
+`EditError`, `Change`, `same`, `spliced`, `palette_of`, `repainted` — moved into
+`wiring/editvocab.py`, a module with no `hacks.prism` import (`same` takes
+`as_int` from `shared/constants`; `spliced` types its entry with a structural
+`Spliceable` Protocol, naming no hack's `Entry`). Every prism-free consumer —
+`mapnew`, `mapresize`, `placement`, `mapedit`, `vanilla/resize` — was repointed
+at `editvocab`, severing the `vanilla/newmap → wiring.mapnew → objedit`
+import-load leak.
 
-**Step 2 — the move itself — is still open.** Eight modules still live in
-`wiring/` while being consumed only by `hacks/prism/` and each other: `objedit`,
-`scaffold`, `props`, `removal`, `warps`, `connections`, `mapedit`, `text`. Their
-coupling is not the import lines, it is prism's logic — the field indices *are*
-prism's twelve-slot `person_event` (`PALETTE=8`, `PERSONTYPE=9`), which polished
-does not have; `objedit`'s trainer parser is anchored on prism's five-arg
-`trainer` and would skip every family `generictrainer`. The first family caller
-that reached for `S_X`/`W_Y` next door would get a wrong answer, not a crash —
-which is why they move rather than stay.
+**Step 2 — the move itself.** Eight modules that lived in `wiring/` while being
+consumed only by `hacks/prism/` and each other — `objedit`, `scaffold`, `props`,
+`removal`, `warps`, `connections`, `mapedit`, `text` — relocated into
+`hacks/prism/`, beside the write-adapter files that moved home in category 3.
+Their coupling was never the import lines, it was prism's logic: the field
+indices *are* prism's twelve-slot `person_event` (`PALETTE=8`, `PERSONTYPE=9`),
+which polished does not have; `objedit`'s trainer parser is anchored on prism's
+five-arg `trainer` and would skip every family `generictrainer`. A family caller
+that reached for `S_X`/`W_Y` next door would have got a wrong answer, not a
+crash — which is why they moved rather than stayed.
 
-The fix is decided (see `family-write-plan.md`, "How category 4 gets paid"):
-**move, don't parameterize.** No family caller wants these modules' logic, so an
-injection seam would serve a second consumer that does not exist. Relocate the
-prism-bound editor (`MapEdit`, the field constants, `edit_*`, the trainer
-helpers) and the seven siblings into `hacks/prism/`, beside the write-adapter
-files that moved home in category 3. The import graph does not change, so no
-cycle appears; only the spelling of the paths does. CLI-extractability survives —
-`prism-objedit` wraps `hacks/prism/objedit` as readily as `wiring/`.
+It was a **move, not a parameterize** (see `family-write-plan.md`, "How category
+4 gets paid"): no family caller wants these modules' logic, so an injection seam
+would have served a second consumer that does not exist. The import graph did
+not change — only the spelling of the paths — so no cycle appeared, and
+CLI-extractability survives: a `prism-objedit` CLI wraps `hacks/prism/objedit` as
+readily as it would have `wiring/`. `editvocab` stays in `wiring/` (the family
+still reaches it for `EditError`); the movers now reach it as `...wiring.editvocab`.
+
+**Verified:** `mapnew`/`mapresize`/`placement` load zero prism modules; the seam
+trio, `test_wiring`, `test_scaffold`, `test_events_write`, `test_placement`,
+`test_mapnew`, `test_studio`, and `test_regions`/`test_flagalloc` all pass. What
+remains of prism showing up when a *family* tree mounts is the mount discovering
+every hack through `studio → session → mount` — the mount's job by design, not a
+wiring-layer leak. With this paid, the seam has no known structural debt left.
 
 ## Wanted next — family dialogue-overflow linting
 
