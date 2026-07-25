@@ -54,7 +54,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .objedit import EditError
+from .editvocab import EditError
 
 #: The three shapes. See the module docstring; prism's `mapspec.BANK`/`INTO`/
 #: `AUTO` are the same distinctions drawn one layer down, where `AUTO` means

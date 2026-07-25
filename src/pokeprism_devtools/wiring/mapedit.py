@@ -44,7 +44,7 @@ from pathlib import Path
 
 from ..hacks.prism import mapsource
 from ..shared.edits import Edit
-from .objedit import Change, EditError, same
+from .editvocab import Change, EditError, same
 
 PRIMARY = "maps/map_headers.asm"
 SECONDARY = "maps/second_map_headers.asm"

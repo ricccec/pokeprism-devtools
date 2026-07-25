@@ -35,7 +35,7 @@ from pathlib import Path
 
 from ...shared.edits import Edit
 from ...wiring.mapresize import MapShape, Standing
-from ...wiring.objedit import EditError
+from ...wiring.editvocab import EditError
 from . import read as r
 from . import eventblock as eb
 

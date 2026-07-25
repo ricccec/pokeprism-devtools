@@ -617,6 +617,41 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   family caller that reaches for one of *those* will get a wrong answer rather
   than a crash.
 
+  **How category 4 gets paid — measured 2026-07-24, and it is a move, not a
+  decouple-in-place.** An earlier reading of this section (and the leak-census
+  note) assumed the eight were shared mechanics one parser-import away from
+  reuse, to be decoupled *in place* by handing primitives across the seam. A
+  who-imports trace says otherwise. All eight — `objedit`, `scaffold`, `props`,
+  `removal`, `warps`, `connections`, `mapedit`, `text` — are consumed only by
+  `hacks/prism/` and by each other; no `hacks/vanilla` or `hacks/polished`
+  module touches any of them. The family reaches this whole surface for exactly
+  one name: `EditError`, imported by `vanilla/resize.py`, and it is dialect-free.
+
+  And the coupling is not the seven import lines — it is the logic. The field
+  indices *are* prism's twelve-slot `person_event` (`PALETTE=8`, `PERSONTYPE=9`)
+  where polished has no palette column at all and its objtype sits at `args[8]`;
+  `objedit`'s trainer parser is anchored on prism's five-arg `trainer` and would
+  skip every family `generictrainer`; `reword` runs prism's `ctxt` dialogue
+  formatter the family "cannot borrow" (`wiring/blocks.py`). A family editor
+  could reuse the *discipline* — `same`/`spliced`, "rewrite only the args the
+  form owns" — but none of the layout or grammar. Decoupling-in-place would
+  therefore build an injection seam for a second consumer that does not exist
+  and, when it did, would inject nearly everything anyway.
+
+  So category 4 closes the way category 3 did: **move, don't parameterize.**
+  Split `objedit` — the dialect-free vocabulary (`EditError`, `Change`, `same`,
+  `spliced`, `palette_of`, `repainted`) stays in a prism-free `wiring/` module
+  that the family and the clean modules keep importing; the prism-bound editor
+  (`MapEdit`, the field constants, `edit_*`, the trainer helpers) and the seven
+  prism-only siblings relocate into `hacks/prism/`, beside the five studio files
+  that moved home in category 3. The import graph does not change, so no cycle
+  appears; only the spelling of the paths does. CLI-extractability survives it —
+  a `prism-objedit` CLI wraps `hacks/prism/objedit` as readily as `wiring/` — so
+  `keep-mechanics-cli-extractable` is honoured, not spent. **Not yet done**: the
+  chosen shape is recorded here; the safe first step is extracting the
+  vocabulary (which alone severs the `vanilla/newmap → wiring.mapnew → objedit`
+  import-load leak) before the relocation follows.
+
 - **Phase 10 — the reader's four-macro vocabulary. Done**, and the survey that
   opened it corrected the plan twice before a line was written. Not a write
   refusal; found by censusing Phase 8's item ball against the real trees, and it
