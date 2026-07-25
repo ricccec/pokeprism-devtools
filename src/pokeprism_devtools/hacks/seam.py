@@ -26,9 +26,10 @@ never an `if <hack name>`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:  # annotations are lazy, so a probe pays for no studio import
+    from ..maplint.diagnostics import Diagnostic
     from ..studio import panels
 
 
@@ -98,6 +99,28 @@ class Sketches(Protocol):
 
 
 @runtime_checkable
+class Lints(Protocol):
+    """`Hack.ctx is not None` only. A tree's linter, running its *own* rules and
+    answering the two questions the session asks around them — never told which
+    rules a tree supports, because that is knowledge the context owns and the
+    session must not. Prism's :class:`~..maplint.context.LintContext` satisfies
+    this; a family context that knows only text satisfies it just as well, and
+    the session cannot tell them apart."""
+
+    def lint(self) -> list[Diagnostic]:
+        """Every finding in the repo, suppressions applied — the whole rule set
+        this context carries, run against the tree it describes."""
+
+    def mentions(self, d: Diagnostic, only: str) -> bool:
+        """Whether a finding is 'about' one map: in its file, or naming it from a
+        shared file (connections live in one, not in the map)."""
+
+    def source_lines(self, rel: str) -> list[str]:
+        """One file's lines, by repo-relative path — what a finding's location
+        points into, for the view that shows the offending line."""
+
+
+@runtime_checkable
 class Writes(Protocol):
     """What a tree mounted for writing must answer. `None` in place of one of
     these is not how a write adapter says no — :class:`Refused` is, with the
@@ -156,8 +179,9 @@ class Hack:
     reads: Reads
     #: The linter's context, for the hack the linter is written against. The
     #: session lints exactly when this is not None, and hands it back to
-    #: everything that asks repo-wide questions.
-    ctx: Any = None
+    #: everything that asks repo-wide questions. A :class:`Lints`: it runs its
+    #: own rules, so the session never learns which rules a tree supports.
+    ctx: Lints | None = None
     #: The write adapter — the studio's actions, forms and undo apply to this
     #: tree through it. None mounts the tree read-only, and everything above
     #: the seam that would change the repo degrades to absence.

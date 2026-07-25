@@ -38,7 +38,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from .. import maplint
 from ..dev_server import playtest as devplay
 from ..maplint.diagnostics import Diagnostic, Severity
 from ..hacks.mount import mount
@@ -317,14 +316,14 @@ class Session:
         if self.ctx is None:
             return []
         if self._found is None:
-            self._found = maplint.run(self.ctx)
+            self._found = self.ctx.lint()
         return self._found
 
     def diagnostics(self, const: str) -> list[Diagnostic]:
         """The findings *about* one map — those in its file, plus those in the
         shared second_map_headers.asm that name it, since a map's connections
         live there rather than in the map."""
-        return [d for d in self.lint() if maplint.mentions(d, self.ctx, const)]
+        return [d for d in self.lint() if self.ctx.mentions(d, const)]
 
     def findings_for(self, const: str) -> list[Finding]:
         """The findings about one map, flattened for the side panel.

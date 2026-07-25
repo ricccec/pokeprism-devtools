@@ -15,11 +15,15 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..hacks.prism import (
     dialogue, eventflags, eventheader as eh, flagrefs, landmarks, maps, mapsource,
     spritesets, textbox, trainercite, trainerparty)
 from ..hacks.prism.maps import MapDef
+
+if TYPE_CHECKING:
+    from .diagnostics import Diagnostic
 
 _SECOND_HEADERS = "maps/second_map_headers.asm"
 _PRIMARY_HEADERS = "maps/map_headers.asm"
@@ -110,6 +114,21 @@ class LintContext:
         self._text: dict[str, list[dialogue.Block]] = {}
         self._source: dict[str, list[str]] = {}
         self._rel: dict[Path, str] = {}
+
+    # -- the lint capability ------------------------------------------------- #
+    # The session lints through `Hack.ctx`, which is this object; these three
+    # methods are the whole `seam.Lints` surface (`source_lines` is below, under
+    # "files"). The session calls them and never learns which rules prism runs —
+    # a family context answers the same three with its own, smaller rule set.
+    def lint(self) -> list[Diagnostic]:
+        """Every finding in the repo, suppressions applied — every prism rule."""
+        from . import run                 # lazy: __init__ imports this module, so
+        return run(self)                  # a module-level import would be a cycle
+
+    def mentions(self, d: Diagnostic, only: str) -> bool:
+        """Whether a finding is 'about' the named map — see :func:`.mentions`."""
+        from . import mentions as _mentions
+        return _mentions(d, self, only)
 
     # -- staying current ----------------------------------------------------- #
     def invalidate(self, paths: Iterable[str]) -> None:
