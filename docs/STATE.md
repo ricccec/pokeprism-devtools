@@ -87,35 +87,36 @@ remains of prism showing up when a *family* tree mounts is the mount discovering
 every hack through `studio → session → mount` — the mount's job by design, not a
 wiring-layer leak. With this paid, the seam has no known structural debt left.
 
-## Wanted next — family dialogue-overflow linting
+## Wanted next — family dialogue-overflow linting (scoped: `family-write-plan.md`, Phase 11)
 
-Distinct from the open item above (that is debt; this is a wanted capability),
-but the next thing worth building rather than a resting blank.
+Distinct from a debt (there is none left): this is a wanted capability, the next
+thing worth building rather than a resting blank. **Now scoped as Phase 11** in
+`family-write-plan.md`; that section holds the argument, the architecture, and
+the moves. In brief:
 
-**The want:** the linter should flag a dialogue line that crosses the screen
-boundary and overflows the box — for vanilla and polished, not only prism.
+**The want:** flag a dialogue line that crosses the screen boundary and
+overflows the box — for vanilla and polished, not only prism.
 
-**Why it needs no VWF.** Overflow is a *fit* question, and the family font is
-fixed-width: every glyph is one tile, the dialogue box interior is a fixed tile
-width, and the script's own break controls (`cont`/`para`, the `@` terminator)
-say where each visual line ends. "Does this line fit" is then: count printable
-tiles between breaks, compare to the box width. That is exact, not a guess —
-which is why it does **not** sit under `Measures.measure`. `measure` rightly
-refuses to answer in characters because *VWF pixel* width is unknowable without
-the metrics; fixed-width tile counting is ground truth, a different question.
+**Why it needs no VWF — measured, and the old flat claim corrected.** Overflow
+is a *fit* question, and map dialogue is fixed-width in **both** trees: every
+glyph is one tile, the box interior is a fixed 18 tiles (`TEXTBOX_INNERW`), and
+the script's own break macros (`text`/`line`/`cont`/`para`) end each visual
+line. Count printable tiles between breaks, compare to the box width — exact, not
+a guess. (Polished *does* ship a VWF, but only for menus; overworld dialogue
+runs through the fixed-width `PlaceString` path. So the fit is exact for
+dialogue even though a menu elsewhere is proportional.) This is why it does
+**not** sit under `Measures.measure`, which rightly refuses the unknowable VWF
+*pixel* width — a different question.
 
-**What it reads.** `Reads.texts(label)` already hands every adapter every string
-in source order, so the input crosses the seam today. What is missing is small
-and family-local: the box interior width (a per-family constant) and the family's
-line-break control vocabulary (which macro ends a visual line).
+**What it reads.** `Reads.texts(label)` already crosses every string in source
+order. What is missing is small and family-local: the box width, the break
+vocabulary, and a family charmap reader for control-code expansions.
 
-**Where it lands.** As a family **`ctx`** — a lint context. This is the first
-thing that makes `Hack.ctx` non-`None` for vanilla/polished, and it surfaces
-through the same finding channel prism's linter already uses. It does not touch
-`Measures`, `Writes`, or the read methods.
-
-**Not yet scoped in a plan doc.** When it is picked up, give it a short section
-in `family-write-plan.md` and move this block into "the open engineering item".
+**Where it lands.** As a family **`ctx`** — the first thing that makes
+`Hack.ctx` non-`None` for vanilla/polished, surfacing through prism's existing
+finding channel. Phase 11's step A first turns `Hack.ctx` into a lint capability
+(`ctx.lint()`) so a family ctx can run only its own rules without the session
+knowing rule sets. Does not touch `Measures`, `Writes`, or the read methods.
 
 ## Absences by design — none permanent but one, all otherwise deferred
 
@@ -127,12 +128,16 @@ scoped out, each pick-up-able as its own phase.
 
 **The one permanent absence — and it is a font fact, not a capability:**
 
-- **Family VWF pixel metrics** — vanilla and polished use a fixed-width font, so
-  the per-glyph pixel widths prism's `measure` sums do not exist. This is about
-  the font, forever. It does **not** mean the family cannot be checked for
-  overflow — that is fixed-width tile counting, scoped just above.
+- **Family VWF pixel metrics for dialogue** — map dialogue in both trees renders
+  through the fixed-width `PlaceString` path, so the per-glyph pixel widths
+  prism's `measure` sums do not exist for it. (Polished ships a menu VWF, but it
+  is off the dialogue path.) This is about the dialogue font, forever. It does
+  **not** mean the family cannot be checked for overflow — that is fixed-width
+  tile counting, scoped just above as Phase 11.
 
-**Deferred — implementable, deliberately out of the seam's current scope:**
+**Deferred — implementable, deliberately out of the seam's current scope. The
+full roadmap, grouped, is in `family-write-plan.md` ("The roadmap past the
+seam"); the standing items:**
 
 - **Family `plays`** — build-and-replay is engine wiring, a separate project.
 - **Family rewording** — `wiring/text` is still prism-parser-based (one of the
