@@ -24,7 +24,7 @@ from pathlib import Path
 
 from ...studio.actions import (DIRECTIONS, MAPS, Action, ActionError, Field,
                                Result)
-from ...wiring import connections, warps
+from . import connections, warps
 
 
 class Connect(Action):

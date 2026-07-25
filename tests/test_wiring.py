@@ -27,12 +27,13 @@ from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
 from pokeprism_devtools.hacks.prism import eventheader as eh # noqa: E402
 from pokeprism_devtools.hacks.prism import write as PW  # noqa: E402
 from pokeprism_devtools.shared.edits import apply_edits  # noqa: E402
-from pokeprism_devtools.wiring import connections as C, objedit as O  # noqa: E402
+from pokeprism_devtools.hacks.prism import connections as C, objedit as O  # noqa: E402
 from pokeprism_devtools.wiring import mapresize as MR  # noqa: E402
 from pokeprism_devtools.hacks.prism.resize import DIALECT as PRISM_RESIZE  # noqa: E402
-from pokeprism_devtools.wiring import removal as R, warpdel as WD  # noqa: E402
-from pokeprism_devtools.wiring import warps as W  # noqa: E402
-from pokeprism_devtools.wiring.scaffold import Object  # noqa: E402
+from pokeprism_devtools.hacks.prism import removal as R  # noqa: E402
+from pokeprism_devtools.wiring import warpdel as WD  # noqa: E402
+from pokeprism_devtools.hacks.prism import warps as W  # noqa: E402
+from pokeprism_devtools.hacks.prism.scaffold import Object  # noqa: E402
 
 _failures = 0
 

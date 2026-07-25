@@ -28,10 +28,11 @@ from pathlib import Path
 from . import eventmodel, trainerstats
 from .eventflags import FlagError
 from .eventheader import ListKind
-from ...wiring import connections, props, removal, scaffold, warpdel
+from . import connections, props, removal, scaffold
+from ...wiring import warpdel
 # By name, not by module: `Action.text()` is a method, and `text.reword(...)`
 # sitting next to `self.text("label")` in the same three lines is a trap.
-from ...wiring.text import TextError, reword
+from .text import TextError, reword
 from ...studio.actions import (CLASSES, FACINGS, FLAGS, ITEMS, MOVEMENTS, PALETTES,
                       PARTIES, SPRITES, TMHMS, TREES, Action, ActionError,
                       Field, Result)
