@@ -6,7 +6,8 @@ plans it replaces as a status source are journey logs and stay as history:
 - `adapter-plan.md` — the argument for one frontend / many hacks, and why the
   split is deferred. Its one scheduled piece (the pluggable mount) shipped.
 - `polished-crystal-feasibility.md` — the measured experiment. Phases 0–4.
-- `family-write-plan.md` — the family write story. Phases 5–10.
+- `family-write-plan.md` — the family write story. Phases 5–10 (history).
+- `family-lint-plan.md` — the live plan: Phase 11 and the roadmap past the seam.
 
 Read those for *why* a thing is shaped the way it is. Read this for *what shape
 it is in*. When a phase closes or an engineering item is paid, update this file
@@ -87,11 +88,11 @@ remains of prism showing up when a *family* tree mounts is the mount discovering
 every hack through `studio → session → mount` — the mount's job by design, not a
 wiring-layer leak. With this paid, the seam has no known structural debt left.
 
-## Wanted next — family dialogue-overflow linting (scoped: `family-write-plan.md`, Phase 11)
+## Wanted next — family dialogue-overflow linting (scoped: `family-lint-plan.md`, Phase 11)
 
 Distinct from a debt (there is none left): this is a wanted capability, the next
 thing worth building rather than a resting blank. **Now scoped as Phase 11** in
-`family-write-plan.md`; that section holds the argument, the architecture, and
+`family-lint-plan.md`; that section holds the argument, the architecture, and
 the moves. In brief:
 
 **The want:** flag a dialogue line that crosses the screen boundary and
@@ -136,7 +137,7 @@ scoped out, each pick-up-able as its own phase.
   tile counting, scoped just above as Phase 11.
 
 **Deferred — implementable, deliberately out of the seam's current scope. The
-full roadmap, grouped, is in `family-write-plan.md` ("The roadmap past the
+full roadmap, grouped, is in `family-lint-plan.md` ("The roadmap past the
 seam"); the standing items:**
 
 - **Family `plays`** — build-and-replay is engine wiring, a separate project.
@@ -158,7 +159,9 @@ begins.
 
 ## Doc hygiene — the accretion to watch
 
-`docs/` is accreting. Besides the three journey docs and this one:
+`docs/` is accreting. Besides the three journey docs, this one, and the live
+`family-lint-plan.md` (Phase 11 + roadmap, split out of `family-write-plan.md`
+to keep the completed history off the hot path):
 `devtools-plan.md` (historical), `bank-usage-plan.md` (spec, no code),
 `blockdata-plan.md` (shipped), `map-inspect-plan.md`, `devtools.md` (user
 reference). Separately, a `feat/map-studio` docs restructure sits **stashed**
