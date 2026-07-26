@@ -119,6 +119,12 @@ class Lints(Protocol):
         """One file's lines, by repo-relative path — what a finding's location
         points into, for the view that shows the offending line."""
 
+    def invalidate(self, paths) -> None:
+        """Forget what these files told us, so the next lint sees the tree as it
+        now is. The session calls this after every edit it writes: a cached
+        finding you just fixed must stop being reported, and one you just broke
+        must start. Repo-relative paths."""
+
 
 @runtime_checkable
 class Writes(Protocol):

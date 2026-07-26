@@ -234,8 +234,8 @@ def test_the_mount_recognises_vanilla(root: Path) -> None:
     print("\nthe mount recognises a vanilla tree by its tail anchor")
     hack = hackmount.mount(root)
     check("mounted as vanilla", hack.name == "vanilla")
-    check("with no linter", hack.ctx is None)
-    check("with the family write adapter, and nothing else declared",
+    check("with a text linter", hack.ctx is not None)
+    check("with the family write adapter and linter, no emulator or tile ruler",
           hack.writes is not None and not hack.plays and not hack.measures)
 
 
@@ -384,9 +384,10 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
           [t.name for t in md.tabs] ==
           ["Attributes", "NPCs", "Trainers", "Objects", "Warps", "Signposts",
            "Triggers", "Connections", "Roof", "Wild"])
-    check("lint finds nothing because there is no linter", s.lint() == [])
-    check("and the panes can ask before drawing a verdict",
-          s.lints is False and s.measures is False)
+    check("its linter finds nothing on this fixture — no engine files to measure",
+          s.lint() == [])
+    check("but it declares one now; measure is the absence left",
+          s.lints is True and s.measures is False)
     # NPC, warp and signpost offer one form each. The object tab offers three —
     # the item ball, the fruit tree and the hidden item — because each writes a
     # block an entry points at, and each is a different block. (The hidden item

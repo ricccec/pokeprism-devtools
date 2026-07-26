@@ -6,9 +6,11 @@ that finds *which* file to look at lives in `shared/mapindex`; what the file's
 contents mean is vanilla's alone, and it knows nothing of polished's head anchor
 — they are two independent questions about the same byte. What vanilla is *made
 of* is `build` below: a reader and a writer over a stock pokecrystal checkout,
-and none of the extra capabilities. No ctx means the session does not lint;
-`plays` and `measures` left false mean the emulator and the tile ruler degrade
-to absence above the seam. Nothing is imported until vanilla claims the tree.
+and its family linter. The `ctx` is what makes the session lint a vanilla tree
+at all — the dialogue-overflow rules, surfacing through the same Diagnostics
+channel prism uses; `plays` and `measures` left false mean the emulator and the
+tile ruler degrade to absence above the seam. Nothing is imported until vanilla
+claims the tree.
 """
 
 from __future__ import annotations
@@ -39,7 +41,8 @@ def claims(root: Path) -> Hack | NearMiss:
 
 
 def build(root: Path) -> Hack:
-    """The vanilla :class:`~..seam.Hack`: a reader and a writer, nothing more."""
+    """The vanilla :class:`~..seam.Hack`: a reader, a writer, and a text linter."""
+    from . import lint
     from .read import Reader
     from .write import Writer
-    return Hack("vanilla", Reader(root), writes=Writer(root))
+    return Hack("vanilla", Reader(root), ctx=lint.build(root), writes=Writer(root))
