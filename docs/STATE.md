@@ -38,8 +38,8 @@ these; a missing capability degrades to a visible absence, never a crash.
 | | reads | writes | lint (`ctx`) | plays | measures |
 |---|---|---|---|---|---|
 | **prism** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **vanilla** | ✓ | ✓ | ✓ (dialogue overflow + name bounds) | — | — |
-| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow + name bounds, n-gram reader) | — | — |
+| **vanilla** | ✓ | ✓ | ✓ (dialogue overflow, name + buffer bounds) | — | — |
+| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | — | — |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
 resize, new-map, and the block scaffolding those ride — and the writes
@@ -96,7 +96,7 @@ wiring-layer leak. With this paid, the seam has no known structural debt left.
 **Move A — done.** `Hack.ctx` is a lint *capability* (`seam.Lints`): `lint()`,
 `mentions()`, `source_lines()`, `invalidate()`. The session lints through it and
 never learns which rules a tree runs — prism's `LintContext` runs all of them, a
-family ctx runs three (the two overflow rules plus name bounds), and the session
+family ctx runs four (the two overflow rules plus name and buffer bounds), and the session
 cannot tell them apart. It branches only on `ctx is not None`, never on a name.
 
 **Move B — done, both family trees.** `hacks/vanilla/lint/` is a
@@ -141,15 +141,27 @@ like the determinate rule, the tightest real line packs to the tile
 agrees with the authors again. The per-tree bound is declared data (`_NAME_BOUND`
 maps each name buffer to `PLAYER_NAME_LENGTH`), read from source, seam-clean.
 
-`text-buffer` — the *other* half of Move C, the unbounded `<STRBF*>` headroom —
-is **not** the clean port the plan assumed and is left for a deliberate pick-up
-(see the roadmap). Prism's dialogue is one string with inline codes, so
-`text_from_ram` is a mid-line token; the family splits a box across separate
-`text`/`text_ram` *script commands*, and the parser deliberately treats each
-`text` as its own box and `@` as a terminator — a conservative simplification
-that undercounts rather than false-positives. Modelling `text_ram` correctly
-(joining consecutive commands into one visual line, past the `@`-terminator) is a
-parser change with false-positive risk, distinct from Move C's inline-token work.
+**Move C — done, buffers (`text-buffer`), both trees.** The other half needed the
+parser rewrite the name half did not. The family splits a box across separate
+`text`/`text_ram` *script commands*: `line "your @"` / `text_ram wStringBuffer3` /
+`text "…"` is one visual line, `your <mon>…`, with a name spliced into the middle
+of it. The old parse treated each break macro as its own line and `@` as the end
+of the box, so the buffer and its suffix fell out as a stray second box and the
+mon name measured as nothing on a line it is really the width of. The parser now
+walks the cursor the way the engine does — `@` ends a *draw* and hands control
+back to the command interpreter, so a `text_ram` and the `text` after it join the
+line in progress; a line breaks only at `line`/`cont`/`para`/`next`, a box closes
+only at `done`/`prompt`/`page`/`text_end` or the next label, and
+`if DEF(FAITHFUL)`/`else`/`endc` branches are measured as siblings, not summed.
+A name buffer reached by `text_ram` bounds like an inline `<PLAYER>` (declared
+`ram_bound`, read from source); any other buffer is unbounded, since the text
+cannot say how long it prints. On that, `text-buffer` warns the one certain
+overflow — a line whose fixed text already fills the box has no room for the
+spliced buffer, short or long — and stays silent on every buffer it cannot bound,
+the same honesty as the determinate rules. Both shipping trees stay clean under
+all four rules; the parse rewrite changed only the buffer lines (and correctly
+joined a handful of `text_decimal` number-splices), verified line-for-line
+against the old parse across both trees.
 
 **The finding channel is now genuinely hack-neutral.** `maplint/__init__` defers
 its rule/context imports (all of `hacks.prism`) into `run()`/`main()`, so
@@ -178,11 +190,6 @@ scoped out, each pick-up-able as its own phase.
 full roadmap, grouped, is in `family-lint-plan.md` ("The roadmap past the
 seam"); the standing items:**
 
-- **Family `text-buffer`** — the unbounded `<STRBF*>` headroom rule, Move C's
-  second half. It needs the dialogue parser to model the `text_ram` script macro
-  and join consecutive `text` commands into one visual line past the `@`
-  terminator — a parser change with false-positive risk, not the inline-token
-  port `text-width-name` was. See the Move C note above.
 - **Family `plays`** — build-and-replay is engine wiring, a separate project.
 - **Family rewording** — `wiring/text` is still prism-parser-based (one of the
   cat-4 movers); rewording against a fixed-width charmap is a text-wiring project.
