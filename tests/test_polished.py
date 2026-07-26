@@ -190,8 +190,8 @@ def test_the_mount_tells_the_family_apart(root: Path) -> None:
     print("\nthe mount tells polished from vanilla by where the anchor sits")
     hack = hackmount.mount(root)
     check("mounted as polished", hack.name == "polished")
-    check("no linter, the family write adapter, nothing else declared",
-          hack.ctx is None and hack.writes is not None and not hack.plays
+    check("the family write adapter and a linter, but it neither plays nor measures",
+          hack.ctx is not None and hack.writes is not None and not hack.plays
           and not hack.measures)
     check("the writer holds the head anchor",
           hack.writes.anchor == "_MapScriptHeader")

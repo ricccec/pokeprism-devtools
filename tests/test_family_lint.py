@@ -23,11 +23,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools.hacks import mount as hackmount  # noqa: E402
 from pokeprism_devtools.hacks import seam  # noqa: E402
+from pokeprism_devtools.hacks.polished import lint as polished_lint  # noqa: E402
 from pokeprism_devtools.hacks.vanilla import lint  # noqa: E402
 from pokeprism_devtools.hacks.vanilla.lint import box, dialogue, metrics, rules  # noqa: E402
 from pokeprism_devtools.maplint.diagnostics import apply_suppressions  # noqa: E402
 
 VANILLA = Path.home() / "code/ricccec/pokecrystal"
+POLISHED = Path.home() / "code/ricccec/polishedcrystal"
 FAILED = 0
 
 #: One box each: a fitting line and its overflowing twin, the `#` trap, and a
@@ -180,6 +182,73 @@ def test_the_seam_conformance(root: Path) -> None:
         check(f"it answers {name}()", callable(getattr(hack.ctx, name, None)))
 
 
+#: The polished fast-follow. Same box, same parse, same rules — the fork is the
+#: width reader, which resolves a byte through the Huffman n-gram table instead
+#: of vanilla's dict. The checks below pin the two things that fork: n-grams draw
+#: their expansion's tiles (not one), and the `#`-style expansion that reads
+#: shorter than it draws is still the surprise the width message must name.
+def test_polished_metrics_read_from_ngrams(root: Path) -> None:
+    print("\npolished reads widths out of its n-gram table, not vanilla's dict")
+    m = polished_lint.load(root)
+    check("`#` prints 4 tiles (Poké)", m.width.get("#") == 4, str(m.width.get("#")))
+    check("`#mon` prints 7 (Pokémon)", m.width.get("#mon") == 7, str(m.width.get("#mon")))
+    check("a name buffer counts as nothing (`<PLAYER>` -> 0)",
+          m.width.get("<PLAYER>") == 0, str(m.width.get("<PLAYER>")))
+    check("an n-gram draws its whole expansion (`the ` -> 4 tiles, not 1)",
+          m.width.get("the ") == 4, str(m.width.get("the ")))
+    check("an apostrophe ligature inside an n-gram is one tile (`'s ` -> 2, not 3)",
+          m.width.get("'s ") == 2, str(m.width.get("'s ")))
+    check("a graphic ligature is a single tile (`<PK>` falls through to 1)",
+          m.width.get("<PK>") is None, str(m.width.get("<PK>")))
+
+
+def test_polished_falsification(root: Path) -> None:
+    print("\npolished catches the same overflows, and names only the real surprise")
+    m = polished_lint.load(root)
+    b = box.speech_box(root)
+    check("the box is 18 tiles wide, as vanilla's", b.cols == 18, str(b.cols))
+    with tempfile.TemporaryDirectory() as d:
+        sample = Path(d) / "Sample.asm"
+        sample.write_text(_SAMPLE)
+        ln = {l.lineno: l for blk in dialogue.parse(root, sample, m) for l in blk.lines}
+        check("a line exactly 18 tiles fits", ln[2].determinate == 18)
+        check("one more tile overflows", ln[3].determinate == 19)
+        check("the `#mon`->Pokémon line is 19 tiles though it reads as 16 characters",
+              ln[7].determinate == 19, str(ln[7].determinate))
+        check("a `next` after `line` lands past the box's last row",
+              ln[13].row == 18 and ln[13].row > b.last_row, f"row {ln[13].row}")
+
+        class Ctx:
+            pass
+        ctx = Ctx()
+        ctx.root, ctx.metrics, ctx.box = root, m, b
+        ctx.map_files = {"SAMPLE": sample}
+        ctx.rel = lambda p: "maps/Sample.asm"
+        ctx.text_blocks = lambda const: dialogue.parse(root, sample, m)
+        found = []
+        for rule in rules.ALL:
+            found += rule(ctx)
+        check("both rules fire", sorted({d.code for d in found}) == ["text-rows", "text-width"])
+        trap = next((d for d in found if d.line == 7), None)
+        check("the width message names `#mon`, the token that draws wider than it reads",
+              trap is not None and "`#mon` prints 7 tiles" in trap.message,
+              trap.message if trap else "no finding on the #mon line")
+
+
+def test_polished_real_tree_is_clean(root: Path) -> None:
+    print("\na stock polishedcrystal lints clean — a finding here is a false alarm")
+    found = polished_lint.build(root).lint()
+    check("no dialogue overflow in the shipping game", found == [],
+          "; ".join(d.location for d in found[:5]))
+
+
+def test_polished_seam_conformance(root: Path) -> None:
+    print("\nthe mounted polished ctx is a seam.Lints")
+    hack = hackmount.mount(root)
+    check("polished now carries a ctx", hack.ctx is not None)
+    check("it satisfies the Lints protocol", isinstance(hack.ctx, seam.Lints))
+
+
 def main() -> int:
     test_the_channel_loads_no_prism()
     if not VANILLA.exists():
@@ -191,6 +260,14 @@ def main() -> int:
         test_the_rules_and_suppression(VANILLA)
         test_the_real_tree_is_clean(VANILLA)
         test_the_seam_conformance(VANILLA)
+
+    if not POLISHED.exists():
+        print("\n(no polishedcrystal checkout next door — skipping the polished tests)")
+    else:
+        test_polished_metrics_read_from_ngrams(POLISHED)
+        test_polished_falsification(POLISHED)
+        test_polished_real_tree_is_clean(POLISHED)
+        test_polished_seam_conformance(POLISHED)
 
     print()
     if FAILED:

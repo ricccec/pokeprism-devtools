@@ -28,29 +28,27 @@ from .metrics import Metrics
 if TYPE_CHECKING:
     from . import dialogue as _dialogue
 
-#: The engine files the box, the charmap and the widths are read from. A tree
-#: missing any — mid-edit, or a fixture that is only a few maps — cannot be
-#: measured for overflow, so the linter degrades to silence rather than crashing
-#: on the first `read_text`, the way the seam says an absent capability must.
-_ENGINE_FILES = ("constants/hardware.inc", "constants/text_constants.asm",
-                 "constants/charmap.asm", "home/text.asm")
-
 
 class FamilyLintContext:
     """One family tree, in the shape the text rules ask about.
 
     `labels` is const -> map label; `load_metrics` builds the tree's own width
     reader when first asked — deferred so mounting a tree whose engine files are
-    mid-edit or absent does not fail; the linter degrades to silence instead. The
-    text of each map is parsed lazily and cached, so linting the repo parses each
-    file once and asking about one map does not pay for the rest.
+    mid-edit or absent does not fail; the linter degrades to silence instead.
+    `engine_files` is the set of files the box, the charmap and the widths are
+    read from; it is engine-specific data the caller declares, because the file
+    the widths come from is exactly what forks — vanilla reads `home/text.asm`,
+    polished reads its n-gram table — so the guard cannot name one tree's file.
+    The text of each map is parsed lazily and cached, so linting the repo parses
+    each file once and asking about one map does not pay for the rest.
     """
 
     def __init__(self, root: Path, load_metrics: Callable[[Path], Metrics],
-                 labels: dict[str, str]) -> None:
+                 labels: dict[str, str], engine_files: tuple[str, ...]) -> None:
         self.root = root
         self._load_metrics = load_metrics
         self._labels = labels
+        self._engine_files = engine_files
         self._text: dict[str, list[_dialogue.Block]] = {}
         self._source: dict[str, list[str]] = {}
         self._rel: dict[Path, str] = {}
@@ -66,8 +64,11 @@ class FamilyLintContext:
         The family's own small `run`: it does not borrow `maplint.run`, which
         would run prism's whole rule set against a context that only knows text.
         The suppression pass and the finding type are the shared, hack-neutral
-        channel; the rules are the family's."""
-        if not all((self.root / f).is_file() for f in _ENGINE_FILES):
+        channel; the rules are the family's. A tree missing any engine file —
+        mid-edit, or a fixture that is only a few maps — cannot be measured, so
+        the lint degrades to silence rather than crashing on the first
+        `read_text`, the way the seam says an absent capability must."""
+        if not all((self.root / f).is_file() for f in self._engine_files):
             return []
         found: list[Diagnostic] = []
         for rule in rules.ALL:

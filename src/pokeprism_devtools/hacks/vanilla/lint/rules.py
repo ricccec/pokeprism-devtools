@@ -76,11 +76,17 @@ def _because(ctx: FamilyLintContext, line: Line) -> str:
 
     Without this the message is a bare number — and the author already counted the
     characters, which is how they got here. What they need to hear is that `#` is
-    four of them."""
+    four of them.
+
+    The test is `width > len(token)`, not `width > 1`: it names exactly the tokens
+    that draw wider than they read — `#` (one character, four tiles). It must not
+    be `> 1`, because polished's n-grams (`the `, `It's `) are several tiles too
+    but exactly as many as their letters, so calling them out would bury the one
+    token that actually surprises the author under a list of ones that do not."""
     metrics = ctx.metrics
     grew = {tok: metrics.width[tok]
             for tok in set(charmap.tokenize(ctx.root, line.text))
-            if metrics.width.get(tok, 1) > 1}
+            if metrics.width.get(tok, 1) > len(tok)}
     if not grew:
         return ""
     parts = ", ".join(f"`{t}` prints {w} tiles" for t, w in sorted(grew.items()))
