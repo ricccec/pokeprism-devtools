@@ -589,7 +589,7 @@ def test_a_quiet_build_keeps_only_the_problems(root: Path) -> None:
     to keep every line that carries the answer and drop the mountain that doesn't,
     because the mountain is the whole reason quiet exists."""
     print("\nthe quiet build's grep")
-    from pokeprism_devtools.hacks.prism import play as play_mod
+    from pokeprism_devtools.shared import make as make_mod
 
     keep = [
         "maps/CastroForest.asm:41: error: Unknown symbol \"SPRITE_NOPE\"",
@@ -605,9 +605,9 @@ def test_a_quiet_build_keeps_only_the_problems(root: Path) -> None:
         "Linking pokeprism.gbc",             # 'error' is not in it; a bare verb is not a problem
     ]
     for ln in keep:
-        check(f"kept: {ln[:40]}", play_mod.is_problem(ln))
+        check(f"kept: {ln[:40]}", make_mod.is_build_problem(ln))
     for ln in drop:
-        check(f"dropped: {ln[:40]}", not play_mod.is_problem(ln))
+        check(f"dropped: {ln[:40]}", not make_mod.is_build_problem(ln))
 
 
 def test_it_boots_the_rom_it_built(root: Path) -> None:
@@ -625,6 +625,7 @@ def test_it_boots_the_rom_it_built(root: Path) -> None:
 
     from pokeprism_devtools.dev_server import playtest as devplay
     from pokeprism_devtools.hacks.prism import play as play_mod
+    from pokeprism_devtools.shared import make as make_mod
 
     ran: list[list[str]] = []
 
@@ -637,7 +638,7 @@ def test_it_boots_the_rom_it_built(root: Path) -> None:
         return FakeProc()
 
     s = Session(root)
-    with mock.patch.object(play_mod.subprocess, "Popen", fake_popen):
+    with mock.patch.object(make_mod.subprocess, "Popen", fake_popen):
         s.build(lambda _: None, target="prism", jobs=4)
     check("it names the target and the jobs", ran[-1] == ["make", "-j4", "prism"],
           " ".join(ran[-1]))
