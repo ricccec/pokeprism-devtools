@@ -209,21 +209,30 @@ validity bytes (`SAVE_CHECK_VALUE_1`/`_2`) that say a save is real, and the 16-b
 checksum over `sGameData` the game verifies before it will load rather than fall
 back to its backup. Which `(group, number)` a map name resolves to comes from the
 same `map_constants.asm` parse the reader already draws the catalog with, so boot
-and the map list can never disagree.
+and the map list can never disagree. One more family difference lives here as data:
+a stock pokecrystal wants `rgbds` v1.0.0+, but the shell that launches the studio
+exports `RGBDS` pointing at the older toolchain prism pins — so `play.py` declares
+`_BUILD_ENV = {"RGBDS": ""}`, clearing that override back to the modern `rgbds` on
+`PATH`. The neutral `shared/make.run_make` grew an `env` parameter to carry it and
+stays ignorant of which variable or version; the whole toolchain difference is said
+once, in the adapter, as declared data.
 
-**Verified — patcher and resolution, not a live build.** `tests/test_vanilla_play.py`
-round-trips a synthetic save the way writers are checked, and falsifies each check
-first: a transposed `y`/`x` reads back different from what was asked, a stale
-checksum fails the game's own verification, a save missing its validity bytes is
-refused. The `(group, number)` resolution is checked against the **real** pokecrystal
-tree (`OLIVINE_POKECENTER_1F` → group 1 map 1, `NEW_BARK_TOWN` → group 24 map 4,
-matching the source's own trailing comments). A **live** `make` + boot is *not* run
-here: this machine's pokecrystal checkout drives an `rgbds` that fails its own
-`rgbdscheck` (a toolchain version mismatch, independent of the studio), and swapping
-the system `rgbds` would risk the prism build that works with it. The build path and
-the real-`.sym` layout check are wired and skip cleanly until a compatible build
-exists next door — the documented fallback, patcher-first, with the live loop left
-one working toolchain away.
+**Verified — live build, patcher, and resolution.** The Crystal loop's build half is
+closed for real: vanilla's own `Player.build` produced a 2 MB `pokecrystal.gbc` +
+`.sym` with the hostile `RGBDS=0.7.0` still exported, proving the `_BUILD_ENV`
+override selects the right toolchain the way the studio will. `tests/test_vanilla_play.py`
+round-trips a save the way writers are checked, and falsifies each check first: a
+transposed `y`/`x` reads back different from what was asked, a stale checksum fails
+the game's own verification, a save missing its validity bytes is refused. Against the
+**real** built `.sym` it confirms every symbol the patcher reads is present and that
+the game-data block, checksum, and `wCurMapData` mirror all sit where the arithmetic
+assumes. The `(group, number)` resolution is checked against the real tree
+(`OLIVINE_POKECENTER_1F` → group 1 map 1, `NEW_BARK_TOWN` → group 24 map 4, matching
+the source's own trailing comments). The one piece left un-run is the final boot:
+`stand_on` needs a real save with the intro finished (there is no `.sav` until a
+person plays the game once and saves in-game), and the last step opens a SameBoy
+window — a human save and a GUI launch, which `boot()` refuses cleanly and with
+instructions until they exist.
 
 ## Absences by design — none permanent but one, all otherwise deferred
 

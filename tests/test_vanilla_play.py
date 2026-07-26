@@ -172,6 +172,32 @@ def test_a_missing_symbol_is_a_clear_refusal() -> None:
         check("stand_on refuses a .sym missing its symbols", False)
 
 
+def test_build_clears_the_inherited_toolchain() -> None:
+    """A stock pokecrystal wants a newer `rgbds` than a sibling tree may pin in
+    the launching shell's `RGBDS`. Vanilla's build must clear that override so it
+    falls back to the `rgbds` on `PATH` — the difference that closes the live
+    build loop. Prove the runner is handed `RGBDS=""`, without running `make`."""
+    from pokeprism_devtools.hacks.vanilla import play  # noqa: PLC0415
+    from pokeprism_devtools.shared import make as make_mod  # noqa: PLC0415
+
+    print("\nvanilla's build hands the make-runner an rgbds override, not the inherited pin")
+    seen: dict[str, object] = {}
+
+    def fake_run_make(root, target, log, *, jobs, env=None):
+        seen["env"] = env
+        return True
+
+    original = make_mod.run_make
+    make_mod.run_make = fake_run_make
+    try:
+        ok = play.Player(Path("/nonexistent")).build(lambda _l: None, jobs=1)
+    finally:
+        make_mod.run_make = original
+    check("build succeeds through the runner", ok is True)
+    check("it passes an env that clears RGBDS to the PATH toolchain",
+          seen.get("env") == {"RGBDS": ""}, str(seen.get("env")))
+
+
 # -- the one thing only a real build can show ------------------------------ #
 def test_a_real_sym_carries_these_symbols() -> None:
     root = Path.home() / "code/ricccec/pokecrystal"
@@ -226,6 +252,7 @@ def main() -> int:
     test_the_checksum_round_trips()
     test_it_stands_on_the_exact_tile()
     test_a_missing_symbol_is_a_clear_refusal()
+    test_build_clears_the_inherited_toolchain()
     test_real_map_resolution()
     test_a_real_sym_carries_these_symbols()
 

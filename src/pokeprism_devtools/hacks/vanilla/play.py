@@ -29,6 +29,13 @@ from . import read, savefile
 #: file on disk was the one asked for, the way prism has to.
 _TARGETS = ("pokecrystal.gbc", "pokecrystal_debug.gbc")
 
+#: A stock pokecrystal wants rgbds v1.0.0 or newer (its `rgbdscheck.asm` fails the
+#: build otherwise). But the shell that launches the studio may export `RGBDS`
+#: pointing at the *older* toolchain a sibling in this family pins — clearing that
+#: override drops the build back to the `rgbds` on `PATH`, which is the modern one.
+#: This is the whole of vanilla's toolchain difference, said once, as data.
+_BUILD_ENV = {"RGBDS": ""}
+
 
 class Player:
     """Vanilla's :class:`~..seam.Plays`: `make` a pokecrystal ROM, patch its save
@@ -52,7 +59,7 @@ class Player:
         jobs = jobs if jobs is not None else (os.cpu_count() or 1)
         if jobs < 1:
             raise PlayError("you cannot run fewer than one job")
-        return make.run_make(self._root, target, log, jobs=jobs)
+        return make.run_make(self._root, target, log, jobs=jobs, env=_BUILD_ENV)
 
     def boot(self, const: str, y: int, x: int, *,
              target: str | None = None, keep_people: bool = False) -> list[str]:

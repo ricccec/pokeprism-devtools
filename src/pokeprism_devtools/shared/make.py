@@ -15,9 +15,10 @@ is in scope; here a build that fails is just ``False``.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 #: A line of `make` output worth stopping on when a build is run *quiet*. The
@@ -41,7 +42,7 @@ def is_build_problem(line: str) -> bool:
 
 
 def run_make(root: Path, target: str, log: Callable[[str], None], *,
-             jobs: int) -> bool:
+             jobs: int, env: Mapping[str, str] | None = None) -> bool:
     """`make -j<jobs> <target>` in `root`, streamed a line at a time through
     `log`. True if `make` exited 0.
 
@@ -52,11 +53,19 @@ def run_make(root: Path, target: str, log: Callable[[str], None], *,
     `jobs` is trusted to be at least one — the adapter that calls this validates
     it against the seam's vocabulary before we get here, because "fewer than one
     job" is a refusal to explain, not a thing to clamp silently.
+
+    `env` is a handful of environment overrides laid over the inherited ones for
+    this build. It exists because `make` and `rgbds` are the *family's* toolchain,
+    not one version of it: two trees in the family can want two different `rgbds`,
+    and the shell that launched the studio has exported one of them. An adapter
+    that needs a different one says so here — this layer stays ignorant of which
+    variable or which version, and only lays the mapping over `os.environ`.
     """
     cmd = ["make", f"-j{jobs}", target]
     log(f"$ {' '.join(cmd)}")
     proc = subprocess.Popen(
         cmd, cwd=root,
+        env={**os.environ, **env} if env else None,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1,
     )
