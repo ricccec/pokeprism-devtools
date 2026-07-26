@@ -8,6 +8,11 @@ map lives is read from vanilla's own `map_constants.asm` through the reader that
 already parses it. The `make` runner and the emulator are the only pieces neither
 tree owns, and both come from neutral modules (`shared.make`, `dev_server.emulator`)
 so nothing here reaches into prism.
+
+The boot half is not yet the whole of prism's. It stands you on the tile — writes
+the position, fixes the checksum — but does not rebuild the map's objects, so the
+overworld's sprites come up wrong. See :meth:`Player.boot`; that is the next piece
+of the loop, not a finished one.
 """
 
 from __future__ import annotations
@@ -70,9 +75,20 @@ class Player:
              target: str | None = None, keep_people: bool = False) -> list[str]:
         """Stand at (y, x) on `const`, in a built pokecrystal, now.
 
-        `keep_people` is part of the seam's boot and ignored here on purpose:
-        standing you on a map touches only the four position bytes, never the
-        map's objects, so there is nothing about people to keep or drop.
+        **Known limitation — the map's objects are not rebuilt.** This writes
+        the four position bytes and fixes the primary checksum, and nothing
+        else. It does *not* reconstruct `wMapObjects` for the map you land on,
+        so the overworld's NPC and sprite state stays whatever the previous map
+        left in SRAM — which the game renders as glitched or wrong sprites. You
+        stand on the right tile; you do not yet walk into a cleanly populated
+        map. Prism does the whole thing (`dev_server/apply.py` rebuilds the
+        objects and their sprite VRAM, and recomputes *both* SRAM checksums);
+        vanilla has only the position half so far.
+
+        `keep_people` is accepted for the seam and ignored: it chooses whether
+        an object rebuild preserves the objects already there, and there is no
+        rebuild here for it to change. It is the flag that will gate that work
+        once vanilla grows it.
         """
         target = self._target(target)
         rom = self._root / target
