@@ -16,6 +16,7 @@ finds it.
 from __future__ import annotations
 
 from ..hacks.prism import charmap, dialogue, textbox
+from . import textfit
 from .context import LintContext
 from .diagnostics import Diagnostic, Severity
 
@@ -33,9 +34,9 @@ def text_width(ctx: LintContext) -> list[Diagnostic]:
         path = ctx.rel(info.path)
         for block in ctx.text_blocks(const):
             for line in block.lines:
-                if line.determinate <= block.box.cols:
+                over = textfit.overshoot(line.determinate, block.box.cols)
+                if over <= 0:
                     continue
-                over = line.determinate - block.box.cols
                 out.append(Diagnostic(
                     "text-width", Severity.ERROR, path, line.lineno,
                     f"this line is {line.determinate} tiles wide but the "
@@ -122,7 +123,7 @@ def text_rows(ctx: LintContext) -> list[Diagnostic]:
         path = ctx.rel(info.path)
         for block in ctx.text_blocks(const):
             for line in block.lines:
-                if line.row <= block.box.last_row:
+                if not textfit.below_box(line.row, block.box.last_row):
                     continue
                 out.append(Diagnostic(
                     "text-rows", Severity.ERROR, path, line.lineno,
