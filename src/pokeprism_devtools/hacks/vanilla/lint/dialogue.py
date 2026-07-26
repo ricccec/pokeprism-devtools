@@ -48,7 +48,14 @@ class Line:
     macro: str           # the macro that opened it: text, line, para, …
     row: int             # the screen row it lands on
     determinate: int     # tiles certain to draw — literals and fixed expansions
+    bounded: int         # extra tiles when every name buffer on it is at its bound
     text: str            # the source string(s), joined — for naming the culprit
+
+    @property
+    def worst(self) -> int:
+        """Tiles when every name buffer here is at its longest — the width a
+        seven-letter name makes real. `text-width-name`'s question."""
+        return self.determinate + self.bounded
 
 
 @dataclass(frozen=True)
@@ -94,7 +101,8 @@ def _line(root: Path, speech: Box, lineno: int, macro: str, row: int,
           metrics: Metrics, rest: str) -> Line:
     strings = [_INTERP_RE.sub("", _unescape(s)) for s in _STR_RE.findall(rest)]
     width = sum(metrics.determinate(root, s) for s in strings)
-    return Line(lineno, macro, row, width, "".join(strings))
+    bnd = sum(metrics.bounded(root, s) for s in strings)
+    return Line(lineno, macro, row, width, bnd, "".join(strings))
 
 
 def _terminates(rest: str) -> bool:

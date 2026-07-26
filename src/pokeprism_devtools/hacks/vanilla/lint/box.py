@@ -59,12 +59,15 @@ class Box:
         return row
 
 
-def _equs(root: Path, rel: str, known: dict[str, int]) -> dict[str, int]:
+def equs(root: Path, rel: str, known: dict[str, int]) -> dict[str, int]:
     """`[DEF] NAME EQU <arithmetic>` lines, resolved against what is known so far.
 
     The family writes `DEF NAME EQU expr` in its own constants and the plain
     `def NAME equ N` of hardware.inc; both are one case-insensitive shape, and a
     line that is symbolic or non-arithmetic is skipped — nothing the box needs is.
+
+    Shared with `metrics`, which reads the same constants file for the name-buffer
+    length bounds `text-width-name` measures against.
     """
     out = dict(known)
     for line in (root / rel).read_text().split("\n"):
@@ -81,8 +84,8 @@ def _equs(root: Path, rel: str, known: dict[str, int]) -> dict[str, int]:
 @lru_cache(maxsize=4)
 def speech_box(root: Path) -> Box:
     """The one box family dialogue lands in, measured from the engine."""
-    syms = _equs(root, _HARDWARE, {})
-    syms = _equs(root, _TEXT_CONSTANTS, syms)
+    syms = equs(root, _HARDWARE, {})
+    syms = equs(root, _TEXT_CONSTANTS, syms)
     inner_w = syms["TEXTBOX_INNERW"]
     inner_y = syms["TEXTBOX_INNERY"]
     return Box("textbox", cols=inner_w, first_row=inner_y,

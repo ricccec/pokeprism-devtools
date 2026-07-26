@@ -26,7 +26,7 @@ from pokeprism_devtools.hacks import seam  # noqa: E402
 from pokeprism_devtools.hacks.polished import lint as polished_lint  # noqa: E402
 from pokeprism_devtools.hacks.vanilla import lint  # noqa: E402
 from pokeprism_devtools.hacks.vanilla.lint import box, dialogue, metrics, rules  # noqa: E402
-from pokeprism_devtools.maplint.diagnostics import apply_suppressions  # noqa: E402
+from pokeprism_devtools.maplint.diagnostics import Severity, apply_suppressions  # noqa: E402
 
 VANILLA = Path.home() / "code/ricccec/pokecrystal"
 POLISHED = Path.home() / "code/ricccec/polishedcrystal"
@@ -53,6 +53,23 @@ RowsText:
 
 PriceText:
 \ttext "Yours for {d:SOME_PRICE}!"
+\tdone
+'''
+
+#: The name-bound cases, kept in their own sample so the linenos above stay put.
+#: A line that packs to exactly the box at a seven-letter name is the boundary the
+#: authors design to (`<PLAYER> obtained a`, 18 tiles — the real LakeOfRage line),
+#: and must *not* warn; one tile wider must; a short line with room to spare must
+#: not. `<PLAYER>` is the family name token both trees carry.
+_NAME_SAMPLE = '''\
+NameFits:
+\ttext "<PLAYER> obtained a"
+
+NameBreaks:
+\ttext "<PLAYER> and I are set"
+
+NameRoomy:
+\ttext "<PLAYER>!"
 \tdone
 '''
 
@@ -173,6 +190,50 @@ def test_the_real_tree_is_clean(root: Path) -> None:
           "; ".join(d.location for d in found[:5]))
 
 
+def _name_rule_over_sample(root: Path, m) -> list:
+    """Run `text-width-name` over `_NAME_SAMPLE` with the tree's own metrics."""
+    with tempfile.TemporaryDirectory() as d:
+        sample = Path(d) / "Sample.asm"
+        sample.write_text(_NAME_SAMPLE)
+        blocks = dialogue.parse(root, sample, m)
+
+        class Ctx:
+            pass
+        ctx = Ctx()
+        ctx.root, ctx.metrics, ctx.box = root, m, box.speech_box(root)
+        ctx.map_files = {"SAMPLE": sample}
+        ctx.rel = lambda p: "maps/Sample.asm"
+        ctx.text_blocks = lambda const: blocks
+        return rules.text_width_name(ctx)
+
+
+def _check_name_rule(engine: str, root: Path, m) -> None:
+    """Shared name-overflow checks — identical for vanilla and polished, since the
+    rule, the box and the seven-letter bound are all shared; only the reader that
+    filled `m` forks."""
+    print(f"\n{engine}: a line breaks only once a long name is substituted")
+    check("`<PLAYER>` carries a seven-tile worst case, not a determinate width",
+          m.bound.get("<PLAYER>") == 7 and m.width.get("<PLAYER>") == 0,
+          f"bound={m.bound.get('<PLAYER>')} width={m.width.get('<PLAYER>')}")
+    check("a plain glyph has no name bound", "#" not in m.bound and "a" not in m.bound)
+
+    found = _name_rule_over_sample(root, m)
+    lines = sorted(d.line for d in found)
+    check("it warns on the line that overflows a long name, and only it",
+          lines == [5], str(lines))
+    check("the boundary line that packs to exactly 18 does not warn", 2 not in lines)
+    check("a line with room to spare does not warn", 8 not in lines)
+    if found:
+        d = found[0]
+        check("it is a warning, not an error", d.severity == Severity.WARNING, str(d.severity))
+        check("the message contrasts the before-name and after-name widths",
+              "14 tiles before" in d.message and "up to 21 after" in d.message, d.message)
+
+
+def test_name_bound_and_overflow(root: Path) -> None:
+    _check_name_rule("vanilla", root, metrics.load(root))
+
+
 def test_the_seam_conformance(root: Path) -> None:
     print("\nthe mounted vanilla ctx is a seam.Lints")
     hack = hackmount.mount(root)
@@ -242,6 +303,10 @@ def test_polished_real_tree_is_clean(root: Path) -> None:
           "; ".join(d.location for d in found[:5]))
 
 
+def test_polished_name_bound_and_overflow(root: Path) -> None:
+    _check_name_rule("polished", root, polished_lint.load(root))
+
+
 def test_polished_seam_conformance(root: Path) -> None:
     print("\nthe mounted polished ctx is a seam.Lints")
     hack = hackmount.mount(root)
@@ -258,6 +323,7 @@ def main() -> int:
         test_the_box_from_source(VANILLA)
         test_falsification(VANILLA)
         test_the_rules_and_suppression(VANILLA)
+        test_name_bound_and_overflow(VANILLA)
         test_the_real_tree_is_clean(VANILLA)
         test_the_seam_conformance(VANILLA)
 
@@ -266,6 +332,7 @@ def main() -> int:
     else:
         test_polished_metrics_read_from_ngrams(POLISHED)
         test_polished_falsification(POLISHED)
+        test_polished_name_bound_and_overflow(POLISHED)
         test_polished_real_tree_is_clean(POLISHED)
         test_polished_seam_conformance(POLISHED)
 

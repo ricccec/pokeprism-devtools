@@ -1,8 +1,8 @@
 """Polished's dialogue-overflow linter — the family lint with an n-gram reader.
 
 Polished shares the overflow *question* with vanilla, and almost all the answer:
-the map event format is the same, so the box, the dialogue parse, the two rules
-and the neutral tile arithmetic are vanilla's, reused here unchanged. What it
+the map event format is the same, so the box, the dialogue parse, the overflow
+rules and the neutral tile arithmetic are vanilla's, reused here unchanged. What it
 does not share is the text *engine*. Vanilla dispatches each byte through a
 `dict 'token', Handler` table and prints ROM strings by name; polished stores its
 strings Huffman-compressed and resolves a byte through an n-gram table
@@ -24,12 +24,23 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from ..vanilla.lint import charmap
+from ..vanilla.lint import box, charmap
 from ..vanilla.lint.context import FamilyLintContext
 from ..vanilla.lint.metrics import Metrics
 
 _CHARMAP = "constants/charmap.asm"
 _NGRAMS = "data/text/ngrams.asm"
+_TEXT_CONSTANTS = "constants/text_constants.asm"
+
+#: WRAM name buffer -> the constant bounding its printed length, the polished
+#: half of vanilla's `_NAME_BOUND`. The n-gram table's variable region carries
+#: two names and one free phrase (`wTrendyPhrase`); only the names have a bound
+#: the naming screen enforces, so only they are `text-width-name`'s business. The
+#: phrase is unbounded, and its headroom is `text-buffer`'s, when that lands.
+_NAME_BOUND = {
+    "wPlayerName": "PLAYER_NAME_LENGTH",
+    "wRivalName": "PLAYER_NAME_LENGTH",
+}
 
 #: The files polished's box, charmap and widths are read from. It is vanilla's
 #: list with the engine file swapped: the n-gram table, not `home/text.asm`.
@@ -54,7 +65,7 @@ _RANGE_RE = re.compile(
 )
 _DR_RE = re.compile(r"^\s*dr\s+\.(\S+)")
 _RAWCHAR_RE = re.compile(r'^\.([^\s:]+):\s*rawchar\s+"((?:[^"\\]|\\.)*)"')
-_DW_RE = re.compile(r"^\.([^\s:]+):\s*dw\b")
+_DW_RE = re.compile(r"^\.([^\s:]+):\s*dw\s+(\w+)")
 
 
 @lru_cache(maxsize=4)
@@ -63,19 +74,20 @@ def load(root: Path) -> Metrics:
 
     A token whose byte falls in the n-gram range prints its expansion — several
     tiles for one byte — and gets that tile count; a name buffer (`<PLAYER>`,
-    stored in WRAM) has no determinate width and gets zero; every other byte is a
-    single tile and falls through to the shared `determinate`'s default of one."""
+    stored in WRAM) has no determinate width and gets zero, plus a worst-case
+    `bound` for `text-width-name`; every other byte is a single tile and falls
+    through to the shared `determinate`'s default of one."""
     byte_of = _bytes_of(root)
     start, end = _ngram_range(root)
     plain = tuple(sorted((tok for tok, b in byte_of.items() if not start <= b <= end),
                          key=len, reverse=True))
-    tiles_by_byte = _ngram_tiles(root, start, plain)
+    tiles_by_byte, buffer_by_byte = _ngram_tiles(root, start, plain)
 
     width: dict[str, int] = {}
     for token, byte in byte_of.items():
         if start <= byte <= end and byte in tiles_by_byte:
             width[token] = tiles_by_byte[byte]
-    return Metrics(width, _CONTROL)
+    return Metrics(width, _CONTROL, _name_bounds(root, byte_of, buffer_by_byte))
 
 
 def build(root: Path) -> FamilyLintContext:
@@ -108,14 +120,15 @@ def _num(text: str) -> int:
     return int(text[1:], 16) if text.startswith("$") else int(text)
 
 
-def _ngram_tiles(root: Path, start: int, plain: tuple[str, ...]) -> dict[int, int]:
-    """byte -> tiles it draws, resolved through the n-gram string table.
+def _ngram_tiles(root: Path, start: int,
+                 plain: tuple[str, ...]) -> tuple[dict[int, int], dict[int, str]]:
+    """byte -> tiles it draws, and byte -> the WRAM buffer it prints (for names).
 
     The table is byte-ordered from `start`: the nth `dr .label` is byte
     `start + n`, and each `.label` is either a `rawchar` string (its tiles, in the
     un-compressed charmap where a ligature is one tile) or a `dw` at a WRAM name,
-    which prints something with no determinate width — zero here, its bound is a
-    later rule's business."""
+    which prints something with no determinate width — zero tiles here, and the
+    buffer recorded so `text-width-name` can look its bound up."""
     src = (root / _NGRAMS).read_text().split("\n")
     byte_of_label: dict[str, int] = {}
     seen = 0
@@ -125,6 +138,7 @@ def _ngram_tiles(root: Path, start: int, plain: tuple[str, ...]) -> dict[int, in
             seen += 1
 
     tiles: dict[int, int] = {}
+    buffers: dict[int, str] = {}
     for line in src:
         if m := _RAWCHAR_RE.match(line):
             label, expansion = m.group(1), m.group(2)
@@ -133,7 +147,23 @@ def _ngram_tiles(root: Path, start: int, plain: tuple[str, ...]) -> dict[int, in
         elif m := _DW_RE.match(line):
             if (byte := byte_of_label.get(m.group(1))) is not None:
                 tiles[byte] = 0
-    return tiles
+                buffers[byte] = m.group(2)
+    return tiles, buffers
+
+
+def _name_bounds(root: Path, byte_of: dict[str, int],
+                 buffer_by_byte: dict[int, str]) -> dict[str, int]:
+    """token -> its worst-case name length, for the bounded name buffers only.
+
+    The n-gram `dw` entries name their buffer; `_NAME_BOUND` is which of those
+    the naming screen bounds and by which constant. `wTrendyPhrase` is a `dw` too
+    but not in the map, so it is left out — its content is unbounded, which is
+    `text-buffer`'s concern, not this one."""
+    consts = box.equs(root, _TEXT_CONSTANTS, {})
+    bound_of_byte = {byte: consts[_NAME_BOUND[buf]] - 1
+                     for byte, buf in buffer_by_byte.items() if buf in _NAME_BOUND}
+    return {token: bound_of_byte[byte]
+            for token, byte in byte_of.items() if byte in bound_of_byte}
 
 
 def _tile_count(expansion: str, plain: tuple[str, ...]) -> int:
