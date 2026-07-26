@@ -18,16 +18,17 @@ callers can hold one and neither has to think about the other's threads.
 from __future__ import annotations
 
 import datetime as dt
-import subprocess
-import threading
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from pokeprism_devtools.hacks.prism import savefile
 from pokeprism_devtools.shared import symfile
 
-from . import apply, launcher
+from . import apply
+# The emulator is neutral — a SameBoy process, no map dialect — so it lives in
+# its own module a family adapter can import without pulling prism in through
+# here. Re-exported so `devplay.Emulator` still reads the same to prism.
+from .emulator import Emulator, LaunchReport  # noqa: F401
 
 
 class PlaytestError(RuntimeError):
@@ -121,85 +122,3 @@ def patch_save(
     apply.recompute_checksums(sav, inv)
     sav.write(target)
     return PatchReport(target=target, backup=backup, changes=changes)
-
-
-@dataclass
-class LaunchReport:
-    launched: bool
-    #: Whether we found an emulator to run at all. Not finding one is a shrug —
-    #: the ROM and the save are still on disk and the user can open them by hand.
-    #: Finding one and failing to start it is an error.
-    found: bool = True
-    command: str = ""
-    replaced: bool = False       # we killed a previous instance to do this
-    warnings: list[str] = field(default_factory=list)
-
-
-class Emulator:
-    """The SameBoy process, if we managed to get hold of one.
-
-    Re-launching means killing the instance we started last time, which we can
-    only do if we started it *as* SameBoy. When all we could find was the macOS
-    `open -a` shim, the PID we hold is the shim's, not the emulator's, and the
-    old window stays up — so say so, once, rather than silently failing to
-    replace it.
-    """
-
-    def __init__(self) -> None:
-        self._proc: subprocess.Popen | None = None
-        self._lock = threading.RLock()
-
-    @property
-    def running(self) -> bool:
-        with self._lock:
-            return self._proc is not None and self._proc.poll() is None
-
-    def stop(self) -> bool:
-        """Kill the emulator we started. Returns whether there was one."""
-        with self._lock:
-            if not self.running:
-                self._proc = None
-                return False
-            proc = self._proc
-            assert proc is not None
-            proc.terminate()
-            try:
-                proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
-            self._proc = None
-            return True
-
-    def launch(self, rom_path: Path, *, focus: bool = True) -> LaunchReport:
-        cmd, trackable = launcher.build_cmd(rom_path)
-        if cmd is None:
-            return LaunchReport(launched=False, found=False, warnings=[
-                f"SameBoy not found. Launch {rom_path} manually, or set "
-                "$SAMEBOY_BIN to the binary path."
-            ])
-
-        replaced = self.stop()
-        warnings = []
-        if not trackable:
-            warnings.append(
-                "SameBoy.app not found via $SAMEBOY_BIN, $PATH, or Spotlight; "
-                "using `open -a`. Re-launch will not be able to terminate the "
-                "previous instance. Set $SAMEBOY_BIN to the SameBoy binary "
-                "path to fix."
-            )
-
-        try:
-            proc = subprocess.Popen(cmd)
-        except OSError as e:
-            return LaunchReport(launched=False, warnings=[*warnings, f"failed to launch: {e}"])
-
-        with self._lock:
-            self._proc = proc
-        if focus:
-            # The window takes a moment to exist; there is nothing to raise
-            # before it does.
-            time.sleep(1)
-            launcher.focus_after_launch()
-        return LaunchReport(launched=True, command=cmd[0], replaced=replaced,
-                            warnings=warnings)

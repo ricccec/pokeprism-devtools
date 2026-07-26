@@ -15,14 +15,12 @@ else, so playtesting a map does not cost you the character you play it as.
 from __future__ import annotations
 
 import os
-import re
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
 from ...dev_server import apply as devapply
 from ...dev_server import inventory, playtest as devplay
-from ...shared import paths
+from ...shared import make, paths
 from ..seam import PlayError
 
 #: The two ROMs this repo builds, and whether each one is the *debug* build — which
@@ -42,26 +40,6 @@ TARGETS: dict[str, bool] = {"prism": True, "nodebug": False}
 DEFAULT_TARGET = "prism"
 
 
-#: A line of `make` output worth stopping on when the build is run *quiet*. This
-#: is the studio's version of the pipe a person reaches for by hand —
-#: `make ... 2>&1 | grep -E ': (error|fatal):|^make: \*\*\*'` — and it is here
-#: rather than in the build screen so it can be tested without a compiler.
-#:
-#: The reason quiet exists at all: a `prism` build is a few thousand lines of
-#: `rgbasm`/`rgblink` chatter, and streaming every one of them into a Textual
-#: `RichLog` — a widget write, marshalled across a thread boundary, per line — is
-#: itself minutes of work the compiler never asked for. The lines that carry the
-#: *answer*, though, are a handful: the errors, and the `make: ***` that follows
-#: them. Keep those, drop the rest, and the log stays the thing you read when it
-#: breaks without being the thing that makes it slow.
-_PROBLEM = re.compile(r": (error|fatal|warning):|^make(\[\d+\])?: \*\*\*")
-
-
-def is_problem(line: str) -> bool:
-    """Whether this line of build output is one a quiet build still shows."""
-    return _PROBLEM.search(line) is not None
-
-
 def _debug(target: str) -> bool:
     if target not in TARGETS:
         raise PlayError(f"{target!r} is not a target — {' or '.join(TARGETS)}")
@@ -72,26 +50,16 @@ def build(root: Path, log: Callable[[str], None], *,
           target: str = DEFAULT_TARGET, jobs: int | None = None) -> bool:
     """`make -j<n> <target>`, streamed a line at a time. True if the ROM built.
 
-    Streamed rather than captured because it takes minutes, and a progress bar
-    that cannot fail is worse than the compiler's own output: when the map you
-    just added doesn't link, the reason is in these lines, and it names your map.
+    Prism's part is the two words above the shared runner: *which* target is a
+    real one (`_debug` rejects anything but `prism`/`nodebug`), and that a job
+    count under one is a refusal to explain. The streaming itself is every
+    tree's, and lives in `shared.make`.
     """
     _debug(target)
     jobs = jobs if jobs is not None else (os.cpu_count() or 1)
     if jobs < 1:
         raise PlayError("you cannot run fewer than one job")
-    cmd = ["make", f"-j{jobs}", target]
-    log(f"$ {' '.join(cmd)}")
-    proc = subprocess.Popen(
-        cmd, cwd=root,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1,
-    )
-    assert proc.stdout is not None
-    with proc.stdout:
-        for line in proc.stdout:
-            log(line.rstrip("\n"))
-    return proc.wait() == 0
+    return make.run_make(root, target, log, jobs=jobs)
 
 
 def boot(root: Path, emulator: devplay.Emulator, const: str, y: int, x: int, *,
@@ -157,8 +125,8 @@ class Player:
         return tuple(TARGETS)
 
     def keeps(self, line: str) -> bool:
-        """Whether a quiet build still shows this line — see :func:`is_problem`."""
-        return is_problem(line)
+        """Whether a quiet build still shows this line — the shared grep."""
+        return make.is_build_problem(line)
 
     def build(self, log: Callable[[str], None], *,
               target: str | None = None, jobs: int | None = None) -> bool:
