@@ -235,8 +235,8 @@ def test_the_mount_recognises_vanilla(root: Path) -> None:
     hack = hackmount.mount(root)
     check("mounted as vanilla", hack.name == "vanilla")
     check("with a text linter", hack.ctx is not None)
-    check("with the family write adapter and linter, no emulator or tile ruler",
-          hack.writes is not None and not hack.plays and not hack.measures)
+    check("with the family write adapter, linter and build-and-boot, but no tile ruler",
+          hack.writes is not None and hack.plays is not None and not hack.measures)
 
 
 def test_the_six_lists(root: Path) -> None:

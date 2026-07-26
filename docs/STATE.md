@@ -20,35 +20,42 @@ first.
 a `claim.py` that recognises its own tree and builds its adapter — the same
 entry-point path a third-party adapter would use.
 
-Four `runtime_checkable` protocols, each gating a capability rather than a name:
+Six `runtime_checkable` protocols, each gating a capability rather than a name:
 
 | Protocol | What it covers | Gated on |
 |---|---|---|
 | `Reads` | the nine read methods every adapter owes | always present |
 | `Writes` | the nine write methods (actions, forms, deletion, undo) | `Hack.writes is not None` |
+| `Lints` | a tree's own linter, run through the seam | `Hack.ctx is not None` |
+| `Plays` | build-and-boot: `make` a ROM, patch a save, open the game | `Hack.plays is not None` |
 | `Measures` | `measure` — text in tiles against the engine's VWF | `Hack.measures` |
 | `Sketches` | `sketch` — draw the map while you type | reachable only from an action that sets `sketches` |
 
-`Hack` declares `name`, `reads`, `ctx` (lint context, or `None`), `writes` (or
-`None` → read-only), `plays`, `measures`. Everything above the seam gates on
-these; a missing capability degrades to a visible absence, never a crash.
+`Hack` declares `name`, `reads`, `ctx` (a `Lints`, or `None`), `writes` (a
+`Writes`, or `None` → read-only), `plays` (a `Plays`, or `None` → unplayable),
+`measures`. Everything above the seam gates on these; a missing capability
+degrades to a visible absence, never a crash. `plays` was a bare `bool` until the
+build-and-boot section below turned it into the protocol it should always have
+been.
 
 ## Capability matrix — what each mounted tree can do
 
 | | reads | writes | lint (`ctx`) | plays | measures |
 |---|---|---|---|---|---|
 | **prism** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **vanilla** | ✓ | ✓ | ✓ (dialogue overflow, name + buffer bounds) | — | — |
+| **vanilla** | ✓ | ✓ | ✓ (dialogue overflow, name + buffer bounds) | ✓ (stock pokecrystal build + stand-on-map) | — |
 | **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | — | — |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
 resize, new-map, and the block scaffolding those ride — and the writes
-round-trip to the byte on all real maps. **Both family trees now lint too**: the
-dialogue-overflow rules below make them the first family trees with a non-`None`
-`ctx`. They share everything but the width reader, which polished's Huffman
-n-gram engine spells differently (see below). Their remaining blanks in the
-matrix are the **absences by design** further down — one permanent, the rest
-deferred — not gaps.
+round-trip to the byte on all real maps. **Both family trees lint too** (the
+dialogue-overflow rules below), and **vanilla now plays too**: a stock
+pokecrystal builds and the studio can stand you on a map in it (the build-and-boot
+section below). The family linters share everything but the width reader, which
+polished's Huffman n-gram engine spells differently (see below). The two blanks
+left — vanilla `measures`, polished `plays`/`measures` — are the **absences by
+design** further down; `measures` is the one permanent one (a font fact), and
+polished `plays` is the next family tree the build-and-boot seam is ready for.
 
 ## The last engineering item — paid (2026-07-25)
 
@@ -169,6 +176,55 @@ its rule/context imports (all of `hacks.prism`) into `run()`/`main()`, so
 arithmetic) import without loading prism. That is what lets a family tree's
 linter reach the channel without dragging in the tree it is not written against.
 
+## Landing now — family build-and-boot (`plays` becomes a real capability)
+
+`plays` was the last capability still carried as a bare `bool`, and because it was
+only a flag the session reached *around* the seam: it imported `dev_server.playtest`,
+built a prism `Emulator()` for every session — a read-only family tree included —
+and delegated to a `studio/play.py` whose `make` targets, save patcher and ROM paths
+were all prism's. Two moves fixed that.
+
+**Move A — cut the seam.** `Plays` is now a protocol like the rest —
+`targets()`, `keeps()` (which build lines a quiet build shows), `build()`, `boot()` —
+and `Hack.plays` carries a `Plays | None`. Prism's play body moved into
+`hacks/prism/play.py` behind a `Player` adapter that holds its own emulator and
+resolves its own default target; the session routes through `hack.plays`, names no
+`make` target, and instantiates no emulator. `PlayError` sits at the seam beside
+`Refused` — the seam's word for a build-or-patch failure, caught by the session
+without importing the adapter that raised it. Two neutral pieces came out along the
+way: the `make` runner + quiet-grep (`shared/make.py`, every rgbds tree's, not any
+hack's) and the SameBoy `Emulator` (`dev_server/emulator.py`, re-exported so
+`devplay.Emulator` still reads the same to prism). Prism plays exactly as before
+through the new adapter; the seam trio and `test_studio` stay green, and
+`test_seam` now conformance-checks the `Plays` surface of every adapter that has one.
+
+**Move B — vanilla plays.** `hacks/vanilla/play.py` is the family `Player`: it
+builds a stock pokecrystal (`pokecrystal.gbc`/`pokecrystal_debug.gbc`, whose target
+name *is* the ROM filename, so no debug/nodebug guess) and stands you on a map by
+patching its save. That patcher is `hacks/vanilla/savefile.py`, written from scratch
+— **not** prism's `savefile.py`, whose RTC trailer and offsets are prism's. It reads
+the stock Gen-2 layout by symbol from the built `.sym`: the four position bytes
+(`wMapGroup`/`wMapNumber`/`wYCoord`/`wXCoord`) mirrored into `sCurMapData`, the two
+validity bytes (`SAVE_CHECK_VALUE_1`/`_2`) that say a save is real, and the 16-bit
+checksum over `sGameData` the game verifies before it will load rather than fall
+back to its backup. Which `(group, number)` a map name resolves to comes from the
+same `map_constants.asm` parse the reader already draws the catalog with, so boot
+and the map list can never disagree.
+
+**Verified — patcher and resolution, not a live build.** `tests/test_vanilla_play.py`
+round-trips a synthetic save the way writers are checked, and falsifies each check
+first: a transposed `y`/`x` reads back different from what was asked, a stale
+checksum fails the game's own verification, a save missing its validity bytes is
+refused. The `(group, number)` resolution is checked against the **real** pokecrystal
+tree (`OLIVINE_POKECENTER_1F` → group 1 map 1, `NEW_BARK_TOWN` → group 24 map 4,
+matching the source's own trailing comments). A **live** `make` + boot is *not* run
+here: this machine's pokecrystal checkout drives an `rgbds` that fails its own
+`rgbdscheck` (a toolchain version mismatch, independent of the studio), and swapping
+the system `rgbds` would risk the prism build that works with it. The build path and
+the real-`.sym` layout check are wired and skip cleanly until a compatible build
+exists next door — the documented fallback, patcher-first, with the live loop left
+one working toolchain away.
+
 ## Absences by design — none permanent but one, all otherwise deferred
 
 Each is a capability a family tree does not have *yet*. None is debt: none is the
@@ -190,7 +246,9 @@ scoped out, each pick-up-able as its own phase.
 full roadmap, grouped, is in `family-lint-plan.md` ("The roadmap past the
 seam"); the standing items:**
 
-- **Family `plays`** — build-and-replay is engine wiring, a separate project.
+- **Polished `plays`** — vanilla now builds and boots; polished's save is its own
+  layout (closer to prism's than to stock Gen-2), so a polished `Player` over its
+  own patcher is the next pick-up, on the same seam and neutral runner.
 - **Family rewording** — `wiring/text` is still prism-parser-based (one of the
   cat-4 movers); rewording against a fixed-width charmap is a text-wiring project.
 - **Connection *adding*** — `wiring/connections` is two-sided; deserves its own
@@ -202,7 +260,11 @@ seam"); the standing items:**
   to prevent.
 
 The prism-only CLIs (`dev_server`, `gfx_view`, `map_inspect`, …, 12 files) are
-prism-written by design, gated by `plays`. The finding channel (`maplint/`) is no
+prism-written by design, gated by `plays` — save-patch, inventory, RTC and the
+rest are prism's. Two neutral pieces were lifted out of that corner so a family
+`Player` can reach them without pulling prism in: `dev_server/emulator.py` (the
+SameBoy process, re-exported through `playtest`) and `shared/make.py` (the `make`
+runner). The finding channel (`maplint/`) is no
 longer prism-only: its rules are, but the channel itself — `diagnostics` and the
 neutral `textfit` — imports without prism, and both family trees now carry their
 own overflow `ctx` on top of it. What each tree lints is its own; that the
@@ -223,6 +285,10 @@ entropy to prune when convenient, not now.
 
 Run as scripts with `./.venv/bin/python tests/<name>.py`, not pytest. The
 seam-critical trio — `test_seam.py`, `test_vanilla.py`, `test_polished.py` —
-passes clean. `test_seam.py::test_falsified` is the one that earns its keep: it
-catches the adapter that passes every name check while answering `None` to
-everything — the one that mounts, draws an empty studio, and blames the repo.
+passes clean, as do `test_studio.py` and `test_vanilla_play.py` (the family save
+patcher, round-tripped with each check falsified first). `test_seam.py::test_falsified`
+is the one that earns its keep: it catches the adapter that passes every name
+check while answering `None` to everything — the one that mounts, draws an empty
+studio, and blames the repo. The three reds on HEAD (`test_maplint`,
+`test_eventheader`, `test_lib`) are pre-existing and unrelated — true reports
+about the live prism tree, left alone.

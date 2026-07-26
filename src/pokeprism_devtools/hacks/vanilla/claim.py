@@ -8,9 +8,10 @@ contents mean is vanilla's alone, and it knows nothing of polished's head anchor
 of* is `build` below: a reader and a writer over a stock pokecrystal checkout,
 and its family linter. The `ctx` is what makes the session lint a vanilla tree
 at all — the dialogue-overflow rules, surfacing through the same Diagnostics
-channel prism uses; `plays` and `measures` left false mean the emulator and the
-tile ruler degrade to absence above the seam. Nothing is imported until vanilla
-claims the tree.
+channel prism uses; `plays` now carries a stock-pokecrystal build-and-boot, while
+`measures` left false means the tile ruler still degrades to absence (the dialogue
+font is fixed-width, so there is no VWF to measure against). Nothing is imported
+until vanilla claims the tree.
 """
 
 from __future__ import annotations
@@ -41,8 +42,12 @@ def claims(root: Path) -> Hack | NearMiss:
 
 
 def build(root: Path) -> Hack:
-    """The vanilla :class:`~..seam.Hack`: a reader, a writer, and a text linter."""
-    from . import lint
+    """The vanilla :class:`~..seam.Hack`: a reader, a writer, a text linter, and
+    now build-and-boot — a stock pokecrystal builds and the studio can stand you
+    on a map in it. `measures` stays false: the dialogue font is fixed-width, so
+    there is still no VWF to measure tiles against (see `docs/STATE.md`)."""
+    from . import lint, play
     from .read import Reader
     from .write import Writer
-    return Hack("vanilla", Reader(root), ctx=lint.build(root), writes=Writer(root))
+    return Hack("vanilla", Reader(root), ctx=lint.build(root),
+                writes=Writer(root), plays=play.Player(root))
