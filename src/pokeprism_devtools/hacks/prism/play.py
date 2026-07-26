@@ -15,7 +15,7 @@ else, so playtesting a map does not cost you the character you play it as.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from ...dev_server import apply as devapply
@@ -47,19 +47,24 @@ def _debug(target: str) -> bool:
 
 
 def build(root: Path, log: Callable[[str], None], *,
-          target: str = DEFAULT_TARGET, jobs: int | None = None) -> bool:
+          target: str = DEFAULT_TARGET, jobs: int | None = None,
+          env: Mapping[str, str] | None = None) -> bool:
     """`make -j<n> <target>`, streamed a line at a time. True if the ROM built.
 
     Prism's part is the two words above the shared runner: *which* target is a
     real one (`_debug` rejects anything but `prism`/`nodebug`), and that a job
     count under one is a refusal to explain. The streaming itself is every
     tree's, and lives in `shared.make`.
+
+    Prism pins no toolchain of its own — `env=None` (the default) inherits the
+    environment, which is where prism's `rgbds` is already selected. A caller may
+    still override it, the same handle vanilla uses to escape that same default.
     """
     _debug(target)
     jobs = jobs if jobs is not None else (os.cpu_count() or 1)
     if jobs < 1:
         raise PlayError("you cannot run fewer than one job")
-    return make.run_make(root, target, log, jobs=jobs)
+    return make.run_make(root, target, log, jobs=jobs, env=env)
 
 
 def boot(root: Path, emulator: devplay.Emulator, const: str, y: int, x: int, *,
@@ -129,9 +134,10 @@ class Player:
         return make.is_build_problem(line)
 
     def build(self, log: Callable[[str], None], *,
-              target: str | None = None, jobs: int | None = None) -> bool:
+              target: str | None = None, jobs: int | None = None,
+              env: Mapping[str, str] | None = None) -> bool:
         return build(self._root, log,
-                     target=target or DEFAULT_TARGET, jobs=jobs)
+                     target=target or DEFAULT_TARGET, jobs=jobs, env=env)
 
     def boot(self, const: str, y: int, x: int, *,
              target: str | None = None, keep_people: bool = False) -> list[str]:
