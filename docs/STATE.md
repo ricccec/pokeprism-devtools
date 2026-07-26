@@ -38,14 +38,17 @@ these; a missing capability degrades to a visible absence, never a crash.
 | | reads | writes | lint (`ctx`) | plays | measures |
 |---|---|---|---|---|---|
 | **prism** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **vanilla** | ✓ | ✓ | — | — | — |
-| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | — | — | — |
+| **vanilla** | ✓ | ✓ | ✓ (dialogue overflow) | — | — |
+| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | fast-follow | — | — |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
 resize, new-map, and the block scaffolding those ride — and the writes
-round-trip to the byte on all real maps. Their blanks in the matrix are the
-**absences by design** below — one permanent, the rest deferred — not gaps. One
-of the deferred, family dialogue-overflow linting, is wanted next.
+round-trip to the byte on all real maps. **Vanilla now lints too**: the
+dialogue-overflow rules below make it the first family tree with a non-`None`
+`ctx`. Polished's is the fast-follow — it shares everything but the width reader,
+which its Huffman n-gram engine spells differently (see below). Their remaining
+blanks in the matrix are the **absences by design** further down — one
+permanent, the rest deferred — not gaps.
 
 ## The last engineering item — paid (2026-07-25)
 
@@ -88,36 +91,36 @@ remains of prism showing up when a *family* tree mounts is the mount discovering
 every hack through `studio → session → mount` — the mount's job by design, not a
 wiring-layer leak. With this paid, the seam has no known structural debt left.
 
-## Wanted next — family dialogue-overflow linting (scoped: `family-lint-plan.md`, Phase 11)
+## Landing now — family dialogue-overflow linting (Phase 11; `family-lint-plan.md`)
 
-Distinct from a debt (there is none left): this is a wanted capability, the next
-thing worth building rather than a resting blank. **Now scoped as Phase 11** in
-`family-lint-plan.md`; that section holds the argument, the architecture, and
-the moves. In brief:
+**Move A — done.** `Hack.ctx` is a lint *capability* (`seam.Lints`): `lint()`,
+`mentions()`, `source_lines()`, `invalidate()`. The session lints through it and
+never learns which rules a tree runs — prism's `LintContext` runs all of them, a
+family ctx runs two, and the session cannot tell them apart. It branches only on
+`ctx is not None`, never on a name.
 
-**The want:** flag a dialogue line that crosses the screen boundary and
-overflows the box — for vanilla and polished, not only prism.
+**Move B — done for vanilla; polished is the fast-follow.** `hacks/vanilla/lint/`
+is a `FamilyLintContext` that flags a dialogue line wider than the 18-tile box
+(`text-width`, counting the `#`→POKé kind of expansion the eye misses) or landing
+past its last row (`text-rows`). It reads the box from `constants/text_constants.asm`,
+tokenises with a family charmap, and counts widths from the engine — all
+false-positive-free determinate arithmetic, the exact-fit case the plan argues is
+*not* a `Measures.measure` question. Vanilla's real tree lints clean; the rules
+and their falsification live in `tests/test_family_lint.py`.
 
-**Why it needs no VWF — measured, and the old flat claim corrected.** Overflow
-is a *fit* question, and map dialogue is fixed-width in **both** trees: every
-glyph is one tile, the box interior is a fixed 18 tiles (`TEXTBOX_INNERW`), and
-the script's own break macros (`text`/`line`/`cont`/`para`) end each visual
-line. Count printable tiles between breaks, compare to the box width — exact, not
-a guess. (Polished *does* ship a VWF, but only for menus; overworld dialogue
-runs through the fixed-width `PlaceString` path. So the fit is exact for
-dialogue even though a menu elsewhere is proportional.) This is why it does
-**not** sit under `Measures.measure`, which rightly refuses the unknowable VWF
-*pixel* width — a different question.
+**The one thing that forks — the width reader.** The map *event* format is
+identical across the family (so the read mechanics are shared), but the *text
+engines* are not: vanilla is classic `dict`+`print_name`→ROM `db`, polished is
+`_dtxt`/Huffman `ctxtmap` with an n-gram string table (closer to prism). So the
+box, the dialogue parse, the rules and the neutral arithmetic are shared; only
+the `Metrics` reader is engine-specific. Polished will bring its own n-gram
+reader and reuse everything else — the same fork pattern as its writer.
 
-**What it reads.** `Reads.texts(label)` already crosses every string in source
-order. What is missing is small and family-local: the box width, the break
-vocabulary, and a family charmap reader for control-code expansions.
-
-**Where it lands.** As a family **`ctx`** — the first thing that makes
-`Hack.ctx` non-`None` for vanilla/polished, surfacing through prism's existing
-finding channel. Phase 11's step A first turns `Hack.ctx` into a lint capability
-(`ctx.lint()`) so a family ctx can run only its own rules without the session
-knowing rule sets. Does not touch `Measures`, `Writes`, or the read methods.
+**The finding channel is now genuinely hack-neutral.** `maplint/__init__` defers
+its rule/context imports (all of `hacks.prism`) into `run()`/`main()`, so
+`maplint.diagnostics` and the new `maplint.textfit` (the shared fit/row
+arithmetic) import without loading prism. That is what lets a family tree's
+linter reach the channel without dragging in the tree it is not written against.
 
 ## Absences by design — none permanent but one, all otherwise deferred
 

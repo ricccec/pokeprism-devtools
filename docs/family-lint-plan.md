@@ -79,17 +79,29 @@ hack's name — and mechanics that a CLI could someday wrap live in `wiring/`
   arithmetic, and `keep-mechanics-cli-extractable` survives — a `family-maplint`
   CLI wraps the same rules.
 
-  **Three moves.** (A) The `ctx.lint()`/`mentions()`/`source_lines()` capability
-  refactor; prism behaviour unchanged, proven by `test_maplint`/`test_studio`
-  staying green. (B) The family determinate-overflow lint: family charmap + box
+  **Three moves.** (A — **done**) The
+  `ctx.lint()`/`mentions()`/`source_lines()` capability refactor; prism behaviour
+  unchanged, proven by `test_maplint`/`test_studio` staying green. (B — **done
+  for vanilla**) The family determinate-overflow lint: family charmap + box
   reader + two rules — `text-width` (a visual line past 18 tiles, counting
   control-code expansions like `<POKE>`) and `text-rows` (more visual lines than
   the box holds before a required `para`/scroll) — and `Hack.ctx` wired in
-  vanilla and polished `claim.py`. This is the first non-`None` family `ctx`.
+  vanilla's `claim.py`. This is the first non-`None` family `ctx`.
   (C, deferred) the buffer refinements: name worst-case (`<PLAYER>` at its
   seven-letter longest, prism's `text-width-name`) and unbounded headroom
   (`text-buffer`). The family charmaps carry `<PLAYER>`/`<RIVAL>`, so these port
   cleanly once the determinate core has proven out.
+
+  **The correction Move B forced.** The plan above assumed one family text engine,
+  so "polished imports vanilla's lint" whole. It does not: the map *event* format
+  is shared, but the text engines diverge — vanilla is the classic
+  `dict`+`print_name`→ROM `db`, polished is `_dtxt`/Huffman `ctxtmap` with an
+  n-gram string table (closer to prism). The overflow *counting* holds for both,
+  and the box, the dialogue parse, the rules and the neutral `maplint.textfit`
+  arithmetic are all shared; only the width `Metrics` reader is engine-specific.
+  So `Hack.ctx` is wired for vanilla now, and **polished is the fast-follow** — it
+  brings its own n-gram width reader and reuses everything else, the same fork
+  relation its writer already has with vanilla's.
 
   **Verification, the usual way.** Calibrate the box width by measuring the
   widest non-overflowing real line across both trees, then falsify: widen a
