@@ -38,8 +38,8 @@ these; a missing capability degrades to a visible absence, never a crash.
 | | reads | writes | lint (`ctx`) | plays | measures |
 |---|---|---|---|---|---|
 | **prism** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **vanilla** | ✓ | ✓ | ✓ (dialogue overflow) | — | — |
-| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, n-gram reader) | — | — |
+| **vanilla** | ✓ | ✓ | ✓ (dialogue overflow + name bounds) | — | — |
+| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow + name bounds, n-gram reader) | — | — |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
 resize, new-map, and the block scaffolding those ride — and the writes
@@ -96,8 +96,8 @@ wiring-layer leak. With this paid, the seam has no known structural debt left.
 **Move A — done.** `Hack.ctx` is a lint *capability* (`seam.Lints`): `lint()`,
 `mentions()`, `source_lines()`, `invalidate()`. The session lints through it and
 never learns which rules a tree runs — prism's `LintContext` runs all of them, a
-family ctx runs two, and the session cannot tell them apart. It branches only on
-`ctx is not None`, never on a name.
+family ctx runs three (the two overflow rules plus name bounds), and the session
+cannot tell them apart. It branches only on `ctx is not None`, never on a name.
 
 **Move B — done, both family trees.** `hacks/vanilla/lint/` is a
 `FamilyLintContext` that flags a dialogue line wider than the 18-tile box
@@ -127,6 +127,30 @@ takes its `engine_files` as declared data (the guard cannot name one tree's
 read* (`> len`, not `> 1`), so it calls out `#` without burying it under
 polished's every n-gram.
 
+**Move C — done, name bounds (`text-width-name`), both trees.** A line can fit in
+testing and overflow the moment someone types a long name: `<PLAYER>` reads as
+nothing and draws up to seven tiles (`PLAYER_NAME_LENGTH - 1`). The rule warns
+where the *determinate* part still fits but the *worst case* does not — a
+`Severity.WARNING`, since a short name is fine, not an error. It is the clean
+half of Move C: the name tokens (`<PLAYER>`/`<RIVAL>`/`<MOM>`/`<RED>`/`<GREEN>` in
+vanilla, `<PLAYER>`/`<RIVAL>` in polished) sit *inline* in strings, already
+tokenised, so all that was added is a declared `bound` per tree and a `worst`
+alongside `determinate`. Both shipping trees stay clean under it — and, exactly
+like the determinate rule, the tightest real line packs to the tile
+(`<PLAYER> obtained a`, 18 tiles at a seven-letter name, LakeOfRage): the metric
+agrees with the authors again. The per-tree bound is declared data (`_NAME_BOUND`
+maps each name buffer to `PLAYER_NAME_LENGTH`), read from source, seam-clean.
+
+`text-buffer` — the *other* half of Move C, the unbounded `<STRBF*>` headroom —
+is **not** the clean port the plan assumed and is left for a deliberate pick-up
+(see the roadmap). Prism's dialogue is one string with inline codes, so
+`text_from_ram` is a mid-line token; the family splits a box across separate
+`text`/`text_ram` *script commands*, and the parser deliberately treats each
+`text` as its own box and `@` as a terminator — a conservative simplification
+that undercounts rather than false-positives. Modelling `text_ram` correctly
+(joining consecutive commands into one visual line, past the `@`-terminator) is a
+parser change with false-positive risk, distinct from Move C's inline-token work.
+
 **The finding channel is now genuinely hack-neutral.** `maplint/__init__` defers
 its rule/context imports (all of `hacks.prism`) into `run()`/`main()`, so
 `maplint.diagnostics` and the new `maplint.textfit` (the shared fit/row
@@ -154,6 +178,11 @@ scoped out, each pick-up-able as its own phase.
 full roadmap, grouped, is in `family-lint-plan.md` ("The roadmap past the
 seam"); the standing items:**
 
+- **Family `text-buffer`** — the unbounded `<STRBF*>` headroom rule, Move C's
+  second half. It needs the dialogue parser to model the `text_ram` script macro
+  and join consecutive `text` commands into one visual line past the `@`
+  terminator — a parser change with false-positive risk, not the inline-token
+  port `text-width-name` was. See the Move C note above.
 - **Family `plays`** — build-and-replay is engine wiring, a separate project.
 - **Family rewording** — `wiring/text` is still prism-parser-based (one of the
   cat-4 movers); rewording against a fixed-width charmap is a text-wiring project.
