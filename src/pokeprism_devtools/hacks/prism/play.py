@@ -1,8 +1,11 @@
-"""Building the ROM, and standing in it.
+"""Building the ROM, and standing in it — prism's :class:`~..seam.Plays`.
 
 The other half of the loop, and the only part of the studio that leaves the source
 tree: it runs `make`, patches a save, and opens an emulator. Everything else in
-`studio/` reads and writes `.asm` files; this runs a compiler and a game.
+`studio/` reads and writes `.asm` files; this runs a compiler and a game. It lives
+below the seam because every byte of it is prism's: the `make` targets, the save
+format the patcher writes, the emulator that comes up. The session drives it
+through :class:`Player` and knows none of that — see `hacks/seam.py`.
 
 The save, the state file and the backups are `prism-dev`'s. The studio does not
 keep a second game — what it overrides is *where you are standing*, and nothing
@@ -17,9 +20,10 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
-from ..dev_server import apply as devapply
-from ..dev_server import inventory, playtest as devplay
-from ..shared import paths
+from ...dev_server import apply as devapply
+from ...dev_server import inventory, playtest as devplay
+from ...shared import paths
+from ..seam import PlayError
 
 #: The two ROMs this repo builds, and whether each one is the *debug* build — which
 #: is the word `shared/paths.py` uses for the same distinction, so this table is
@@ -36,11 +40,6 @@ TARGETS: dict[str, bool] = {"prism": True, "nodebug": False}
 #: the one you want when the map you are standing in is a map you made ten seconds
 #: ago and may have got wrong.
 DEFAULT_TARGET = "prism"
-
-
-class PlayError(RuntimeError):
-    """Nothing built, or the save could not be patched. Carries a message for a
-    human, because every one of these is something you can do something about."""
 
 
 #: A line of `make` output worth stopping on when the build is run *quiet*. This
@@ -134,3 +133,39 @@ def boot(root: Path, emulator: devplay.Emulator, const: str, y: int, x: int, *,
         raise PlayError(str(e)) from e
 
     return report.changes + emulator.launch(rom).warnings
+
+
+class Player:
+    """Prism's :class:`~..seam.Plays`: `make`, patch prism's save, open SameBoy.
+
+    Thin over the module functions — they carry the argument, the reasons and
+    the tests. What the class adds is the two things the seam wants an object
+    for: it holds the emulator (so a second boot replaces the window, not opens
+    a new one — see :meth:`boot`), and it resolves the session's `target=None`
+    into prism's own :data:`DEFAULT_TARGET`, so no default target has to live
+    above the seam.
+    """
+
+    def __init__(self, root: Path) -> None:
+        self._root = root
+        #: Held across boots, so booting again replaces the window you are
+        #: already looking at instead of opening a second one behind it.
+        self._emulator = devplay.Emulator()
+
+    def targets(self) -> tuple[str, ...]:
+        """Prism's build targets, the default (`prism`, the debug build) first."""
+        return tuple(TARGETS)
+
+    def keeps(self, line: str) -> bool:
+        """Whether a quiet build still shows this line — see :func:`is_problem`."""
+        return is_problem(line)
+
+    def build(self, log: Callable[[str], None], *,
+              target: str | None = None, jobs: int | None = None) -> bool:
+        return build(self._root, log,
+                     target=target or DEFAULT_TARGET, jobs=jobs)
+
+    def boot(self, const: str, y: int, x: int, *,
+             target: str | None = None, keep_people: bool = False) -> list[str]:
+        return boot(self._root, self._emulator, const, y, x,
+                    target=target or DEFAULT_TARGET, keep_people=keep_people)
