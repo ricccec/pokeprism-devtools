@@ -39,16 +39,16 @@ these; a missing capability degrades to a visible absence, never a crash.
 |---|---|---|---|---|---|
 | **prism** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **vanilla** | ✓ | ✓ | ✓ (dialogue overflow) | — | — |
-| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | fast-follow | — | — |
+| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, n-gram reader) | — | — |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
 resize, new-map, and the block scaffolding those ride — and the writes
-round-trip to the byte on all real maps. **Vanilla now lints too**: the
-dialogue-overflow rules below make it the first family tree with a non-`None`
-`ctx`. Polished's is the fast-follow — it shares everything but the width reader,
-which its Huffman n-gram engine spells differently (see below). Their remaining
-blanks in the matrix are the **absences by design** further down — one
-permanent, the rest deferred — not gaps.
+round-trip to the byte on all real maps. **Both family trees now lint too**: the
+dialogue-overflow rules below make them the first family trees with a non-`None`
+`ctx`. They share everything but the width reader, which polished's Huffman
+n-gram engine spells differently (see below). Their remaining blanks in the
+matrix are the **absences by design** further down — one permanent, the rest
+deferred — not gaps.
 
 ## The last engineering item — paid (2026-07-25)
 
@@ -99,22 +99,33 @@ never learns which rules a tree runs — prism's `LintContext` runs all of them,
 family ctx runs two, and the session cannot tell them apart. It branches only on
 `ctx is not None`, never on a name.
 
-**Move B — done for vanilla; polished is the fast-follow.** `hacks/vanilla/lint/`
-is a `FamilyLintContext` that flags a dialogue line wider than the 18-tile box
+**Move B — done, both family trees.** `hacks/vanilla/lint/` is a
+`FamilyLintContext` that flags a dialogue line wider than the 18-tile box
 (`text-width`, counting the `#`→POKé kind of expansion the eye misses) or landing
 past its last row (`text-rows`). It reads the box from `constants/text_constants.asm`,
 tokenises with a family charmap, and counts widths from the engine — all
 false-positive-free determinate arithmetic, the exact-fit case the plan argues is
-*not* a `Measures.measure` question. Vanilla's real tree lints clean; the rules
-and their falsification live in `tests/test_family_lint.py`.
+*not* a `Measures.measure` question. Both real trees lint clean (polished across
+606 maps and 27,701 visual lines, 2,753 of them packed to exactly 18 tiles and
+none over — the metric agrees with the authors to the tile); the rules and their
+falsification live in `tests/test_family_lint.py`.
 
 **The one thing that forks — the width reader.** The map *event* format is
 identical across the family (so the read mechanics are shared), but the *text
 engines* are not: vanilla is classic `dict`+`print_name`→ROM `db`, polished is
 `_dtxt`/Huffman `ctxtmap` with an n-gram string table (closer to prism). So the
 box, the dialogue parse, the rules and the neutral arithmetic are shared; only
-the `Metrics` reader is engine-specific. Polished will bring its own n-gram
-reader and reuse everything else — the same fork pattern as its writer.
+the `Metrics` reader is engine-specific. `hacks/polished/lint.py` is that fork and
+nothing else: it resolves a byte through the n-gram table (`data/text/ngrams.asm`)
+where an n-gram is one ROM byte but several screen tiles (`#`→`Poké`, `the `→four
+tiles), counting each expansion in the un-compressed charmap so an apostrophe
+ligature like `'s` is the one tile it draws and not two. It reuses vanilla's box,
+parse, rules and `FamilyLintContext` unchanged — the same fork pattern as its
+writer. Two shared touch-ups let it in without a branch: `FamilyLintContext` now
+takes its `engine_files` as declared data (the guard cannot name one tree's
+`home/text.asm`), and the width message names tokens that draw *wider than they
+read* (`> len`, not `> 1`), so it calls out `#` without burying it under
+polished's every n-gram.
 
 **The finding channel is now genuinely hack-neutral.** `maplint/__init__` defers
 its rule/context imports (all of `hacks.prism`) into `run()`/`main()`, so
@@ -155,10 +166,11 @@ seam"); the standing items:**
   to prevent.
 
 The prism-only CLIs (`dev_server`, `gfx_view`, `map_inspect`, …, 12 files) are
-prism-written by design, gated by `plays`. The current linter (`maplint/`, 7
-files) is prism-only *today* via `ctx is None` — but that is a present fact, not
-a permanent one: the family overflow pass above is exactly how a family `ctx`
-begins.
+prism-written by design, gated by `plays`. The finding channel (`maplint/`) is no
+longer prism-only: its rules are, but the channel itself — `diagnostics` and the
+neutral `textfit` — imports without prism, and both family trees now carry their
+own overflow `ctx` on top of it. What each tree lints is its own; that the
+session cannot tell them apart is the seam working.
 
 ## Doc hygiene — the accretion to watch
 

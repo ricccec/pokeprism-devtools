@@ -13,9 +13,10 @@ hack's name — and mechanics that a CLI could someday wrap live in `wiring/`
 (the capability matrix, the seam's shape), read `STATE.md`.
 
 - **Phase 11 — the family's first lint: does the dialogue fit the box.
-  Planned, not built.** The linter (`maplint/`) is prism-only today, and the
-  reason given has always been "the family has no VWF." That reason was measured
-  this cycle and found to be answering the wrong question.
+  Built, both family trees (Move C deferred).** The linter was prism-only, and the
+  reason given had always been "the family has no VWF." That reason was measured
+  this cycle and found to be answering the wrong question; the determinate
+  overflow lint below now ships for vanilla and polished.
 
   **The want.** Flag a dialogue line that crosses the screen boundary and
   overflows its box — for vanilla and polished, not only prism. A line one tile
@@ -81,27 +82,35 @@ hack's name — and mechanics that a CLI could someday wrap live in `wiring/`
 
   **Three moves.** (A — **done**) The
   `ctx.lint()`/`mentions()`/`source_lines()` capability refactor; prism behaviour
-  unchanged, proven by `test_maplint`/`test_studio` staying green. (B — **done
-  for vanilla**) The family determinate-overflow lint: family charmap + box
+  unchanged, proven by `test_maplint`/`test_studio` staying green. (B — **done,
+  both family trees**) The family determinate-overflow lint: family charmap + box
   reader + two rules — `text-width` (a visual line past 18 tiles, counting
   control-code expansions like `<POKE>`) and `text-rows` (more visual lines than
-  the box holds before a required `para`/scroll) — and `Hack.ctx` wired in
-  vanilla's `claim.py`. This is the first non-`None` family `ctx`.
+  the box holds before a required `para`/scroll) — and `Hack.ctx` wired in both
+  `claim.py`s. These are the first non-`None` family `ctx`s.
   (C, deferred) the buffer refinements: name worst-case (`<PLAYER>` at its
   seven-letter longest, prism's `text-width-name`) and unbounded headroom
   (`text-buffer`). The family charmaps carry `<PLAYER>`/`<RIVAL>`, so these port
   cleanly once the determinate core has proven out.
 
-  **The correction Move B forced.** The plan above assumed one family text engine,
-  so "polished imports vanilla's lint" whole. It does not: the map *event* format
-  is shared, but the text engines diverge — vanilla is the classic
-  `dict`+`print_name`→ROM `db`, polished is `_dtxt`/Huffman `ctxtmap` with an
-  n-gram string table (closer to prism). The overflow *counting* holds for both,
-  and the box, the dialogue parse, the rules and the neutral `maplint.textfit`
-  arithmetic are all shared; only the width `Metrics` reader is engine-specific.
-  So `Hack.ctx` is wired for vanilla now, and **polished is the fast-follow** — it
-  brings its own n-gram width reader and reuses everything else, the same fork
-  relation its writer already has with vanilla's.
+  **The correction Move B forced, and how the fast-follow paid it.** The plan
+  above assumed one family text engine, so "polished imports vanilla's lint"
+  whole. It does not: the map *event* format is shared, but the text engines
+  diverge — vanilla is the classic `dict`+`print_name`→ROM `db`, polished is
+  `_dtxt`/Huffman `ctxtmap` with an n-gram string table (closer to prism). The
+  overflow *counting* holds for both, and the box, the dialogue parse, the rules
+  and the neutral `maplint.textfit` arithmetic are all shared; only the width
+  `Metrics` reader is engine-specific. So vanilla shipped first, then **polished
+  followed** — `hacks/polished/lint.py`, a `load` that resolves a byte through the
+  n-gram table and a `build` that reuses vanilla's `FamilyLintContext` verbatim.
+  The subtlety the fork carries is that an n-gram is one ROM byte but several
+  screen tiles (`#`→`Poké`, `the `→four), so each n-gram token's width is *its
+  expansion's* tile count — counted in the un-compressed charmap, where an
+  apostrophe ligature (`'s`) is the one tile it draws and not two. Two shared
+  seams let polished in without a branch: `FamilyLintContext` takes its engine
+  files as declared data (the guard cannot hardcode one tree's `home/text.asm`),
+  and the width message names tokens that draw *wider than they read* (`> len`,
+  not `> 1`) so it surfaces `#` without burying it under polished's every n-gram.
 
   **Verification, the usual way.** Calibrate the box width by measuring the
   widest non-overflowing real line across both trees, then falsify: widen a
