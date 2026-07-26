@@ -72,10 +72,17 @@ class Metrics:
     name. So a name token sits in both dicts — zero in `width`, its worst case in
     `bound` — and the two are summed by different readers (`determinate` and
     `bounded`) for the two questions `text-width` and `text-width-name` ask.
+
+    `ram_bound` is those same names reached the *other* way: not the inline
+    `<PLAYER>` token but the `text_ram wPlayerName` script command, which prints a
+    WRAM buffer straight onto the line. It maps the WRAM label to the worst case,
+    for the dialogue parser to charge to the line a `text_ram` lands on — a name
+    buffer bounds, any other buffer is unbounded and has no entry here.
     """
     width: dict[str, int]
     control: frozenset[str]
     bound: dict[str, int] = field(default_factory=dict)
+    ram_bound: dict[str, int] = field(default_factory=dict)
 
     def determinate(self, root: Path, text: str) -> int:
         """Tiles a source string is certain to draw — literals and fixed ROM
@@ -131,7 +138,8 @@ def load(root: Path) -> Metrics:
             width[token] = 0             # a name: no determinate width to count
             if target in _NAME_BOUND:    # …but a worst case once someone types it
                 bound[token] = consts[_NAME_BOUND[target]] - 1
-    return Metrics(width, frozenset(control), bound)
+    ram_bound = {buf: consts[c] - 1 for buf, c in _NAME_BOUND.items()}
+    return Metrics(width, frozenset(control), bound, ram_bound)
 
 
 def _rom_width(root: Path, text: str) -> int:

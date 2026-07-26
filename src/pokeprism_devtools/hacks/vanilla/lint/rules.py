@@ -10,9 +10,12 @@ four tiles, so `"#mon Center near"` is sixteen characters, comfortably inside
 eighteen, and nineteen tiles — one too many. No amount of staring at the string
 finds it. `text-width-name` is the same trap sprung a step later: `<PLAYER>` reads
 as nothing and draws up to seven, so a line that fits in testing overflows the
-moment someone types a long name. The comparisons themselves are `maplint.textfit`,
-shared with prism's rules verbatim; what feeds them — the box, the widths, the
-name bounds — is the family's own.
+moment someone types a long name. `text-buffer` is the trap for the buffers the
+text cannot bound at all — `text_ram wStringBuffer3` prints whatever a script
+loaded there — and so it warns only where the certainty is total: a line whose
+fixed text already fills the box has no room for a spliced buffer, short or long.
+The comparisons themselves are `maplint.textfit`, shared with prism's rules
+verbatim; what feeds them — the box, the widths, the bounds — is the family's own.
 """
 
 from __future__ import annotations
@@ -82,6 +85,39 @@ def text_width_name(ctx: FamilyLintContext) -> list[Diagnostic]:
     return out
 
 
+def text_buffer(ctx: FamilyLintContext) -> list[Diagnostic]:
+    """A line whose fixed text leaves a spliced-in buffer no room at all.
+
+    `text_ram wStringBuffer3` prints whatever a script loaded into that buffer —
+    a nickname, an item, a phrase — straight onto the line, and the text cannot
+    say how long that is. So most buffer lines cannot be judged and are left
+    alone: an honest linter does not warn on a width it cannot know.
+
+    What it *can* know is that a buffer prints at least one tile. When the fixed
+    text on a line already fills the box, that one tile has nowhere to go — the
+    line overflows for every possible buffer content, short or long. That is the
+    one buffer overflow that is certain, and the only one worth a finding. A line
+    already too wide on its fixed text alone is `text-width`'s, so this fires only
+    where the fixed part fits and the buffer is what tips it over."""
+    box = ctx.box
+    out = []
+    for const, path in sorted(ctx.map_files.items()):
+        rel = ctx.rel(path)
+        for block in ctx.text_blocks(const):
+            for line in block.lines:
+                floor = line.determinate + len(line.unbounded)
+                if not line.unbounded or line.determinate > box.cols or floor <= box.cols:
+                    continue
+                bufs = ", ".join(f"`{b}`" for b in line.unbounded)
+                out.append(Diagnostic(
+                    "text-buffer", Severity.WARNING, rel, line.lineno,
+                    f"this line already fills the {box.name} with {line.determinate} "
+                    f"tiles of fixed text, then prints {bufs} into it — the buffer "
+                    f"overflows the box however short its contents",
+                ))
+    return out
+
+
 def text_rows(ctx: FamilyLintContext) -> list[Diagnostic]:
     """A line that lands below the last row inside the box.
 
@@ -126,4 +162,4 @@ def _because(ctx: FamilyLintContext, line: Line) -> str:
     return f" ({parts})"
 
 
-ALL = (text_width, text_width_name, text_rows)
+ALL = (text_width, text_width_name, text_buffer, text_rows)

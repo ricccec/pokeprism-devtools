@@ -87,7 +87,10 @@ def load(root: Path) -> Metrics:
     for token, byte in byte_of.items():
         if start <= byte <= end and byte in tiles_by_byte:
             width[token] = tiles_by_byte[byte]
-    return Metrics(width, _CONTROL, _name_bounds(root, byte_of, buffer_by_byte))
+    consts = box.equs(root, _TEXT_CONSTANTS, {})
+    ram_bound = {buf: consts[c] - 1 for buf, c in _NAME_BOUND.items()}
+    return Metrics(width, _CONTROL, _name_bounds(root, byte_of, buffer_by_byte),
+                   ram_bound)
 
 
 def build(root: Path) -> FamilyLintContext:

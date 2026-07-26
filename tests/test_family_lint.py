@@ -73,6 +73,30 @@ NameRoomy:
 \tdone
 '''
 
+#: The buffer cases. A `text_ram` splices a WRAM string onto the line it lands on,
+#: so the parser must *join* it — `BufOverflow`'s buffer sits on the same line as
+#: the 18 tiles before it, not a fresh line of its own. Its content is unbounded,
+#: so the only certain overflow is when the fixed text already fills the box and
+#: the buffer has nowhere to go; a roomy line and a *name* buffer (bounded, not
+#: unbounded) must stay silent. `wPlayerName` is a name in both trees; any other
+#: `wStringBuffer*` is scratch the text cannot bound.
+_BUFFER_SAMPLE = '''\
+BufOverflow:
+\ttext "123456789012345678"
+\ttext_ram wStringBuffer3
+\tdone
+
+BufRoomy:
+\ttext "Hi "
+\ttext_ram wStringBuffer3
+\tdone
+
+BufName:
+\ttext "Hi "
+\ttext_ram wPlayerName
+\tdone
+'''
+
 
 def check(label: str, cond: bool, detail: str = "") -> None:
     global FAILED
@@ -234,6 +258,55 @@ def test_name_bound_and_overflow(root: Path) -> None:
     _check_name_rule("vanilla", root, metrics.load(root))
 
 
+def _buffer_rule_over_sample(root: Path, m):
+    """`text-buffer` findings and the parsed lines, over `_BUFFER_SAMPLE`."""
+    with tempfile.TemporaryDirectory() as d:
+        sample = Path(d) / "Sample.asm"
+        sample.write_text(_BUFFER_SAMPLE)
+        blocks = dialogue.parse(root, sample, m)
+        lines = {l.lineno: l for blk in blocks for l in blk.lines}
+
+        class Ctx:
+            pass
+        ctx = Ctx()
+        ctx.root, ctx.metrics, ctx.box = root, m, box.speech_box(root)
+        ctx.map_files = {"SAMPLE": sample}
+        ctx.rel = lambda p: "maps/Sample.asm"
+        ctx.text_blocks = lambda const: blocks
+        return rules.text_buffer(ctx), lines
+
+
+def _check_buffer_rule(engine: str, root: Path, m) -> None:
+    """Shared buffer checks — the parse and the rule are one code path for both
+    trees, and only the declared name bound forks. A `text_ram` joins the line it
+    lands on, an unbounded buffer overflows only a line already full, and a name
+    buffer is bounded, not unbounded."""
+    print(f"\n{engine}: a spliced buffer overflows only a line already full")
+    found, lines = _buffer_rule_over_sample(root, m)
+
+    check("`text_ram` joins its buffer onto the line before it, not a new one",
+          lines[2].determinate == 18 and lines[2].unbounded == ["wStringBuffer3"],
+          f"det={lines[2].determinate} unb={lines[2].unbounded}")
+    check("a name buffer via `text_ram` is bounded, not unbounded",
+          lines[12].bounded == 7 and not lines[12].unbounded,
+          f"bnd={lines[12].bounded} unb={lines[12].unbounded}")
+
+    warned = sorted(d.line for d in found)
+    check("it warns where the fixed text already fills the box, and only there",
+          warned == [2], str(warned))
+    check("a line with room for the buffer does not warn", 7 not in warned)
+    check("a bounded name buffer is not a text-buffer finding", 12 not in warned)
+    if found:
+        d = found[0]
+        check("it is a warning, not an error", d.severity == Severity.WARNING, str(d.severity))
+        check("the message names the buffer with nowhere to go",
+              "wStringBuffer3" in d.message and "fills" in d.message, d.message)
+
+
+def test_buffer_overflow(root: Path) -> None:
+    _check_buffer_rule("vanilla", root, metrics.load(root))
+
+
 def test_the_seam_conformance(root: Path) -> None:
     print("\nthe mounted vanilla ctx is a seam.Lints")
     hack = hackmount.mount(root)
@@ -307,6 +380,10 @@ def test_polished_name_bound_and_overflow(root: Path) -> None:
     _check_name_rule("polished", root, polished_lint.load(root))
 
 
+def test_polished_buffer_overflow(root: Path) -> None:
+    _check_buffer_rule("polished", root, polished_lint.load(root))
+
+
 def test_polished_seam_conformance(root: Path) -> None:
     print("\nthe mounted polished ctx is a seam.Lints")
     hack = hackmount.mount(root)
@@ -324,6 +401,7 @@ def main() -> int:
         test_falsification(VANILLA)
         test_the_rules_and_suppression(VANILLA)
         test_name_bound_and_overflow(VANILLA)
+        test_buffer_overflow(VANILLA)
         test_the_real_tree_is_clean(VANILLA)
         test_the_seam_conformance(VANILLA)
 
@@ -333,6 +411,7 @@ def main() -> int:
         test_polished_metrics_read_from_ngrams(POLISHED)
         test_polished_falsification(POLISHED)
         test_polished_name_bound_and_overflow(POLISHED)
+        test_polished_buffer_overflow(POLISHED)
         test_polished_real_tree_is_clean(POLISHED)
         test_polished_seam_conformance(POLISHED)
 
