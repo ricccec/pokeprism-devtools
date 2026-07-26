@@ -117,6 +117,11 @@ class Build(ModalScreen[None]):
                 yield Checkbox("Quiet", value=True, id="build-quiet")
             yield RichLog(id="build-log", wrap=False, markup=False, auto_scroll=True)
             yield Static("", id="build-status")
+            # TODO(build-only): offer a "build without running" path here — a
+            # checkbox, or a second button beside "Build & run". Sometimes you
+            # just want to know the map compiles and links, without patching a
+            # save or opening SameBoy. `_run` would skip the boot step (stop
+            # after "Built.") when it is set. Keep the default as build & run.
             with Horizontal(id="build-buttons"):
                 yield Button("Cancel", id="close")
                 yield Button("Build & run", variant="primary", id="go")
