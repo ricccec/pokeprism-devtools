@@ -43,7 +43,7 @@ been.
 | | reads | writes | lint (`ctx`) | plays | measures |
 |---|---|---|---|---|---|
 | **prism** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **vanilla** | ✓ | ✓ | ✓ (dialogue overflow, name + buffer bounds) | ~ (build ✓; boot stands on the tile but does **not** rebuild map objects → glitched sprites) | — |
+| **vanilla** | ✓ | ✓ | ✓ (dialogue overflow, name + buffer bounds) | ~ (build ✓; boot stands on the tile but does **not** rebuild the map → glitched sprites *and* surrounding tiles) | — |
 | **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | — | — |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
@@ -222,16 +222,18 @@ same `map_constants.asm` parse the reader already draws the catalog with, so boo
 and the map list can never disagree.
 
 **But the boot is only the position half of prism's.** `stand_on` writes those four
-position bytes and the primary checksum, and stops. It does **not** rebuild
-`wMapObjects` for the map you land on, so the game loads the new coordinates over the
-*previous* map's object and sprite state and renders it wrong — a live playtest of
-`pokecrystal11_debug` next door confirmed the glitch. This was a blindspot, not a
-scoped deferral: the code claimed (in `boot`'s own comment) that touching only the
-four bytes was sufficient, and the round-trip test could not catch it because a
-writer that writes too little still round-trips the bytes it *does* write. Prism's
-`dev_server/apply.py` does the missing work — rebuild the objects, compute their
-sprite VRAM tiles/palettes/movement, write the player sprite, recompute *both* SRAM
-checksums. Porting that to vanilla is the open work on `plays` (see Absences below).
+position bytes and the primary checksum, and stops. It does **not** rebuild the map
+you land on, so the game loads the new coordinates over the *previous* map's state and
+renders it wrong — both the object/NPC sprites **and** the tiles around the player (the
+block/tile data under and around you is still the old map's). A live playtest of
+`pokecrystal11_debug` next door confirmed it. This was a blindspot, not a scoped
+deferral: the code claimed (in `boot`'s own comment) that touching only the four bytes
+was sufficient, and the round-trip test could not catch it because a writer that writes
+too little still round-trips the bytes it *does* write. Prism hit and solved this same
+corruption during its own development; `dev_server/apply.py` does the missing work —
+rebuild `wMapObjects`, the surrounding tile/block data, the sprite VRAM
+tiles/palettes/movement, the player sprite, and recompute *both* SRAM checksums.
+Porting that to vanilla is the open work on `plays` (see Absences below).
 
 **The toolchain: a declared default, overridable from above.** A stock pokecrystal
 wants `rgbds` v1.0.0+, and pins none itself — so `play.py` declares
@@ -269,9 +271,9 @@ real `pokecrystal11_debug.sav` next door: a dry-run of `stand_on` on a copy conf
 the byte-writer is correct — it moved a genuine playthrough from its saved tile to
 `NEW_BARK_TOWN` (24, 4), left the file at 32816 bytes, and recomputed a checksum that
 verifies. But the live SameBoy launch showed the glitch above: the position is right,
-the map's objects are not rebuilt, so the overworld's sprites are wrong. So the
-writer is proven; the boot is proven *incomplete*. What is left is not a human step —
-it is the map-object rebuild the position patcher never had.
+the map itself is not rebuilt, so the overworld's sprites *and* the tiles around the
+player are wrong. So the writer is proven; the boot is proven *incomplete*. What is
+left is not a human step — it is the map rebuild the position patcher never had.
 
 ## Absences by design — none permanent but one, all otherwise deferred
 
@@ -294,15 +296,18 @@ scoped out, each pick-up-able as its own phase.
 full roadmap, grouped, is in `family-lint-plan.md` ("The roadmap past the
 seam"); the standing items:**
 
-- **Vanilla boot: rebuild the map's objects** — the position half is done; the
-  missing half is reconstructing `wMapObjects` (and the sprite VRAM tiles, palettes
-  and movement, plus the player sprite, plus the *backup* checksum) for the map you
-  land on, so the overworld renders cleanly instead of with the previous map's
-  sprites. Prism's `dev_server/apply.py` is the working reference; the shape to port
-  is there, but its reads are prism's (inventory, offset layout), so the shareable
-  core has to be teased out and stock Gen-2's object layout re-checked. This is the
-  one item here that is a *correction*, not a clean absence — the boot currently
-  claims a completeness it does not have until this lands.
+- **Vanilla boot: rebuild the map, not just the position** — the position half is
+  done; the missing half is reconstructing the map you land on so it renders cleanly
+  instead of over the previous map's state: `wMapObjects` (and the sprite VRAM tiles,
+  palettes and movement, plus the player sprite), the **surrounding tile/block data**,
+  and the *backup* checksum. Prism hit this same corruption in its own development and
+  solved it; `dev_server/apply.py` is the working reference. The shape to port is
+  there, but its reads are prism's (inventory, offset layout), so the shareable core
+  has to be teased out — and this is the moment to decide **which parts of prism's boot
+  are hack-neutral and lift them into `shared`/`wiring` written once, rather than
+  re-implemented inside each hack's `play.py`**. Stock Gen-2's object/tile layout must
+  be re-checked against prism's. This is the one item here that is a *correction*, not
+  a clean absence — the boot claims a completeness it does not have until this lands.
 - **Polished `plays`** — vanilla now builds and half-boots; polished's save is its own
   layout (closer to prism's than to stock Gen-2), so a polished `Player` over its
   own patcher is the next pick-up, on the same seam and neutral runner.

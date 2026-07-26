@@ -3,8 +3,10 @@
 This is the forward-looking half of the family write story. The completed work —
 Phases 5 through 10, which took the family tree from read-only to a full writer
 that round-trips to the byte — is history now and lives in
-`family-write-plan.md`. What remains is one scoped-but-unbuilt phase and a
-roadmap of deferred capabilities, none blocking another.
+`family-write-plan.md`. Phase 11 (the family lint) is now built end to end too;
+what remains is a roadmap of deferred capabilities, none blocking another. The
+one item that is a *correction* rather than a clean absence — finishing vanilla's
+boot so the map it stands you on renders cleanly — is called out in the roadmap.
 
 It inherits the two rules the branch was built on: hack differences live in
 adapters and cross the seam as **declared data** — only `hacks/mount.py` knows a
@@ -13,7 +15,7 @@ hack's name — and mechanics that a CLI could someday wrap live in `wiring/`
 (the capability matrix, the seam's shape), read `STATE.md`.
 
 - **Phase 11 — the family's first lint: does the dialogue fit the box.
-  Built, both family trees (Move C deferred).** The linter was prism-only, and the
+  Built, both family trees — Move C done, four rules ship.** The linter was prism-only, and the
   reason given had always been "the family has no VWF." That reason was measured
   this cycle and found to be answering the wrong question; the determinate
   overflow lint below now ships for vanilla and polished.
@@ -88,10 +90,21 @@ hack's name — and mechanics that a CLI could someday wrap live in `wiring/`
   control-code expansions like `<POKE>`) and `text-rows` (more visual lines than
   the box holds before a required `para`/scroll) — and `Hack.ctx` wired in both
   `claim.py`s. These are the first non-`None` family `ctx`s.
-  (C, deferred) the buffer refinements: name worst-case (`<PLAYER>` at its
-  seven-letter longest, prism's `text-width-name`) and unbounded headroom
-  (`text-buffer`). The family charmaps carry `<PLAYER>`/`<RIVAL>`, so these port
-  cleanly once the determinate core has proven out.
+  (C — **done, both trees**) the buffer refinements: name worst-case
+  (`<PLAYER>` at its seven-letter longest, prism's `text-width-name`) and
+  unbounded headroom (`text-buffer`). `text-width-name` was the clean half — a
+  name reads as nothing but draws up to `PLAYER_NAME_LENGTH-1` tiles, warn where
+  the determinate fit passes but the worst case does not. `text-buffer` needed a
+  parser rewrite: the family splits one visual line across separate
+  `text`/`text_ram` script commands, so `dialogue.parse` became a cursor/command
+  accumulator (`@` ends a *draw*, not the box; `text_ram` and the following
+  `text` join the line in progress; `if DEF(FAITHFUL)` branches measure as
+  siblings). It fires the one certain overflow — fixed text already fills the box
+  and a buffer has nowhere to go — and stays silent on buffers it cannot bound.
+  Both shipping trees are 0-findings under all four rules; the rewrite was diffed
+  line-for-line against the old parse across both trees (only buffer lines and a
+  few number-splices changed). Rules are now `text-width`, `text-width-name`,
+  `text-rows`, `text-buffer`.
 
   **The correction Move B forced, and how the fast-follow paid it.** The plan
   above assumed one family text engine, so "polished imports vanilla's lint"
@@ -142,9 +155,22 @@ every one is deferred-but-buildable unless marked permanent.
   type; it needs a family block renderer to point at, and returning a
   non-drawing stand-in would be the exact wrong-absence Phase 4's `absent()`
   exists to prevent.
-- **Family `plays`.** Build-and-boot — a patched save, an emulator — is engine
-  wiring and a separate project. It gates the prism-only CLIs (`dev_server`,
-  `gfx_view`, `map_inspect`, …).
+- **Family `plays` — partly built; vanilla's boot needs finishing.** Build-and-boot
+  — a patched save, an emulator — is engine wiring and a separate project, and it
+  gates the prism-only CLIs (`dev_server`, `gfx_view`, `map_inspect`, …). Vanilla
+  now **builds** (targets read from the Makefile's `roms :=`) and **half-boots**:
+  it writes the four position bytes and the primary checksum, but does *not* rebuild
+  the map you land on, so the overworld comes up corrupted — wrong NPC/object sprites
+  **and** wrong tiles around the player (the block/tile state under and around you is
+  the previous map's). This was a blindspot, not a scoped deferral, and is the one
+  correction on this roadmap. Prism solved exactly this during its own development;
+  `dev_server/apply.py` is the working reference for the full map-entry patch (rebuild
+  `wMapObjects`, the surrounding tile/block data, sprite VRAM, both checksums). Two
+  jobs, in order: **(1)** decide which parts of prism's solution are hack-neutral and
+  lift them into shared/wiring so the logic is written **once**, not re-implemented per
+  hack; **(2)** finish vanilla's boot on top of that shared core, and let polished's
+  boot reuse it. **Polished `plays`** proper (its own save layout, closer to prism's
+  than to stock Gen-2) is the follow-on once the shared boot core exists.
 - **Permanent, do not build: family VWF pixel-metrics live `measure`.** Map
   dialogue is fixed-width in both trees, so there are no per-glyph pixel widths
   to sum for it; the `Measures` gutter's absence is the correct rendering. (The
