@@ -7,7 +7,8 @@ before it was a question.
 — and then the thing that goes looking for "the ROM" finds two of them and takes
 whichever it prefers, which was not the one you were thinking of. Now the target is
 named on the way in and named again on the way out, so the game you boot is the
-game you built. See `studio/play.py`.
+game you built. The targets themselves come from the play adapter
+(`session.build_targets`), because which builds exist is the engine's to say.
 
 **How many jobs.** `make` is serial unless told otherwise, and this build is a few
 hundred files. Nothing about that was a choice anybody made; it was just what
@@ -22,8 +23,8 @@ tiles you cannot stand on.
 a `prism` build is a few thousand lines of compiler chatter, and putting every one
 of them into the log — a widget write across a thread boundary, per line — is
 itself minutes the compiler never asked for. Quiet keeps only the lines that carry
-the answer (`play.is_problem` — the errors, and the `make: ***` after them), the
-same thing you would reach for a `grep` to do by hand, with a line counter ticking
+the answer (`session.keeps_build_line` — the errors, and the `make: ***` after
+them), the same thing you would reach for a `grep` to do by hand, with a counter ticking
 so a silent log does not read as a hung one. Uncheck it to watch the whole build.
 
 Then `make` takes minutes and can fail, and when it fails the reason is in its
@@ -53,7 +54,6 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Label, RichLog, Static
 
 from ..combo import Combo
-from ..play import DEFAULT_TARGET, TARGETS, is_problem
 from ..session import Session, SessionError
 
 #: How often the log's line counter is allowed to touch the screen while a quiet
@@ -105,7 +105,8 @@ class Build(ModalScreen[None]):
             yield Label(f" Build, and stand on {self._label}", id="build-title")
             with Horizontal(id="build-config"):
                 yield Label("Target")
-                yield Combo(list(TARGETS), value=DEFAULT_TARGET, id="build-target")
+                targets = self._session.build_targets()
+                yield Combo(list(targets), value=targets[0], id="build-target")
                 yield Label("Jobs")
                 yield Input(value=str(os.cpu_count() or 1), id="build-jobs",
                             classes="narrow")
@@ -164,7 +165,7 @@ class Build(ModalScreen[None]):
 
         def line(text: str) -> None:
             seen[0] += 1
-            if not quiet or is_problem(text):
+            if not quiet or self._session.keeps_build_line(text):
                 self.app.call_from_thread(log.write, text)
             if not quiet:
                 return

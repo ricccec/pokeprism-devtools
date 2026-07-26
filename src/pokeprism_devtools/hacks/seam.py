@@ -29,6 +29,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:  # annotations are lazy, so a probe pays for no studio import
+    from collections.abc import Callable
+
     from ..maplint.diagnostics import Diagnostic
     from ..studio import panels
 
@@ -96,6 +98,46 @@ class Sketches(Protocol):
     being an arithmetic complaint and becomes a map of the wrong shape."""
 
     def sketch(self, action) -> panels.Blocks | None: ...
+
+
+@runtime_checkable
+class Plays(Protocol):
+    """`Hack.plays is not None` only. Build-and-boot wiring — the one capability
+    that leaves the source tree: everything else in the studio reads and writes
+    `.asm`, this runs a compiler and a game. What a `make` target is, what a
+    save's bytes are, which emulator comes up: all of it is the adapter's, and
+    the session drives it knowing none of it. A tree with no play adapter has no
+    boot key, never a crash.
+
+    The emulator is the *adapter's*, not the session's, and it is held across
+    boots: booting a second map replaces the window you are already looking at
+    instead of opening another behind it. That is why this is an object with
+    state and not four free functions."""
+
+    def targets(self) -> tuple[str, ...]:
+        """The build targets to offer, the default first. The studio shows these
+        and hands one back to :meth:`build`/:meth:`boot`; it never learns what
+        distinguishes them — that a target is a debug build, say, is the
+        adapter's knowledge, not the build screen's."""
+
+    def keeps(self, line: str) -> bool:
+        """Whether a line of build output is one a *quiet* build still shows —
+        the errors worth stopping on, out of the thousands of lines of compiler
+        chatter. The studio streams `make` output and asks this per line, so
+        which lines are noise stays the engine's to know."""
+
+    def build(self, log: Callable[[str], None], *,
+              target: str | None = None, jobs: int | None = None) -> bool:
+        """`make` the named target, streamed a line at a time through `log`.
+        True if the ROM built. `target=None` means the adapter's default (its
+        `targets()[0]`), so the session carries no default target of its own."""
+
+    def boot(self, const: str, y: int, x: int, *,
+             target: str | None = None, keep_people: bool = False) -> list[str]:
+        """Patch a save to stand at (y, x) on this map, then open the game.
+        Returns the changes worth showing. Raises :class:`PlayError` when
+        nothing built or the save could not be patched — the session catches it
+        and puts the sentence on screen. `target=None` is the adapter default."""
 
 
 @runtime_checkable
@@ -176,6 +218,15 @@ class Refused(RuntimeError):
     catches it and puts the sentence on screen, whichever adapter said it."""
 
 
+class PlayError(RuntimeError):
+    """A play adapter's failure: nothing built, or the save could not be
+    patched. Carries a message for a human, because every one of these is
+    something you can do something about. Defined at the seam for the same
+    reason as :class:`Refused` — it is the seam's word, caught by the session,
+    not any one hack's — so the session need not import the adapter that raised
+    it to know how to show it."""
+
+
 @dataclass(frozen=True)
 class Hack:
     """One mounted tree: its adapter, and what it declared it can do."""
@@ -192,8 +243,10 @@ class Hack:
     #: tree through it. None mounts the tree read-only, and everything above
     #: the seam that would change the repo degrades to absence.
     writes: Writes | None = None
-    #: Build-and-boot (a patched save, an emulator) is wired for this tree.
-    plays: bool = False
+    #: Build-and-boot wiring — run the compiler, patch a save, open the game.
+    #: A :class:`Plays`, holding its own emulator across boots. None mounts the
+    #: tree unplayable, and the studio's boot key degrades to absence.
+    plays: Plays | None = None
     #: Text is measured in tiles against the engine's own VWF and charmap,
     #: rather than guessed at in characters.
     measures: bool = False

@@ -38,13 +38,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from ..dev_server import playtest as devplay
 from ..maplint.diagnostics import Diagnostic, Severity
 from ..hacks.mount import mount
-from ..hacks.seam import Refused
+from ..hacks.seam import PlayError, Refused
 from ..shared import caches, world
 from ..shared.edits import StaleEdit, apply_edits
-from . import panels, play, reader, undo
+from . import panels, reader, undo
 from .actions import Action
 # The shapes of the answers — see `model.py`. Re-exported, because whatever wants
 # a `MapData` wants it *from the session*: the session is the only thing that can
@@ -100,9 +99,6 @@ class Session:
         # The repo as it was when we read it. Everything this object believes was
         # derived from exactly these bytes — see :mod:`..shared.world`.
         self.world = world.World.stamp(root)
-        # Held across playtests, so booting again replaces the window you are
-        # already looking at instead of opening a second one behind it.
-        self._emulator = devplay.Emulator()
 
     # -- has the ground moved? ------------------------------------------------ #
     def drifted(self) -> list[str]:
@@ -137,10 +133,31 @@ class Session:
                 "write adapter.")
 
     def _playable(self) -> None:
-        if not self.hack.plays:
+        if self.hack.plays is None:
             raise SessionError(
                 f"this {self.hack.name} tree has no build-and-boot wiring — "
                 "the studio can show its maps, not play them.")
+
+    @property
+    def plays(self) -> bool:
+        """Whether build-and-boot is wired for this tree. The footer's `b` and
+        the build screen ask before offering: a read-only family tree has no
+        game to stand in, so the key is absent, not disabled."""
+        return self.hack.plays is not None
+
+    def build_targets(self) -> tuple[str, ...]:
+        """The build targets the screen offers, the default first — the play
+        adapter's own list. The studio shows them and hands one back; it never
+        learns what a target means."""
+        self._playable()
+        return self.hack.plays.targets()
+
+    def keeps_build_line(self, line: str) -> bool:
+        """Whether a *quiet* build still shows this line of `make` output — the
+        play adapter's grep, since which chatter is noise is the engine's to
+        know."""
+        self._playable()
+        return self.hack.plays.keeps(line)
 
     @property
     def lints(self) -> bool:
@@ -462,25 +479,27 @@ class Session:
 
     # -- playing it ----------------------------------------------------------- #
     def build(self, log: Callable[[str], None], *,
-              target: str = play.DEFAULT_TARGET, jobs: int | None = None) -> bool:
-        """`make -j<n> <target>`, streamed a line at a time. True if it built."""
+              target: str | None = None, jobs: int | None = None) -> bool:
+        """`make` the target, streamed a line at a time. True if it built. No
+        default target here: `None` means the play adapter's own default, so the
+        session names no `make` target of its own."""
         self._playable()
         try:
-            return play.build(self.root, log, target=target, jobs=jobs)
-        except play.PlayError as e:
+            return self.hack.plays.build(log, target=target, jobs=jobs)
+        except PlayError as e:
             raise SessionError(str(e)) from e
 
     def boot(self, const: str, y: int, x: int, *,
-             target: str = play.DEFAULT_TARGET, keep_people: bool = False) -> list[str]:
-        """Stand at (y, x) on this map, in the game, now — see :mod:`.play`, which
-        is where the target is argued: the two ROMs sit side by side in the repo,
-        and choosing between them by which file happens to exist is how the studio
-        came to build one and boot the other."""
+             target: str | None = None, keep_people: bool = False) -> list[str]:
+        """Stand at (y, x) on this map, in the game, now — through the play
+        adapter, which is where the target and the save format are argued and
+        where the emulator lives. The session hands the map and the tile down
+        and shows what comes back."""
         self._playable()
         try:
-            return play.boot(self.root, self._emulator, const, y, x,
-                             target=target, keep_people=keep_people)
-        except play.PlayError as e:
+            return self.hack.plays.boot(const, y, x,
+                                        target=target, keep_people=keep_people)
+        except PlayError as e:
             raise SessionError(str(e)) from e
 
     # -- keeping the linter honest -------------------------------------------- #

@@ -346,7 +346,7 @@ class Studio(Flow, App):
             # Build-and-boot is a declared capability, not a given: a tree
             # whose adapter has no emulator wiring simply has no `b`.
             return (True if self._const is not None
-                    and self.session.hack.plays else None)
+                    and self.session.plays else None)
         if action == "texts":
             return True if self._const is not None else None
         if action == "undo":

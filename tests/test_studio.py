@@ -541,7 +541,7 @@ def test_boot_stands_you_where_the_cursor_is(root: Path) -> None:
     from unittest import mock
 
     from pokeprism_devtools.dev_server import playtest as devplay
-    from pokeprism_devtools.studio import play as play_mod
+    from pokeprism_devtools.hacks.prism import play as play_mod
 
     s = Session(root)
     (root / "pokeprism.gbc").write_bytes(b"\x00")   # boot() refuses without one
@@ -589,7 +589,7 @@ def test_a_quiet_build_keeps_only_the_problems(root: Path) -> None:
     to keep every line that carries the answer and drop the mountain that doesn't,
     because the mountain is the whole reason quiet exists."""
     print("\nthe quiet build's grep")
-    from pokeprism_devtools.studio import play as play_mod
+    from pokeprism_devtools.hacks.prism import play as play_mod
 
     keep = [
         "maps/CastroForest.asm:41: error: Unknown symbol \"SPRITE_NOPE\"",
@@ -624,7 +624,7 @@ def test_it_boots_the_rom_it_built(root: Path) -> None:
     from unittest import mock
 
     from pokeprism_devtools.dev_server import playtest as devplay
-    from pokeprism_devtools.studio import play as play_mod
+    from pokeprism_devtools.hacks.prism import play as play_mod
 
     ran: list[list[str]] = []
 

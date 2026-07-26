@@ -140,7 +140,17 @@ def test_surface(hacks: dict[str, seam.Hack]) -> None:
             check(f"{name} is a Writes", isinstance(hack.writes, seam.Writes))
             conforms(hack.writes, seam.Writes, f"{name}.writes")
 
-    say("surface — the optional two, against the declared capability")
+    say("surface — the optional capabilities, against what each declared")
+    for name, hack in hacks.items():
+        # Build-and-boot: a capability object on the Hack, not on `reads`. It is
+        # present exactly when it is not None, and when present it must conform —
+        # a play adapter missing `boot` is a `b` key that mounts and then explodes.
+        check(f"{name} plays matches its adapter",
+              isinstance(hack.plays, seam.Plays) == (hack.plays is not None),
+              f"plays={hack.plays!r}")
+        if hack.plays is not None:
+            conforms(hack.plays, seam.Plays, f"{name}.plays")
+
     for name, hack in hacks.items():
         # Both directions. A tree that answers `measure` without declaring
         # `measures` is as wrong as one that declares it and can't: the session
