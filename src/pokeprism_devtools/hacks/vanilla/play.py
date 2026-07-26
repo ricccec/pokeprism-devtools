@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from ...dev_server.emulator import Emulator
@@ -29,11 +29,13 @@ from . import read, savefile
 #: file on disk was the one asked for, the way prism has to.
 _TARGETS = ("pokecrystal.gbc", "pokecrystal_debug.gbc")
 
-#: A stock pokecrystal wants rgbds v1.0.0 or newer (its `rgbdscheck.asm` fails the
-#: build otherwise). But the shell that launches the studio may export `RGBDS`
-#: pointing at the *older* toolchain a sibling in this family pins — clearing that
-#: override drops the build back to the `rgbds` on `PATH`, which is the modern one.
-#: This is the whole of vanilla's toolchain difference, said once, as data.
+#: Vanilla's *default* toolchain, and only the default — a caller may override it
+#: (see :meth:`Player.build`). A stock pokecrystal wants rgbds v1.0.0 or newer (its
+#: `rgbdscheck.asm` fails the build otherwise), and pins none itself: clearing
+#: `RGBDS` means "use the `rgbds` on `PATH`", which is portable to any set-up
+#: pokecrystal machine. It is written as a clear rather than a bare `{}` because
+#: the shell that launches the studio may export `RGBDS` pointing at the *older*
+#: toolchain a sibling in this family pins, and this drops that on the floor.
 _BUILD_ENV = {"RGBDS": ""}
 
 
@@ -54,12 +56,16 @@ class Player:
         return make.is_build_problem(line)
 
     def build(self, log: Callable[[str], None], *,
-              target: str | None = None, jobs: int | None = None) -> bool:
+              target: str | None = None, jobs: int | None = None,
+              env: Mapping[str, str] | None = None) -> bool:
         target = self._target(target)
         jobs = jobs if jobs is not None else (os.cpu_count() or 1)
         if jobs < 1:
             raise PlayError("you cannot run fewer than one job")
-        return make.run_make(self._root, target, log, jobs=jobs, env=_BUILD_ENV)
+        # `env=None` means "vanilla's declared default"; a caller that knows the
+        # machine's toolchain better than `_BUILD_ENV` does can override it.
+        return make.run_make(self._root, target, log, jobs=jobs,
+                             env=env if env is not None else _BUILD_ENV)
 
     def boot(self, const: str, y: int, x: int, *,
              target: str | None = None, keep_people: bool = False) -> list[str]:

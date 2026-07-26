@@ -172,15 +172,17 @@ def test_a_missing_symbol_is_a_clear_refusal() -> None:
         check("stand_on refuses a .sym missing its symbols", False)
 
 
-def test_build_clears_the_inherited_toolchain() -> None:
-    """A stock pokecrystal wants a newer `rgbds` than a sibling tree may pin in
-    the launching shell's `RGBDS`. Vanilla's build must clear that override so it
-    falls back to the `rgbds` on `PATH` — the difference that closes the live
-    build loop. Prove the runner is handed `RGBDS=""`, without running `make`."""
+def test_build_toolchain_default_and_override() -> None:
+    """The toolchain env is the adapter's *default*, and a caller may override it.
+    A stock pokecrystal wants a newer `rgbds` than a sibling tree may pin in the
+    launching shell's `RGBDS`, so vanilla's default clears it to the `PATH`
+    toolchain (`RGBDS=""`) — the difference that closes the live build loop. But
+    a caller who knows the machine's `rgbds` better must win. Prove both, without
+    running `make`."""
     from pokeprism_devtools.hacks.vanilla import play  # noqa: PLC0415
     from pokeprism_devtools.shared import make as make_mod  # noqa: PLC0415
 
-    print("\nvanilla's build hands the make-runner an rgbds override, not the inherited pin")
+    print("\nvanilla's build: the rgbds default clears the pin, and a caller can override it")
     seen: dict[str, object] = {}
 
     def fake_run_make(root, target, log, *, jobs, env=None):
@@ -190,12 +192,18 @@ def test_build_clears_the_inherited_toolchain() -> None:
     original = make_mod.run_make
     make_mod.run_make = fake_run_make
     try:
+        # No env: the adapter's declared default (clear RGBDS to PATH).
         ok = play.Player(Path("/nonexistent")).build(lambda _l: None, jobs=1)
+        check("build succeeds through the runner", ok is True)
+        check("env=None takes the default that clears RGBDS to PATH",
+              seen.get("env") == {"RGBDS": ""}, str(seen.get("env")))
+        # An override: the caller's toolchain wins, the default is dropped.
+        chosen = {"RGBDS": "/opt/rgbds-1.0.1/"}
+        play.Player(Path("/nonexistent")).build(lambda _l: None, jobs=1, env=chosen)
+        check("a passed env overrides the default entirely",
+              seen.get("env") == chosen, str(seen.get("env")))
     finally:
         make_mod.run_make = original
-    check("build succeeds through the runner", ok is True)
-    check("it passes an env that clears RGBDS to the PATH toolchain",
-          seen.get("env") == {"RGBDS": ""}, str(seen.get("env")))
 
 
 # -- the one thing only a real build can show ------------------------------ #
@@ -252,7 +260,7 @@ def main() -> int:
     test_the_checksum_round_trips()
     test_it_stands_on_the_exact_tile()
     test_a_missing_symbol_is_a_clear_refusal()
-    test_build_clears_the_inherited_toolchain()
+    test_build_toolchain_default_and_override()
     test_real_map_resolution()
     test_a_real_sym_carries_these_symbols()
 

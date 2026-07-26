@@ -35,7 +35,7 @@ changed under us is one whose old contents we have no business restoring.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from ..maplint.diagnostics import Diagnostic, Severity
@@ -81,7 +81,8 @@ class StaleWorld(SessionError):
 class Session:
     """One repo, open for editing."""
 
-    def __init__(self, root: Path, hack_path: Path | None = None) -> None:
+    def __init__(self, root: Path, hack_path: Path | None = None, *,
+                 build_env: Mapping[str, str] | None = None) -> None:
         # The seam's own gate, not just the CLI's: a headless caller that points
         # a Session at a tree no adapter recognises gets an error naming the
         # tree, rather than a session that swears the repo has no maps in it.
@@ -91,6 +92,11 @@ class Session:
         self._hack_path = hack_path  # a `--hack-path` adapter, re-used on re-read
         self.hack = mount(root, hack_path)
         self.root = root
+        # A toolchain override for `build`, or None to take the play adapter's own
+        # default. The session never learns what a toolchain is — it only carries
+        # the user's word from above the seam to the adapter that resolves it. Set
+        # this when the machine's `rgbds` is not the one the tree assumes.
+        self._build_env = build_env
         # The linter's context, for the hack the linter is written against.
         # None means "this tree has no linter", and every lint answer is [].
         self.ctx = self.hack.ctx
@@ -482,10 +488,12 @@ class Session:
               target: str | None = None, jobs: int | None = None) -> bool:
         """`make` the target, streamed a line at a time. True if it built. No
         default target here: `None` means the play adapter's own default, so the
-        session names no `make` target of its own."""
+        session names no `make` target of its own. The toolchain env is likewise
+        the adapter's default unless the session was given one to pass down."""
         self._playable()
         try:
-            return self.hack.plays.build(log, target=target, jobs=jobs)
+            return self.hack.plays.build(log, target=target, jobs=jobs,
+                                         env=self._build_env)
         except PlayError as e:
             raise SessionError(str(e)) from e
 

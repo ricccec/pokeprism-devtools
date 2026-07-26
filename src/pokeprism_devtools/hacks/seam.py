@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:  # annotations are lazy, so a probe pays for no studio import
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
     from ..maplint.diagnostics import Diagnostic
     from ..studio import panels
@@ -127,10 +127,18 @@ class Plays(Protocol):
         which lines are noise stays the engine's to know."""
 
     def build(self, log: Callable[[str], None], *,
-              target: str | None = None, jobs: int | None = None) -> bool:
+              target: str | None = None, jobs: int | None = None,
+              env: Mapping[str, str] | None = None) -> bool:
         """`make` the named target, streamed a line at a time through `log`.
         True if the ROM built. `target=None` means the adapter's default (its
-        `targets()[0]`), so the session carries no default target of its own."""
+        `targets()[0]`), so the session carries no default target of its own.
+
+        `env` overrides the build's toolchain environment (an `rgbds` a family
+        of trees shares in one place but two versions of, say). `None` means the
+        adapter's own declared default — so a hack that pins nothing keeps
+        pinning nothing and a caller that knows better can still say so, without
+        the session having to learn what a toolchain is or which one this tree
+        wants. The mapping is laid over the inherited environment for the build."""
 
     def boot(self, const: str, y: int, x: int, *,
              target: str | None = None, keep_people: bool = False) -> list[str]:

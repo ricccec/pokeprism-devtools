@@ -209,21 +209,35 @@ validity bytes (`SAVE_CHECK_VALUE_1`/`_2`) that say a save is real, and the 16-b
 checksum over `sGameData` the game verifies before it will load rather than fall
 back to its backup. Which `(group, number)` a map name resolves to comes from the
 same `map_constants.asm` parse the reader already draws the catalog with, so boot
-and the map list can never disagree. One more family difference lives here as data:
-a stock pokecrystal wants `rgbds` v1.0.0+, but the shell that launches the studio
-exports `RGBDS` pointing at the older toolchain prism pins — so `play.py` declares
-`_BUILD_ENV = {"RGBDS": ""}`, clearing that override back to the modern `rgbds` on
-`PATH`. The neutral `shared/make.run_make` grew an `env` parameter to carry it and
-stays ignorant of which variable or version; the whole toolchain difference is said
-once, in the adapter, as declared data.
+and the map list can never disagree.
+
+**The toolchain: a declared default, overridable from above.** A stock pokecrystal
+wants `rgbds` v1.0.0+, and pins none itself — so `play.py` declares
+`_BUILD_ENV = {"RGBDS": ""}`, meaning "use the `rgbds` on `PATH`" (portable to any
+set-up pokecrystal machine, and a no-op except that it also drops the *older*
+toolchain the launching shell exports for prism). But that is only the **default**:
+`build` takes an `env` that, when given, wins entirely, so a user who knows the
+machine's `rgbds` better than the adapter does can say so without touching hack code.
+The env flows in from above — `Session(build_env=…)` → `Plays.build(env=…)` →
+`shared.make.run_make(env=…)` — and each layer stays ignorant of what a toolchain is:
+the session carries the user's word, the runner lays the mapping over `os.environ`,
+and only the adapter knows which `rgbds` this tree assumes. This de-privileges prism,
+which until now was the implicit default every sibling had to escape: prism pins
+nothing in code either (`env=None` inherits, which is where its `rgbds` is already
+chosen), so both trees now name their toolchain the same way — as data, from below,
+overridable from above. What a build *target* is was already this shape (`targets()`
+offers, the session passes the chosen one down); the toolchain now matches it.
 
 **Verified — live build, patcher, and resolution.** The Crystal loop's build half is
-closed for real: vanilla's own `Player.build` produced a 2 MB `pokecrystal.gbc` +
-`.sym` with the hostile `RGBDS=0.7.0` still exported, proving the `_BUILD_ENV`
-override selects the right toolchain the way the studio will. `tests/test_vanilla_play.py`
+closed for real, through the studio's own path: `Session.build` (with `build_env` at
+its default, and the hostile `RGBDS=0.7.0` exported) relinked a 2 MB `pokecrystal.gbc`
++ `.sym` off the modern `PATH` toolchain — the whole above-the-seam chain
+(`Session` → `Plays.build(env=None)` → the adapter's declared default →
+`run_make`) proven live, not just the adapter in isolation. `tests/test_vanilla_play.py`
 round-trips a save the way writers are checked, and falsifies each check first: a
 transposed `y`/`x` reads back different from what was asked, a stale checksum fails
-the game's own verification, a save missing its validity bytes is refused. Against the
+the game's own verification, a save missing its validity bytes is refused; it also
+proves the toolchain env is a default a caller can override. Against the
 **real** built `.sym` it confirms every symbol the patcher reads is present and that
 the game-data block, checksum, and `wCurMapData` mirror all sit where the arithmetic
 assumes. The `(group, number)` resolution is checked against the real tree
