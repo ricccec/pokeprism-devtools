@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import re
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -23,11 +24,9 @@ from ...shared.symfile import SymFile
 from ..seam import PlayError
 from . import read, savefile
 
-#: The pokecrystal ROMs worth booting, the plain build first. Each is a `make`
-#: file target that also writes its own `.sym` beside it (`Makefile`, `-n $*.sym`),
-#: so the target name *is* the ROM filename — no debug/nodebug guessing about which
-#: file on disk was the one asked for, the way prism has to.
-_TARGETS = ("pokecrystal.gbc", "pokecrystal_debug.gbc")
+#: The line in the `Makefile` that opens the list of ROMs `make` knows how to
+#: build. What follows is a backslash-continued run of `*.gbc` names.
+_ROMS = re.compile(r"^\s*roms\s*:=")
 
 #: Vanilla's *default* toolchain, and only the default — a caller may override it
 #: (see :meth:`Player.build`). A stock pokecrystal wants rgbds v1.0.0 or newer (its
@@ -49,7 +48,7 @@ class Player:
         self._emulator = Emulator()
 
     def targets(self) -> tuple[str, ...]:
-        return _TARGETS
+        return _roms(self._root)
 
     def keeps(self, line: str) -> bool:
         """Whether a quiet build still shows this line — the shared grep."""
@@ -113,9 +112,22 @@ class Player:
 
     # -- the pieces ---------------------------------------------------------- #
     def _target(self, target: str | None) -> str:
-        target = target or _TARGETS[0]
-        if target not in _TARGETS:
-            raise PlayError(f"{target!r} is not a target — {' or '.join(_TARGETS)}")
+        """Resolve and check a target against what the tree actually builds.
+
+        The valid set is read from the `Makefile`, so a target the studio can
+        hand back is one `make` really knows. When the list can't be read (a
+        tree mid-edit), we don't reject — we can't offer a catalog, but we also
+        can't prove a caller's target wrong, so we trust it. The default is the
+        first ROM the `Makefile` lists, which is the plain build."""
+        roms = _roms(self._root)
+        if target is None:
+            if not roms:
+                raise PlayError(
+                    "the Makefile lists no ROMs to build (no `roms :=`) — there "
+                    "is no default target to fall back on.")
+            return roms[0]
+        if roms and target not in roms:
+            raise PlayError(f"{target!r} is not a target — {', '.join(roms)}")
         return target
 
     def _where(self, const: str) -> tuple[int, int]:
@@ -139,3 +151,33 @@ class Player:
         dest = d / f"{template.stem}-{ts}.sav"
         dest.write_bytes(template.read_bytes())
         return dest
+
+
+def _roms(root: Path) -> tuple[str, ...]:
+    """The ROMs `make` builds, in `Makefile` order — read from its `roms :=`
+    list, not guessed, so the studio offers exactly the targets the tree does
+    and no others. The old two-target guess omitted three real ROMs, one of
+    them the debug build a save was already made for; a list read from source
+    can't drift from what `make` will accept.
+
+    Each of these targets writes its own `.sym` beside the ROM (the `Makefile`'s
+    `-n $*.sym`), so a target name *is* the ROM filename — no debug/nodebug
+    indirection about which file on disk was meant, the way prism needs.
+
+    `roms :=` is one logical line spread across physical ones with trailing
+    backslashes; we read from the assignment until the first line that does not
+    continue. A tree whose `Makefile` can't be read yields `()`: the honest "I
+    can't see the build," which the callers degrade around rather than a stale
+    baked-in list. Cheap enough (one small file, scanned to the block's end)
+    that it re-reads each call instead of caching a Makefile a person may edit.
+    """
+    out: list[str] = []
+    collecting = False
+    for raw in read.lines(root / "Makefile"):
+        if _ROMS.match(raw):
+            collecting = True
+        if collecting:
+            out += re.findall(r"\S+\.gbc", raw)
+            if not raw.rstrip().endswith("\\"):
+                break
+    return tuple(out)

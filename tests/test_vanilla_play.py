@@ -192,18 +192,75 @@ def test_build_toolchain_default_and_override() -> None:
     original = make_mod.run_make
     make_mod.run_make = fake_run_make
     try:
+        # An explicit target keeps this off the filesystem: the root is fake, so
+        # its Makefile can't be read, and a named target is trusted rather than
+        # validated against a list that isn't there. This test is about env.
+        t = "pokecrystal.gbc"
         # No env: the adapter's declared default (clear RGBDS to PATH).
-        ok = play.Player(Path("/nonexistent")).build(lambda _l: None, jobs=1)
+        ok = play.Player(Path("/nonexistent")).build(lambda _l: None, jobs=1, target=t)
         check("build succeeds through the runner", ok is True)
         check("env=None takes the default that clears RGBDS to PATH",
               seen.get("env") == {"RGBDS": ""}, str(seen.get("env")))
         # An override: the caller's toolchain wins, the default is dropped.
         chosen = {"RGBDS": "/opt/rgbds-1.0.1/"}
-        play.Player(Path("/nonexistent")).build(lambda _l: None, jobs=1, env=chosen)
+        play.Player(Path("/nonexistent")).build(lambda _l: None, jobs=1, target=t, env=chosen)
         check("a passed env overrides the default entirely",
               seen.get("env") == chosen, str(seen.get("env")))
     finally:
         make_mod.run_make = original
+
+
+def test_targets_are_read_from_the_makefile() -> None:
+    """The targets the studio offers are the `roms :=` list, read from the
+    Makefile — not a hardcoded pair that once omitted three real ROMs. A
+    synthetic Makefile (the real block's shape: `roms :=` then backslash-
+    continued names, ending on a non-continued line) proves the parse without a
+    checkout, then the validation the parse feeds."""
+    import tempfile  # noqa: PLC0415
+
+    from pokeprism_devtools.hacks.vanilla import play  # noqa: PLC0415
+    from pokeprism_devtools.hacks.seam import PlayError  # noqa: PLC0415
+
+    print("\nvanilla's targets are the Makefile's `roms :=` list, read not guessed")
+    makefile = (
+        "roms := \\\n"
+        "\tpokecrystal.gbc \\\n"
+        "\tpokecrystal11.gbc \\\n"
+        "\tpokecrystal_au.gbc \\\n"
+        "\tpokecrystal_debug.gbc \\\n"
+        "\tpokecrystal11_debug.gbc\n"
+        "patches := pokecrystal11.patch\n"
+        "pokecrystal11_vc.gbc: foo\n")   # a .gbc past the block must not be swept in
+    want = ("pokecrystal.gbc", "pokecrystal11.gbc", "pokecrystal_au.gbc",
+            "pokecrystal_debug.gbc", "pokecrystal11_debug.gbc")
+
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "Makefile").write_text(makefile)
+        p = play.Player(root)
+        check("targets() are the five roms in order, and only those",
+              p.targets() == want, str(p.targets()))
+        check("the default target is the first rom the Makefile lists",
+              p._target(None) == "pokecrystal.gbc")
+        check("a rom the Makefile lists validates",
+              p._target("pokecrystal11_debug.gbc") == "pokecrystal11_debug.gbc")
+        try:
+            p._target("pokecrystal_vc.gbc")
+        except PlayError:
+            check("a target the Makefile does not list is refused", True)
+        else:
+            check("a target the Makefile does not list is refused", False)
+
+    print("  a tree whose Makefile can't be read offers nothing, and says so")
+    empty = play.Player(Path("/nonexistent"))
+    check("targets() degrades to () when the Makefile can't be read",
+          empty.targets() == ())
+    try:
+        empty._target(None)
+    except PlayError:
+        check("no default target when there is no roms list to draw one from", True)
+    else:
+        check("no default target when there is no roms list to draw one from", False)
 
 
 # -- the one thing only a real build can show ------------------------------ #
@@ -261,6 +318,7 @@ def main() -> int:
     test_it_stands_on_the_exact_tile()
     test_a_missing_symbol_is_a_clear_refusal()
     test_build_toolchain_default_and_override()
+    test_targets_are_read_from_the_makefile()
     test_real_map_resolution()
     test_a_real_sym_carries_these_symbols()
 
