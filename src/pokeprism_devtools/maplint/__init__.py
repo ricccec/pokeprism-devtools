@@ -34,28 +34,37 @@ import sys
 from pathlib import Path
 
 from ..shared.paths import RepoNotFound, repo_root
-from . import (
-    rules_content, rules_flags, rules_geometry, rules_objects, rules_sprites,
-    rules_text, rules_trainers,
-)
-from .context import LintContext
 from .diagnostics import Diagnostic, Severity, apply_suppressions
 
 BASELINE = ".devtools/maplint-baseline.json"
-
-ALL_RULES = (*rules_geometry.ALL, *rules_objects.ALL, *rules_sprites.ALL,
-             *rules_content.ALL, *rules_flags.ALL, *rules_text.ALL,
-             *rules_trainers.ALL)
 
 _COLOR = {Severity.ERROR: "\033[31m", Severity.WARNING: "\033[33m", Severity.INFO: "\033[36m"}
 _RESET = "\033[0m"
 _DIM = "\033[2m"
 
 
-def run(ctx: LintContext, *, only: str | None = None) -> list[Diagnostic]:
+def all_rules() -> tuple:
+    """Every prism rule, gathered on demand.
+
+    Imported here rather than at module top so that reaching this package for the
+    *finding channel alone* — `maplint.diagnostics`, `maplint.textfit`, both
+    stdlib-only — does not drag in the rules, and through them all of
+    `hacks.prism`. A family linter builds on that channel and must be able to
+    import it without loading the tree it is not written against.
+    """
+    from . import (
+        rules_content, rules_flags, rules_geometry, rules_objects, rules_sprites,
+        rules_text, rules_trainers,
+    )
+    return (*rules_geometry.ALL, *rules_objects.ALL, *rules_sprites.ALL,
+            *rules_content.ALL, *rules_flags.ALL, *rules_text.ALL,
+            *rules_trainers.ALL)
+
+
+def run(ctx, *, only: str | None = None) -> list[Diagnostic]:
     """Run every rule and return the findings, suppressions applied."""
     found: list[Diagnostic] = []
-    for rule in ALL_RULES:
+    for rule in all_rules():
         found.extend(rule(ctx))
 
     files = {d.path: ctx.source_lines(d.path) for d in found}
@@ -118,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"prism-maplint: {e}", file=sys.stderr)
         return 2
 
+    from .context import LintContext
     ctx = LintContext(root)
     found = run(ctx, only=args.map)
 
