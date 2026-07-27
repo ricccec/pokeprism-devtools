@@ -36,9 +36,12 @@ Each tool requires a built ROM — specifically the `.sym` file emitted
 alongside it. Run `make nodebug` (release) or `make` (debug) inside
 pokeprism once first; the tools will pick up whichever ROM is present.
 
-Runtime artifacts (`inventory.json`, `state.json`, `sav-backups/`, and
-optional `presets/`) live under `<pokeprism>/.devtools/`. The tool creates
-the directory on first run.
+Runtime artifacts (`inventory.json`, `state.json`, `studio.json`,
+`sav-backups/`, and optional `presets/`) live under
+`<pokeprism>/.devtools/`. The tool creates the directory on first run.
+`studio.json` is the map studio's few remembered answers about *this* tree —
+today, the ROM target its build screen prefills. Deleting it costs a prefill
+and nothing else.
 
 ## Status
 
