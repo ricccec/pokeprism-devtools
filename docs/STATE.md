@@ -43,7 +43,7 @@ been.
 | | reads | writes | lint (`ctx`) | plays | measures |
 |---|---|---|---|---|---|
 | **prism** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **vanilla** | ✓ | ✓ | ✓ (dialogue overflow, name + buffer bounds) | ✓ (build ✓; boot rebuilds the map — tiles, objects, sprites, both checksums) | — |
+| **vanilla** | ✓ | ✓ | ✓ (dialogue overflow, name + buffer bounds) | ✓ (build ✓; boot rebuilds the map — tiles, objects, sprites, both checksums — confirmed live in SameBoy) | — |
 | **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | — | — |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
@@ -289,8 +289,25 @@ a position-only boot would have left — the falsification); `wMapObjects` holds
 destination's own NPCs; the player struct sits on the new tile; the on-screen
 sprites are instantiated; and both the primary and backup checksums verify with the
 backup mirroring the primary (a corrupted game-data byte is shown failing the check
-first). The writer is proven complete — the only step left is the human's: launch
-SameBoy and see the clean map.
+first).
+
+**Confirmed live (2026-07-27) — the loop is closed.** The human step is done: a boot
+to Route 32 (4, 19) through `Player.boot` opened SameBoy on a clean map — the player
+on the right tile, the destination's own tiles with the north connection to Violet
+City filled, and the one on-screen object (map-object slot 8, `SPRITE_COOLTRAINER_M`
+at (8, 19), VRAM tile 36) rendering as itself rather than as the player. That is the
+last thing `save-patch.md` listed as unproven; **build-and-boot for vanilla is now
+verified end to end, offline and on screen.**
+
+The same session turned up one thing that *looks* like a bug and is not, now written
+up in `save-patch.md` under "Variable sprites carry story state": Route 40 draws its
+two SWIMMER♂ trainers as **the rival**, because they are placed as the variable id
+`SPRITE_OLIVINE_RIVAL` and the save has never run the Olivine City script that flips
+`wVariableSprites[5]` from its new-game `SPRITE_RIVAL` to `SPRITE_SWIMMER_GUY`. The
+engine resolves the graphic from save state; the patcher only resolves the *length*.
+A teleport lands the player somewhere the save never earned, so a story-stale graphic
+is the engine being right — a different failure mode from a wrong `SPRITE_TILE`, and
+one to rule out before touching the allocator.
 
 ## Absences by design — none permanent but one, all otherwise deferred
 
@@ -321,9 +338,9 @@ seam"); the standing items:**
   it diverges — is the next pick-up, on the same seam, neutral runner and rebuild core.
 - **Prism variable sprites in the boot** — the shared sprite-VRAM allocator now
   resolves a *variable* sprite (id ≥ `SPRITE_VARS`) through the save's
-  `wVariableSprites` before sizing it (a still boulder is 4 tiles, a walking NPC
-  12, and guessing wrong shifts every sprite placed after it — the glitch that
-  rendered Route 32's boulders as the player). Prism runs the same allocator, so
+  `wVariableSprites` before sizing it (a still sprite is 4 tiles, a walking NPC
+  12, and guessing wrong shifts every sprite placed after it — the class of glitch
+  that gave Route 32's cooltrainer another sprite's tile). Prism runs the same allocator, so
   the *sort* half of that fix already applies to it; the *resolution* half is
   **data-gated** and prism does not yet feed it. `dev_server/apply.py` calls
   `rebuild_map` without `variable_sprites`, so it takes the empty default and
@@ -339,6 +356,20 @@ seam"); the standing items:**
   change prism output on an untestable path. Harmless until a prism map that
   teleports onto a weird-tree/boulder — the same class of glitch vanilla had. See
   `save-patch.md`.
+
+  **The vanilla side is less verified than that reads, and the gap is the same
+  one** (found 2026-07-27, `save-patch.md` has the detail). The stock debug save's
+  `wVariableSprites` is untouched new-game state, and **every set slot in it
+  resolves to a *walking* sprite** (`SPRITE_SUDOWOODO`, `SPRITE_RIVAL`,
+  `SPRITE_ROCKET`, `SPRITE_JANINE`, `SPRITE_LASS` — all 12 tiles). Since the old
+  buggy `type_of` also assumed walking, **no map booted from that save exercises
+  the still-vs-walking half of the fix**; what vanilla's Route 32 proof actually
+  pins down is the sort and the `const_next` cutoff parse. So neither tree has a
+  ground-truth save that discriminates the length half. Closing it needs a save
+  whose array points a slot at a *still* sprite — or Route 37, whose twins are
+  `SPRITE_WEIRD_TREE` and whose two resolutions (`SudowoodoSpriteGFX`
+  `12, STANDING` vs `TwinSpriteGFX` `12, WALKING`) share a length but differ in
+  *type*, which is enough to move the sort.
 - **Family rewording** — `wiring/text` is still prism-parser-based (one of the
   cat-4 movers); rewording against a fixed-width charmap is a text-wiring project.
 - **Connection *adding*** — `wiring/connections` is two-sided; deserves its own
@@ -382,7 +413,32 @@ passes clean, as do `test_studio.py` and `test_vanilla_play.py` (the family save
 patcher and the **full map rebuild**, round-tripped with each check falsified
 first: on the real debug ROM+save it proves `wScreenSave`, the objects, the
 sprites and both checksums against tiles/objects independently computed from the
-ROM, on an outdoor town and an indoor lab). `test_grid.py` and `test_lib.py` now
+ROM, on an outdoor town and an indoor lab). **One trap about that save:**
+`Player.boot` patches `pokecrystal11_debug.sav` *in place*, so after the first boot
+that file holds our own output and is no longer ground truth — and it still passes
+every validity check, because a patched save is a valid save. The only game-written
+save left is preserved at `.devtools/sav-backups/GENUINE-players-house-2f.sav` in the
+pokecrystal tree (start-of-game, PLAYERS_HOUSE_2F at (3, 3)); every timestamped
+backup after the first is a previous patch's output. Anything used as ground truth
+has to be copied out under a name the backup rotation won't age out.
+
+**That has already cost one test its teeth (found 2026-07-27, not yet fixed).**
+`test_visible_sprites_get_the_right_vram_tile` reads the debug save's *current* map
+and compares our computed VRAM tiles against the `SPRITE_TILE` in its
+`wObjectStructs` — sound only while those structs are the **game's**. They aren't
+any more: `instantiate_visible_sprites` writes that field from the same
+`sprite_tiles` output the test then checks it against, so on a save any boot has
+touched the check is **self-confirming and cannot fail**. It still prints `[OK]`,
+which is the worst version of the problem. And the one genuine save left is
+*indoor*, so pointing the test at it makes it **skip** on the `is_outdoor` guard.
+The check is therefore doing nothing today, in either direction. Its earlier proof
+was real — it ran against a genuine Route 32 save that has since been overwritten —
+so this is decayed coverage, not a wrong result. Restoring it needs either a
+game-written *outdoor* save kept out of the rotation, or the genuine observation
+(sprite 35 → tile 36 at Route 32) frozen as declared data with its provenance. This
+is exactly the trap [[round-trip-to-verify-writer]] names: a check that only re-reads
+what the writer wrote.
+`test_grid.py` and `test_lib.py` now
 exercise the lifted `shared/overworld` reader through prism's `MapFormat`, proving
 the parameterization keeps prism byte-identical. `test_seam.py::test_falsified`
 is the one that earns its keep: it catches the adapter that passes every name
