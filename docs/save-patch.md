@@ -173,8 +173,9 @@ lookup (`type_of`, depth-bounded).
 
 This is how the game lets one map object show different graphics without editing
 the map. Route 36's Sudowoodo places `SPRITE_WEIRD_TREE`; script code writes
-`wVariableSprites` to make it a tree, a rock, or a battle sprite depending on game
-state. Route 32's boulders are variable sprites resolving to a rock.
+`wVariableSprites` to reuse that one id for different graphics as the story moves
+on. Route 40 and Route 41 place their SWIMMER♂ trainers as
+`SPRITE_OLIVINE_RIVAL`, which resolves to a swimmer or to the rival — see below.
 
 **Why it matters to the patcher:** the real sprite's *type* decides its VRAM
 *length* (still = 4, walking = 12), and the allocator sorts by type and assigns
@@ -183,6 +184,71 @@ sprite placed after it. A variable sprite's real type is knowable **only from th
 save**, which is why the save's `wVariableSprites` array has to travel into the
 shared core (`rebuild_map(..., variable_sprites=...)`, read in vanilla from the
 16-byte `wVariableSprites` field).
+
+### Variable sprites carry story state — a stale graphic is not a bug
+
+`wVariableSprites` is **saved game state**, not a property of the map. Scripts
+write it as the player progresses, so what a variable sprite *looks like* depends
+on how far the save has got. A teleport jumps the player past that progress
+without running any of it, so a map can legitimately come up drawing a graphic
+the player would never see at that point in a real playthrough.
+
+The clearest case, found on the first live boot: Route 40's two SWIMMER♂ trainers
+are placed as `SPRITE_OLIVINE_RIVAL`, and they render as **the rival, standing in
+the sea**. Nothing is wrong. `InitializeEventsScript`
+(`engine/events/std_scripts.asm`) runs at new game and sets
+`variablesprite SPRITE_OLIVINE_RIVAL, SPRITE_RIVAL`; the only thing that flips it
+to a swimmer is `maps/OlivineCity.asm`
+(`variablesprite SPRITE_OLIVINE_RIVAL, SPRITE_SWIMMER_GUY`), which you reach by
+walking into Olivine City. Boot a save that has never been to Olivine onto Route
+40 and the rival is exactly what the engine draws. Route 41 places five more of
+the same object.
+
+**The game resolves the graphic; we only resolve the length.** The runtime reads
+`wVariableSprites` itself when it draws the object — the patcher's use of the same
+array is confined to picking the sprite's VRAM *length* so the allocator's
+cumulative offsets come out right. So a story-stale graphic is the engine faithfully
+obeying the save, and it is a **different failure mode** from the one this whole
+mechanism exists to prevent:
+
+| symptom | cause | ours? |
+|---|---|---|
+| object draws as a plausible *other* character | `wVariableSprites` reflects unreached story state | no — engine is correct |
+| object draws as the **player**, or as garbage | `SPRITE_TILE` names the wrong VRAM tile | yes — that's the bug class above |
+
+The quick test that separates them: look up both candidate resolutions in the
+sprite table. If they share a type and length — `RivalSpriteGFX` and
+`SwimmerGuySpriteGFX` are both `12, WALKING_SPRITE` — then **no** VRAM shift is
+possible either way, and a wrong-looking graphic cannot be an allocation error.
+
+**Both halves of that test are load-bearing; equal length alone is not enough.**
+Route 37's twin trainers are also placed as `SPRITE_WEIRD_TREE`, so from a save
+that hasn't beaten the Sudowoodo they draw as **Sudowoodo** — the same story-state
+effect. But here the two resolutions are `SudowoodoSpriteGFX` at
+`12, STANDING_SPRITE` and `TwinSpriteGFX` at `12, WALKING_SPRITE`: same length,
+**different type**. Since `SortUsedSprites` orders by type, which one the save
+names can move the sprite's position in the sort and therefore its tile — so a
+story-stale graphic there can coexist with a genuine allocation error, and the two
+have to be told apart some other way. `SPRITE_WEIRD_TREE` flips to `SPRITE_TWIN`
+in `maps/Route36.asm`, at the end of the Sudowoodo encounter.
+
+A save whose array still matches `InitializeEventsScript` byte for byte is one
+nothing has touched, which makes it easy to confirm the patcher left it alone (it
+never writes the array — it only reads it). The debug save is in exactly that
+state, and that has a consequence worth knowing before trusting a boot from it:
+**every set slot resolves to a walking sprite** (`SPRITE_SUDOWOODO`, `SPRITE_RIVAL`,
+`SPRITE_ROCKET`, `SPRITE_JANINE`, `SPRITE_LASS` — all 12 tiles). Since the old
+buggy `type_of` also assumed walking, **no map booted from this save exercises the
+still-vs-walking half of bug 2 below.** What it does still exercise is the
+`const_next` parse that puts `SPRITE_VARS` at `$f0`: read that cutoff too low and
+fixed ids get misclassified as variable and resolved through the array into
+nonsense. Catching the length half live needs a save whose array points a slot at
+a *still* sprite.
+
+Standing on a map deliberately **does not invent story state** — the patcher
+reconstructs what `MAPSETUP_CONTINUE` skips, and nothing else. Making a map render
+as though the player had progressed to it (writing `wVariableSprites`, setting
+events) is a separate feature, not a fix, and it is not implemented.
 
 ---
 
@@ -216,6 +282,12 @@ pool.** Stock's per-group outdoor sprite lists are a *fixed* 23 entries
 straight into the next group's list — 170+ ids — which shouldered the map's real
 sprites out of VRAM so they fell back to the player's tile. Fixed with the
 `count` parameter (23 fixed for stock, `None`/terminated for prism).
+
+That one surfaced on **Route 40**, whose three smashable rocks (`SPRITE_ROCK`, a
+*fixed* still sprite — nothing variable about it) all rendered as the player.
+Worth keeping the two repros apart, because they are different bugs on different
+maps: Route 40's rocks were the pool overrun, Route 32's cooltrainer at (8, 19)
+was the sort and the variable-sprite sizing.
 
 ### Why prism "worked fine" the whole time
 
@@ -274,8 +346,20 @@ confirming a clean map. Two idioms:
   Patch a **copy** of a different save to the same map/position and **diff** —
   our tiles must match the game's. A save produced by our own patcher is **not**
   valid ground truth (it would just confirm our own arithmetic). This is how the
-  Route 32 sprite bugs were pinned down: the genuine `pokecrystal11_debug.sav`
-  had an NPC at (8, 19) with a known tile that our output got wrong.
+  Route 32 sprite bugs were pinned down: a genuine save standing on Route 32 had
+  an NPC at (8, 19) with a known tile that our output got wrong.
+
+  **Mind which file that is.** `Player.boot` patches `pokecrystal11_debug.sav`
+  *in place*, so after the first boot that filename holds our own output and is
+  worthless as ground truth — it only ever looks genuine, because a patched save
+  is still a valid save. The real one is whatever `.devtools/sav-backups/` holds
+  from *before* the first boot; every later backup is the previous patch's
+  output. Anything to be used as ground truth should be copied out under a name
+  the rotation won't age out.
+- **Rule out story state before calling a live glitch a bug.** A boot lands the
+  player somewhere the save never earned, so an object drawing "wrong" may be the
+  engine correctly obeying `wVariableSprites` — check that first, with the
+  same-length test above, before going near the allocator.
 - **Falsify each check first.** Every assertion in `tests/test_vanilla_play.py`
   is shown *failing* before it passes, so a check that can't fail (the classic
   round-trip that only re-reads what the writer wrote) is caught. The original
