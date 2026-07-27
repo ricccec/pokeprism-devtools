@@ -21,8 +21,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from ....maplint.diagnostics import Diagnostic, apply_suppressions
-from . import box, dialogue, rules
-from .box import Box
+from .. import box
+from ..box import Box
+from . import dialogue, rules
 from .metrics import Metrics
 
 if TYPE_CHECKING:

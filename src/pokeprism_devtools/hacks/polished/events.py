@@ -30,7 +30,7 @@ from ...shared import coords
 from ...shared.coords import Tile
 from ...studio import panels
 from ..vanilla.events import (MapSource, arg, first_words, macro_args, mark,
-                              parse, prose, yx)
+                              parse, refs, yx)
 from .shorthand import SHORTHANDS
 
 ANCHOR = "_MapScriptHeader"
@@ -154,9 +154,6 @@ def tables(path: Path) -> panels.MapTables:
 
 
 def texts(path: Path) -> list[panels.TextRef]:
-    """Every text block in one map, as prose. Like vanilla, one box."""
-    src = parse(path, anchor=ANCHOR)
-    return [panels.TextRef(label=b.label, owner=b.owner, lineno=b.lineno,
-                           prose=p, box="speech")
-            for b in src.blocks.values()
-            if (p := prose(b.lines))]
+    """Every text block in one map, as prose. Like vanilla, one box — and, like
+    vanilla, out of the one parse; only the anchor forks."""
+    return refs(parse(path, anchor=ANCHOR))

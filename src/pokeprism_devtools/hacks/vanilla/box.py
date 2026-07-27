@@ -13,6 +13,13 @@ the box's second row — while `<NEXT>`/`<LNBRK>` are *relative*, two rows and o
 below wherever the last line began. That difference is the whole of `text-rows`:
 an absolute move cannot leave the box, but two relative ones in a two-row box
 walk straight off the bottom.
+
+This sits beside `.dialogue` rather than inside `.lint` because both halves of
+the family's text work read it: the linter, to say a line landed outside the
+window, and `.text`, to pick the macro for a line you have just written. A
+writer that did not know where `line` lands would emit one over the top of the
+line above it — which is a finding the linter would then report against text
+this studio wrote.
 """
 
 from __future__ import annotations
@@ -57,6 +64,49 @@ class Box:
         if action == OPEN:
             return self.first_row
         return row
+
+
+class Cursor:
+    """Where the next line lands, and which rows already have ink on them.
+
+    The bookkeeping you cannot do by looking at one macro. `<LINE>` is
+    *absolute*, so whether a `line` is the box's second line or a line drawn
+    straight over the last one is not a property of the `line` — it is a
+    property of everything above it. In a two-row family box that question has
+    teeth: a *third* line written as a third `line` draws over the second, and
+    the way to a third line is `cont`, which scrolls the box and frees the row
+    first.
+
+    Prism's `textbox.Cursor` is the same class over prism's actions, and the
+    duplication is the seam doing its job: the constants are each dialect's.
+    """
+
+    def __init__(self, box: Box) -> None:
+        self.box = box
+        self.row = box.first_row
+        self.taken: set[int] = set()
+
+    def lands(self, action: str) -> int:
+        return self.box.rows_for(action, self.row)
+
+    def clobbers(self, action: str) -> bool:
+        """Whether a line with this action draws over one already there.
+
+        `<CONT>` scrolls its row off the top before it writes and `<PARA>` wipes
+        the box, so neither ever can — which is exactly why they are the way out
+        when `<LINE>` has nowhere left to go.
+        """
+        if action in (SCROLL, OPEN):
+            return False
+        return self.lands(action) in self.taken
+
+    def move(self, action: str) -> None:
+        if action == OPEN:
+            self.taken.clear()             # the box is wiped; every row is free
+        elif action == SCROLL:
+            self.taken.discard(self.row)   # this row scrolled off the top
+        self.row = self.lands(action)
+        self.taken.add(self.row)
 
 
 def equs(root: Path, rel: str, known: dict[str, int]) -> dict[str, int]:

@@ -24,7 +24,8 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from ..vanilla.lint import box, charmap
+from ..vanilla import box
+from ..vanilla.lint import charmap
 from ..vanilla.lint.context import FamilyLintContext
 from ..vanilla.lint.metrics import Metrics
 

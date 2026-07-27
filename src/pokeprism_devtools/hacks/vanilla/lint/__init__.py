@@ -6,6 +6,12 @@ the width `Metrics`, which is engine-specific; `build` wires vanilla's. Polished
 imports this package the way it imports vanilla's read mechanics and supplies its
 own `Metrics`, forking that one reader and reusing the box, the parse and the
 rules unchanged.
+
+The box (`..box`) and the parse (`..dialogue`) sit *outside* this package on
+purpose: the reword form needs both, and a linter and a writer that disagree
+about where a line begins are a writer that edits the wrong one. What is left in
+here is what only a linter wants — the widths, the rules, and the context that
+holds them.
 """
 
 from __future__ import annotations

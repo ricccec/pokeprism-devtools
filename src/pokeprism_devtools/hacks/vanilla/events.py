@@ -30,11 +30,7 @@ from typing import Callable
 from ...shared import coords
 from ...shared.coords import Tile
 from ...studio import panels
-
-#: The words that put ink in a textbox, each with one quoted string. `para`
-#: opens a fresh box, which prose renders as a blank line — the same shape
-#: prism's dialogue takes, so the Texts browser reads identically.
-_TEXT_WORDS = ("text", "line", "cont", "para", "next")
+from . import dialogue
 
 _TOP_LABEL = re.compile(r"^(\w+):{1,2}")
 _LOCAL_LABEL = re.compile(r"^(\.\w+):{1,2}")
@@ -62,6 +58,11 @@ class MapSource:
     #: objects by, and so the natural handle when the list lines up.
     names: list[str] = field(default_factory=list)
     blocks: dict[str, Block] = field(default_factory=dict)
+    #: The map's dialogue, from the one parse in :mod:`.dialogue`. Carried here
+    #: rather than read again because this function already has the file's lines
+    #: in hand — and because a second reading of the same words is exactly the
+    #: drift that made the reword form unsafe to write in the first place.
+    texts: tuple[dialogue.Block, ...] = ()
 
 
 _EVENT_MACROS = ("warp_event", "coord_event", "bg_event", "object_event")
@@ -91,7 +92,7 @@ def parse(path: Path, anchor: str = "_MapEvents",
     except FileNotFoundError as exc:
         raise panels.Unreadable(f"{path} does not exist.") from exc
 
-    src = MapSource()
+    src = MapSource(texts=tuple(dialogue.parse_source(lines)))
     owner = ""
     current: Block | None = None
     in_consts = False
@@ -241,38 +242,38 @@ def tables(path: Path) -> panels.MapTables:
 def texts(path: Path) -> list[panels.TextRef]:
     """Every text block in one map, as prose. Vanilla draws signs and speech
     in the same box, so everything is "speech" here."""
-    src = parse(path)
+    return refs(parse(path))
+
+
+def refs(src: MapSource) -> list[panels.TextRef]:
+    """The map's dialogue in the seam's record — shared with polished, which
+    parses with its own anchor and then has the identical question to answer.
+
+    A block with nothing to say is dropped: `.dialogue` keeps a box whose only
+    command draws no string, because the writer has to see one to refuse it, and
+    there is no point offering to reword a block with no words in it.
+    """
     return [panels.TextRef(label=b.label, owner=b.owner, lineno=b.lineno,
-                           prose=p, box="speech")
-            for b in src.blocks.values()
-            if (p := prose(b.lines))]
-
-
-def prose(lines: list[str]) -> str:
-    out: list[str] = []
-    for ln in lines:
-        word, _, rest = ln.partition(" ")
-        if word not in _TEXT_WORDS:
-            continue
-        m = re.search(r'"(.*)"', rest)
-        if m is None:
-            continue
-        if word == "para" and out:
-            out.append("")
-        out.append(m.group(1))
-    return "\n".join(out)
+                           prose=b.prose, box="speech")
+            for b in src.texts if b.prose.strip()]
 
 
 def first_words(src: MapSource) -> dict[str, str]:
     """`script label -> the first words it shows`, so an NPC's row can say
     what he says instead of the name of the block that says it. The walk is
     one hop: a script that `jumptext`s or `writetext`s a label shows that
-    label's text; a pointer straight at a text block shows its own."""
+    label's text; a pointer straight at a text block shows its own.
+
+    Keyed the way `src.blocks` is — a local block under its owner — because
+    that is the name an `object_event` points at.
+    """
     first: dict[str, str] = {}
-    for name, b in src.blocks.items():
-        p = prose(b.lines)
-        if p:
-            first[name] = next(ln for ln in p.split("\n") if ln.strip())[:40]
+    for b in src.texts:
+        name = b.owner + b.label if b.label.startswith(".") else b.label
+        if name in first:
+            continue        # a label with two boxes still opens with the first
+        if words := next((ln for ln in b.prose.split("\n") if ln.strip()), ""):
+            first[name] = words[:40]
     out: dict[str, str] = dict(first)
     hop = re.compile(r"^(?:jumptextfaceplayer|jumptext|writetext)\s+(\S+)")
     for name, b in src.blocks.items():

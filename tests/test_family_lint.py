@@ -25,7 +25,8 @@ from pokeprism_devtools.hacks import mount as hackmount  # noqa: E402
 from pokeprism_devtools.hacks import seam  # noqa: E402
 from pokeprism_devtools.hacks.polished import lint as polished_lint  # noqa: E402
 from pokeprism_devtools.hacks.vanilla import lint  # noqa: E402
-from pokeprism_devtools.hacks.vanilla.lint import box, dialogue, metrics, rules  # noqa: E402
+from pokeprism_devtools.hacks.vanilla import box  # noqa: E402
+from pokeprism_devtools.hacks.vanilla.lint import dialogue, metrics, rules  # noqa: E402
 from pokeprism_devtools.maplint.diagnostics import Severity, apply_suppressions  # noqa: E402
 
 VANILLA = Path.home() / "code/ricccec/pokecrystal"
