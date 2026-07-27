@@ -309,6 +309,68 @@ A teleport lands the player somewhere the save never earned, so a story-stale gr
 is the engine being right — a different failure mode from a wrong `SPRITE_TILE`, and
 one to rule out before touching the allocator.
 
+## Landed — the family new-map form draws (2026-07-27)
+
+The family's `newmap` form now sketches, the way prism's has since Phase 7b: the
+grid you pointed at, at the height and width you typed, on the studio's grid
+while the form is still open. The mistake it turns into a picture is the one that
+otherwise *builds* — a grid that is not `height × width` leaves the engine reading
+whatever follows it in the bank as terrain, which shows up in-game as a band of
+garbage along the bottom rather than as an error.
+
+**The blocker was stale.** `studio/mapadd.py` said this needed "a family block
+renderer to point at". It did not: each family reader has drawn *existing* maps
+since Phase 3, through its own `swatches.for_tileset` — vanilla averaging palette
+classes, polished reading metatile attributes. All that was missing was the path
+from a half-filled form to that renderer.
+
+**What crosses, and why it is a new record.** Prism's action and reader are the
+same adapter, so `Action.sketch` is deliberately untyped — "one adapter handing
+itself its own record". The family's form is *neutral studio code* and its readers
+are not, so the same trick would have meant the studio inventing a per-tree value.
+Instead the form answers a declared `panels.Sketch` — grid, size, and the tileset
+name as typed — and each family reader turns it into `panels.Blocks` with its own
+swatches. The shape is shared because a grid file is bytes in any tree; the colour
+forks because a tileset constant means something only to the tree that defines it.
+Same split as the lint's width reader.
+
+**One rule for the picture and the write.** `wiring/mapnew._read_grid` became the
+public `read_grid`, and the form both draws and writes through it — so a grid the
+picture refused cannot then be written, and the grid that drew is the grid that
+lands. Two copies of that arithmetic would eventually disagree and both sides
+would still assemble. `tests/test_family_sketch.py` asserts the two refuse in the
+*same words*, not merely that both refuse.
+
+**Where it deliberately does not refuse:** a tileset that is empty or half-typed
+draws the shape uncoloured, because a form is unfinished for as long as you are
+typing into it and the shape is the half that catches a wrong height. A tileset
+that is *finished and wrong* is refused by name — falling back to tileset 0 would
+draw a forest in a cave's colours, which looks perfectly fine and is perfectly
+wrong. Verified on both real trees, every check falsified first.
+
+## What's left — the pick-up list
+
+The seam has **no known structural debt**; everything below is elective. Ordered
+by what it costs versus what it buys, with the detail in the sections that follow.
+
+| | Size | Where |
+|---|---|---|
+| **1. Restore `test_visible_sprites_get_the_right_vram_tile`** | small | Tests, below — the only place the repo currently misreports itself |
+| **2. Polished `plays`** | large | Absences — the item that completes the capability matrix |
+| **3. Prism variable sprites in the boot** | one line, unverifiable alone | Absences — pair it with (2) or with sprite work |
+| **4. Family rewording** | project | Absences — `wiring/text` is still prism-parser-based |
+| **5. Connection *adding*** | needs design | Absences — two-sided |
+| **6. `EditMap` attributes tab** | unclaimed | Absences |
+
+**(1) is the one I would not leave.** It prints `[OK]` while testing nothing, and
+it guards the sprite-VRAM allocator that (2) and (3) both go on to change — so it
+will be relied on precisely when it cannot bite. It is also the smallest item here.
+
+**Not on this list, on purpose:** family VWF pixel metrics (`measures`), which is
+permanent and a font fact rather than a gap; doc accretion and the stashed
+map-studio restructure, which are housekeeping; and the three pre-existing test
+reds, which are true reports about the live prism tree and are left alone.
+
 ## Absences by design — none permanent but one, all otherwise deferred
 
 Each is a capability a family tree does not have *yet*. None is debt: none is the
@@ -375,10 +437,9 @@ seam"); the standing items:**
 - **Connection *adding*** — `wiring/connections` is two-sided; deserves its own
   look. Deletion already refuses on the neighbour's side, with teeth.
 - **`EditMap` (attributes tab)** for family trees — not claimed.
-- **Family map *sketch*** — the new-map form does not draw the grid while you
-  type; that needs a family block renderer to point at, and returning something
-  that does not draw would be the exact wrong-absence Phase 4's `absent()` exists
-  to prevent.
+- ~~**Family map *sketch***~~ — **done (2026-07-27)**, see below. The blocker
+  ("needs a family block renderer") turned out to be stale: each family reader
+  had drawn existing maps through `swatches.for_tileset` since Phase 3.
 
 The prism-only CLIs (`dev_server`, `gfx_view`, `map_inspect`, …, 12 files) are
 prism-written by design, gated by `plays` — save-patch, inventory, RTC and the
@@ -438,6 +499,10 @@ game-written *outdoor* save kept out of the rotation, or the genuine observation
 (sprite 35 → tile 36 at Route 32) frozen as declared data with its provenance. This
 is exactly the trap [[round-trip-to-verify-writer]] names: a check that only re-reads
 what the writer wrote.
+`test_family_sketch.py` covers the new-map form's picture on both real family
+trees — that it draws at the asked size in the tileset's colours, that each way
+it can be wrong is refused *by name*, and that the picture and the write refuse a
+bad grid in the same words (one `read_grid`, not two that drift).
 `test_grid.py` and `test_lib.py` now
 exercise the lifted `shared/overworld` reader through prism's `MapFormat`, proving
 the parameterization keeps prism byte-identical. `test_seam.py::test_falsified`
