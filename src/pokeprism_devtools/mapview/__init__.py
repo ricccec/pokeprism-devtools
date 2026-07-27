@@ -16,8 +16,10 @@ import argparse
 import sys
 from pathlib import Path
 
-from ..hacks.prism import blockdata, maps
+from ..hacks.prism import maps
+from ..hacks.prism.mapformat import PRISM_FORMAT
 from ..shared import paths, symfile
+from ..shared.overworld import blockdata
 from ..hacks.prism.render import PALETTE_TABLES, render_map, table_for_permission
 from ..shared.viewer import TOD_MAP, TOD_NAMES, open_images, parse_tileset_id
 
@@ -87,7 +89,7 @@ def _render_one(
 
 def _describe(rom, syms, m, tod, tileset_id, palette_table, out_path) -> None:
     """Print the tileset / palette / time-of-day a named map was rendered with."""
-    bd = blockdata.load(rom, syms, m.group, m.map_id, name=m.name)
+    bd = blockdata.load(rom, syms, m.group, m.map_id, name=m.name, format=PRISM_FORMAT)
     eff_tileset = tileset_id if tileset_id is not None else bd.tileset_id
     ts_note = "  (override)" if tileset_id is not None else ""
     if palette_table is not None:

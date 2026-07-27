@@ -26,8 +26,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools import map_show  # noqa: E402
 from pokeprism_devtools.hacks.prism import (  # noqa: E402
-    blockdata, blocksrc, eventheader, render, swatches)
+    blocksrc, eventheader, render, swatches)
 from pokeprism_devtools.shared import coords, symfile # noqa: E402
+from pokeprism_devtools.shared.overworld import blockdata  # noqa: E402
+from pokeprism_devtools.hacks.prism.mapformat import PRISM_FORMAT  # noqa: E402
 
 PRISM = Path.home() / "code/ricccec/pokeprism"
 FAILED = 0
@@ -101,7 +103,8 @@ def test_source_agrees_with_the_rom() -> None:
             unreadable.append(f"{label}: {e}")
             continue
         try:
-            got = blockdata.load(rom, syms, src.group, src.map_id, name=label)
+            got = blockdata.load(rom, syms, src.group, src.map_id, name=label,
+                                 format=PRISM_FORMAT)
         except (ValueError, KeyError):
             continue        # not in this ROM build; the source is all there is
 

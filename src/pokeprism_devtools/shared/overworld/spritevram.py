@@ -32,7 +32,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from ...shared import symfile
+from .. import symfile
 
 # Sprite types (constants/sprite_constants.asm). GetSpriteLength gives STILL_SPRITE
 # 4 tiles and everything else 12; only the STILL/non-STILL split matters here.
@@ -76,16 +76,20 @@ def _pokemon_sprite_id(constants_path: Path) -> int:
     """`SPRITE_POKEMON` — the first sprite id the engine treats as a monster.
 
     Sprite ids at or above it go through `GetMonSprite` (which reports them as
-    walking sprites) instead of the `SpriteHeaders` table, so it is the cut-off
+    walking sprites) instead of the sprite-header table, so it is the cut-off
     for reading a real type byte out of ROM. Recovered by replaying the assembler
     counter up to the `SPRITE_POKEMON EQU const_value` line, so a reorder of the
-    sprite list can't silently shift it.
+    sprite list can't silently shift it. Stock pokecrystal spells the definition
+    `DEF SPRITE_POKEMON EQU ...` (modern rgbds); prism omits the `DEF`, so strip a
+    leading `DEF ` before matching and both are read the same.
     """
     counter = 0
     for raw in constants_path.read_text().splitlines():
         line = raw.split(";", 1)[0].strip()
         if not line:
             continue
+        if line.startswith("DEF "):
+            line = line[4:].lstrip()
         if line == "const_def":
             counter = 0
         elif line.startswith("const_def "):
@@ -133,15 +137,19 @@ def sprite_tiles(
     syms: symfile.SymFile,
     player_sprite: int,
     candidate_ids: list[int],
+    *,
+    headers_symbol: str = "OverworldSprites",
 ) -> dict[int, int]:
     """Return `{sprite_id: vtile}` — the VRAM tile each sprite id ends up at.
 
     `player_sprite` is `wUsedSprites[0]` (the player always occupies slot 0);
     `candidate_ids` is the map's sprite pool in `AddMapSprites` order (the
     `OutdoorSprites` list outdoors, or the map's own NPC sprite ids indoors).
+    `headers_symbol` names the sprite-header table — the stock `OverworldSprites`,
+    or prism's `SpriteHeaders` (same 6-byte entry, different label).
     """
     rom = rom_path.read_bytes()
-    headers = syms["SpriteHeaders"]
+    headers = syms[headers_symbol]
     headers_off = _rom_offset(headers.bank, headers.addr)
     pokemon_id = _pokemon_sprite_id(rom_path.parent / "constants" / "sprite_constants.asm")
 
@@ -200,16 +208,18 @@ def sprite_tiles(
 
 
 def sprite_palettes(
-    rom_path: Path, syms: symfile.SymFile, sprite_ids: list[int]
+    rom_path: Path, syms: symfile.SymFile, sprite_ids: list[int],
+    *, headers_symbol: str = "OverworldSprites",
 ) -> dict[int, int]:
-    """`{sprite_id: default palette}` from `SpriteHeaders` (GetSpritePalette).
+    """`{sprite_id: default palette}` from the sprite-header table (GetSpritePalette).
 
     A map object can override this from its own colour nibble; that override is
     applied where the struct is written, not here. Monster/variable ids have no
-    header row and report PAL_OW_PLAYER, matching GetMonSprite.
+    header row and report PAL_OW_PLAYER, matching GetMonSprite. `headers_symbol`
+    names the table (stock `OverworldSprites`, prism `SpriteHeaders`).
     """
     rom = rom_path.read_bytes()
-    headers = syms["SpriteHeaders"]
+    headers = syms[headers_symbol]
     headers_off = _rom_offset(headers.bank, headers.addr)
     pokemon_id = _pokemon_sprite_id(rom_path.parent / "constants" / "sprite_constants.asm")
     out: dict[int, int] = {}

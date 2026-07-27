@@ -1,10 +1,12 @@
-"""Read a map's blockdata from the pokeprism ROM, and compute the
-`wScreenSave` window the game would have written for a given player
-position.
+"""Read a map's blockdata from a Gen-2 ROM, and compute the `wScreenSave`
+window the game would have written for a given player position.
 
-Used by prism-dev to keep wScreenSave consistent with (wMapGroup,
-wMapNumber, wXCoord, wYCoord) when patching a save. See
-docs/blockdata-plan.md for the data-flow and asm cross-references.
+The reconstruction that keeps wScreenSave consistent with (wMapGroup,
+wMapNumber, wXCoord, wYCoord) when a save is patched — the tiles half of a map
+rebuild. The map-header and block-data formats are stock pokecrystal's, read
+through whichever tree's `SymFile` the caller passes, so the module names no
+hack and belongs to none. See docs/blockdata-plan.md for the data-flow and asm
+cross-references.
 
 Glossary:
     - Bank 0 is mapped at $0000-$3FFF; banks 1+ swap in at $4000-$7FFF.
@@ -20,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ...shared import lz, symfile
+from .. import lz, symfile
 
 # Sizes derived from the asm — see docs/blockdata-plan.md.
 MAP_HEADER_SIZE = 9     # 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1
@@ -35,9 +37,42 @@ PADDING = 3             # 3-block padding around the actual grid in wOverworldMa
 # ends except the count in front of it, so the object events — the last of the
 # four — can only be found by walking the three before them.
 EVENT_HEADER_FILLER = 2
-WARP_SIZE = 5           # warp_def: y, x, warp_to, group, map    (ReadWarps)
-COORD_EVENT_SIZE = 7    # XY_TRIGGER_SIZE                        (ReadCoordEvents)
-SIGNPOST_SIZE = 5       # y, x, function, then two bytes either way (ReadSignposts)
+
+
+#: How the map header stores a connection's strip *source* pointer. Stock
+#: pokecrystal bakes `<neighbour>_Blocks + offset` — a pointer into the
+#: neighbour's own (raw) block data — so the offset is recovered against that
+#: neighbour's block address. Prism decompresses each neighbour into a shared
+#: scratch buffer first, so its pointer is `wDecompressScratch + offset`.
+CONN_SRC_NEIGHBOUR = "neighbour_blocks"
+CONN_SRC_SCRATCH = "decompress_scratch"
+
+
+@dataclass(frozen=True)
+class MapFormat:
+    """How a Gen-2 tree lays its map data out in ROM — the facts that differ
+    between the trees, so the reader itself names none of them.
+
+    Defaults are stock pokecrystal's, re-derived from its own source (not assumed
+    from prism, which the port was first written against — see the branch memory):
+    block data is raw `.blk` bytes (`data/maps/blocks.asm` INCBINs, one byte per
+    block); the event-header records are `warp_event` 5, `coord_event` 8
+    (`db scene,y,x` + filler + `dw script` + `dw 0`), `bg_event` 5; the overworld
+    block buffer is `wOverworldMapBlocks`; and a connection's source pointer is
+    relative to the neighbour's own blocks. Prism diverges on every one of these
+    (LZ-compressed blocks, a 7-byte coord event, `wOverworldMap`, scratch-relative
+    connections) and passes its own `MapFormat`; the difference crosses the seam
+    as declared data rather than living in the reader.
+    """
+    compressed: bool = False             # blockdata: raw .blk (stock) vs LZ (prism)
+    warp: int = 5                        # warp_event: y, x, warp_to, group, map
+    coord_event: int = 8                 # scene, y, x, filler, script, filler
+    signpost: int = 5                    # bg_event: y, x, function, script
+    overworld_map: str = "wOverworldMapBlocks"
+    connection_source: str = CONN_SRC_NEIGHBOUR
+    sprite_headers: str = "OverworldSprites"  # prism: "SpriteHeaders"
+
+
 #: What `CopyMapObjectHeaders` copies into a `wMapObjects` slot: exactly
 #: `MAPOBJECT_E - MAPOBJECT_SPRITE` bytes. The `person_event` macro has three
 #: branches (script pointer, jumpstd, mart) and all three assemble to this same
@@ -177,6 +212,7 @@ def object_events(
     map_id: int,
     *,
     name: str = "",
+    format: MapFormat = MapFormat(),
 ) -> list[bytes]:
     """The map's NPCs, as the 13-byte `person_event` blobs the ROM stores.
 
@@ -206,8 +242,9 @@ def object_events(
 
     # Warps, coord events and signposts, only to step over them: the object
     # events are last, and each array's length is knowable only from the count
-    # byte in front of it.
-    for size in (WARP_SIZE, COORD_EVENT_SIZE, SIGNPOST_SIZE):
+    # byte in front of it. The record sizes are the caller's `format` — the one
+    # place a fork's event header differs from the stock base.
+    for size in (format.warp, format.coord_event, format.signpost):
         if at >= len(rom):
             raise ValueError(f"event header for {who} runs past ROM end")
         at += 1 + rom[at] * size
@@ -233,11 +270,14 @@ def load(
     map_id: int,
     *,
     name: str = "",
+    format: MapFormat = MapFormat(),
 ) -> BlockData:
-    """Read and decompress the blockdata for (group, map_id) from the ROM.
+    """Read the blockdata for (group, map_id) from the ROM.
 
     `group` and `map_id` are both 1-based (matching `wMapGroup` /
     `wMapNumber` values). `name` is optional, used only in error messages.
+    `format` decides whether the block grid is read raw (stock `.blk` bytes) or
+    LZ-decompressed (prism) — the one place the two trees store blocks differently.
     """
     rom = rom_path.read_bytes()
     hdr = _headers(rom, syms, group, map_id, name)
@@ -258,18 +298,22 @@ def load(
         )
 
     blockdata_off = rom_offset(blockdata_bank, blockdata_addr)
-    decompressed, _consumed = lz.decompress(rom, blockdata_off)
     expected = width * height
-    if len(decompressed) < expected:
+    if format.compressed:
+        raw, _consumed = lz.decompress(rom, blockdata_off)
+    else:
+        # Stock stores the grid raw — `width*height` bytes straight from the ROM,
+        # exactly what the `.blk` file INCBINs.
+        raw = rom[blockdata_off : blockdata_off + expected]
+    if len(raw) < expected:
         raise ValueError(
-            f"map {name or f'({group},{map_id})'} blockdata decompressed to "
-            f"{len(decompressed)} bytes, need at least {expected} ({width}x{height})"
+            f"map {name or f'({group},{map_id})'} blockdata is "
+            f"{len(raw)} bytes, need at least {expected} ({width}x{height})"
         )
-    # The game's ReadMapBlocks copies exactly width*height bytes; trailing
-    # data in the compressed stream is ignored. A handful of maps in
-    # pokeprism encode more than they need (e.g. SEVII_ISLAND_1, the
-    # BATTLE_TOWER_* rooms). Truncate so callers see only the live grid.
-    blocks = decompressed[:expected]
+    # The game's ReadMapBlocks copies exactly width*height bytes; any trailing
+    # data (a compressed stream that encodes more than it needs — SEVII_ISLAND_1,
+    # the BATTLE_TOWER_* rooms) is ignored. Truncate to the live grid.
+    blocks = raw[:expected]
 
     return BlockData(
         name=name,
@@ -292,23 +336,24 @@ def map_connections(
     *,
     map_width: int,
     name: str = "",
+    format: MapFormat = MapFormat(),
 ) -> list[Connection]:
     """The map's N/S/W/E connections, resolved to neighbour→overworld geometry.
 
     Reads the connection-flags byte at the tail of the second map header and the
     connection structs that follow it, then recovers each strip's placement by
-    subtracting the wram base addresses the macro baked into the pointers:
-    `strip pointer - wDecompressScratch` is an offset into the neighbour's
-    decompressed grid (stride = the neighbour's own width), and `strip location -
-    wOverworldMap` is an offset into the current map's overworld grid (stride =
-    this map's width + 6). See docs/blockdata-plan.md.
+    subtracting the base addresses the macro baked into the pointers. The *dest*
+    is always the overworld grid: `strip location - wOverworldMap[Blocks]` (stride
+    = this map's width + 6). The *source* base differs by tree
+    (`format.connection_source`): the neighbour's own block data (stock, so it is
+    read from the neighbour's header) or a shared decompress buffer (prism). See
+    docs/blockdata-plan.md.
     """
     rom = rom_path.read_bytes()
     hdr = _headers(rom, syms, group, map_id, name)
     flags = rom[hdr.secondary_off + SECOND_MAP_HEADER_SIZE - 1]
 
-    overworld_base = syms["wOverworldMap"].addr
-    scratch_base = syms["wDecompressScratch"].addr
+    overworld_base = syms[format.overworld_map].addr
     dest_stride = map_width + OVERWORLD_BORDER
     who = name or f"(group={group}, map_id={map_id})"
 
@@ -330,11 +375,24 @@ def map_connections(
         if connected_width == 0:
             raise ValueError(f"{who} {direction} connection has zero-width neighbour")
 
-        src_off = strip_ptr - scratch_base
+        # Where the strip pointer counts from. Stock: the neighbour's own blocks,
+        # so resolve that neighbour's header for its block address; a neighbour we
+        # cannot resolve simply gets no overlay (the same as one that won't load).
+        if format.connection_source == CONN_SRC_SCRATCH:
+            src_base = syms["wDecompressScratch"].addr
+        else:
+            try:
+                nb_hdr = _headers(rom, syms, ngroup, nmap,
+                                  f"{who} {direction} neighbour")
+            except ValueError:
+                continue
+            src_base = _u16_le(rom, nb_hdr.secondary_off + 4)
+
+        src_off = strip_ptr - src_base
         dst_off = strip_loc - overworld_base
         if src_off < 0 or dst_off < 0:
             raise ValueError(
-                f"{who} {direction} connection pointer below its wram base "
+                f"{who} {direction} connection pointer below its source/dest base "
                 f"(strip={strip_ptr:#06x}, loc={strip_loc:#06x})"
             )
         src_row, src_col = divmod(src_off, connected_width)
