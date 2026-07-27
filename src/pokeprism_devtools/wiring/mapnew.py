@@ -166,7 +166,7 @@ def add_map(root: Path, spec: NewMap, answers: dict[str, str], *,
     if problems := _collisions(root, spec):
         raise EditError("; ".join(problems))
 
-    grid = _read_grid(spec)
+    grid = read_grid(spec.blk, spec.height, spec.width)
     placed = {p.blob: (p, p.resolve(answers.get(p.blob, ""), spec.label))
               for p in dialect.placements(root)}
     for blob in ("script", "blocks"):
@@ -209,21 +209,27 @@ def _notes(sections: dict[str, Section]) -> list[str]:
     return out
 
 
-def _read_grid(spec: NewMap) -> bytes:
+def read_grid(blk: Path, height: int, width: int) -> bytes:
     """The grid, at exactly the size the constant is about to declare.
 
     Checked here rather than trusted, because this is the one mistake that
     produces a map which builds: a `.blk` that is not `height * width` bytes
     leaves the engine reading whatever is next in the bank as terrain.
+
+    Public because the new-map *form* draws through it as well as writing
+    through it (`studio/mapadd.AddMap.sketch`). One rule, read once: a grid the
+    picture refused cannot then be written, and a grid that drew is the grid
+    that lands. Two copies of this arithmetic would eventually disagree, and
+    the disagreement would be invisible — both sides assemble.
     """
-    if not spec.blk.is_file():
-        raise EditError(f"no such file: {spec.blk}")
-    data = spec.blk.read_bytes()
-    need = spec.height * spec.width
+    if not blk.is_file():
+        raise EditError(f"no such file: {blk}")
+    data = blk.read_bytes()
+    need = height * width
     if len(data) != need:
         raise EditError(
-            f"{spec.blk.name} is {len(data)} bytes but {spec.height}x"
-            f"{spec.width} is {need} — one of the two is wrong, and the "
+            f"{blk.name} is {len(data)} bytes but {height}x"
+            f"{width} is {need} — one of the two is wrong, and the "
             f"map would build either way")
     return data
 
