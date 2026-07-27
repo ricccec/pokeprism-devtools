@@ -14,7 +14,8 @@ Prism's deviations, each re-checked against prism's own source:
   - a connection's source pointer is relative to the shared decompress scratch
     buffer (prism decompresses each neighbour into it), not the neighbour's own
     block label;
-  - the sprite-header table is `SpriteHeaders`, not `OverworldSprites`.
+  - the sprite-header table is `SpriteHeaders`, not `OverworldSprites`;
+  - a group's outdoor sprite list is zero-terminated, not a fixed 23 entries.
 """
 
 from __future__ import annotations
@@ -29,4 +30,5 @@ PRISM_FORMAT = MapFormat(
     overworld_map="wOverworldMap",
     connection_source=CONN_SRC_SCRATCH,
     sprite_headers="SpriteHeaders",
+    outdoor_sprites=None,   # zero-terminated lists
 )
