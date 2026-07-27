@@ -87,7 +87,14 @@ class Build(ModalScreen[None]):
     #build-title { padding: 0 1; background: $accent; color: $text; }
     #build-config { height: 3; padding: 0 1; }
     #build-config Label { padding: 1 1 0 1; color: $text-muted; }
-    #build-config Input { width: 14; }
+    /* 30 is what the longest target needs (`pokecrystal11_debug.gbc`, where
+       prism's are single words), so it is a ceiling rather than a width:
+       `max-width` clamps the `1fr`, and the box takes 30 whenever there is 30 to
+       take. What the `1fr` buys is the narrow terminal, where a flat 30 pushes
+       the Quiet checkbox off the right edge below 103 columns — and quiet is on
+       by default, so that is the one control you would want back. Here the box
+       gives ground instead, and the row stays whole. */
+    #build-config Input { width: 1fr; max-width: 30; }
     #build-config .narrow { width: 8; }
     #build-log { height: 1fr; margin: 0 1; background: $surface;
                     border: solid $panel; }
