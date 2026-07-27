@@ -584,6 +584,69 @@ def test_boot_stands_you_where_the_cursor_is(root: Path) -> None:
         check("without a built ROM it refuses", False)
 
 
+def test_the_target_you_built_with_comes_back(root: Path) -> None:
+    """What the build screen prefills its target box with, over two runs.
+
+    The bug this replaces is not a crash, it is a chore: the adapter's list is
+    ordered by the `Makefile`, so the first entry is whichever ROM the build
+    declares first, and every single build began by correcting it to the debug
+    one. The value has to survive the studio closing, which means it lives in the
+    tree — so what is really being checked is that it went to disk, in this tree,
+    and not into a session that dies with the app.
+
+    Falsified at each step: the recall is shown empty before anything is
+    remembered (or it proves nothing to see it full afterwards), a second tree is
+    shown *not* to see the first one's answer, and a nonsense file is shown to
+    cost a prefill rather than the screen.
+    """
+    print("\nthe remembered build target")
+    from pokeprism_devtools.studio import prefs
+
+    s = Session(root)
+    targets = s.build_targets()
+    check("with nothing remembered, there is nothing to prefill — the screen "
+          "falls back to the adapter's first target",
+          s.recall_build_target() == "", repr(s.recall_build_target()))
+
+    s.remember_build_target("nodebug")
+    check("what built is written into the tree, not held in the session",
+          (root / prefs.PREFS).is_file(), prefs.PREFS)
+    check("and a studio opened fresh on this tree offers it back",
+          Session(root).recall_build_target() == "nodebug")
+
+    # A free-typed target is the point: the adapter enumerates what the Makefile
+    # declares, and the one you want may not be in that list at all.
+    s.remember_build_target("prism_custom")
+    check("including one the adapter never offered — the box is free text",
+          Session(root).recall_build_target() == "prism_custom"
+          and "prism_custom" not in targets)
+
+    # Other keys in the file are somebody else's; remembering must not take them.
+    prefs.save_pref(root, "something.else", "kept")
+    s.remember_build_target("prism")
+    check("writing one preference leaves the others alone",
+          prefs.read_prefs(root) == {"build.target": "prism",
+                                     "something.else": "kept"},
+          str(prefs.read_prefs(root)))
+
+    # Per tree, because the answer is about the tree. A copy of the same fixture
+    # is a different checkout and has its own.
+    other = root.parent / (root.name + "-other")
+    shutil.copytree(root, other)
+    (other / prefs.PREFS).unlink()
+    check("a second tree remembers its own, not this one's",
+          Session(other).recall_build_target() == "")
+
+    # And the file is a convenience, not data: nothing about it may stop a build.
+    (root / prefs.PREFS).write_text("{ this is not json")
+    check("a corrupt preferences file costs a prefill, not the screen",
+          Session(root).recall_build_target() == "")
+    (root / prefs.PREFS).write_text('{"build.target": null}')
+    check("nor does a value of the wrong type reach the field as 'None'",
+          Session(root).recall_build_target() == "")
+    (root / prefs.PREFS).unlink()
+
+
 def test_a_quiet_build_keeps_only_the_problems(root: Path) -> None:
     """The filter a quiet build runs each line through — the studio's grep. It has
     to keep every line that carries the answer and drop the mountain that doesn't,
@@ -887,6 +950,7 @@ def main() -> int:
                    test_an_object_past_the_count_is_still_shown,
                    test_boot_stands_you_where_the_cursor_is,
                    test_a_quiet_build_keeps_only_the_problems,
+                   test_the_target_you_built_with_comes_back,
                    test_it_boots_the_rom_it_built,
                    test_the_blocks_on_offer_are_the_newest_first,
                    test_the_world_notices, test_a_stale_model_will_not_write,

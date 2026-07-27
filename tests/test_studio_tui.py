@@ -31,7 +31,7 @@ from textual.widgets import (DataTable, Input, OptionList, Static, TabbedContent
 from pokeprism_devtools.hacks.prism import (blocksrc, eventheader,
                                             read as prism_read, swatches)
 from pokeprism_devtools.shared import coords, paths
-from pokeprism_devtools.studio import Session, panels
+from pokeprism_devtools.studio import Session, panels, prefs
 from pokeprism_devtools.studio.actions import ITEMS, ActionError
 from pokeprism_devtools.hacks.prism.content import (BOULDER, HIDDEN, ITEMBALL,
                                                PROP_KINDS, TMHM, TREE, AddNpc,
@@ -44,6 +44,7 @@ from pokeprism_devtools.studio.grid import MapGrid
 from pokeprism_devtools.studio.maplist import MapList
 from pokeprism_devtools.hacks.prism.newmap import NewMap
 from pokeprism_devtools.studio.screens import Confirm, Findings, Form, History, Picker
+from pokeprism_devtools.studio.screens.build import Build
 from pokeprism_devtools.studio.screens.speech import Dialogue
 from pokeprism_devtools.studio.status import Banner, Where
 from pokeprism_devtools.studio.tabs import ADD, MapTabs
@@ -2502,6 +2503,70 @@ class TestAClassKnowsWhatItWears(_Driven):
             AddTrainer("CASTRO_FOREST", party="Wilson")._party()
 
 
+class TestBuildScreen(_Driven):
+    """The three questions `b` asks, and the one it now answers for you.
+
+    On a copy of the repo, because the answer is *kept* in the repo: the point of
+    the preference is that it outlives the app, so a test that could not write to
+    the tree would be testing something else.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.root = Path(cls._tmp.name) / "pokeprism"
+        shutil.copytree(ROOT, cls.root, symlinks=True, ignore=shutil.ignore_patterns(
+            ".git", "*.o", "*.gbc", "*.sym", "*.map"))
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._tmp.cleanup()
+
+    async def _target_box(self, app, pilot) -> Combo:
+        await pilot.press("b")
+        await pilot.pause(0.3)
+        self.assertIsInstance(app.screen, Build)
+        return app.screen.query_one("#build-target", Combo)
+
+    def test_the_target_box_starts_on_what_you_last_built(self) -> None:
+        async def go():
+            prefs_file = self.root / prefs.PREFS
+            prefs_file.unlink(missing_ok=True)
+
+            app = Studio(self.root)
+            async with app.run_test() as pilot:
+                await self.ready(app, pilot)
+                targets = app.session.build_targets()
+
+                # Nothing remembered: the adapter's first, as before.
+                box = await self._target_box(app, pilot)
+                self.assertEqual(box.value, targets[0])
+                self.assertEqual(box._options, list(targets),
+                                 "the list is what the tree can build")
+                await pilot.press("escape")
+                await pilot.pause(0.2)
+
+                # Remembered — and deliberately *not* the default, or the check
+                # could not tell the two apart.
+                wanted = targets[-1]
+                self.assertNotEqual(wanted, targets[0], "need two targets to tell")
+                app.session.remember_build_target(wanted)
+
+                box = await self._target_box(app, pilot)
+                self.assertEqual(box.value, wanted)
+                self.assertEqual(box._options, list(targets),
+                                 "remembering one does not shorten the offer")
+                await pilot.press("escape")
+                await pilot.pause(0.2)
+                await app.action_quit()
+
+            # And it is in the tree, so the next studio opens on it too.
+            self.assertEqual(Session(self.root).recall_build_target(), targets[-1])
+            prefs_file.unlink(missing_ok=True)
+
+        drive(go())
+
+
 class TestTheSeam(unittest.TestCase):
     """The view reads no files.
 
@@ -2531,6 +2596,10 @@ class TestTheSeam(unittest.TestCase):
     #: view that could answer it differently from the session that does the
     #: writing. There must be exactly one opinion about whether the repo has moved,
     #: and it belongs to the side that refuses the write.
+    #: `prefs` is here on the writing side of the same argument. It is small and
+    #: it is only ever remembering a field, which is exactly why a screen would
+    #: reach for it directly — and then two screens would each have their own idea
+    #: of what a tree remembers, and neither would be the one that builds.
     #: `edits` and `prefill` are here for the same reason `reader` is. They are
     #: where the edit forms live, and the temptation is real: `e` opens a form,
     #: forms are the view's business, so why not let the view reach for `EditNpc`
@@ -2540,7 +2609,7 @@ class TestTheSeam(unittest.TestCase):
     READERS = ("blocksrc", "eventheader", "wilddata", "mapsource", "blockdata",
                "metatiles", "render", "dialogue", "trainerparty", "wiring",
                "roofs", "reader", "world", "edits", "prefill", "objedit",
-               "mapedit", "warpdel", "removal", "connections")
+               "mapedit", "warpdel", "removal", "connections", "prefs")
 
     def _files(self) -> list[Path]:
         studio = Path(__file__).resolve().parents[1] / "src/pokeprism_devtools/studio"

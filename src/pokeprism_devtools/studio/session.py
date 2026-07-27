@@ -43,7 +43,7 @@ from ..hacks.mount import mount
 from ..hacks.seam import PlayError, Refused
 from ..shared import caches, world
 from ..shared.edits import StaleEdit, apply_edits
-from . import panels, reader, undo
+from . import panels, prefs, reader, undo
 from .actions import Action
 # The shapes of the answers — see `model.py`. Re-exported, because whatever wants
 # a `MapData` wants it *from the session*: the session is the only thing that can
@@ -157,6 +157,40 @@ class Session:
         learns what a target means."""
         self._playable()
         return self.hack.plays.targets()
+
+    def recall_build_target(self) -> str:
+        """The target this tree last built with, or `""` if it has built none.
+
+        Kept apart from :meth:`build_targets` on purpose. That list is what the
+        adapter says *exists*; this is what you said you *wanted*, and the two
+        are allowed to disagree — the target box is free text (see
+        `studio/combo.py`), so a `make` target the adapter never enumerates is a
+        target you can type, and having typed it once is the whole reason to
+        remember it. Nothing here checks it against the list for the same
+        reason: a target that has left the tree is refused by `make`, loudly,
+        naming itself, which is a better sentence than any we could write.
+        """
+        return prefs.read_prefs(self.root).get(prefs.BUILD_TARGET, "")
+
+    def remember_build_target(self, target: str) -> None:
+        """Prefill this target next time the build screen opens on this tree.
+
+        Called after a build that *worked*, not when the button is pressed:
+        remembering is a small claim that this answer is a good one, and a
+        prefilled field is trusted rather than re-read. A typo remembered is a
+        typo you meet again at the start of every session; a target remembered
+        only once it has actually built is one the field can be believed about.
+
+        Raises `SessionError` if the tree will not take the file — the caller
+        has the build log to say it in. Failing to remember is not a failed
+        build, and must never be reported as one.
+        """
+        try:
+            prefs.save_pref(self.root, prefs.BUILD_TARGET, target)
+        except OSError as e:
+            raise SessionError(
+                f"built, but could not remember the target in "
+                f"{prefs.PREFS}: {e}") from e
 
     def keeps_build_line(self, line: str) -> bool:
         """Whether a *quiet* build still shows this line of `make` output — the

@@ -10,6 +10,14 @@ named on the way in and named again on the way out, so the game you boot is the
 game you built. The targets themselves come from the play adapter
 (`session.build_targets`), because which builds exist is the engine's to say.
 
+The box starts on the target this tree built with last time, kept in the tree
+itself (`studio/prefs.py`). You build the same ROM every session — the debug one,
+because the debug one is the one you can inspect — and the adapter's list is
+ordered by what the `Makefile` declares, not by what you want, so the first entry
+was a value to be corrected on every single build. It is written only after a
+build succeeds: a prefilled field is read as an answer rather than a question, so
+only an answer that has been tried belongs in it.
+
 **How many jobs.** `make` is serial unless told otherwise, and this build is a few
 hundred files. Nothing about that was a choice anybody made; it was just what
 happens when you don't pass `-j`.
@@ -106,7 +114,12 @@ class Build(ModalScreen[None]):
             with Horizontal(id="build-config"):
                 yield Label("Target")
                 targets = self._session.build_targets()
-                yield Combo(list(targets), value=targets[0], id="build-target")
+                # Last time's answer if there is one, and the adapter's default
+                # if there is not. The list is unchanged either way: it says what
+                # this tree can build, which is not the same question.
+                yield Combo(list(targets),
+                            value=self._session.recall_build_target() or targets[0],
+                            id="build-target")
                 yield Label("Jobs")
                 yield Input(value=str(os.cpu_count() or 1), id="build-jobs",
                             classes="narrow")
@@ -199,6 +212,17 @@ class Build(ModalScreen[None]):
             # it under a summary that says less than the last line it printed.
             say("[b]the build failed[/b] — the reason is above")
             return
+
+        # It built, so it is worth starting from next time. A tree that will not
+        # take the file is said out loud and then carried on from — the build
+        # worked, and a screen that reported a failed preference as a failed build
+        # would be lying about the thing you were waiting four minutes for. Into
+        # the log directly, not through `line`: a quiet build keeps only what the
+        # play adapter calls a problem, and this line is ours rather than make's.
+        try:
+            self._session.remember_build_target(target)
+        except SessionError as e:
+            self.app.call_from_thread(log.write, str(e))
 
         say("Built. Patching the save…")
         y, x = spawn
