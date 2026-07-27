@@ -146,9 +146,11 @@ every one is deferred-but-buildable unless marked permanent.
 - **Connection *adding* (both trees).** `hacks/prism/connections` is two-sided;
   deletion already refuses on the neighbour's side. Adding needs its own survey
   of how each tree wires the reciprocal connection before it is scoped.
-- **Family rewording.** Editing existing dialogue text — the reworder
-  (`hacks/prism/text.reword`) is prism-parser-based; a family one writes against
-  the fixed-width charmap. Related to Phase 11's charmap reader, not the same job.
+- ~~**Family rewording.**~~ **Done (2026-07-27)** — `hacks/vanilla/text.py`,
+  both dialects on one class. It was indeed related to Phase 11's reader and not
+  the same job: what it actually needed was Phase 11's *parse*, promoted out of
+  `lint/` so the browser, the linter and the writer read one set of lines. See
+  `STATE.md`, "Landed — family rewording, on one parse".
 - **`EditMap` / attributes-tab editing for family trees.** The header-facts
   editor is unclaimed for vanilla and polished.
 - **Family map *sketch*.** The new-map form does not draw the grid while you

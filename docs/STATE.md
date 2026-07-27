@@ -47,8 +47,8 @@ been.
 | **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | — | — |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
-resize, new-map, and the block scaffolding those ride — and the writes
-round-trip to the byte on all real maps. **Both family trees lint too** (the
+resize, new-map, **reword**, and the block scaffolding those ride — and the
+writes round-trip to the byte on all real maps. **Both family trees lint too** (the
 dialogue-overflow rules below), and **vanilla now builds and boots for real**: a
 stock pokecrystal builds, and the studio patches its save to stand you on a map —
 the *whole* map, not just the position. It writes the four position bytes and then
@@ -59,8 +59,11 @@ primary and backup checksums. That rebuild runs on a shared Gen-2 core
 `play.py`. The family linters share everything but the width reader, which
 polished's Huffman n-gram engine spells differently (see below). The two blanks
 left — vanilla `measures`, polished `plays`/`measures` — are the **absences by
-design** further down; `measures` is the one permanent one (a font fact), and
-polished `plays` is the next family tree the build-and-boot seam is ready for.
+design** further down. `measures` is now two questions wearing one name: *pixel*
+widths for a proportional dialogue font are permanently absent (a font fact),
+while the *tile* count the family linter already does is unwired rather than
+missing, and pick-up (4) is that wiring. Polished `plays` is the next family tree
+the build-and-boot seam is ready for.
 
 ## The last engineering item — paid (2026-07-25)
 
@@ -376,6 +379,57 @@ edge below 103 columns.
 `prefs` joins the seam guard's reader list, so a screen that reaches for it
 directly instead of through the session fails `test_the_view_does_not_import_a_parser`.
 
+## Landed — family rewording, on one parse (2026-07-27)
+
+`t` on a vanilla or polished map listed a block's words and then said rewording
+was not wired for this tree. It is now, and **both dialects mount the same
+class**: they write the same text macros into the same box, and the only thing
+that ever forked — how wide a glyph draws — is not something a splice has to
+know. `hacks/vanilla/text.py` is the splice and the form; `hacks/vanilla/box.py`
+is the window it writes into, moved up out of `lint/` because a writer needs to
+know where a `line` lands as much as a linter needs to know where one landed.
+
+**The first move was collapsing the two parses**, which was named here as the
+blocker and turned out to be the whole of the risk. `events.prose` walked the
+source a macro at a time for the Texts browser; `lint/dialogue` walked it as a
+cursor for the overflow rules; they disagreed, and every disagreement was the
+naive one being wrong (a buffer splice read as three lines, two boxes under one
+label run together, two mail templates listed as dialogue). Harmless while both
+only read — fatal the moment something writes, because the block the browser
+shows and the block the writer splices have to be the same block. There is one
+parse now, `hacks/vanilla/dialogue.py`, and the split it makes instead is by what
+an answer costs: structure needs only the file, so the browser still works on a
+tree whose engine files are mid-edit; widths and rows need the charmap and
+`home/text.asm`, so they stay in the linter. Verified by dumping all **42,976**
+rendered lines the linter sees across both shipping trees before and after —
+byte-identical.
+
+**A block is identified by the line it opens on, not by its label.** 10 labels in
+vanilla and 100 in polished hold two boxes; matching on the label would have
+quietly rewritten the first one every time. `TextRef` already carried `lineno`,
+so the view passes the record's whole identity through the form rather than the
+two fields that happen to be boxes.
+
+**~1.3% of blocks are refused by name rather than written wrong** (46 of 3,277 in
+vanilla, 78 of 6,056 in polished): a line spliced out of three commands has no
+one line of source to put back; an `if`/`else` block shows two versions of one
+line; a jump target inside the box would be moved; and a command sitting between
+the macros — polished has four, an `assert` and three `text_decimal`s — would be
+*deleted* by a span rewrite that never mentioned it. That last one is checked the
+other way round, by asking whether every line in the span is one this writer
+emits, so a command nobody has thought of yet is refused rather than eaten.
+Re-deriving the split for the spliced ones is possible and is not attempted: it
+means deciding where in your new sentence the buffer goes, which is a question
+only the author can answer and the form has no way to ask.
+
+The proof is two halves, because either alone is worthless. All **9,209**
+acceptable blocks in both trees were reworded with the words they already had and
+the file required back byte for byte — and then, because a `rewrite` that returned
+its input would pass that perfectly, a word was changed in every one of them and
+exactly the line that changed was required to move. Falsifying the round trip
+found that dropping the verbatim copy-back is invisible on vanilla and shows up
+59 times on polished: the second tree is not redundancy.
+
 ## What's left — the pick-up list
 
 The seam has **no known structural debt**; everything below is elective. Ordered
@@ -386,7 +440,7 @@ by what it costs versus what it buys, with the detail in the sections that follo
 | **1. Restore `test_visible_sprites_get_the_right_vram_tile`** | small | Tests, below — the only place the repo currently misreports itself |
 | **2. Polished `plays`** | large | Absences — the item that completes the capability matrix |
 | **3. Prism variable sprites in the boot** | one line, unverifiable alone | Absences — pair it with (2) or with sprite work |
-| **4. Family rewording** | project | Absences — the parse and the metrics exist; the splice and the form do not |
+| **4. Family `measures` — the tile gutter in the reword box** | small | Absences — the reason it was "honestly absent" no longer holds |
 | **5. Connection *adding*** | needs design | Absences — two-sided |
 | **6. `EditMap` attributes tab** | unclaimed | Absences |
 | **7. Ignore `.devtools/` from the code that creates it** | small | Housekeeping, below — the tool dirties `git status` in trees it does not own |
@@ -395,8 +449,9 @@ by what it costs versus what it buys, with the detail in the sections that follo
 it guards the sprite-VRAM allocator that (2) and (3) both go on to change — so it
 will be relied on precisely when it cannot bite. It is also the smallest item here.
 
-**Not on this list, on purpose:** family VWF pixel metrics (`measures`), which is
-permanent and a font fact rather than a gap; doc accretion and the stashed
+**Not on this list, on purpose:** family VWF *pixel* metrics, which is permanent
+and a font fact rather than a gap — not to be confused with (4), which is the
+*tile* count the linter already does, wired into the form; doc accretion and the stashed
 map-studio restructure, which are housekeeping; and the three pre-existing test
 reds, which are true reports about the live prism tree and are left alone.
 
@@ -461,22 +516,27 @@ seam"); the standing items:**
   `SPRITE_WEIRD_TREE` and whose two resolutions (`SudowoodoSpriteGFX`
   `12, STANDING` vs `TwinSpriteGFX` `12, WALKING`) share a length but differ in
   *type*, which is enough to move the sort.
-- **Family rewording** — `hacks/prism/text.py` splices against prism's own
-  `dialogue` parse; neither family write adapter answers `form("reword")`, so `t`
-  lists a family map's text and pressing enter says rewording is not wired. **Two
-  thirds of it already exist and were built for something else:** the Phase 11
-  linter brought `hacks/vanilla/lint/dialogue.py` (a cursor walked by the script
-  commands, carrying each rendered line's `lineno` and macro) and
-  `lint/metrics.py` (tile widths read out of `home/text.asm`'s `dict` table). What
-  is missing is the splice that puts words back — the 60-line analogue of
-  `prism/text.py` — and the form that calls it. Still a project, for one reason:
-  the family's *visual* line is not its *source* line. `line "your @"` +
-  `text_ram wStringBuffer3` + `text "…"` is one line on screen and three macros in
-  the file, so prose the author edits does not map onto macros positionally the
-  way prism's does. The design question is whether the form refuses buffer-spliced
-  blocks or re-derives the split — and, before either, whether `events.texts` and
-  `lint/dialogue` collapse into one parse, so the words shown, measured and
-  written back cannot drift apart.
+- **Family `measures`** — the reword box has no tile gutter, so nothing counts
+  `#mon Center` at 19 tiles against an 18-column box *while you are still able to
+  shorten it*; the form degrades to no gutter at all (`Form._retile` returns early
+  when `session.measures` is false) and the linter catches the overflow after the
+  fact instead. The stated reason for the absence — "this tree's dialogue is
+  fixed-width, so the per-glyph pixel widths it would sum do not exist"
+  (`hacks/vanilla/read.py`) — **no longer holds**, and did not from the moment
+  Phase 11 landed: `panels.Measured` is denominated in *tiles*, not pixels, and
+  `lint/metrics.py` counts tiles exactly, `#`→POKé and all. What is left is
+  wiring: a `measure` on both family readers over `box.speech_box` and
+  `metrics.load`, `measures=True` on both mounts (the seam test checks both
+  directions), a decision about `Measured.unknown` (the family charmap reader has
+  no notion of an unmapped token), and degrading when the engine files are absent
+  the way the linter already does. Kept out of the rewording change on purpose:
+  it is a different capability with its own seam flag, and the form is honest
+  without it. The permanent absence above is untouched by this — that is about
+  *pixel* metrics for a proportional font, which the dialogue path does not have.
+- ~~**Family rewording**~~ — **done (2026-07-27)**, see above. The blocker
+  recorded here — that the family's visual line is not its source line — was
+  real, and the answer was to refuse the 1.3% of blocks where it bites rather
+  than to re-derive them.
 - **Connection *adding*** — `wiring/connections` is two-sided; deserves its own
   look. Deletion already refuses on the neighbour's side, with teeth.
 - **`EditMap` (attributes tab)** for family trees — not claimed.
@@ -578,6 +638,17 @@ The remembered build target is covered on both sides of the seam:
 tree, survives a new session, leaves other keys alone, and a corrupt file costs a
 prefill and nothing else), and `test_studio_tui.py::TestBuildScreen` for the box
 itself, on a temp copy of a real repo.
+`test_family_text.py` is the rewording suite, and it is deliberately two checks
+that fail in opposite directions: every acceptable block in a stock pokecrystal
+*and* polishedcrystal reworded with its own words must come back byte-identical
+(9,209 blocks), and every one of them with a word changed must move **exactly**
+the line that changed — because a `rewrite` returning its input passes the first
+one perfectly. Both were falsified before being believed, and the falsification
+that matters is that dropping the verbatim copy-back is invisible on vanilla and
+breaks 59 blocks on polished: the second tree is doing work, not repeating the
+first. The synthetic half covers what the trees do not contain enough of — the
+macro an *added* line gets when `line`'s row is taken, the refusals by name, and
+the stray command a span rewrite would have eaten.
 `test_grid.py` and `test_lib.py` now
 exercise the lifted `shared/overworld` reader through prism's `MapFormat`, proving
 the parameterization keeps prism byte-identical. `test_seam.py::test_falsified`
