@@ -319,6 +319,26 @@ seam"); the standing items:**
   core; polished's save is its own layout (closer to prism's than to stock Gen-2),
   so a polished `Player` over its own patcher — declaring its own `MapFormat` where
   it diverges — is the next pick-up, on the same seam, neutral runner and rebuild core.
+- **Prism variable sprites in the boot** — the shared sprite-VRAM allocator now
+  resolves a *variable* sprite (id ≥ `SPRITE_VARS`) through the save's
+  `wVariableSprites` before sizing it (a still boulder is 4 tiles, a walking NPC
+  12, and guessing wrong shifts every sprite placed after it — the glitch that
+  rendered Route 32's boulders as the player). Prism runs the same allocator, so
+  the *sort* half of that fix already applies to it; the *resolution* half is
+  **data-gated** and prism does not yet feed it. `dev_server/apply.py` calls
+  `rebuild_map` without `variable_sprites`, so it takes the empty default and
+  prism's variable sprites still fall back to walking — the old behaviour. This is
+  **not** a seam breach: the fix lives on the neutral side and prism executes it;
+  it is dormant only because prism has not handed it that one per-tree input, the
+  same way each tree supplies its own `SaveOffsets`. `wVariableSprites` is save
+  state, not ROM, so reading it out of *prism's* save layout is the adapter's job —
+  one line, passing `off("wVariableSprites")`'s 16 bytes into the `rebuild_map`
+  call (`apply.py`). Deferred, not done, because the only prism ground-truth save
+  (MtEmberWest) has no variable sprites in its pool, so the fix cannot be verified
+  against a real game-written save the way vanilla's was; wiring it blind would
+  change prism output on an untestable path. Harmless until a prism map that
+  teleports onto a weird-tree/boulder — the same class of glitch vanilla had. See
+  `save-patch.md`.
 - **Family rewording** — `wiring/text` is still prism-parser-based (one of the
   cat-4 movers); rewording against a fixed-width charmap is a text-wiring project.
 - **Connection *adding*** — `wiring/connections` is two-sided; deserves its own
