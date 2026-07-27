@@ -71,6 +71,9 @@ class MapFormat:
     overworld_map: str = "wOverworldMapBlocks"
     connection_source: str = CONN_SRC_NEIGHBOUR
     sprite_headers: str = "OverworldSprites"  # prism: "SpriteHeaders"
+    #: A map group's outdoor sprite list: a fixed count (stock's
+    #: MAX_OUTDOOR_SPRITES), or None for a zero-terminated list (prism).
+    outdoor_sprites: int | None = 23
 
 
 #: What `CopyMapObjectHeaders` copies into a `wMapObjects` slot: exactly

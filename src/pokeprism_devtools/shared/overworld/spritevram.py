@@ -109,13 +109,23 @@ def _to_int(s: str) -> int:
 
 
 def outdoor_sprite_ids(
-    rom_path: Path, syms: symfile.SymFile, group: int, *, name: str = ""
+    rom_path: Path, syms: symfile.SymFile, group: int, *, name: str = "",
+    count: int | None = 23,
 ) -> list[int]:
     """The sprite pool the overworld loads for maps in `group`.
 
     `AddMapSprites` (outdoor branch) reads `OutdoorSprites[group - 1]`, a pointer
-    to a 0-terminated list of sprite ids, and feeds each to `AddSpriteGFX`. Both
-    the table and the list it points at live in the table's own bank.
+    to that group's sprite list, and feeds each id to `AddSpriteGFX`. Both the
+    table and the list it points at live in the table's own bank.
+
+    How the list ends differs by tree, so `count` says which: stock pokecrystal's
+    lists are a **fixed** `MAX_OUTDOOR_SPRITES` (23) entries — `AddOutdoorSprites`
+    reads exactly that many, `AddSpriteGFX` no-ops on a 0 — so `count=23` reads 23
+    and drops the zero padding. Prism's are **zero-terminated**, read with
+    `count=None`. Reading past a fixed list as if it were terminated (the stock
+    case) runs straight into the next group's list — a pool of a hundred-plus ids
+    that shoulders the map's real sprites out of VRAM, so they fall back to the
+    player's tile and render as the player. That is the bug this parameter fixes.
     """
     if group < 1:
         raise ValueError(f"group must be 1-based; got {group}")
@@ -126,9 +136,17 @@ def outdoor_sprite_ids(
         raise ValueError(f"OutdoorSprites[{group}] index past ROM end")
     list_off = _rom_offset(table.bank, _u16_le(rom, entry))
     ids: list[int] = []
-    while list_off < len(rom) and rom[list_off] != 0:
-        ids.append(rom[list_off])
-        list_off += 1
+    if count is None:
+        while list_off < len(rom) and rom[list_off] != 0:
+            ids.append(rom[list_off])
+            list_off += 1
+    else:
+        for i in range(count):
+            if list_off + i >= len(rom):
+                break
+            v = rom[list_off + i]
+            if v != 0:      # a 0 entry is padding; AddSpriteGFX skips it
+                ids.append(v)
     return ids
 
 

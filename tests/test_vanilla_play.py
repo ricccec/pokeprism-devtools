@@ -425,6 +425,71 @@ def test_the_boot_rebuilds_the_whole_map() -> None:
               and any("people" in c for c in changes), str(changes))
 
 
+def test_visible_sprites_get_the_right_vram_tile() -> None:
+    """Every on-screen object must get the VRAM tile the game gives it — or it
+    renders as whatever sprite happens to sit at the tile it falls back to (the
+    player, at tile 0). This is the check the boot test lacked: it confirmed a
+    sprite was *instantiated*, never that it pointed at the *right* graphics.
+
+    The real `pokecrystal11_debug` save is standing on a real outdoor map, and the
+    game wrote each visible object's `SPRITE_TILE` when it entered — ground truth
+    we recompute and compare against. The bug this guards: `outdoor_sprite_ids`
+    read a group's sprite list until a 0 byte, but stock's lists are a fixed 23
+    entries with no terminator, so it ran into the next groups' lists — a pool of
+    a hundred-plus ids that shouldered the map's own sprites (the boulders) out of
+    VRAM, so they fell back to the player's tile and rendered as the player.
+    """
+    from pokeprism_devtools.hacks.vanilla import play  # noqa: PLC0415
+    from pokeprism_devtools.shared.overworld import blockdata, people, spritevram  # noqa: PLC0415
+
+    root = Path.home() / "code/ricccec/pokecrystal"
+    rom = root / "pokecrystal11_debug.gbc"
+    sym = root / "pokecrystal11_debug.sym"
+    template = root / "pokecrystal11_debug.sav"
+    print("\nvisible objects get the game's VRAM tile (real save's current map)")
+    if not (rom.exists() and sym.exists() and template.exists()):
+        print("  --   no built debug ROM+save next door — skipping")
+        return
+
+    syms = SymFile.load(sym)
+    save = savefile.Save(bytearray(template.read_bytes()))
+    off = save._saved_offset
+    group, number = save.data[off(syms, "wMapGroup")], save.data[off(syms, "wMapNumber")]
+    os_off = off(syms, "wObjectStructs")
+    player = save.data[os_off + people.OBJ_SPRITE]
+    bd = blockdata.load(rom, syms, group, number)
+    if not blockdata.is_outdoor(bd.permission):
+        print(f"  --   save's current map (g{group} m{number}) is indoor — skipping the outdoor-pool check")
+        return
+
+    pool = spritevram.outdoor_sprite_ids(rom, syms, group)
+    # Falsify: the old zero-terminated read walked into adjacent groups. A correct
+    # fixed read is the group's own list — small, no 100+ overrun.
+    check("the outdoor sprite pool is the group's own fixed list, not an overrun "
+          "into the next groups", len(pool) <= 23, f"pool has {len(pool)} ids")
+
+    pk = spritevram._pokemon_sprite_id(root / "constants" / "sprite_constants.asm")
+    tiles = spritevram.sprite_tiles(rom, syms, player, pool)
+    ok = True
+    for i in range(people.NUM_OBJECT_STRUCTS):
+        p = os_off + i * people.OBJECT_STRUCT_LEN
+        spr = save.data[p + people.OBJ_SPRITE]
+        if spr == 0 and i != 0:
+            continue
+        is_mon = spr >= pk                         # mon/variable ids: the game uses tile 0
+        game_tile = save.data[p + people.OBJ_SPRITE_TILE]
+        present = is_mon or spr in tiles           # a real sprite must never be absent
+        # Where the game placed one (non-zero), ours must equal it. (Zero can be a
+        # stale/uninstantiated slot in the save, so it isn't asserted against.)
+        matches = game_tile == 0 or tiles.get(spr) == game_tile
+        if not (present and matches):
+            ok = False
+            print(f"    sprite {spr}: game={game_tile} ours={tiles.get(spr)} "
+                  f"present={present} matches={matches}")
+    check("every visible object gets a real VRAM tile, matching the game where it "
+          "placed one (so a boulder is a boulder, not the player)", ok)
+
+
 def main() -> int:
     test_offsets_resolve()
     test_a_non_save_is_refused()
@@ -435,6 +500,7 @@ def main() -> int:
     test_targets_are_read_from_the_makefile()
     test_real_map_resolution()
     test_the_boot_rebuilds_the_whole_map()
+    test_visible_sprites_get_the_right_vram_tile()
     test_a_real_sym_carries_these_symbols()
 
     print()

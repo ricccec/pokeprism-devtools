@@ -131,7 +131,8 @@ def rebuild_map(
         # reproduces.
         player_sprite = sav.data[offsets.object_structs + people.OBJ_SPRITE]
         if blockdata.is_outdoor(bd.permission):
-            pool = spritevram.outdoor_sprite_ids(rom_path, syms, group, name=name)
+            pool = spritevram.outdoor_sprite_ids(
+                rom_path, syms, group, name=name, count=format.outdoor_sprites)
         else:
             pool = [ev[0] for ev in events]  # indoor: the map's own NPC sprites
         npc_sprites = [ev[0] for ev in events]
