@@ -50,11 +50,13 @@ _SYMS = SymFile([
     Symbol("sChecksum",    0, 0xA028),   # offset 40 — two bytes, outside the sum
     Symbol("sCheckValue2", 0, 0xA02A),   # offset 42
     # WRAM: only the within-block offsets matter (sCurMapData mirrors wCurMapData).
-    Symbol("wCurMapData",  1, 0xC000),
-    Symbol("wMapGroup",    1, 0xC005),   # +5 within the block
-    Symbol("wMapNumber",   1, 0xC006),   # +6
-    Symbol("wYCoord",      1, 0xC007),   # +7
-    Symbol("wXCoord",      1, 0xC008),   # +8
+    # `_saved_offset` needs the block's *end* too, to know a field is inside it.
+    Symbol("wCurMapData",    1, 0xC000),
+    Symbol("wCurMapDataEnd", 1, 0xC009),   # the four fields sit at +5..+8
+    Symbol("wMapGroup",      1, 0xC005),   # +5 within the block
+    Symbol("wMapNumber",     1, 0xC006),   # +6
+    Symbol("wYCoord",        1, 0xC007),   # +7
+    Symbol("wXCoord",        1, 0xC008),   # +8
 ])
 # The save offsets those symbols resolve to, spelled out so the test asserts
 # against numbers it did not compute the same way the code did.
@@ -94,12 +96,12 @@ def test_offsets_resolve() -> None:
     print("\nthe symbols resolve to the offsets the writer will use")
     check("sCurMapData lands at 10", savefile.sram_offset(_SYMS["sCurMapData"]) == 10)
     save = fresh_save()
-    # The private locator is the one the four writes go through; prove it agrees
+    # The private locator is the one every write goes through; prove it agrees
     # with the offsets this test asserts against, or the rest proves nothing.
     for field, label in (("group", "wMapGroup"), ("number", "wMapNumber"),
                          ("y", "wYCoord"), ("x", "wXCoord")):
         check(f"{label} -> save offset {_OFF[field]}",
-              save._curmap_offset(_SYMS, label) == _OFF[field])
+              save._saved_offset(_SYMS, label) == _OFF[field])
 
 
 def test_a_non_save_is_refused() -> None:
@@ -164,7 +166,7 @@ def test_a_missing_symbol_is_a_clear_refusal() -> None:
         save.stand_on(thin, group=1, number=1, y=1, x=1)
     except savefile.SaveError as e:
         check("stand_on raises SaveError naming the missing symbol",
-              "wCurMapData" in str(e) or "sCurMapData" in str(e), str(e))
+              "wMapGroup" in str(e), str(e))
     except Exception as e:  # noqa: BLE001 — the point is the type
         check("stand_on raises SaveError, not a raw lookup error", False,
               f"{type(e).__name__}: {e}")
@@ -311,6 +313,118 @@ def test_real_map_resolution() -> None:
         check(f"{const} resolves to group/number {want}", got == want, str(got))
 
 
+def test_the_boot_rebuilds_the_whole_map() -> None:
+    """The heart of it: standing on a map must rebuild the *map*, not just the
+    position — the tiles and objects around you — or the game renders the previous
+    map's state at the new coordinates (the corruption a live playtest found).
+
+    Runs the whole boot as a dry-run on a *copy* of the real `pokecrystal11_debug`
+    save next door (never the file itself). Falsified first, the project idiom:
+    each check is shown failing on the *stale* pre-rebuild bytes a position-only
+    boot would leave, before it is shown passing on the rebuilt ones. The expected
+    tiles/objects are computed independently from the ROM, so a writer that agrees
+    with itself but not the game can't pass. Two maps: an outdoor town with
+    connections and NPCs, and an indoor lab.
+    """
+    from pokeprism_devtools.hacks.vanilla import play  # noqa: PLC0415
+    from pokeprism_devtools.shared.overworld import blockdata, people  # noqa: PLC0415
+
+    root = Path.home() / "code/ricccec/pokecrystal"
+    rom = root / "pokecrystal11_debug.gbc"
+    sym = root / "pokecrystal11_debug.sym"
+    template = root / "pokecrystal11_debug.sav"
+    print("\nthe full boot rebuilds the map (dry-run on a copy of the real debug save)")
+    if not (rom.exists() and sym.exists() and template.exists()):
+        print("  --   no built debug ROM+save next door — skipping "
+              "(build pokecrystal11_debug.gbc and save in-game once to cover this)")
+        return
+
+    syms = SymFile.load(sym)
+    where = play.Player(root)._where
+
+    for target, y, x in (("CHERRYGROVE_CITY", 8, 8), ("ELMS_LAB", 3, 3)):
+        print(f"  {target} at ({y}, {x})")
+        group, number = where(target)
+        save = savefile.Save(bytearray(template.read_bytes()))
+        check("the debug save looks real before we touch it", save.looks_real(syms))
+
+        ss = save._saved_offset(syms, "wScreenSave")
+        mo = save._saved_offset(syms, "wMapObjects")
+        os_ = save._saved_offset(syms, "wObjectStructs")
+        stale_screen = bytes(save.data[ss:ss + 30])
+
+        # What the rebuild *should* produce, computed independently from the ROM.
+        bd = blockdata.load(rom, syms, group, number, name=target)
+        neighbors = []
+        for conn in blockdata.map_connections(rom, syms, group, number,
+                                               map_width=bd.width):
+            try:
+                neighbors.append((conn, blockdata.load(rom, syms, conn.group,
+                                                       conn.map_id)))
+            except ValueError:
+                continue
+        want_screen = blockdata.compute_screen_save(bd, x, y, neighbors=neighbors)
+        events = blockdata.object_events(rom, syms, group, number, name=target)
+
+        # Falsify: the stale screen bytes are NOT already the destination's, so a
+        # boot that left them (the position-only bug) would fail the check below.
+        check("  the pre-rebuild wScreenSave is the old map's, not the "
+              "destination's (a position-only boot would render corrupt)",
+              stale_screen != want_screen)
+
+        changes = save.stand_on(syms, group=group, number=number, y=y, x=x,
+                                rom_path=rom, keep_people=False)
+
+        check("  after the rebuild, wScreenSave is the destination map's tiles",
+              bytes(save.data[ss:ss + 30]) == want_screen)
+
+        # Objects: slots 1.. hold the destination map's own NPCs (its events).
+        room = min(len(events), people.NUM_OBJECTS - 1)
+        loaded = all(
+            bytes(save.data[mo + (i + 1) * people.MAP_OBJECT_LEN + people.MAPOBJ_SPRITE:
+                            mo + (i + 1) * people.MAP_OBJECT_LEN + people.MAPOBJ_SPRITE
+                            + people.PERSON_EVENT_LEN]) == events[i]
+            for i in range(room))
+        check(f"  wMapObjects holds the destination map's {room} NPC(s)",
+              room > 0 and loaded)
+
+        # The player object struct sits at the new tile (the +4 map convention).
+        check("  the player object struct is at the new tile (x+4, y+4)",
+              save.data[os_ + people.OBJ_STANDING_MAP_X] == (x + 4) & 0xFF and
+              save.data[os_ + people.OBJ_STANDING_MAP_Y] == (y + 4) & 0xFF)
+
+        # Primary and backup checksums both verify, and the backup mirrors the
+        # primary — the whole save is internally consistent, as after an in-game
+        # save. Falsify each by corrupting one byte and re-summing.
+        def verifies(g0: str, g1: str, ck: str) -> bool:
+            a = savefile.sram_offset(syms[g0])
+            b = savefile.sram_offset(syms[g1])
+            c = savefile.sram_offset(syms[ck])
+            return savefile.checksum16(save.data[a:b]) == (save.data[c] | save.data[c + 1] << 8)
+
+        check("  the primary checksum verifies over the rebuilt game data",
+              verifies("sGameData", "sGameDataEnd", "sChecksum"))
+        check("  the backup checksum verifies over the mirrored game data",
+              verifies("sBackupGameData", "sBackupGameDataEnd", "sBackupChecksum"))
+        pg0 = savefile.sram_offset(syms["sGameData"])
+        pg1 = savefile.sram_offset(syms["sGameDataEnd"])
+        bg0 = savefile.sram_offset(syms["sBackupGameData"])
+        bg1 = savefile.sram_offset(syms["sBackupGameDataEnd"])
+        check("  the backup game data byte-for-byte mirrors the primary",
+              bytes(save.data[bg0:bg1]) == bytes(save.data[pg0:pg1]))
+
+        # Falsify the checksum check itself: corrupt a game-data byte and prove
+        # verification now fails, so a passing check above means something.
+        save.data[pg0] ^= 0xFF
+        check("  a corrupted game-data byte fails the primary checksum "
+              "(the check bites)",
+              not verifies("sGameData", "sGameDataEnd", "sChecksum"))
+
+        check("  the boot reports the rebuild it performed",
+              any("wScreenSave" in c for c in changes)
+              and any("people" in c for c in changes), str(changes))
+
+
 def main() -> int:
     test_offsets_resolve()
     test_a_non_save_is_refused()
@@ -320,6 +434,7 @@ def main() -> int:
     test_build_toolchain_default_and_override()
     test_targets_are_read_from_the_makefile()
     test_real_map_resolution()
+    test_the_boot_rebuilds_the_whole_map()
     test_a_real_sym_carries_these_symbols()
 
     print()

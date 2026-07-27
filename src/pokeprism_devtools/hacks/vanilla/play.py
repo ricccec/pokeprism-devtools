@@ -9,10 +9,10 @@ already parses it. The `make` runner and the emulator are the only pieces neithe
 tree owns, and both come from neutral modules (`shared.make`, `dev_server.emulator`)
 so nothing here reaches into prism.
 
-The boot half is not yet the whole of prism's. It stands you on the tile — writes
-the position, fixes the checksum — but does not rebuild the map's objects, so the
-overworld's sprites come up wrong. See :meth:`Player.boot`; that is the next piece
-of the loop, not a finished one.
+The boot rebuilds the whole map, not just the position: standing you on a tile
+also reconstructs the tiles and objects around it (`shared.overworld.rebuild`,
+the engine-general core prism drives too) so the overworld comes up clean rather
+than over the previous map's state. See :meth:`Player.boot`.
 """
 
 from __future__ import annotations
@@ -75,20 +75,12 @@ class Player:
              target: str | None = None, keep_people: bool = False) -> list[str]:
         """Stand at (y, x) on `const`, in a built pokecrystal, now.
 
-        **Known limitation — the map's objects are not rebuilt.** This writes
-        the four position bytes and fixes the primary checksum, and nothing
-        else. It does *not* reconstruct `wMapObjects` for the map you land on,
-        so the overworld's NPC and sprite state stays whatever the previous map
-        left in SRAM — which the game renders as glitched or wrong sprites. You
-        stand on the right tile; you do not yet walk into a cleanly populated
-        map. Prism does the whole thing (`dev_server/apply.py` rebuilds the
-        objects and their sprite VRAM, and recomputes *both* SRAM checksums);
-        vanilla has only the position half so far.
-
-        `keep_people` is accepted for the seam and ignored: it chooses whether
-        an object rebuild preserves the objects already there, and there is no
-        rebuild here for it to change. It is the flag that will gate that work
-        once vanilla grows it.
+        Patches the save to stand on the tile *and* rebuild the map around it —
+        the tiles and the objects, read from the built ROM — then fixes the
+        primary and backup checksums and opens SameBoy. `keep_people` preserves
+        the objects already in the save instead of reloading the destination
+        map's own; it gates the NPC half of the rebuild, exactly as it does for
+        prism through the shared core.
         """
         target = self._target(target)
         rom = self._root / target
@@ -116,12 +108,15 @@ class Player:
                     f"the save at {template.name} doesn't look real (its validity "
                     "bytes are missing). Play the game once to create a proper save.")
             backup = self._backup(template)
-            save.stand_on(syms, group=group, number=number, y=y, x=x)
+            map_changes = save.stand_on(
+                syms, group=group, number=number, y=y, x=x,
+                rom_path=rom, keep_people=keep_people)
             save.write(template)
         except savefile.SaveError as e:
             raise PlayError(str(e)) from e
 
         changes = [f"map = {const} at ({y}, {x})  [group {group}, map {number}]"]
+        changes += map_changes
         if backup is not None:
             changes.append(f"backed up the previous save to {backup.name}")
         return changes + self._emulator.launch(rom).warnings
