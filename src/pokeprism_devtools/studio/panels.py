@@ -316,6 +316,29 @@ class Blocks:
     label: str = ""
 
 
+@dataclass(frozen=True)
+class Sketch:
+    """A grid a form drew, before the tree has put colour on it.
+
+    The counterpart to :class:`Blocks`, and it exists for one reason: the
+    family's new-map form is *neutral studio code* while the colours are not.
+    A grid file is bytes anywhere, but a tileset name means something only to
+    the tree that defines the constant — so the form answers with the grid and
+    the name it was given, and each family reader turns that into `Blocks` with
+    its own swatches. Prism needs no such record: its action and its reader are
+    the same adapter, so it hands itself its own (see `Action.sketch`).
+    """
+    blocks: bytes
+    height: int
+    width: int
+    #: The tileset constant as typed — `TILESET_JOHTO`. Empty when the tree's
+    #: header takes no tileset at all, which is drawn uncoloured rather than
+    #: refused: the shape is the half of the picture that catches a wrong
+    #: height, and it is still worth seeing without the hue.
+    tileset: str = ""
+    label: str = ""
+
+
 def _yx(r) -> tuple[str, str]:
     return (_NONE if r.y is None else str(r.y), _NONE if r.x is None else str(r.x))
 

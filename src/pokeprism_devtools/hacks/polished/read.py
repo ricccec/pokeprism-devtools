@@ -18,6 +18,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from ...studio import panels
+from ...studio.actions import ActionError
 from ..vanilla.read import attrs, dims, label_of, lines
 from . import events, swatches
 
@@ -33,8 +34,9 @@ _WILDMON = re.compile(r"^\s*wildmon\s+(\d+)\s*,\s*(\w+)\s*,?\s*(\w+)?")
 
 class Reader:
     """One polishedcrystal tree, answering the studio's questions in the
-    seam's words. Read-only, like vanilla — and like vanilla, `measure` and
-    `sketch` are honestly absent."""
+    seam's words. Like vanilla, `measure` is honestly absent — the dialogue
+    path is fixed-width whatever the menus do — and like vanilla it sketches:
+    the new-map form draws before it writes."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -98,6 +100,26 @@ class Reader:
         return panels.Blocks(
             blocks=blocks, height=d.height, width=d.width,
             swatches=swatches.for_tileset(self.root, m.tileset) if m else ())
+
+    # -- what a form is sketching -------------------------------------------- #
+    def sketch(self, action) -> panels.Blocks | None:
+        """The new-map form's grid, in this tree's colours.
+
+        The same fork as `geometry` and for the same reason: the shape is
+        shared family mechanics, the swatches come from polished's own
+        metatile attributes. See vanilla's `sketch` for why an unfinished
+        tileset draws uncoloured while a wrong one is refused.
+        """
+        drawn = action.sketch(self.root)
+        if drawn is None:
+            return None
+        try:
+            colors = swatches.for_tileset(self.root, drawn.tileset) if drawn.tileset else ()
+        except panels.Unreadable as exc:
+            raise ActionError(str(exc)) from exc
+        return panels.Blocks(blocks=drawn.blocks, height=drawn.height,
+                             width=drawn.width, swatches=colors,
+                             label=drawn.label)
 
     def wild(self, const: str) -> dict[str, dict[str, list[panels.WildMon]]]:
         """Same shape as the rest of the family — grass 7×3, water 3 — but a

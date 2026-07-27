@@ -20,20 +20,28 @@ for its blocks, so there is no placement to choose and the form simply does not
 have the field. A field offering exactly one answer is worse than no field: it
 implies a decision that was never available.
 
-This form does not sketch. `hacks/prism/newmap.py` draws prism's map on the grid
-while you are still typing, and that is worth having here too — a `.blk` that
-is not `height x width` becomes a picture of the wrong shape rather than an
-error message. It is not claimed yet because it needs a family block renderer
-to point at, and claiming it by returning something that does not draw would be
-the absence Phase 4 built `absent()` to avoid saying wrong. What is not lost is
-the check: `wiring/mapnew.py` refuses a grid that is not exactly
-`height x width`, so the mistake is caught, just told rather than shown.
+**This form sketches**, the way `hacks/prism/newmap.py` does: the grid you
+pointed at, at the height and width you typed, drawn on the studio's grid while
+the form is still open. The mistake worth seeing is the one that otherwise
+builds — a grid that is not `height x width` — and `wiring/mapnew.read_grid`
+already refused it in words. Now it refuses in a picture, which is the same
+check told better: a wrong `height` looks like a map cut off or skewed, and you
+fix the number rather than reading arithmetic about it.
+
+It draws through the *same* `read_grid` the write goes through, so the two can
+never disagree about what the file holds. What it cannot do alone is colour:
+the grid is bytes anywhere, but a tileset constant means something only to the
+tree that defines it. So this answers with a neutral `panels.Sketch` — grid,
+size, and the tileset name as typed — and each family reader turns that into
+`panels.Blocks` with its own swatches. Prism has no such split because its
+action and its reader are the same adapter.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from . import panels
 from ..wiring import mapnew
 from ..wiring.placement import Placement
 from .actions import (BLOCK_SECTIONS, BLOCKS, GROUPS, SCRIPT_SECTIONS, Action,
@@ -62,6 +70,7 @@ _BASE = (
 class AddMap(Action):
     name = "newmap"
     title = "Add a new map"
+    sketches = True
     #: The tree's answers. A class attribute for the reason `studio/resize.py`
     #: gives: a form is built as `action(map_const, **values)` and there is no
     #: third seat. Stamped by :func:`newmap_for`.
@@ -79,6 +88,34 @@ class AddMap(Action):
 
     def selects(self) -> str | None:
         return self.text("label") or None
+
+    # -- the picture ---------------------------------------------------------- #
+    def sketch(self, root: Path) -> panels.Sketch | None:
+        """The map on the grid, before any of it is written down.
+
+        Everything it needs is on the form, so it can be wrong in every way the
+        form can be wrong — and each of those is worth seeing rather than being
+        told. It refuses only what it cannot draw at all: a size that is not a
+        size, and a grid file whose length disagrees with it.
+
+        The tileset is *not* refused when it is empty or half-typed. It is the
+        one answer that only colours the picture, and a form is half-typed for
+        as long as you are typing into it; withholding the shape until the
+        spelling is finished would hide the mistake this exists to show.
+        """
+        blk = self.text("blk")
+        if not blk:
+            raise ActionError("point at the grid you drew")
+        height, width = self.integer("height"), self.integer("width")
+        if height < 1 or width < 1:
+            raise ActionError("a map is at least one block by one block")
+        try:
+            grid = mapnew.read_grid(Path(blk).expanduser(), height, width)
+        except mapnew.EditError as exc:
+            raise ActionError(str(exc)) from exc
+        return panels.Sketch(blocks=grid, height=height, width=width,
+                             tileset=self.text("tileset"),
+                             label=self.text("label"))
 
     def run(self, root: Path) -> Result:
         blk = self.text("blk")

@@ -22,6 +22,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from ...studio import panels
+from ...studio.actions import ActionError
 from . import events, swatches
 
 _ATTR = re.compile(r"^\s*map_attributes\s+(\w+)\s*,\s*(\w+)\s*,\s*(\$\w+|\d+)")
@@ -40,9 +41,9 @@ _WILDMON = re.compile(r"^\s*db\s+(\d+)\s*,\s*(\w+)")
 
 class Reader:
     """One pokecrystal tree, answering the studio's questions in the seam's
-    words. Read-only: `hacks.mount` declares no capability for it, so the
-    protocol's `measure` and `sketch` are honestly absent rather than
-    stubbed."""
+    words. `measure` is honestly absent rather than stubbed — this tree's
+    dialogue is fixed-width, so the per-glyph pixel widths it would sum do not
+    exist. `sketch` is present: the new-map form draws before it writes."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -109,6 +110,32 @@ class Reader:
         return panels.Blocks(
             blocks=blocks, height=d.height, width=d.width,
             swatches=swatches.for_tileset(self.root, m.tileset) if m else ())
+
+    # -- what a form is sketching -------------------------------------------- #
+    def sketch(self, action) -> panels.Blocks | None:
+        """A picture of what the new-map form would put on the grid.
+
+        The form draws the *shape* — it is neutral code and a grid file is
+        bytes in any tree. This puts the tree's *colour* on it, which is the
+        half only an adapter can answer.
+
+        A tileset that is merely unfinished draws uncoloured, because a form is
+        unfinished for as long as you are typing into it and the shape is the
+        half that catches a wrong height. One that is finished and *wrong* is
+        refused, with what is wrong about it: a map drawn in another tileset's
+        colours looks perfectly fine and is perfectly wrong, so it is the one
+        case where saying nothing would be worse than drawing nothing.
+        """
+        drawn = action.sketch(self.root)
+        if drawn is None:
+            return None
+        try:
+            colors = swatches.for_tileset(self.root, drawn.tileset) if drawn.tileset else ()
+        except panels.Unreadable as exc:
+            raise ActionError(str(exc)) from exc
+        return panels.Blocks(blocks=drawn.blocks, height=drawn.height,
+                             width=drawn.width, swatches=colors,
+                             label=drawn.label)
 
     def wild(self, const: str) -> dict[str, dict[str, list[panels.WildMon]]]:
         """Grass splits by time of day, water doesn't — seven slots ×3 and
