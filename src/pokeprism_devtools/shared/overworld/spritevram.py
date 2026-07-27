@@ -20,7 +20,8 @@ the rebuilt allocator places that sprite at, or it renders from a stale offset:
     GetPlayerSprite            -> wUsedSprites[0]
     AddMapSprites              -> append the map's sprite pool, deduped
     LoadSpriteGFX              -> tag each entry with its sprite *type*
-    SortUsedSprites            -> stable sort by type ascending
+    SortUsedSprites            -> sort by type ascending (selection-from-end,
+                                  not stable — a run of equal types reverses)
     ArrangeUsedSprites         -> assign cumulative tile offsets, two VRAM tables
 
 Verified byte-for-byte against a real game-written save: the on-screen SPRITE_ROCK
