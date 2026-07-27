@@ -15,9 +15,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pokeprism_devtools.hacks.prism import (
-    blockdata, party as party_mod, people, savefile, species, spritevram)
+from pokeprism_devtools.hacks.prism import party as party_mod, savefile, species
+from pokeprism_devtools.hacks.prism.mapformat import PRISM_FORMAT
 from pokeprism_devtools.shared import symfile
+from pokeprism_devtools.shared.overworld import rebuild
 
 
 def load_state(path: Path, presets_dir: Path) -> dict:
@@ -112,97 +113,30 @@ def apply_state(
         sav.write_byte(off("wMapNumber"), final_map)
         sav.write_byte(off("wXCoord"), final_x)
         sav.write_byte(off("wYCoord"), final_y)
-        # Recompute wScreenSave from ROM so MAPSETUP_CONTINUE's
-        # LoadNeighboringBlockData overlays consistent data (otherwise the
-        # area around the player renders as stale tiles or zeros).
-        bd = blockdata.load(
-            rom_path, syms, final_group, final_map, name=map_label or ""
-        )
-        # Pull in the connected neighbours so an edge position renders the real
-        # border blocks instead of void. A neighbour that won't load (malformed
-        # header) just falls back to zero padding — no worse than before.
-        neighbors = []
-        for conn in blockdata.map_connections(
-            rom_path, syms, final_group, final_map,
-            map_width=bd.width, name=map_label or "",
-        ):
-            try:
-                nb = blockdata.load(
-                    rom_path, syms, conn.group, conn.map_id,
-                    name=f"{map_label or 'map'} {conn.direction} neighbour",
-                )
-            except ValueError:
-                continue
-            neighbors.append((conn, nb))
-        ss_bytes = blockdata.compute_screen_save(
-            bd, final_x, final_y, neighbors=neighbors
-        )
-        sav.write_bytes(off("wScreenSave"), ss_bytes)
-
+        # The position bytes are prism's own layout; rebuilding the map around
+        # them (tiles + objects) is engine-general Gen-2, so it lives in the
+        # shared core both trees drive. Prism supplies the save offsets from its
+        # inventory; vanilla resolves the same fields from its own symbols.
         label = map_label or f"(group {final_group}, id {final_map})"
-        edges = ", ".join(c.direction for c, _ in neighbors) or "none"
-        changes.append(
-            f"map = {label} at ({final_x}, {final_y}); "
-            f"recomputed wScreenSave from {bd.width}x{bd.height} block grid "
-            f"(connections filled: {edges})"
-        )
-
-        # Reset the player struct, then (unless --keep-people) clear the NPC
-        # slots and load the destination map's own NPCs in their place. Without
-        # this, MAPSETUP_CONTINUE leaves wObjectStructs holding the previous
-        # map's player position and NPC state, so the player renders off-screen
-        # and ghost NPCs from the old map show up. Clearing alone fixes the
-        # ghosts but leaves the map deserted; loading is what makes teleporting
-        # in to look at an NPC you just placed actually show you the NPC.
-        people_changes = people.reset_player_and_clear_npcs(
+        changes.append(f"map = {label} at ({final_x}, {final_y})")
+        changes.extend(rebuild.rebuild_map(
             sav,
-            object_structs_offset=offsets["wObjectStructs"]["sav_offset"],
-            map_objects_offset=offsets["wMapObjects"]["sav_offset"],
-            map_objects_size=offsets["wMapObjects"]["size"],
+            rom_path=rom_path,
+            syms=syms,
+            group=final_group,
+            number=final_map,
             x=final_x,
             y=final_y,
-            keep_npcs=keep_people,
-        )
-        if not keep_people:
-            events = blockdata.object_events(
-                rom_path, syms, final_group, final_map, name=map_label or ""
-            )
-            people_changes |= people.load_map_npcs(
-                sav,
-                map_objects_offset=offsets["wMapObjects"]["sav_offset"],
+            offsets=rebuild.SaveOffsets(
+                screen_save=off("wScreenSave"),
+                object_structs=offsets["wObjectStructs"]["sav_offset"],
+                map_objects=offsets["wMapObjects"]["sav_offset"],
                 map_objects_size=offsets["wMapObjects"]["size"],
-                events=events,
-            )
-            # Instantiate the NPCs that fall on screen into wObjectStructs — the
-            # Continue path loads their graphics (LoadGraphics rebuilds the VRAM
-            # allocator) but never runs InitializeVisibleSprites, so without this
-            # they exist in wMapObjects yet render as nothing. The SPRITE_TILE we
-            # write has to agree with that rebuilt allocator, which is what
-            # spritevram reproduces.
-            player_sprite = sav.data[offsets["wObjectStructs"]["sav_offset"] + people.OBJ_SPRITE]
-            if blockdata.is_outdoor(bd.permission):
-                pool = spritevram.outdoor_sprite_ids(
-                    rom_path, syms, final_group, name=map_label or ""
-                )
-            else:
-                pool = [ev[0] for ev in events]  # indoor: the map's own NPC sprites
-            npc_sprites = [ev[0] for ev in events]
-            tiles = spritevram.sprite_tiles(rom_path, syms, player_sprite, pool)
-            people_changes |= people.instantiate_visible_sprites(
-                sav,
-                object_structs_offset=offsets["wObjectStructs"]["sav_offset"],
-                map_objects_offset=offsets["wMapObjects"]["sav_offset"],
-                map_objects_size=offsets["wMapObjects"]["size"],
-                x=final_x,
-                y=final_y,
-                sprite_tiles=tiles,
-                sprite_palettes=spritevram.sprite_palettes(rom_path, syms, npc_sprites),
-                movement_data=spritevram.movement_data(rom_path, syms),
-                default_tile=tiles.get(player_sprite, 0),
-            )
-        changes.append(
-            "people: " + ", ".join(f"{k}={v}" for k, v in people_changes.items())
-        )
+            ),
+            keep_people=keep_people,
+            name=map_label or "",
+            format=PRISM_FORMAT,
+        ))
 
     party_state = state.get("party")
     if party_state:

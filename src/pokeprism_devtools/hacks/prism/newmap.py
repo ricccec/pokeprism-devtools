@@ -37,7 +37,7 @@ from pathlib import Path
 from ...map_new import TEMPLATE
 from ...mapfit import mapwire
 from . import blocksrc, consts, maps as maps_mod, mapsource
-from .blockdata import BlockData
+from ...shared.overworld.blockdata import BlockData
 from ...shared.edits import Edit
 from .mapspec import MapSpec
 from ...studio.actions import (BLOCKS, FISHGROUPS, GROUPS, LANDMARKS, MUSIC, PERMISSIONS,
