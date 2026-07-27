@@ -348,6 +348,34 @@ that is *finished and wrong* is refused by name — falling back to tileset 0 wo
 draw a forest in a cave's colours, which looks perfectly fine and is perfectly
 wrong. Verified on both real trees, every check falsified first.
 
+## Landed — the build screen remembers its target (2026-07-27)
+
+`b` offers the play adapter's targets in the order the `Makefile` declares them,
+which is not the order anyone wants: on vanilla the first is `pokecrystal.gbc`
+and the answer is always `pokecrystal11_debug.gbc`, so every build opened by
+correcting a field that had been corrected the same way the build before. The
+target that *built* is now kept in the tree it is about — `.devtools/studio.json`,
+beside the lint baseline and the save backups (`studio/prefs.py`) — and prefilled
+next time.
+
+In the tree because that is what it is a fact about: which ROM you build is a
+property of the checkout, and a per-user file would key it by path and be wrong
+the moment the checkout moved. Written only **after a build succeeds**, because a
+prefilled field is read as an answer rather than a question. Reading is forgiving
+(a corrupt `studio.json` costs a prefill, never a build) and writing is not (a
+tree that refuses the file says so in the log). The box stays free text and the
+offer list is untouched — a `make` target the `Makefile` never enumerates is one
+you can type, and having typed it once is the reason to keep it.
+
+The box was also 14 columns, which was never a decision: prism's targets are
+`prism` and `nodebug`, vanilla's are 23-character file names. It is now
+`width: 1fr; max-width: 30` — 30 is what the longest name needs, as a ceiling
+rather than a width, because a flat 30 pushes the Quiet checkbox off the right
+edge below 103 columns.
+
+`prefs` joins the seam guard's reader list, so a screen that reaches for it
+directly instead of through the session fails `test_the_view_does_not_import_a_parser`.
+
 ## What's left — the pick-up list
 
 The seam has **no known structural debt**; everything below is elective. Ordered
@@ -358,9 +386,10 @@ by what it costs versus what it buys, with the detail in the sections that follo
 | **1. Restore `test_visible_sprites_get_the_right_vram_tile`** | small | Tests, below — the only place the repo currently misreports itself |
 | **2. Polished `plays`** | large | Absences — the item that completes the capability matrix |
 | **3. Prism variable sprites in the boot** | one line, unverifiable alone | Absences — pair it with (2) or with sprite work |
-| **4. Family rewording** | project | Absences — `wiring/text` is still prism-parser-based |
+| **4. Family rewording** | project | Absences — the parse and the metrics exist; the splice and the form do not |
 | **5. Connection *adding*** | needs design | Absences — two-sided |
 | **6. `EditMap` attributes tab** | unclaimed | Absences |
+| **7. Ignore `.devtools/` from the code that creates it** | small | Housekeeping, below — the tool dirties `git status` in trees it does not own |
 
 **(1) is the one I would not leave.** It prints `[OK]` while testing nothing, and
 it guards the sprite-VRAM allocator that (2) and (3) both go on to change — so it
@@ -432,8 +461,22 @@ seam"); the standing items:**
   `SPRITE_WEIRD_TREE` and whose two resolutions (`SudowoodoSpriteGFX`
   `12, STANDING` vs `TwinSpriteGFX` `12, WALKING`) share a length but differ in
   *type*, which is enough to move the sort.
-- **Family rewording** — `wiring/text` is still prism-parser-based (one of the
-  cat-4 movers); rewording against a fixed-width charmap is a text-wiring project.
+- **Family rewording** — `hacks/prism/text.py` splices against prism's own
+  `dialogue` parse; neither family write adapter answers `form("reword")`, so `t`
+  lists a family map's text and pressing enter says rewording is not wired. **Two
+  thirds of it already exist and were built for something else:** the Phase 11
+  linter brought `hacks/vanilla/lint/dialogue.py` (a cursor walked by the script
+  commands, carrying each rendered line's `lineno` and macro) and
+  `lint/metrics.py` (tile widths read out of `home/text.asm`'s `dict` table). What
+  is missing is the splice that puts words back — the 60-line analogue of
+  `prism/text.py` — and the form that calls it. Still a project, for one reason:
+  the family's *visual* line is not its *source* line. `line "your @"` +
+  `text_ram wStringBuffer3` + `text "…"` is one line on screen and three macros in
+  the file, so prose the author edits does not map onto macros positionally the
+  way prism's does. The design question is whether the form refuses buffer-spliced
+  blocks or re-derives the split — and, before either, whether `events.texts` and
+  `lint/dialogue` collapse into one parse, so the words shown, measured and
+  written back cannot drift apart.
 - **Connection *adding*** — `wiring/connections` is two-sided; deserves its own
   look. Deletion already refuses on the neighbour's side, with teeth.
 - **`EditMap` (attributes tab)** for family trees — not claimed.
@@ -454,6 +497,33 @@ longer prism-only: its rules are, but the channel itself — `diagnostics` and t
 neutral `textfit` — imports without prism, and both family trees now carry their
 own overflow `ctx` on top of it. What each tree lints is its own; that the
 session cannot tell them apart is the seam working.
+
+## Housekeeping — ignore `.devtools/` from the code that creates it
+
+The tools write into `<hack>/.devtools/`: renders, the lint baseline, the new-map
+specs, the save backups, and now `studio.json`. Only prism's `.gitignore` knows —
+`pokecrystal` and `polishedcrystal` report `?? .devtools/` forever, and they are
+the two trees that **track upstream**, where a line added to a `.gitignore` we do
+not own is a permanent local diff that conflicts on every rebase.
+
+The fix is not to edit those files by hand but to stop needing them: write
+`.devtools/.gitignore` containing `*` at the moment the directory is created. It
+ignores its own contents *and itself* (`git check-ignore` names line 1 as the rule
+that hides the file), so the whole directory leaves `git status` with nothing
+tracked and nothing to commit. `.git/info/exclude` does the same job and was
+rejected: it means reaching into git's private directory, and doing it correctly
+means resolving `git rev-parse --git-dir` first, because `.git` is a *file* in a
+worktree or a submodule.
+
+The work is a `shared/` helper — `make_devtools_dir(root, *sub)` — that mkdirs,
+writes the ignore once if absent (never overwriting: it may have been edited), and
+returns the path, plus the six call sites that create the directory themselves
+today (`dev_server/cli.py`, `gfx_view`, `mapview`, `metatiles`, `map_new` specs,
+`vanilla/play.py`'s sav-backups, `studio/prefs.py`). One code path making both
+means the ignore and the directory cannot drift. A bare `*` also hides
+`.devtools/presets/`, which `devtools.md` calls check-in-able — not a regression,
+since prism's own `.devtools/*` already ignores them with no negation, and the
+negated variant puts `?? .devtools/` back for the two trees that have no presets.
 
 ## Doc hygiene — the accretion to watch
 
@@ -503,6 +573,11 @@ what the writer wrote.
 trees — that it draws at the asked size in the tileset's colours, that each way
 it can be wrong is refused *by name*, and that the picture and the write refuse a
 bad grid in the same words (one `read_grid`, not two that drift).
+The remembered build target is covered on both sides of the seam:
+`test_studio.py::test_the_target_you_built_with_comes_back` for the store (per
+tree, survives a new session, leaves other keys alone, and a corrupt file costs a
+prefill and nothing else), and `test_studio_tui.py::TestBuildScreen` for the box
+itself, on a temp copy of a real repo.
 `test_grid.py` and `test_lib.py` now
 exercise the lifted `shared/overworld` reader through prism's `MapFormat`, proving
 the parameterization keeps prism byte-identical. `test_seam.py::test_falsified`
