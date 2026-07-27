@@ -16,7 +16,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from . import blockdata
+from ...shared.overworld import blockdata
+from .mapformat import PRISM_FORMAT
 from ...shared import lz, symfile
 
 TILE_PX = 8
@@ -283,7 +284,7 @@ def render_map(
     palette_table: override the BG palette table (one of PALETTE_TABLES);
         default derives it from the map's permission via get_map_palettes.
     """
-    bd = blockdata.load(rom_path, syms, group, map_id, name=name)
+    bd = blockdata.load(rom_path, syms, group, map_id, name=name, format=PRISM_FORMAT)
     gfx_tileset = tileset_id if tileset_id is not None else bd.tileset_id
     metatiles, attributes, gfx = load_tileset_files(root, gfx_tileset)
     if palette_table is not None:

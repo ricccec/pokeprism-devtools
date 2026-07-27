@@ -15,9 +15,10 @@ from __future__ import annotations
 import sys
 
 from pokeprism_devtools.hacks.prism import (
-    blockdata, eventheader, maps, mapsource, party, people, render, savefile, species,
-    spritevram)
+    eventheader, maps, mapsource, party, render, savefile, species)
+from pokeprism_devtools.hacks.prism.mapformat import PRISM_FORMAT
 from pokeprism_devtools.shared import constants, lz, paths, symfile
+from pokeprism_devtools.shared.overworld import blockdata, people, spritevram
 
 
 def check(label: str, cond: bool, detail: str = "") -> None:
@@ -105,13 +106,15 @@ def main() -> None:
 
     print("\nblockdata.py — load")
     rom = paths.rom_path(root)
-    caper = blockdata.load(rom, syms, group=2, map_id=5, name="CAPER_HOUSE")
+    caper = blockdata.load(rom, syms, group=2, map_id=5, name="CAPER_HOUSE",
+                           format=PRISM_FORMAT)
     check(
         "CAPER_HOUSE is 4x4 blocks with 16 bytes of grid",
         caper.width == 4 and caper.height == 4 and len(caper.blocks) == 16,
         f"{caper.width}x{caper.height}, len={len(caper.blocks)}",
     )
-    aqua = blockdata.load(rom, syms, group=31, map_id=2, name="ACQUA_TUTORIAL")
+    aqua = blockdata.load(rom, syms, group=31, map_id=2, name="ACQUA_TUTORIAL",
+                          format=PRISM_FORMAT)
     check(
         "ACQUA_TUTORIAL is 25x30 blocks with 750 bytes of grid",
         aqua.width == 25 and aqua.height == 30 and len(aqua.blocks) == 750,
@@ -182,16 +185,17 @@ def main() -> None:
         m = sf.data[off["wMapNumber"]]
         y = sf.data[off["wYCoord"]]
         x = sf.data[off["wXCoord"]]
-        bd = blockdata.load(rom, syms, group=g, map_id=m)
+        bd = blockdata.load(rom, syms, group=g, map_id=m, format=PRISM_FORMAT)
         # Fold in the neighbours the same way apply.py does — without them an
         # edge save (one standing near a connection) never matches, because the
         # game filled that padding from the adjacent map.
         neighbors = []
         for conn in blockdata.map_connections(
-            rom, syms, g, m, map_width=bd.width
+            rom, syms, g, m, map_width=bd.width, format=PRISM_FORMAT
         ):
             try:
-                nb = blockdata.load(rom, syms, conn.group, conn.map_id)
+                nb = blockdata.load(rom, syms, conn.group, conn.map_id,
+                                    format=PRISM_FORMAT)
             except ValueError:
                 continue
             neighbors.append((conn, nb))
@@ -231,7 +235,8 @@ def main() -> None:
             unparseable += 1
             continue
         try:
-            events = blockdata.object_events(rom, syms, *gm[const], name=label)
+            events = blockdata.object_events(rom, syms, *gm[const], name=label,
+                                             format=PRISM_FORMAT)
         except Exception as e:                       # noqa: BLE001 — report, don't crash
             disagree += 1
             first_bad = first_bad or f"{label}: {e}"
@@ -257,7 +262,8 @@ def main() -> None:
     print("\npeople.py — load_map_npcs")
     # A map with NPCs in it, synthesized into a blank wMapObjects the way
     # ReadObjectEvents would have.
-    events = blockdata.object_events(rom, syms, group=2, map_id=5, name="CAPER_HOUSE")
+    events = blockdata.object_events(rom, syms, group=2, map_id=5, name="CAPER_HOUSE",
+                                     format=PRISM_FORMAT)
     slots = 16
     size = slots * people.MAP_OBJECT_LEN
     sav = type("S", (), {"data": bytearray(size)})()
@@ -826,7 +832,8 @@ def main() -> None:
     # `rom` was reassigned to a list of banks in the mapfile section above.
     rom_file = paths.rom_path(root)
     rmap = next((m for m in map_defs if m.name == "AZALEA_TOWN"), map_defs[0])
-    bd = blockdata.load(rom_file, syms, rmap.group, rmap.map_id, name=rmap.name)
+    bd = blockdata.load(rom_file, syms, rmap.group, rmap.map_id, name=rmap.name,
+                        format=PRISM_FORMAT)
     base_img = render.render_map(root, rom_file, syms, rmap.group, rmap.map_id, name=rmap.name)
     check(f"render_map({rmap.name}) → {bd.width}×{bd.height} blocks",
           base_img.size == (bd.width * 32, bd.height * 32), f"{base_img.size}")

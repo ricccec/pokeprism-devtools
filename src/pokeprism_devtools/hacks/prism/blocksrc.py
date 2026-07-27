@@ -29,7 +29,7 @@ from pathlib import Path
 
 from . import maps as maps_mod, mapsource
 from ...shared import constants, lz
-from .blockdata import BlockData
+from ...shared.overworld.blockdata import BlockData
 
 _DIMENSIONS = "constants/map_dimension_constants.asm"
 _TILESETS = "constants/tilemap_constants.asm"
