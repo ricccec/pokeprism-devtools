@@ -407,8 +407,9 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
         check("measuring refuses with a sentence", False)
     except SessionError as exc:
         check("measuring refuses with a sentence", "vanilla" in str(exc))
-    check("reword is still absent — it is the text project",
-          s.form("reword") is None)
+    check("reword crosses now, and takes no dialect: both trees write the same "
+          "text macros",
+          s.form("reword").name == "reword")
     check("resize crosses, and carries the family's width-first shape",
           s.form("resize").dialect.shape.height_first is False)
     check("newmap crosses too, asking this tree's own header arguments",

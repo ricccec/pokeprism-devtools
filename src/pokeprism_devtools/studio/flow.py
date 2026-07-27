@@ -158,9 +158,14 @@ class Flow:
             self.notify("rewording text is not wired for this tree — "
                         "the words are on screen to read", timeout=8)
             return
+        # Everything the record knows about *which* block this is, not just the
+        # part that is a field. A label is not an identity — a family label can
+        # hold two boxes — so the line it opens on rides along, and an adapter
+        # that needs it to be sure has it. See `hacks/vanilla/text.py`.
         self.push_screen(
             Form(form, self.session, self._const or "",
-                 values={"label": text.label, "text": text.prose},
+                 values={"label": text.label, "owner": text.owner,
+                         "at": str(text.lineno), "text": text.prose},
                  boxes={"text": text.box}),
             self._filled)
 

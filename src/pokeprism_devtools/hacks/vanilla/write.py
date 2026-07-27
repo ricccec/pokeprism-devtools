@@ -199,16 +199,24 @@ class Writer:
         return self._actions[0].get(kind, ())
 
     def form(self, name: str):
-        """`resize` and `newmap` cross; `reword` is the text project.
+        """All three cross now, and `reword` is the one that is shared whole.
 
         The plan had resize standing on `newmap`, and the survey said it does
         not: a resized map keeps whatever section it was already in, so resize
         never asks the placement question that makes `newmap` hard. They are
         two capabilities and the cheap one arrived first.
 
+        `reword` takes no dialect argument at all — the two trees write the same
+        text macros into the same box, and the only thing that forked (how wide
+        a glyph draws) is not something a splice has to know. So both mount the
+        same class, which is what `.text`'s one parse buys.
+
         Each dialect is the one the mount declared, defaulting to vanilla's,
         and each is resolved lazily for the reason `_forms` gives below.
         """
+        if name == "reword":
+            from .text import EditText
+            return EditText
         if name == "resize":
             from ...studio.resize import resize_for
             from .resize import VANILLA
