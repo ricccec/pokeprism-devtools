@@ -56,6 +56,7 @@ def rebuild_map(
     keep_people: bool = False,
     name: str = "",
     format: blockdata.MapFormat = blockdata.MapFormat(),
+    variable_sprites: bytes = b"",
 ) -> list[str]:
     """Rebuild the tiles and objects around (x, y) on (group, number).
 
@@ -65,7 +66,10 @@ def rebuild_map(
     them. `keep_people` preserves the objects already in the save (only the tiles
     and the player are refreshed) instead of reloading the destination map's own.
     `format` is the tree's ROM map dialect — stock pokecrystal's by default, prism
-    passes its own. Returns human-readable change lines.
+    passes its own. `variable_sprites` is the save's `wVariableSprites` array, which
+    the sprite-VRAM allocation needs to size the map's variable sprites correctly
+    (empty is tolerated — they then fall back to walking sprites). Returns
+    human-readable change lines.
     """
     changes: list[str] = []
 
@@ -137,7 +141,8 @@ def rebuild_map(
             pool = [ev[0] for ev in events]  # indoor: the map's own NPC sprites
         npc_sprites = [ev[0] for ev in events]
         tiles = spritevram.sprite_tiles(rom_path, syms, player_sprite, pool,
-                                        headers_symbol=format.sprite_headers)
+                                        headers_symbol=format.sprite_headers,
+                                        variable_sprites=variable_sprites)
         people_changes |= people.instantiate_visible_sprites(
             sav,
             object_structs_offset=offsets.object_structs,

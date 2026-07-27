@@ -142,17 +142,22 @@ class Save:
         The rebuild is engine-general; what is vanilla's is *where* its fields sit
         in this save, so that is all this resolves before handing over. The
         `wMapObjects` byte length has no end symbol, so it comes from the Gen-2
-        constant the core itself owns (`NUM_OBJECTS * MAP_OBJECT_LEN`)."""
+        constant the core itself owns (`NUM_OBJECTS * MAP_OBJECT_LEN`). The
+        variable-sprite table travels along because the VRAM allocation needs it:
+        a variable sprite's real type is only in the save (`wVariableSprites`, a
+        `$100 - SPRITE_VARS` = 16-byte array in the player block)."""
         offsets = rebuild.SaveOffsets(
             screen_save=self._saved_offset(syms, "wScreenSave"),
             object_structs=self._saved_offset(syms, "wObjectStructs"),
             map_objects=self._saved_offset(syms, "wMapObjects"),
             map_objects_size=people.NUM_OBJECTS * people.MAP_OBJECT_LEN,
         )
+        vs = self._saved_offset(syms, "wVariableSprites")
         return rebuild.rebuild_map(
             self, rom_path=rom_path, syms=syms,
             group=group, number=number, x=x, y=y,
-            offsets=offsets, keep_people=keep_people)
+            offsets=offsets, keep_people=keep_people,
+            variable_sprites=bytes(self.data[vs:vs + 16]))
 
     def _recompute_checksum(self, syms: SymFile) -> None:
         start = sram_offset(self._sym(syms, "sGameData"))

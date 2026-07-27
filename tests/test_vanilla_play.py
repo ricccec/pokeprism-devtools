@@ -468,8 +468,13 @@ def test_visible_sprites_get_the_right_vram_tile() -> None:
     check("the outdoor sprite pool is the group's own fixed list, not an overrun "
           "into the next groups", len(pool) <= 23, f"pool has {len(pool)} ids")
 
-    pk = spritevram._pokemon_sprite_id(root / "constants" / "sprite_constants.asm")
-    tiles = spritevram.sprite_tiles(rom, syms, player, pool)
+    pk, _vars = spritevram._sprite_cutoffs(root / "constants" / "sprite_constants.asm")
+    # The save's variable-sprite table: a variable sprite in the pool (a Sudowoodo,
+    # say) has no fixed type without it, and its length shifts every later tile.
+    vs = off(syms, "wVariableSprites")
+    variable_sprites = bytes(save.data[vs:vs + 16])
+    tiles = spritevram.sprite_tiles(rom, syms, player, pool,
+                                    variable_sprites=variable_sprites)
     ok = True
     for i in range(people.NUM_OBJECT_STRUCTS):
         p = os_off + i * people.OBJECT_STRUCT_LEN

@@ -72,17 +72,24 @@ def _u16_le(data: bytes, offset: int) -> int:
 
 
 @lru_cache(maxsize=8)
-def _pokemon_sprite_id(constants_path: Path) -> int:
-    """`SPRITE_POKEMON` — the first sprite id the engine treats as a monster.
+def _sprite_cutoffs(constants_path: Path) -> tuple[int, int]:
+    """`(SPRITE_POKEMON, SPRITE_VARS)` — the two id thresholds `GetSprite` splits on.
 
-    Sprite ids at or above it go through `GetMonSprite` (which reports them as
-    walking sprites) instead of the sprite-header table, so it is the cut-off
-    for reading a real type byte out of ROM. Recovered by replaying the assembler
-    counter up to the `SPRITE_POKEMON EQU const_value` line, so a reorder of the
-    sprite list can't silently shift it. Stock pokecrystal spells the definition
-    `DEF SPRITE_POKEMON EQU ...` (modern rgbds); prism omits the `DEF`, so strip a
-    leading `DEF ` before matching and both are read the same.
+    Below `SPRITE_POKEMON` a sprite reads its type from the header table. In
+    `[SPRITE_POKEMON, SPRITE_VARS)` it is a monster icon (`GetMonSprite` reports it
+    as a walking sprite). At or above `SPRITE_VARS` it is a *variable* sprite,
+    resolved at runtime through `wVariableSprites[id - SPRITE_VARS]` — so its real
+    type (and VRAM length) is only knowable from the save, and getting it wrong
+    mis-sizes every sprite the VRAM allocator places after it.
+
+    Recovered by replaying the assembler counter. Both constants sit behind a
+    `const_next $XX` that *jumps* the counter (`SPRITE_POKEMON` at `$80`,
+    `SPRITE_VARS` at `$f0`), so honouring `const_next` is load-bearing — counting
+    `const` lines alone reads them far too low. `DEF ` prefixes (modern rgbds) are
+    stripped so prism, which omits them, reads the same. A tree with no
+    `SPRITE_VARS` has no variable sprites, so its cut-off is past every id (`$100`).
     """
+    pokemon = vars_id = None
     counter = 0
     for raw in constants_path.read_text().splitlines():
         line = raw.split(";", 1)[0].strip()
@@ -92,15 +99,19 @@ def _pokemon_sprite_id(constants_path: Path) -> int:
             line = line[4:].lstrip()
         if line == "const_def":
             counter = 0
-        elif line.startswith("const_def "):
+        elif line.startswith("const_def ") or line.startswith("const_next"):
             counter = _to_int(line.split(None, 1)[1])
         elif line.startswith("const_value"):
             counter = _to_int(line.split("=", 1)[1])
         elif line.startswith("const "):
             counter += 1
         elif line.startswith("SPRITE_POKEMON") and "EQU" in line:
-            return counter
-    raise ValueError(f"SPRITE_POKEMON not found in {constants_path}")
+            pokemon = counter
+        elif line.startswith("SPRITE_VARS") and "EQU" in line:
+            vars_id = counter
+    if pokemon is None:
+        raise ValueError(f"SPRITE_POKEMON not found in {constants_path}")
+    return pokemon, (vars_id if vars_id is not None else 0x100)
 
 
 def _to_int(s: str) -> int:
@@ -157,6 +168,7 @@ def sprite_tiles(
     candidate_ids: list[int],
     *,
     headers_symbol: str = "OverworldSprites",
+    variable_sprites: bytes = b"",
 ) -> dict[int, int]:
     """Return `{sprite_id: vtile}` — the VRAM tile each sprite id ends up at.
 
@@ -165,18 +177,37 @@ def sprite_tiles(
     `OutdoorSprites` list outdoors, or the map's own NPC sprite ids indoors).
     `headers_symbol` names the sprite-header table — the stock `OverworldSprites`,
     or prism's `SpriteHeaders` (same 6-byte entry, different label).
+
+    `variable_sprites` is the save's `wVariableSprites` array (empty if the caller
+    hasn't got it). A *variable* sprite id (>= `SPRITE_VARS`) has no fixed type: it
+    stands for whatever `wVariableSprites[id - SPRITE_VARS]` names at runtime, which
+    can be a still sprite (a Sudowoodo, a boulder) as easily as a walking one. Since
+    the allocator sorts by type and a still sprite is 4 tiles where a walking one is
+    12, guessing walking for a variable sprite mis-sizes it and shifts the VRAM tile
+    of every sprite the sort places after it — the class of bug that renders an NPC
+    with the wrong graphics. So resolve it through the array; only an unset entry
+    (or no array) falls back to walking, as the engine's `NoBreedmon` does.
     """
     rom = rom_path.read_bytes()
     headers = syms[headers_symbol]
     headers_off = _rom_offset(headers.bank, headers.addr)
-    pokemon_id = _pokemon_sprite_id(rom_path.parent / "constants" / "sprite_constants.asm")
+    pokemon_id, vars_id = _sprite_cutoffs(
+        rom_path.parent / "constants" / "sprite_constants.asm")
 
-    def type_of(sprite_id: int) -> int:
-        # GetSprite routes monster/variable ids through GetMonSprite, which
-        # reports them as walking sprites; only lower ids read SpriteHeaders.
-        if sprite_id == 0 or sprite_id >= pokemon_id:
+    def type_of(sprite_id: int, depth: int = 0) -> int:
+        # GetSprite: below SPRITE_POKEMON the type is the header byte; a monster
+        # icon (< SPRITE_VARS) is a walking sprite; a variable sprite resolves
+        # through wVariableSprites to a real id whose type we then read.
+        if sprite_id == 0:
             return WALKING_SPRITE
-        return rom[headers_off + (sprite_id - 1) * _HEADER_SIZE + _HEADER_TYPE_OFF]
+        if sprite_id < pokemon_id:
+            return rom[headers_off + (sprite_id - 1) * _HEADER_SIZE + _HEADER_TYPE_OFF]
+        if sprite_id < vars_id:
+            return WALKING_SPRITE
+        i = sprite_id - vars_id
+        if depth < 4 and 0 <= i < len(variable_sprites) and variable_sprites[i]:
+            return type_of(variable_sprites[i], depth + 1)
+        return WALKING_SPRITE
 
     # AddSpriteGFX: slot 0 is the player; each map sprite is appended unless it is
     # already present. The dedup scans from slot 1, so it never compares against
@@ -192,10 +223,21 @@ def sprite_tiles(
         if len(used) >= LIST_CAPACITY:
             break
 
-    # LoadSpriteGFX tags each entry with its type; SortUsedSprites bubble-sorts by
-    # type ascending, swapping only on a strict decrease, so equal types keep their
-    # order — a stable sort.
-    entries = sorted(((sid, type_of(sid)) for sid in used), key=lambda e: e[1])
+    # LoadSpriteGFX tags each entry with its type; SortUsedSprites orders by type
+    # ascending. It is NOT a stable sort: it selects each position's minimum by
+    # scanning from the *end* of the list toward the front and swapping on a strict
+    # decrease, so a run of equal types comes out reversed relative to input order.
+    # That reversal moves which sprites land where — and, near a table boundary,
+    # which overflow — so reproducing it (not a convenient stable sort) is what
+    # makes a walking NPC land on the tile the game gave it.
+    entries: list[tuple[int, int]] = [(sid, type_of(sid)) for sid in used]
+    n = len(entries)
+    for pivot in range(n - 1):
+        j = n - 1
+        while j > pivot:
+            if entries[j][1] < entries[pivot][1]:
+                entries[pivot], entries[j] = entries[j], entries[pivot]
+            j -= 1
 
     # ArrangeUsedSprites: walk the sorted list assigning cumulative tile offsets,
     # spilling into the second VRAM table the moment the first would pass $80.
@@ -239,7 +281,8 @@ def sprite_palettes(
     rom = rom_path.read_bytes()
     headers = syms[headers_symbol]
     headers_off = _rom_offset(headers.bank, headers.addr)
-    pokemon_id = _pokemon_sprite_id(rom_path.parent / "constants" / "sprite_constants.asm")
+    pokemon_id, _vars = _sprite_cutoffs(
+        rom_path.parent / "constants" / "sprite_constants.asm")
     out: dict[int, int] = {}
     for sid in sprite_ids:
         if sid == 0 or sid >= pokemon_id:
