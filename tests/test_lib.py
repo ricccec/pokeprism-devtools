@@ -380,8 +380,10 @@ def main() -> None:
         dsyms = symfile.SymFile.load(dsym)
         # MtEmberWest is group 95; the player is SPRITE_P0 (id 1). The engine
         # rebuilds this same list on Continue, so the tile must match the save.
-        pool = spritevram.outdoor_sprite_ids(drom, dsyms, 95, name="MT_EMBER_WEST")
-        tiles = spritevram.sprite_tiles(drom, dsyms, 1, pool)
+        pool = spritevram.outdoor_sprite_ids(drom, dsyms, 95, name="MT_EMBER_WEST",
+                                             count=PRISM_FORMAT.outdoor_sprites)
+        tiles = spritevram.sprite_tiles(drom, dsyms, 1, pool,
+                                        headers_symbol=PRISM_FORMAT.sprite_headers)
         check("SPRITE_ROCK (89) allocates to VRAM tile 200 (matches the save)",
               tiles.get(89) == 200, f"got {tiles.get(89)}")
 
