@@ -25,6 +25,7 @@ from ..mapfit import mapwire
 from ..hacks.prism import maps as maps_mod
 from ..hacks.prism import mapsource
 from ..hacks.prism.mapspec import MapSpec
+from ..shared.devtools import make_devtools_dir
 from ..shared.paths import RepoNotFound, repo_root
 
 _PERMISSIONS = ("TOWN", "ROUTE", "INDOOR", "CAVE", "PERM_5", "GATE", "DUNGEON")
@@ -335,8 +336,7 @@ def main() -> None:
 
     mapwire.apply_edits(root, edits, dry_run=False)
 
-    spec_dir = root / ".devtools" / "specs"
-    spec_dir.mkdir(parents=True, exist_ok=True)
+    spec_dir = make_devtools_dir(root, "specs")
     spec_path = spec_dir / f"{spec.label}.toml"
     spec_path.write_text(spec.to_toml())
 

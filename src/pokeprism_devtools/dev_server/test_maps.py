@@ -25,6 +25,7 @@ import traceback
 
 from pokeprism_devtools.hacks.prism import savefile
 from pokeprism_devtools.shared import paths, symfile
+from pokeprism_devtools.shared.devtools import make_devtools_dir
 
 from . import apply, inventory
 
@@ -61,8 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    inventory_path = root / ".devtools" / "inventory.json"
-    inventory_path.parent.mkdir(parents=True, exist_ok=True)
+    inventory_path = make_devtools_dir(root) / "inventory.json"
     inv = inventory.load_or_build(
         root, sym_path, inventory_path,
         force=args.rebuild_inventory,

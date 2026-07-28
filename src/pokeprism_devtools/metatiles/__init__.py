@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..shared import constants, lz, paths
+from ..shared.devtools import make_devtools_dir
 from ..shared.symfile import SymFile
 from ..shared.viewer import is_stale, open_images, parse_tileset_id
 
@@ -535,8 +536,7 @@ def _as_dict(a: TilesetAnalysis) -> dict:
 
 
 def _render_sheet(root: Path, tileset_id: int, force: bool) -> Path:
-    cache_dir = root / ".devtools" / "gfx-renders"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir = make_devtools_dir(root, "gfx-renders")
     tid = f"{tileset_id:02d}"
     sources = [
         root / "tilesets" / f"{tid}_metatiles.bin",

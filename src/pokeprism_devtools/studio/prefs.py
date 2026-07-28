@@ -28,6 +28,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ..shared.devtools import make_devtools_dir
+
 #: Where it lives, relative to the hack repo's root.
 PREFS = ".devtools/studio.json"
 
@@ -64,8 +66,7 @@ def save_pref(root: Path, key: str, value: str) -> None:
 
     Raises `OSError` if the tree will not take it.
     """
-    path = root / PREFS
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = make_devtools_dir(root) / Path(PREFS).name
     path.write_text(json.dumps(read_prefs(root) | {key: value},
                                indent=2, sort_keys=True) + "\n",
                     encoding="utf-8")

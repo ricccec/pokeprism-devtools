@@ -25,6 +25,7 @@ from pathlib import Path
 
 from ...dev_server.emulator import Emulator
 from ...shared import make
+from ...shared.devtools import make_devtools_dir
 from ...shared.symfile import SymFile
 from ..seam import PlayError
 from . import read, savefile
@@ -156,8 +157,7 @@ class Player:
         """Copy the save before overwriting it. Patching a save writes over the
         player's actual game, so never do it without leaving the previous bytes
         somewhere to be put back."""
-        d = self._root / ".devtools" / "sav-backups"
-        d.mkdir(parents=True, exist_ok=True)
+        d = make_devtools_dir(self._root, "sav-backups")
         ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         dest = d / f"{template.stem}-{ts}.sav"
         dest.write_bytes(template.read_bytes())

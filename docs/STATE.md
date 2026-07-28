@@ -506,13 +506,17 @@ by what it costs versus what it buys, with the detail in the sections that follo
 | **2. Prism variable sprites in the boot** | one line, unverifiable alone | Absences — pair it with (1) or with sprite work |
 | **3. Connection *adding*** | needs design | Absences — two-sided |
 | **4. `EditMap` attributes tab** | unclaimed | Absences |
-| **5. Ignore `.devtools/` from the code that creates it** | small | Housekeeping, below — the tool dirties `git status` in trees it does not own |
 
-Two items came off this list in as many days. The decayed VRAM test that used to
+Three items came off this list in as many days. The decayed VRAM test that used to
 head it is **restored** (2026-07-28) — see Tests, below; it was the one the repo
 could not afford to leave, because it guards the sprite-VRAM allocator that (1)
 and (2) both go on to change, and it now proves it bites on every run. **Family
-`measures` is done** the same day — see "Landed", below.
+`measures` is done** the same day — see "Landed", below. And the `.devtools/`
+housekeeping item is **done** (2026-07-28): every `mkdir` that creates the
+directory now goes through one `shared/devtools.py` helper that seeds a
+self-ignoring `.gitignore` (`*`) as it makes the dir, so `pokecrystal` and
+`polishedcrystal` — which track upstream and cannot take a line in a `.gitignore`
+we do not own — no longer report `?? .devtools/`. See "Landed", below.
 
 **Not on this list, on purpose:** family VWF *pixel* metrics, which is permanent
 and a font fact rather than a gap — not to be confused with the *tile* count, which
@@ -611,15 +615,15 @@ neutral `textfit` — imports without prism, and both family trees now carry the
 own overflow `ctx` on top of it. What each tree lints is its own; that the
 session cannot tell them apart is the seam working.
 
-## Housekeeping — ignore `.devtools/` from the code that creates it
+## Landed — `.devtools/` hides itself from the tree that owns it (2026-07-28)
 
 The tools write into `<hack>/.devtools/`: renders, the lint baseline, the new-map
-specs, the save backups, and now `studio.json`. Only prism's `.gitignore` knows —
-`pokecrystal` and `polishedcrystal` report `?? .devtools/` forever, and they are
+specs, the save backups, `studio.json`. Only prism's `.gitignore` knew —
+`pokecrystal` and `polishedcrystal` reported `?? .devtools/` forever, and they are
 the two trees that **track upstream**, where a line added to a `.gitignore` we do
 not own is a permanent local diff that conflicts on every rebase.
 
-The fix is not to edit those files by hand but to stop needing them: write
+The fix was not to edit those files by hand but to stop needing them: write
 `.devtools/.gitignore` containing `*` at the moment the directory is created. It
 ignores its own contents *and itself* (`git check-ignore` names line 1 as the rule
 that hides the file), so the whole directory leaves `git status` with nothing
@@ -628,15 +632,21 @@ rejected: it means reaching into git's private directory, and doing it correctly
 means resolving `git rev-parse --git-dir` first, because `.git` is a *file* in a
 worktree or a submodule.
 
-The work is a `shared/` helper — `make_devtools_dir(root, *sub)` — that mkdirs,
-writes the ignore once if absent (never overwriting: it may have been edited), and
-returns the path, plus the six call sites that create the directory themselves
-today (`dev_server/cli.py`, `gfx_view`, `mapview`, `metatiles`, `map_new` specs,
-`vanilla/play.py`'s sav-backups, `studio/prefs.py`). One code path making both
-means the ignore and the directory cannot drift. A bare `*` also hides
-`.devtools/presets/`, which `devtools.md` calls check-in-able — not a regression,
-since prism's own `.devtools/*` already ignores them with no negation, and the
-negated variant puts `?? .devtools/` back for the two trees that have no presets.
+The work is one `shared/` helper — `devtools.make_devtools_dir(root, *sub)` —
+that mkdirs, seeds the ignore once if absent (never overwriting: it may have been
+edited to un-ignore `presets/`), and returns the path. Every call site that
+created the directory itself now routes through it: `studio/prefs.py`,
+`maplint` (baseline), `gfx_view`, `mapview`, `metatiles`, `map_new` specs,
+`vanilla/play.py`'s sav-backups, and the prism entrypoints `dev_server/cli.py`,
+`dev_server/test_maps.py`, `hacks/prism/play.py`. One code path making both means
+the ignore and the directory cannot drift. (Two `mkdir`s stay direct on purpose:
+`dev_server/playtest.py`'s backup — a prism-only path whose `.devtools/` its
+entrypoint has already seeded — and the generic `shared/edits.py`, which only ever
+touches `.devtools/` on prism's own newmap path, where prism's `.gitignore`
+already covers it.) A bare `*` also hides `.devtools/presets/`, which `devtools.md`
+calls check-in-able — not a regression, since prism's own `.devtools/*` already
+ignores them with no negation, and the negated variant puts `?? .devtools/` back
+for the two trees that have no presets.
 
 ## Doc hygiene — the accretion to watch
 
