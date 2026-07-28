@@ -33,7 +33,12 @@ SRAM_BASE = 0xA000
 
 #: `constants/misc_constants.asm`: the two bytes the game writes either side of the
 #: save data and checks on load. A file without them was never a real save.
-CHECK_VALUE_1 = 99
+#: Polished bumped value-1 to 97 at save version 7 and kept 99 as the "_OLD" value;
+#: the loader (`engine/menus/save.asm`) still accepts *either*, so a real save reads
+#: 97 (current) or 99 (pre-v7). Value-2 is unchanged. (The comment in `ram/sram.asm`
+#: still says "loaded with 99" but the actual `EQU` is 97 — the constant is truth.)
+CHECK_VALUE_1 = 97
+CHECK_VALUE_1_OLD = 99
 CHECK_VALUE_2 = 127
 
 #: Polished's object-engine ABI (`constants/map_object_constants.asm`): its object
@@ -95,8 +100,9 @@ class Save:
     def looks_real(self, syms: SymFile) -> bool:
         """Both validity bytes present and correct. The game writes these the
         first time it saves; their absence is how a fresh/empty SRAM dump gives
-        itself away."""
-        return (self._byte(syms, "sCheckValue1") == CHECK_VALUE_1
+        itself away. Value-1 may be the current 97 or the pre-v7 99 — the loader
+        accepts either, so we must too."""
+        return (self._byte(syms, "sCheckValue1") in (CHECK_VALUE_1, CHECK_VALUE_1_OLD)
                 and self._byte(syms, "sCheckValue2") == CHECK_VALUE_2)
 
     # -- stand somewhere ---------------------------------------------------- #
@@ -194,8 +200,12 @@ class Save:
                 f"primary is {src1 - src0} — this is not the save layout the "
                 "patcher understands.")
         self.data[dst0:dst1] = self.data[src0:src1]
-        self.data[sram_offset(self._sym(syms, "sBackupCheckValue1"))] = CHECK_VALUE_1
-        self.data[sram_offset(self._sym(syms, "sBackupCheckValue2"))] = CHECK_VALUE_2
+        # Mirror the primary's own validity bytes (97 or the pre-v7 99), so the
+        # backup carries the same save version and never disagrees with it.
+        self.data[sram_offset(self._sym(syms, "sBackupCheckValue1"))] = \
+            self._byte(syms, "sCheckValue1")
+        self.data[sram_offset(self._sym(syms, "sBackupCheckValue2"))] = \
+            self._byte(syms, "sCheckValue2")
         total = checksum16(self.data[dst0:dst1])
         at = sram_offset(self._sym(syms, "sBackupChecksum"))
         self.data[at] = total & 0xFF
