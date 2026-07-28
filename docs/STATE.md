@@ -28,7 +28,7 @@ Six `runtime_checkable` protocols, each gating a capability rather than a name:
 | `Writes` | the nine write methods (actions, forms, deletion, undo) | `Hack.writes is not None` |
 | `Lints` | a tree's own linter, run through the seam | `Hack.ctx is not None` |
 | `Plays` | build-and-boot: `make` a ROM, patch a save, open the game | `Hack.plays is not None` |
-| `Measures` | `measure` — text in tiles against the engine's VWF | `Hack.measures` |
+| `Measures` | `measure` — text in tiles against the engine's charmap and widths | `Hack.measures` |
 | `Sketches` | `sketch` — draw the map while you type | reachable only from an action that sets `sketches` |
 
 `Hack` declares `name`, `reads`, `ctx` (a `Lints`, or `None`), `writes` (a
@@ -43,8 +43,8 @@ been.
 | | reads | writes | lint (`ctx`) | plays | measures |
 |---|---|---|---|---|---|
 | **prism** | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **vanilla** | ✓ | ✓ | ✓ (dialogue overflow, name + buffer bounds) | ✓ (build ✓; boot rebuilds the map — tiles, objects, sprites, both checksums — confirmed live in SameBoy) | — |
-| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | — | — |
+| **vanilla** | ✓ | ✓ | ✓ (dialogue overflow, name + buffer bounds) | ✓ (build ✓; boot rebuilds the map — tiles, objects, sprites, both checksums — confirmed live in SameBoy) | ✓ (tiles) |
+| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | — | ✓ (tiles, n-gram reader) |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
 resize, new-map, **reword**, and the block scaffolding those ride — and the
@@ -57,13 +57,19 @@ the objects (`wObjectStructs`/`wMapObjects`), the on-screen sprites, and both th
 primary and backup checksums. That rebuild runs on a shared Gen-2 core
 (`shared/overworld/`) prism drives too — written once, not copied into each hack's
 `play.py`. The family linters share everything but the width reader, which
-polished's Huffman n-gram engine spells differently (see below). The two blanks
-left — vanilla `measures`, polished `plays`/`measures` — are the **absences by
-design** further down. `measures` is now two questions wearing one name: *pixel*
-widths for a proportional dialogue font are permanently absent (a font fact),
-while the *tile* count the family linter already does is unwired rather than
-missing, and pick-up (3) is that wiring. Polished `plays` is the next family tree
+polished's Huffman n-gram engine spells differently (see below), and **both now
+measure**: the reword box carries a tile gutter, the same widths the linter reads,
+asked while the line is still yours to shorten. The one blank left is polished
+`plays`, which is the **absence by design** further down and the next family tree
 the build-and-boot seam is ready for.
+
+`measures` was always two questions wearing one name, and only one of them was
+ever absent: *pixel* widths for a proportional dialogue font do not exist (a font
+fact, permanent), while the *tile* count is exact in every tree and was merely
+unwired. It is wired now, and the flag is no longer a constant — each family mount
+asks its own tree whether the charmap and the widths are on disk, because those
+*are* the measurement, and answers accordingly. A checkout mid-edit gets no gutter
+rather than a wrong one.
 
 ## The last engineering item — paid (2026-07-25)
 
@@ -130,7 +136,7 @@ identical across the family (so the read mechanics are shared), but the *text
 engines* are not: vanilla is classic `dict`+`print_name`→ROM `db`, polished is
 `_dtxt`/Huffman `ctxtmap` with an n-gram string table (closer to prism). So the
 box, the dialogue parse, the rules and the neutral arithmetic are shared; only
-the `Metrics` reader is engine-specific. `hacks/polished/lint.py` is that fork and
+the `Metrics` reader is engine-specific. `hacks/polished/metrics.py` is that fork and
 nothing else: it resolves a byte through the n-gram table (`data/text/ngrams.asm`)
 where an n-gram is one ROM byte but several screen tiles (`#`→`Poké`, `the `→four
 tiles), counting each expansion in the un-compressed charmap so an apostrophe
@@ -379,6 +385,65 @@ edge below 103 columns.
 `prefs` joins the seam guard's reader list, so a screen that reaches for it
 directly instead of through the session fails `test_the_view_does_not_import_a_parser`.
 
+## Landed — the reword box counts tiles (2026-07-28)
+
+The reword form had no gutter on a family tree: you typed the words and found out
+from the linter, later, that `#mon Center near` is sixteen characters and nineteen
+tiles against an eighteen-column box. Now the count is on the line, on every
+keystroke, in both family trees — the same gutter prism has had.
+
+**The absence was a real refusal answering the wrong question.** `hacks/vanilla/
+read.py` said `measure` was "honestly absent … this tree's dialogue is
+fixed-width, so the per-glyph pixel widths it would sum do not exist," and that
+sentence is true and irrelevant: `panels.Measured` is denominated in *tiles*, and
+fixed width is what makes a tile count **exact** rather than a guess. The
+permanent absence is the *pixel* width of a proportional font, which nothing on
+the dialogue path asks for. This is Phase 11's lesson a second time — a
+principled-sounding refusal that had never been measured against the question
+actually being asked.
+
+**What it is made of.** Almost nothing new, which was the point: the widths
+(`hacks/vanilla/metrics.py`) and the box (`hacks/vanilla/box.py`) are the
+linter's, unchanged. `measures.py` walks prose the way `lint/dialogue.py` walks a
+parsed file, and both go through one `Metrics.tiles` — a gutter that said sixteen
+where the linter said nineteen would be worse than no gutter at all. Polished
+forks the one thing it forks everywhere else, the n-gram width reader, and shares
+the rest.
+
+**Two things moved to make that true.** The widths and the charmap left `lint/`
+for `hacks/vanilla/`, exactly as the box and the parse did when the reword form
+needed them — `lint/` holds what only a linter wants, and the widths stopped
+being that the moment a second reader appeared. And polished's `lint.py` split:
+the n-gram reader is now `hacks/polished/metrics.py`, mirroring vanilla, leaving
+`lint.py` as the ten lines of wiring it always was.
+
+**The flag is read off the tree, not written down.** The charmap and the widths
+*are* the measurement, so a checkout that has neither cannot measure, and each
+family mount now asks (`metrics.engine_is_readable`) and picks a reader
+accordingly: `MeasuringReader` when the engine is there, plain `Reader` when it is
+not. Two classes rather than one method that sometimes refuses, because the seam
+test checks `isinstance(reads, Measures) == hack.measures` **both ways** — a flag
+and a method that could disagree are a crash on a keystroke in one direction and a
+gutter nobody ever sees in the other. The fixture trees in `test_vanilla.py` and
+`test_polished.py` ship no text engine, so they are the degraded direction, tested.
+
+**`Measured`'s two list fields got family answers**, both real rather than empty:
+`unknown` is a token the tokenizer fell through on — a typo'd `<PLAYR>` is named
+instead of being counted as seven tiles of literal text — and `unbounded` is a
+token that prints WRAM nothing can bound. Vanilla has none of the latter (every
+buffer its engine splices inline is a name the naming screen caps); polished has
+`<TRENDY>`, the phrase the player types at the Goldenrod sign, which is now named
+rather than quietly counted as zero.
+
+**Verification.** `test_family_lint.py` grew a third section, and the check that
+matters is the last one: the linter's own sample, measured both ways, required to
+agree line for line. It is not decoration — it failed the first time it ran,
+because the test was measuring a polished tree with vanilla's `dict` widths, and
+an n-gram read through the wrong charmap counts as one tile. Every other number
+it asserts has a twin in the rule tests above it (`#mon Center near` = 19,
+`<PLAYER> obtained a` = 11 + 7 at exactly the box, one tile wider = 3 over at
+worst), and each has its falsification beside it.
+
 ## Landed — family rewording, on one parse (2026-07-27)
 
 `t` on a vanilla or polished map listed a block's words and then said rewording
@@ -439,19 +504,19 @@ by what it costs versus what it buys, with the detail in the sections that follo
 |---|---|---|
 | **1. Polished `plays`** | large | Absences — the item that completes the capability matrix |
 | **2. Prism variable sprites in the boot** | one line, unverifiable alone | Absences — pair it with (1) or with sprite work |
-| **3. Family `measures` — the tile gutter in the reword box** | small | Absences — the reason it was "honestly absent" no longer holds |
-| **4. Connection *adding*** | needs design | Absences — two-sided |
-| **5. `EditMap` attributes tab** | unclaimed | Absences |
-| **6. Ignore `.devtools/` from the code that creates it** | small | Housekeeping, below — the tool dirties `git status` in trees it does not own |
+| **3. Connection *adding*** | needs design | Absences — two-sided |
+| **4. `EditMap` attributes tab** | unclaimed | Absences |
+| **5. Ignore `.devtools/` from the code that creates it** | small | Housekeeping, below — the tool dirties `git status` in trees it does not own |
 
-The decayed VRAM test that used to head this list is **restored** (2026-07-28) —
-see Tests, below. That was the one item the repo could not afford to leave, because
-it guards the sprite-VRAM allocator that (1) and (2) both go on to change; it now
-bites, and it proves it bites on every run.
+Two items came off this list in as many days. The decayed VRAM test that used to
+head it is **restored** (2026-07-28) — see Tests, below; it was the one the repo
+could not afford to leave, because it guards the sprite-VRAM allocator that (1)
+and (2) both go on to change, and it now proves it bites on every run. **Family
+`measures` is done** the same day — see "Landed", below.
 
 **Not on this list, on purpose:** family VWF *pixel* metrics, which is permanent
-and a font fact rather than a gap — not to be confused with (3), which is the
-*tile* count the linter already does, wired into the form; doc accretion and the stashed
+and a font fact rather than a gap — not to be confused with the *tile* count, which
+is now wired into the reword form; doc accretion and the stashed
 map-studio restructure, which are housekeeping; and the three pre-existing test
 reds, which are true reports about the live prism tree and are left alone.
 
@@ -471,8 +536,10 @@ map, on the shared core, proven above.)
   through the fixed-width `PlaceString` path, so the per-glyph pixel widths
   prism's `measure` sums do not exist for it. (Polished ships a menu VWF, but it
   is off the dialogue path.) This is about the dialogue font, forever. It does
-  **not** mean the family cannot be checked for overflow — that is fixed-width
-  tile counting, scoped just above as Phase 11.
+  **not** mean the family cannot be measured: fixed width is precisely what makes
+  the *tile* count exact, and that count now runs in both the linter and the
+  reword gutter. What has no answer is a pixel width for a font the dialogue path
+  never uses.
 
 **Deferred — implementable, deliberately out of the seam's current scope. The
 full roadmap, grouped, is in `family-lint-plan.md` ("The roadmap past the
@@ -516,23 +583,9 @@ seam"); the standing items:**
   `SPRITE_WEIRD_TREE` and whose two resolutions (`SudowoodoSpriteGFX`
   `12, STANDING` vs `TwinSpriteGFX` `12, WALKING`) share a length but differ in
   *type*, which is enough to move the sort.
-- **Family `measures`** — the reword box has no tile gutter, so nothing counts
-  `#mon Center` at 19 tiles against an 18-column box *while you are still able to
-  shorten it*; the form degrades to no gutter at all (`Form._retile` returns early
-  when `session.measures` is false) and the linter catches the overflow after the
-  fact instead. The stated reason for the absence — "this tree's dialogue is
-  fixed-width, so the per-glyph pixel widths it would sum do not exist"
-  (`hacks/vanilla/read.py`) — **no longer holds**, and did not from the moment
-  Phase 11 landed: `panels.Measured` is denominated in *tiles*, not pixels, and
-  `lint/metrics.py` counts tiles exactly, `#`→POKé and all. What is left is
-  wiring: a `measure` on both family readers over `box.speech_box` and
-  `metrics.load`, `measures=True` on both mounts (the seam test checks both
-  directions), a decision about `Measured.unknown` (the family charmap reader has
-  no notion of an unmapped token), and degrading when the engine files are absent
-  the way the linter already does. Kept out of the rewording change on purpose:
-  it is a different capability with its own seam flag, and the form is honest
-  without it. The permanent absence above is untouched by this — that is about
-  *pixel* metrics for a proportional font, which the dialogue path does not have.
+- ~~**Family `measures`**~~ — **done (2026-07-28)**, see "Landed", below. The
+  stated reason for the absence turned out to be answering the wrong question, in
+  the same way Phase 11's did.
 - ~~**Family rewording**~~ — **done (2026-07-27)**, see above. The blocker
   recorded here — that the family's visual line is not its source line — was
   real, and the answer was to refuse the 1.3% of blocks where it bites rather
@@ -664,6 +717,12 @@ The remembered build target is covered on both sides of the seam:
 tree, survives a new session, leaves other keys alone, and a corrupt file costs a
 prefill and nothing else), and `test_studio_tui.py::TestBuildScreen` for the box
 itself, on a temp copy of a real repo.
+`test_family_lint.py` covers both readers of the family's widths — the rules, and
+the reword gutter added on 2026-07-28. Its last check is the one that keeps them
+one arithmetic: the linter's own sample measured through the rules *and* through
+the gutter, required to agree line for line. That check is not decoration; it
+failed the first time it ran, on a polished tree being measured with vanilla's
+`dict` widths, which reads every n-gram as a single tile.
 `test_family_text.py` is the rewording suite, and it is deliberately two checks
 that fail in opposite directions: every acceptable block in a stock pokecrystal
 *and* polishedcrystal reworded with its own words must come back byte-identical

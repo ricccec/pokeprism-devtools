@@ -114,8 +114,9 @@ hack's name — and mechanics that a CLI could someday wrap live in `wiring/`
   overflow *counting* holds for both, and the box, the dialogue parse, the rules
   and the neutral `maplint.textfit` arithmetic are all shared; only the width
   `Metrics` reader is engine-specific. So vanilla shipped first, then **polished
-  followed** — `hacks/polished/lint.py`, a `load` that resolves a byte through the
-  n-gram table and a `build` that reuses vanilla's `FamilyLintContext` verbatim.
+  followed** — `hacks/polished/metrics.py`, a `load` that resolves a byte through
+  the n-gram table, and a `lint.py` whose `build` reuses vanilla's
+  `FamilyLintContext` verbatim.
   The subtlety the fork carries is that an n-gram is one ROM byte but several
   screen tiles (`#`→`Poké`, `the `→four), so each n-gram token's width is *its
   expansion's* tile count — counted in the un-compressed charmap, where an
@@ -173,11 +174,15 @@ every one is deferred-but-buildable unless marked permanent.
   hack; **(2)** finish vanilla's boot on top of that shared core, and let polished's
   boot reuse it. **Polished `plays`** proper (its own save layout, closer to prism's
   than to stock Gen-2) is the follow-on once the shared boot core exists.
-- **Permanent, do not build: family VWF pixel-metrics live `measure`.** Map
-  dialogue is fixed-width in both trees, so there are no per-glyph pixel widths
-  to sum for it; the `Measures` gutter's absence is the correct rendering. (The
-  menu VWF polished ships is off the dialogue path and out of scope.) Overflow is
-  covered by the tile-counting lint, not by `measure`.
+- ~~**Family `measures`**~~ — **done (2026-07-28)**. The reword box carries a tile
+  gutter in both family trees, over the same widths and the same box the rules
+  read. See `STATE.md`, "Landed — the reword box counts tiles".
+- **Permanent, do not build: family VWF *pixel*-metrics live `measure`.** Map
+  dialogue is fixed-width in both trees, so there are no per-glyph pixel widths to
+  sum for it. This is not the item above and never was: fixed width is exactly what
+  makes the *tile* count the gutter shows correct, and what has no answer is the
+  pixel width of a proportional font. (The menu VWF polished ships is off the
+  dialogue path and out of scope.)
 
 The sentence to keep, again: nothing in these phases teaches the studio a hack
 name. Each phase moves a refusal downward — from a sentence the writer says,
