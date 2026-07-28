@@ -43,9 +43,16 @@ def claims(root: Path) -> Hack | NearMiss:
 
 
 def build(root: Path) -> Hack:
-    """The polished :class:`~..seam.Hack`: vanilla's `Writer`, six forks over."""
-    from .read import Reader
-    from . import lint
+    """The polished :class:`~..seam.Hack`: vanilla's `Writer`, six forks over.
+
+    `measures` is asked of the tree exactly as vanilla asks it, over polished's
+    own engine files — the n-gram table where vanilla reads `home/text.asm`. The
+    menu VWF polished ships changes none of this: map dialogue draws through the
+    same fixed-width path in both trees, which is what the count is of.
+    """
+    from .read import MeasuringReader, Reader
+    from . import lint, metrics
+    from ..vanilla.metrics import engine_is_readable
     from ..vanilla.actions import POLISHED_ADDERS, POLISHED_EDITORS
     from ..vanilla.newmap import POLISHED as POLISHED_NEWMAP
     from ..vanilla.resize import polished as polished_resize
@@ -63,7 +70,9 @@ def build(root: Path) -> Hack:
     # mints a section per map for a new map's blocks where vanilla joins one of
     # three — so its new-map form asks one question fewer than vanilla's, over
     # a different list of header arguments.
-    return Hack("polished", Reader(root), ctx=lint.build(root),
+    tiles = engine_is_readable(root, metrics.ENGINE_FILES)
+    return Hack("polished", (MeasuringReader if tiles else Reader)(root),
+                ctx=lint.build(root), measures=tiles,
                 writes=Writer(root, _ANCHOR, POLISHED_WARPS,
                               POLISHED_CHOICES,
                               (POLISHED_ADDERS, POLISHED_EDITORS),

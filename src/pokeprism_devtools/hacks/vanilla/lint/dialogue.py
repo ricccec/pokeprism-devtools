@@ -19,21 +19,12 @@ trees; this measuring, the parse under it and the rules over it do not.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import box, dialogue
 from ..box import Box
-from .metrics import Metrics
-
-#: rgbds string interpolation — `{d:PRICE}` assembles to the *value* of PRICE, a
-#: handful of digits, not the forty characters of its name. It is the family's
-#: `deciram`: a variable the source cannot bound, so it is dropped from the
-#: determinate count rather than measured as literal text (which flagged every
-#: price line in the game as a fifty-tile overflow).
-_INTERP_RE = re.compile(r"\{[^}]*\}")
-
+from ..metrics import Metrics
 
 @dataclass(frozen=True)
 class Line:
@@ -82,12 +73,14 @@ def measure(root: Path, metrics: Metrics, speech: Box,
         unbounded: list[str] = []
         parts: list[str] = []
         for draw in line.draws:
-            for s in (_INTERP_RE.sub("", x) for x in draw.strings):
-                # Stopping at the `@` that ends the draw, exactly as the engine
-                # does, is `determinate` and `bounded`'s own business: both walk
-                # the string's tokens and stop at the first control code.
-                det += metrics.determinate(root, s)
-                bnd += metrics.bounded(root, s)
+            for s in draw.strings:
+                # Stopping at the `@` that ends the draw, and dropping the rgbds
+                # interpolation a price line carries, are both `Metrics.tiles`'
+                # own business — one walk, shared with the reword gutter, so the
+                # two never disagree about how wide a line is.
+                cost = metrics.tiles(root, s)
+                det += cost.determinate
+                bnd += cost.bounded
                 parts.append(s)
             if not draw.buffer:
                 continue

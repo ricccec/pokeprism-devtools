@@ -235,7 +235,12 @@ def test_the_mount_recognises_vanilla(root: Path) -> None:
     hack = hackmount.mount(root)
     check("mounted as vanilla", hack.name == "vanilla")
     check("with a text linter", hack.ctx is not None)
-    check("with the family write adapter, linter and build-and-boot, but no tile ruler",
+    # This fixture is a handful of maps and no text engine, so the tile ruler is
+    # the one thing it cannot have: `measures` is read off the tree, and a tree
+    # with no charmap has nothing to count tiles against. A real pokecrystal does
+    # measure — `test_family_lint.py` is where that half is checked.
+    check("with the family write adapter, linter and build-and-boot; no tile "
+          "ruler, because this fixture ships no text engine to measure with",
           hack.writes is not None and hack.plays is not None and not hack.measures)
 
 
@@ -386,7 +391,8 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
            "Triggers", "Connections", "Roof", "Wild"])
     check("its linter finds nothing on this fixture — no engine files to measure",
           s.lint() == [])
-    check("but it declares one now; measure is the absence left",
+    check("it declares a linter, and no ruler — the charmap and the widths are "
+          "the measurement, and this tree has neither",
           s.lints is True and s.measures is False)
     # NPC, warp and signpost offer one form each. The object tab offers three —
     # the item ball, the fruit tree and the hidden item — because each writes a
@@ -404,9 +410,11 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
     check("the sprite hint is silence", s.sprite_hint("TOWN_A", "SPRITE_TEACHER") == "")
     try:
         s.measure("Hello.")
-        check("measuring refuses with a sentence", False)
+        check("measuring refuses with a sentence rather than crashing on the "
+              "missing charmap", False)
     except SessionError as exc:
-        check("measuring refuses with a sentence", "vanilla" in str(exc))
+        check("measuring refuses with a sentence rather than crashing on the "
+              "missing charmap", "vanilla" in str(exc))
     check("reword crosses now, and takes no dialect: both trees write the same "
           "text macros",
           s.form("reword").name == "reword")

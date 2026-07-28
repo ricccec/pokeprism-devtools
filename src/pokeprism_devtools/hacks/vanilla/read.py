@@ -23,7 +23,7 @@ from pathlib import Path
 
 from ...studio import panels
 from ...studio.actions import ActionError
-from . import events, swatches
+from . import events, measures, metrics, swatches
 
 _ATTR = re.compile(r"^\s*map_attributes\s+(\w+)\s*,\s*(\w+)\s*,\s*(\$\w+|\d+)")
 _CONN = re.compile(r"^\s*connection\s+(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(-?\d+)")
@@ -41,9 +41,9 @@ _WILDMON = re.compile(r"^\s*db\s+(\d+)\s*,\s*(\w+)")
 
 class Reader:
     """One pokecrystal tree, answering the studio's questions in the seam's
-    words. `measure` is honestly absent rather than stubbed — this tree's
-    dialogue is fixed-width, so the per-glyph pixel widths it would sum do not
-    exist. `sketch` is present: the new-map form draws before it writes."""
+    words. `sketch` is present: the new-map form draws before it writes.
+    `measure` is not here but in :class:`MeasuringReader`, which is what the
+    mount builds when the tree's text engine is on disk to measure against."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -177,6 +177,28 @@ class Reader:
     # -- the words ----------------------------------------------------------- #
     def texts(self, label: str) -> list[panels.TextRef]:
         return events.texts(self.root / f"maps/{label}.asm")
+
+
+class MeasuringReader(Reader):
+    """The same reader, on a tree whose text engine can be read.
+
+    Two classes rather than one method that sometimes refuses, because the seam
+    declares `measures` as a flag and the two must not be able to disagree: a
+    reader that answers `measure` on a tree it cannot measure is a crash on a
+    keystroke, and a flag that is false on a reader that could is a gutter nobody
+    ever sees. The mount picks one, once, from what is actually on disk.
+    """
+
+    def measure(self, text: str, box: str) -> panels.TextPreview:
+        """Dialogue-in-progress against the box it lands in, in tiles.
+
+        Fixed-width tiles, which is why this exists at all: the family dialogue
+        path is `PlaceString`, one tile per glyph, so the count is exact rather
+        than the pixel guess a proportional font would need. What has no answer
+        here is the *pixel* width of polished's menu VWF, and nothing on the
+        dialogue path asks for it.
+        """
+        return measures.measure_lines(self.root, metrics.load(self.root), text)
 
 
 # --------------------------------------------------------------------------- #

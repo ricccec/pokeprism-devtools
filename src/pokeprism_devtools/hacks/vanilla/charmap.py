@@ -11,6 +11,11 @@ rather than reproduced — a fork that adds a glyph gets it counted for free. Th
 is the family's copy of prism's `charmap`, kept here because the seam forbids a
 family module reaching into prism's; the file it reads and the macros it accepts
 are the family's, not prism's `macros/charmap.asm`.
+
+It sits beside `.box` and `.dialogue` rather than inside `.lint` for the reason
+they do: both halves of the family's text work read it. The linter counts a
+line's tiles to report an overflow after the fact, and `.measures` counts the
+same tiles under the reword box while you can still shorten the line.
 """
 
 from __future__ import annotations

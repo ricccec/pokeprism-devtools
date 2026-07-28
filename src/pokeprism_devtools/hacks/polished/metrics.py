@@ -1,0 +1,196 @@
+"""How many tiles each token prints, read out of polished's text engine.
+
+Polished shares the *question* with vanilla — how wide does this line draw — and
+almost all of the answer: the box, the dialogue parse, the overflow rules, the
+reword gutter and the neutral tile arithmetic are vanilla's, reused here
+unchanged. What it does not share is the text *engine*. Vanilla dispatches each
+byte through a `dict 'token', Handler` table and prints ROM strings by name;
+polished stores its strings Huffman-compressed and resolves a byte through an
+n-gram table (`data/text/ngrams.asm`) instead — so it forks the one
+engine-specific piece, the width `Metrics` reader, exactly as polished's read and
+write adapters fork vanilla's rather than pretending the two trees are peers.
+
+The subtlety the fork carries is that an n-gram is one ROM byte but several
+screen tiles: `#` is `$4d`, whose string is `Poké`, four tiles, and `the ` is
+`$3e`, whose string is four tiles of its own. So the width of every n-gram token
+must be *its expansion's* tile count, and that expansion is counted in the
+engine's un-compressed charmap, where an apostrophe ligature like `'s` is one
+tile and not two — which is why the count is a tokenise, not a `len`.
+"""
+
+from __future__ import annotations
+
+import re
+from functools import lru_cache
+from pathlib import Path
+
+from ..vanilla import box, charmap
+from ..vanilla.metrics import Metrics
+
+_CHARMAP = "constants/charmap.asm"
+_NGRAMS = "data/text/ngrams.asm"
+_TEXT_CONSTANTS = "constants/text_constants.asm"
+
+#: WRAM name buffer -> the constant bounding its printed length, the polished
+#: half of vanilla's `_NAME_BOUND`. The n-gram table's variable region carries
+#: two names and one free phrase (`wTrendyPhrase`); only the names have a bound
+#: the naming screen enforces, so only they are `text-width-name`'s business. The
+#: phrase is unbounded, and its headroom is `text-buffer`'s, when that lands.
+_NAME_BOUND = {
+    "wPlayerName": "PLAYER_NAME_LENGTH",
+    "wRivalName": "PLAYER_NAME_LENGTH",
+}
+
+#: The files polished's box, charmap and widths are read from. It is vanilla's
+#: list with the engine file swapped: the n-gram table, not `home/text.asm`.
+ENGINE_FILES = ("constants/hardware.inc", _TEXT_CONSTANTS, _CHARMAP, _NGRAMS)
+
+#: The cursor and terminator codes — the polished analogue of vanilla's set of
+#: control handlers, and engine knowledge the same way. A width run stops at any
+#: of these; on the dialogue path the line breaks are the `line`/`next` macros,
+#: so inline these appear only as the terminator, but naming them keeps the count
+#: honest if one ever does.
+_CONTROL = frozenset({
+    charmap.TERMINATOR, "<DONE>", "<PROMPT>", "<NEXT>", "<LINE>", "<CONT>",
+    "<PARA>", "<LNBRK>",
+})
+
+_MAP_RE = re.compile(
+    r'^\s*(?:ctxtmap|charmap)\s+"((?:[^"\\]|\\.)*)"\s*,\s*(\$[0-9a-fA-F]+|\d+)'
+)
+_RANGE_RE = re.compile(
+    r"^\s*DEF\s+(NGRAMS_START|NGRAMS_END)\s+EQU\s+(\$[0-9a-fA-F]+|\d+)"
+)
+_DR_RE = re.compile(r"^\s*dr\s+\.(\S+)")
+_RAWCHAR_RE = re.compile(r'^\.([^\s:]+):\s*rawchar\s+"((?:[^"\\]|\\.)*)"')
+_DW_RE = re.compile(r"^\.([^\s:]+):\s*dw\s+(\w+)")
+
+
+@lru_cache(maxsize=4)
+def load(root: Path) -> Metrics:
+    """Every n-gram token's tile width, read out of polished's engine.
+
+    A token whose byte falls in the n-gram range prints its expansion — several
+    tiles for one byte — and gets that tile count; a name buffer (`<PLAYER>`,
+    stored in WRAM) has no determinate width and gets zero, plus a worst-case
+    `bound` for `text-width-name`; every other byte is a single tile and falls
+    through to the shared `determinate`'s default of one."""
+    byte_of = _bytes_of(root)
+    start, end = _ngram_range(root)
+    plain = tuple(sorted((tok for tok, b in byte_of.items() if not start <= b <= end),
+                         key=len, reverse=True))
+    tiles_by_byte, buffer_by_byte = _ngram_tiles(root, start, plain)
+
+    width: dict[str, int] = {}
+    for token, byte in byte_of.items():
+        if start <= byte <= end and byte in tiles_by_byte:
+            width[token] = tiles_by_byte[byte]
+    consts = box.equs(root, _TEXT_CONSTANTS, {})
+    ram_bound = {buf: consts[c] - 1 for buf, c in _NAME_BOUND.items()}
+    return Metrics(width, _CONTROL, _name_bounds(root, byte_of, buffer_by_byte),
+                   ram_bound, _unbounded_tokens(byte_of, buffer_by_byte))
+
+
+def _bytes_of(root: Path) -> dict[str, int]:
+    """token -> byte, first declaration winning, as rgbds resolves the charmap."""
+    out: dict[str, int] = {}
+    for line in (root / _CHARMAP).read_text().split("\n"):
+        if m := _MAP_RE.match(line):
+            tok = _unescape(m.group(1))
+            out.setdefault(tok, _num(m.group(2)))
+    return out
+
+
+def _ngram_range(root: Path) -> tuple[int, int]:
+    """The `$0a..$51` byte window the n-gram table fills, read from its `DEF`s."""
+    bounds: dict[str, int] = {}
+    for line in (root / _CHARMAP).read_text().split("\n"):
+        if m := _RANGE_RE.match(line):
+            bounds[m.group(1)] = _num(m.group(2))
+    return bounds["NGRAMS_START"], bounds["NGRAMS_END"]
+
+
+def _num(text: str) -> int:
+    """A charmap literal, `$4d` or plain decimal, as an int."""
+    return int(text[1:], 16) if text.startswith("$") else int(text)
+
+
+def _ngram_tiles(root: Path, start: int,
+                 plain: tuple[str, ...]) -> tuple[dict[int, int], dict[int, str]]:
+    """byte -> tiles it draws, and byte -> the WRAM buffer it prints (for names).
+
+    The table is byte-ordered from `start`: the nth `dr .label` is byte
+    `start + n`, and each `.label` is either a `rawchar` string (its tiles, in the
+    un-compressed charmap where a ligature is one tile) or a `dw` at a WRAM name,
+    which prints something with no determinate width — zero tiles here, and the
+    buffer recorded so `text-width-name` can look its bound up."""
+    src = (root / _NGRAMS).read_text().split("\n")
+    byte_of_label: dict[str, int] = {}
+    seen = 0
+    for line in src:
+        if m := _DR_RE.match(line):
+            byte_of_label[m.group(1)] = start + seen
+            seen += 1
+
+    tiles: dict[int, int] = {}
+    buffers: dict[int, str] = {}
+    for line in src:
+        if m := _RAWCHAR_RE.match(line):
+            label, expansion = m.group(1), m.group(2)
+            if (byte := byte_of_label.get(label)) is not None:
+                tiles[byte] = _tile_count(_unescape(expansion), plain)
+        elif m := _DW_RE.match(line):
+            if (byte := byte_of_label.get(m.group(1))) is not None:
+                tiles[byte] = 0
+                buffers[byte] = m.group(2)
+    return tiles, buffers
+
+
+def _name_bounds(root: Path, byte_of: dict[str, int],
+                 buffer_by_byte: dict[int, str]) -> dict[str, int]:
+    """token -> its worst-case name length, for the bounded name buffers only.
+
+    The n-gram `dw` entries name their buffer; `_NAME_BOUND` is which of those
+    the naming screen bounds and by which constant. `wTrendyPhrase` is a `dw` too
+    but not in the map, so it is left out — its content is unbounded, which is
+    `text-buffer`'s concern, not this one."""
+    consts = box.equs(root, _TEXT_CONSTANTS, {})
+    bound_of_byte = {byte: consts[_NAME_BOUND[buf]] - 1
+                     for byte, buf in buffer_by_byte.items() if buf in _NAME_BOUND}
+    return {token: bound_of_byte[byte]
+            for token, byte in byte_of.items() if byte in bound_of_byte}
+
+
+def _unbounded_tokens(byte_of: dict[str, int],
+                      buffer_by_byte: dict[int, str]) -> frozenset[str]:
+    """The tokens that print WRAM nobody can bound — the `dw` entries left over
+    once the bounded names are taken out. `wTrendyPhrase` is the one polished has:
+    a phrase the player types at the Goldenrod sign, so no constant caps it and no
+    worst case exists to add. Counting it as zero would call a full line safe on
+    the strength of a string that has not been written yet."""
+    return frozenset(
+        token for token, byte in byte_of.items()
+        if buffer_by_byte.get(byte) not in (None, *_NAME_BOUND))
+
+
+def _tile_count(expansion: str, plain: tuple[str, ...]) -> int:
+    """Tiles an n-gram expansion draws — its tokens up to the terminator.
+
+    Counted in the un-compressed (`plain`) charmap, longest match first, so the
+    apostrophe ligatures (`'s`, `'d`) that are one tile each are one tile each,
+    and a byte with no charmap entry still counts as the single tile it draws."""
+    text = expansion.split(charmap.TERMINATOR, 1)[0]
+    n, i = 0, 0
+    while i < len(text):
+        for tok in plain:
+            if text.startswith(tok, i):
+                i += len(tok)
+                break
+        else:
+            i += 1
+        n += 1
+    return n
+
+
+def _unescape(tok: str) -> str:
+    return tok.replace('\\"', '"').replace("\\\\", "\\")

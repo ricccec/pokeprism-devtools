@@ -19,8 +19,9 @@ from pathlib import Path
 
 from ...studio import panels
 from ...studio.actions import ActionError
+from ..vanilla import measures
 from ..vanilla.read import attrs, dims, label_of, lines
-from . import events, swatches
+from . import events, metrics, swatches
 
 _MAP = re.compile(r"^\s*map\s+(\w+)\s*,\s*(.+)")
 _BLOCKS_LABEL = re.compile(r"^(\w+)_BlockData:")
@@ -34,9 +35,9 @@ _WILDMON = re.compile(r"^\s*wildmon\s+(\d+)\s*,\s*(\w+)\s*,?\s*(\w+)?")
 
 class Reader:
     """One polishedcrystal tree, answering the studio's questions in the
-    seam's words. Like vanilla, `measure` is honestly absent — the dialogue
-    path is fixed-width whatever the menus do — and like vanilla it sketches:
-    the new-map form draws before it writes."""
+    seam's words. Like vanilla it sketches — the new-map form draws before it
+    writes — and like vanilla it keeps `measure` in a subclass the mount builds
+    only when the text engine is there to measure against."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -160,6 +161,20 @@ class Reader:
     # -- the words ----------------------------------------------------------- #
     def texts(self, label: str) -> list[panels.TextRef]:
         return events.texts(self.root / f"maps/{label}.asm")
+
+
+class MeasuringReader(Reader):
+    """The same reader, on a tree whose n-gram widths can be read.
+
+    Vanilla's `MeasuringReader` with polished's `Metrics` handed in — the fork is
+    the one argument, exactly as it is for the linter. The measuring itself, the
+    box and the tile arithmetic are shared, because polished's map dialogue draws
+    through the same fixed-width path vanilla's does. Its menu VWF is somewhere
+    else entirely and no line measured here goes through it.
+    """
+
+    def measure(self, text: str, box: str) -> panels.TextPreview:
+        return measures.measure_lines(self.root, metrics.load(self.root), text)
 
 
 # --------------------------------------------------------------------------- #

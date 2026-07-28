@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
-"""Tests for the family dialogue-overflow linter (hacks/vanilla/lint).
+"""Tests for the family's text measuring — the linter, and the gutter beside it.
 
-Two kinds of check, the same shape as the maplint suite. The *synthetic* ones
-craft a handful of overflow lines and prove each is caught — one tile past the
-box, the invisible `#`->POKé expansion, a `next` off the bottom row — and that a
-line exactly the box's width is *not*. The *real-tree* ones lint a stock
-pokecrystal checkout and require it to come back clean: a shipping game has no
-overflow, so a finding there is the lint crying wolf. Both need engine files
-(the charmap, the widths, the box constants), so both skip when no checkout sits
-next door.
+Three kinds of check. The *synthetic* ones craft a handful of overflow lines and
+prove each is caught — one tile past the box, the invisible `#`->POKé expansion,
+a `next` off the bottom row — and that a line exactly the box's width is *not*.
+The *real-tree* ones lint a stock pokecrystal checkout and require it to come
+back clean: a shipping game has no overflow, so a finding there is the lint
+crying wolf.
+
+The third is the *gutter* (`hacks/vanilla/measures.py`), which asks the same
+widths at the other moment — under the reword box, while the line is still yours
+to shorten, rather than after it is written. It is checked here rather than
+somewhere of its own because the property worth having is that the two are one
+arithmetic: every number it asserts has a twin in the rule tests above, and the
+last check measures the linter's own sample both ways and requires the counts to
+match line for line.
+
+All of it needs engine files (the charmap, the widths, the box constants), so all
+of it skips when no checkout sits next door.
 
     python tests/test_family_lint.py
 """
@@ -24,9 +33,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from pokeprism_devtools.hacks import mount as hackmount  # noqa: E402
 from pokeprism_devtools.hacks import seam  # noqa: E402
 from pokeprism_devtools.hacks.polished import lint as polished_lint  # noqa: E402
-from pokeprism_devtools.hacks.vanilla import lint  # noqa: E402
-from pokeprism_devtools.hacks.vanilla import box  # noqa: E402
-from pokeprism_devtools.hacks.vanilla.lint import dialogue, metrics, rules  # noqa: E402
+from pokeprism_devtools.hacks.polished import metrics as polished_metrics  # noqa: E402
+from pokeprism_devtools.hacks.vanilla import box, lint, metrics  # noqa: E402
+from pokeprism_devtools.hacks.vanilla.lint import dialogue, rules  # noqa: E402
 from pokeprism_devtools.maplint.diagnostics import Severity, apply_suppressions  # noqa: E402
 
 VANILLA = Path.home() / "code/ricccec/pokecrystal"
@@ -106,9 +115,14 @@ def check(label: str, cond: bool, detail: str = "") -> None:
         FAILED += 1
 
 
-def _lines(root: Path, sample: Path):
-    """Every rendered line in the sample, keyed by the macro's source lineno."""
-    m = metrics.load(root)
+def _lines(root: Path, sample: Path, load=metrics.load):
+    """Every rendered line in the sample, keyed by the macro's source lineno.
+
+    `load` is the tree's own width reader, because the widths are the one thing
+    that forks: measuring a polished checkout with vanilla's `dict` table reads
+    its n-grams as single tiles and quietly agrees with nothing.
+    """
+    m = load(root)
     out = {}
     for blk in dialogue.parse(root, sample, m):
         for ln in blk.lines:
@@ -324,7 +338,7 @@ def test_the_seam_conformance(root: Path) -> None:
 #: shorter than it draws is still the surprise the width message must name.
 def test_polished_metrics_read_from_ngrams(root: Path) -> None:
     print("\npolished reads widths out of its n-gram table, not vanilla's dict")
-    m = polished_lint.load(root)
+    m = polished_metrics.load(root)
     check("`#` prints 4 tiles (Poké)", m.width.get("#") == 4, str(m.width.get("#")))
     check("`#mon` prints 7 (Pokémon)", m.width.get("#mon") == 7, str(m.width.get("#mon")))
     check("a name buffer counts as nothing (`<PLAYER>` -> 0)",
@@ -339,7 +353,7 @@ def test_polished_metrics_read_from_ngrams(root: Path) -> None:
 
 def test_polished_falsification(root: Path) -> None:
     print("\npolished catches the same overflows, and names only the real surprise")
-    m = polished_lint.load(root)
+    m = polished_metrics.load(root)
     b = box.speech_box(root)
     check("the box is 18 tiles wide, as vanilla's", b.cols == 18, str(b.cols))
     with tempfile.TemporaryDirectory() as d:
@@ -378,11 +392,77 @@ def test_polished_real_tree_is_clean(root: Path) -> None:
 
 
 def test_polished_name_bound_and_overflow(root: Path) -> None:
-    _check_name_rule("polished", root, polished_lint.load(root))
+    _check_name_rule("polished", root, polished_metrics.load(root))
 
 
 def test_polished_buffer_overflow(root: Path) -> None:
-    _check_buffer_rule("polished", root, polished_lint.load(root))
+    _check_buffer_rule("polished", root, polished_metrics.load(root))
+
+
+def test_the_reword_gutter(root: Path, name: str, load) -> None:
+    """The same widths, asked at the other moment — under the reword box.
+
+    The linter says a line is nineteen tiles after it is written; the gutter says
+    it while you can still shorten it. Two readers of one arithmetic, so the thing
+    worth checking is that they are one arithmetic: every number below has a twin
+    in the rule tests above, and the last check is the two paths compared line for
+    line over the same sample.
+    """
+    print(f"\n{name}: the tile gutter under the reword box")
+    hack = hackmount.mount(root)
+    reads = hack.reads
+    bx = box.speech_box(root)
+    check("the mount declares it measures, and the reader carries the method",
+          hack.measures and isinstance(reads, seam.Measures),
+          f"measures={hack.measures} reader={type(reads).__name__}")
+
+    m = reads.measure("#mon Center near", "speech")
+    check("the box measured against is the engine's, not a number written here",
+          (m.box, m.cols) == (bx.name, bx.cols), f"{m.box}, {m.cols} cols")
+    check("`#mon Center near` is 16 characters and 19 tiles — one past the box",
+          (m.lines[0].tiles, m.lines[0].over) == (19, 1),
+          f"tiles={m.lines[0].tiles} over={m.lines[0].over}")
+    check("and the same line two words shorter fits — the count discriminates",
+          reads.measure("#mon Center", "speech").lines[0].over == 0)
+
+    fits, breaks = reads.measure(
+        "<PLAYER> obtained a\n<PLAYER> and I are set", "speech").lines
+    check("`<PLAYER>` reads as nothing and draws up to seven",
+          (fits.tiles, fits.bounded) == (11, 7), f"{fits.tiles}+{fits.bounded}")
+    check("the line that packs to exactly 18 at a long name is not flagged",
+          (fits.over, fits.over_at_worst) == (0, 0))
+    check("the one a tile wider is over only at worst — fine now, broken for "
+          "BARTHOLOMEW",
+          (breaks.over, breaks.over_at_worst) == (0, 3),
+          f"over={breaks.over} at worst={breaks.over_at_worst}")
+
+    typo = reads.measure("<PLAYR> hi", "speech").lines[0]
+    check("a typo'd name token is named as unmapped, not quietly counted",
+          bool(typo.unknown), str(typo.unknown))
+    check("and the correctly spelled one is not",
+          not reads.measure("<PLAYER> hi", "speech").lines[0].unknown)
+
+    unbounded = sorted(load(root).unbounded)
+    if not unbounded:
+        print("  --   no inline token here prints WRAM nobody can bound — "
+              "every buffer this engine splices is a name the naming screen caps")
+    else:
+        tok = unbounded[0]
+        line = reads.measure(f"Hi {tok}!", "speech").lines[0]
+        check(f"`{tok}` prints WRAM with no bound, so it is named, not counted "
+              "as zero", line.unbounded == [tok], str(line.unbounded))
+
+    # And the whole point: the two readers of these widths agree. The sample is
+    # the linter's own, measured both ways — through `lint.dialogue`, which walks
+    # a parsed file, and through the gutter, which walks prose out of a form.
+    with tempfile.TemporaryDirectory() as d:
+        sample = Path(d) / "Sample.asm"
+        sample.write_text(_SAMPLE)
+        linted = [ln for _, ln in sorted(_lines(root, sample, load).items())]
+    gutter = reads.measure("\n".join(ln.text for ln in linted), "speech").lines
+    both = [(g.tiles, ln.determinate) for g, ln in zip(gutter, linted)]
+    check("every line of the linter's own sample measures the same both ways",
+          len(gutter) == len(linted) and all(a == b for a, b in both), str(both))
 
 
 def test_polished_seam_conformance(root: Path) -> None:
@@ -405,6 +485,7 @@ def main() -> int:
         test_buffer_overflow(VANILLA)
         test_the_real_tree_is_clean(VANILLA)
         test_the_seam_conformance(VANILLA)
+        test_the_reword_gutter(VANILLA, "vanilla", metrics.load)
 
     if not POLISHED.exists():
         print("\n(no polishedcrystal checkout next door — skipping the polished tests)")
@@ -415,6 +496,7 @@ def main() -> int:
         test_polished_buffer_overflow(POLISHED)
         test_polished_real_tree_is_clean(POLISHED)
         test_polished_seam_conformance(POLISHED)
+        test_the_reword_gutter(POLISHED, "polished", polished_metrics.load)
 
     print()
     if FAILED:

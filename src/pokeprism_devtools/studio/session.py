@@ -348,9 +348,10 @@ class Session:
     def measure(self, text: str, box: str = "speech") -> TextPreview:
         """Dialogue-in-progress against the box it lands in, in *tiles*.
 
-        Tiles are engine physics — a VWF, a charmap, buffer tokens — so only a
-        hack that declared the capability can answer; prism is the only one
-        with a VWF in its family. Refused with the reason, not with silence.
+        Tiles are engine physics — a charmap, control-code expansions, buffer
+        tokens — so only a hack that declared the capability can answer, and what
+        it declares is whether those are on disk to be read. Refused with the
+        reason, not with silence.
         """
         if not self.hack.measures:
             raise SessionError(

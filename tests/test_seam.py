@@ -24,9 +24,12 @@ What is checked, and what deliberately is not:
     would fail on agreement and pass on a lie. Calling the method and looking
     at what comes out is the check that means something.
   * The two optional protocols are checked **against the declared capability**,
-    both ways: prism must answer `measure` because it declared `measures`, and
-    the family must not be asked — that is the degrade-to-absence rule as a
-    test rather than as a paragraph.
+    both ways: an adapter must answer `measure` exactly when its `Hack` declared
+    `measures`. All three trees here declare it, and the direction that bites is
+    the other one — a family tree with no text engine on disk mounts a reader
+    with no `measure` on it, which `test_vanilla.py` and `test_polished.py` check
+    over fixtures. That is the degrade-to-absence rule as a test rather than as a
+    paragraph.
 
 `test_falsified` comes last and matters most: it builds adapters that are wrong
 in the five ways an adapter is actually wrong — a missing method, a renamed

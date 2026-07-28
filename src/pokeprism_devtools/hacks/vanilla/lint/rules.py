@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 
 from ....maplint import textfit
 from ....maplint.diagnostics import Diagnostic, Severity
-from . import charmap
+from .. import charmap
 
 if TYPE_CHECKING:
     from .context import FamilyLintContext

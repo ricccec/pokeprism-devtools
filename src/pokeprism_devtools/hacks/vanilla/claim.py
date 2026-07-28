@@ -8,10 +8,10 @@ contents mean is vanilla's alone, and it knows nothing of polished's head anchor
 of* is `build` below: a reader and a writer over a stock pokecrystal checkout,
 and its family linter. The `ctx` is what makes the session lint a vanilla tree
 at all — the dialogue-overflow rules, surfacing through the same Diagnostics
-channel prism uses; `plays` now carries a stock-pokecrystal build-and-boot, while
-`measures` left false means the tile ruler still degrades to absence (the dialogue
-font is fixed-width, so there is no VWF to measure against). Nothing is imported
-until vanilla claims the tree.
+channel prism uses; `plays` carries a stock-pokecrystal build-and-boot, and
+`measures` is now answered by the tree rather than declared false: a checkout with
+its text engine on disk can say how wide a line draws, and one without it cannot.
+Nothing is imported until vanilla claims the tree.
 """
 
 from __future__ import annotations
@@ -42,12 +42,22 @@ def claims(root: Path) -> Hack | NearMiss:
 
 
 def build(root: Path) -> Hack:
-    """The vanilla :class:`~..seam.Hack`: a reader, a writer, a text linter, and
-    now build-and-boot — a stock pokecrystal builds and the studio can stand you
-    on a map in it. `measures` stays false: the dialogue font is fixed-width, so
-    there is still no VWF to measure tiles against (see `docs/STATE.md`)."""
-    from . import lint, play
-    from .read import Reader
+    """The vanilla :class:`~..seam.Hack`: a reader, a writer, a text linter,
+    build-and-boot, and now the tile ruler under the reword box.
+
+    `measures` is read off the tree, not written down here. The reason it was
+    hardcoded false — "the dialogue font is fixed-width, so there is no VWF to
+    measure against" — had the question backwards: fixed width is what makes the
+    count *exact*, and `panels.Measured` was always denominated in tiles. What
+    genuinely cannot be measured is a checkout with no charmap and no engine file
+    to read them out of, so that is what is asked, and a tree that fails it gets a
+    reader with no `measure` on it rather than one that would crash on a
+    keystroke.
+    """
+    from . import lint, metrics, play
+    from .read import MeasuringReader, Reader
     from .write import Writer
-    return Hack("vanilla", Reader(root), ctx=lint.build(root),
-                writes=Writer(root), plays=play.Player(root))
+    tiles = metrics.engine_is_readable(root, metrics.ENGINE_FILES)
+    return Hack("vanilla", (MeasuringReader if tiles else Reader)(root),
+                ctx=lint.build(root), writes=Writer(root),
+                plays=play.Player(root), measures=tiles)

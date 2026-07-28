@@ -23,8 +23,8 @@ from typing import TYPE_CHECKING, Callable
 from ....maplint.diagnostics import Diagnostic, apply_suppressions
 from .. import box
 from ..box import Box
+from ..metrics import Metrics, engine_is_readable
 from . import dialogue, rules
-from .metrics import Metrics
 
 if TYPE_CHECKING:
     from . import dialogue as _dialogue
@@ -69,7 +69,7 @@ class FamilyLintContext:
         mid-edit, or a fixture that is only a few maps — cannot be measured, so
         the lint degrades to silence rather than crashing on the first
         `read_text`, the way the seam says an absent capability must."""
-        if not all((self.root / f).is_file() for f in self._engine_files):
+        if not engine_is_readable(self.root, self._engine_files):
             return []
         found: list[Diagnostic] = []
         for rule in rules.ALL:

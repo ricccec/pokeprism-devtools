@@ -84,9 +84,12 @@ class Reads(Protocol):
 
 @runtime_checkable
 class Measures(Protocol):
-    """`measures=True` only. Text measured in tiles is engine physics — a VWF,
-    a charmap, buffer tokens — so a tree without one cannot answer this, and
-    the session refuses with that sentence rather than guessing in characters."""
+    """`measures=True` only. Text measured in tiles is engine physics — a
+    charmap, control-code expansions, buffer tokens — so a tree the studio cannot
+    read those out of cannot answer, and the session refuses with that sentence
+    rather than guessing in characters. Tiles, not pixels: what a proportional
+    font would need is a per-glyph width, and the trees that have one keep it off
+    the dialogue path."""
 
     def measure(self, text: str, box: str) -> panels.TextPreview: ...
 
@@ -255,6 +258,9 @@ class Hack:
     #: A :class:`Plays`, holding its own emulator across boots. None mounts the
     #: tree unplayable, and the studio's boot key degrades to absence.
     plays: Plays | None = None
-    #: Text is measured in tiles against the engine's own VWF and charmap,
-    #: rather than guessed at in characters.
+    #: Text is measured in tiles against the engine's own charmap and widths,
+    #: rather than guessed at in characters. Adapters read this off the tree
+    #: rather than hardcoding it: the charmap and the widths *are* the
+    #: measurement, so a checkout that is missing them declares False and the
+    #: gutter is absent instead of wrong.
     measures: bool = False
