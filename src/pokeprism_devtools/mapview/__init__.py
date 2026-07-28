@@ -19,6 +19,7 @@ from pathlib import Path
 from ..hacks.prism import maps
 from ..hacks.prism.mapformat import PRISM_FORMAT
 from ..shared import paths, symfile
+from ..shared.devtools import make_devtools_dir
 from ..shared.overworld import blockdata
 from ..hacks.prism.render import PALETTE_TABLES, render_map, table_for_permission
 from ..shared.viewer import TOD_MAP, TOD_NAMES, open_images, parse_tileset_id
@@ -132,8 +133,7 @@ def main() -> None:
 
     syms = symfile.SymFile.load(sym)
     tod = TOD_MAP[args.time]
-    cache_dir = root / ".devtools" / "map-renders"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir = make_devtools_dir(root, "map-renders")
 
     all_maps = maps.parse_maps(root / "constants" / "map_dimension_constants.asm")
 

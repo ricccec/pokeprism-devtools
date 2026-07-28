@@ -23,6 +23,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from ..shared import paths
+from ..shared.devtools import make_devtools_dir
 from ..hacks.prism.render import (
     PALETTE_TABLES, palettes_for_table, render_tileset_sheet)
 from ..shared.viewer import TOD_MAP, TOD_NAMES, is_stale, open_images, parse_tileset_id
@@ -132,8 +133,7 @@ def main() -> None:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)
 
-    cache_dir = root / ".devtools" / "gfx-renders"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir = make_devtools_dir(root, "gfx-renders")
 
     if args.cmd == "tileset":
         tod = TOD_MAP[args.time]

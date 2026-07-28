@@ -21,6 +21,7 @@ from pathlib import Path
 from ...dev_server import apply as devapply
 from ...dev_server import inventory, playtest as devplay
 from ...shared import make, paths
+from ...shared.devtools import make_devtools_dir
 from ..seam import PlayError
 
 #: The two ROMs this repo builds, and whether each one is the *debug* build — which
@@ -91,7 +92,7 @@ def boot(root: Path, emulator: devplay.Emulator, const: str, y: int, x: int, *,
         raise PlayError(str(e)) from e
 
     layout = devplay.Layout.under(root)
-    layout.inventory.parent.mkdir(parents=True, exist_ok=True)
+    make_devtools_dir(root)
     inv = inventory.load_or_build(root, sym, layout.inventory, log=lambda _: None)
 
     state = devapply.load_state(layout.state, layout.presets)
