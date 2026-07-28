@@ -62,7 +62,7 @@ left — vanilla `measures`, polished `plays`/`measures` — are the **absences 
 design** further down. `measures` is now two questions wearing one name: *pixel*
 widths for a proportional dialogue font are permanently absent (a font fact),
 while the *tile* count the family linter already does is unwired rather than
-missing, and pick-up (4) is that wiring. Polished `plays` is the next family tree
+missing, and pick-up (3) is that wiring. Polished `plays` is the next family tree
 the build-and-boot seam is ready for.
 
 ## The last engineering item — paid (2026-07-25)
@@ -437,20 +437,20 @@ by what it costs versus what it buys, with the detail in the sections that follo
 
 | | Size | Where |
 |---|---|---|
-| **1. Restore `test_visible_sprites_get_the_right_vram_tile`** | small | Tests, below — the only place the repo currently misreports itself |
-| **2. Polished `plays`** | large | Absences — the item that completes the capability matrix |
-| **3. Prism variable sprites in the boot** | one line, unverifiable alone | Absences — pair it with (2) or with sprite work |
-| **4. Family `measures` — the tile gutter in the reword box** | small | Absences — the reason it was "honestly absent" no longer holds |
-| **5. Connection *adding*** | needs design | Absences — two-sided |
-| **6. `EditMap` attributes tab** | unclaimed | Absences |
-| **7. Ignore `.devtools/` from the code that creates it** | small | Housekeeping, below — the tool dirties `git status` in trees it does not own |
+| **1. Polished `plays`** | large | Absences — the item that completes the capability matrix |
+| **2. Prism variable sprites in the boot** | one line, unverifiable alone | Absences — pair it with (1) or with sprite work |
+| **3. Family `measures` — the tile gutter in the reword box** | small | Absences — the reason it was "honestly absent" no longer holds |
+| **4. Connection *adding*** | needs design | Absences — two-sided |
+| **5. `EditMap` attributes tab** | unclaimed | Absences |
+| **6. Ignore `.devtools/` from the code that creates it** | small | Housekeeping, below — the tool dirties `git status` in trees it does not own |
 
-**(1) is the one I would not leave.** It prints `[OK]` while testing nothing, and
-it guards the sprite-VRAM allocator that (2) and (3) both go on to change — so it
-will be relied on precisely when it cannot bite. It is also the smallest item here.
+The decayed VRAM test that used to head this list is **restored** (2026-07-28) —
+see Tests, below. That was the one item the repo could not afford to leave, because
+it guards the sprite-VRAM allocator that (1) and (2) both go on to change; it now
+bites, and it proves it bites on every run.
 
 **Not on this list, on purpose:** family VWF *pixel* metrics, which is permanent
-and a font fact rather than a gap — not to be confused with (4), which is the
+and a font fact rather than a gap — not to be confused with (3), which is the
 *tile* count the linter already does, wired into the form; doc accretion and the stashed
 map-studio restructure, which are housekeeping; and the three pre-existing test
 reds, which are true reports about the live prism tree and are left alone.
@@ -607,28 +607,54 @@ sprites and both checksums against tiles/objects independently computed from the
 ROM, on an outdoor town and an indoor lab). **One trap about that save:**
 `Player.boot` patches `pokecrystal11_debug.sav` *in place*, so after the first boot
 that file holds our own output and is no longer ground truth — and it still passes
-every validity check, because a patched save is a valid save. The only game-written
-save left is preserved at `.devtools/sav-backups/GENUINE-players-house-2f.sav` in the
-pokecrystal tree (start-of-game, PLAYERS_HOUSE_2F at (3, 3)); every timestamped
-backup after the first is a previous patch's output. Anything used as ground truth
-has to be copied out under a name the backup rotation won't age out.
+every validity check, because a patched save is a valid save. Game-written saves are
+preserved in the pokecrystal tree under `.devtools/sav-backups/GENUINE-*.sav` —
+`route-32`, `new-bark-town` (both outdoor, the VRAM fixtures),
+`players-house-1f` and `players-house-2f` (indoor); every *timestamped* backup
+after the first is a previous patch's output. Anything used as ground truth has to
+be copied out under a name the rotation won't age out — it only ever writes
+`pokecrystal11_debug-<timestamp>.sav`, so the `GENUINE-` prefix is what keeps these.
 
-**That has already cost one test its teeth (found 2026-07-27, not yet fixed).**
-`test_visible_sprites_get_the_right_vram_tile` reads the debug save's *current* map
-and compares our computed VRAM tiles against the `SPRITE_TILE` in its
-`wObjectStructs` — sound only while those structs are the **game's**. They aren't
-any more: `instantiate_visible_sprites` writes that field from the same
-`sprite_tiles` output the test then checks it against, so on a save any boot has
-touched the check is **self-confirming and cannot fail**. It still prints `[OK]`,
-which is the worst version of the problem. And the one genuine save left is
-*indoor*, so pointing the test at it makes it **skip** on the `is_outdoor` guard.
-The check is therefore doing nothing today, in either direction. Its earlier proof
-was real — it ran against a genuine Route 32 save that has since been overwritten —
-so this is decayed coverage, not a wrong result. Restoring it needs either a
-game-written *outdoor* save kept out of the rotation, or the genuine observation
-(sprite 35 → tile 36 at Route 32) frozen as declared data with its provenance. This
-is exactly the trap [[round-trip-to-verify-writer]] names: a check that only re-reads
-what the writer wrote.
+**That cost one test its teeth, and the teeth are back (2026-07-28).**
+`test_visible_sprites_get_the_right_vram_tile` used to read the *working* debug
+save's current map and compare our computed VRAM tiles against the `SPRITE_TILE`
+in its `wObjectStructs` — sound only while those structs are the **game's**. They
+stopped being: `instantiate_visible_sprites` writes that field from the same
+`sprite_tiles` output the test then checked it against, so on a save any boot had
+touched the check was **self-confirming and could not fail** — while still printing
+`[OK]`, the worst version of the problem. Exactly the trap
+[[round-trip-to-verify-writer]] names: a check that only re-reads what the writer
+wrote.
+
+It now runs on **declared fixtures** in `.devtools/sav-backups/`, saves the game
+wrote and no boot has touched: `GENUINE-route-32.sav` and
+`GENUINE-new-bark-town.sav`. Both were made by warping in, walking through a door
+and back, then saving in-game — `MAPSETUP_WARP` runs `LoadMapGraphics` (rebuilding
+the VRAM allocation) *and* `LoadMapObjects` (writing the structs), where the
+patched-boot `MAPSETUP_CONTINUE` runs the first and literally calls
+`LoadMapAttributes_SkipObjects` for the second. That asymmetry is both why the
+patcher exists and why a door launders a patched arrival back into ground truth.
+A map *edge* would not do: `MapSetupScript_Connection` omits `LoadMapGraphics`, so
+it never rebuilds the allocation.
+
+Two properties keep it from rotting the same way twice. **Provenance is checked,
+not assumed** — `_engine_wrote_the_structs` re-runs our own patcher on a copy at
+the fixture's own position and demands bytes the fixture has set where ours are
+zero (the animated remainder the engine fills on its first frame). The fingerprint
+is *derived from the writer*, so it cannot go stale when the writer grows a field,
+and the guard is itself falsified: a deliberately patched fixture must be refused.
+And the comparison is **falsified every run** — five wrong allocations (the
+historical zero-terminated pool, unresolved variable sprites, the pool in sorted
+rather than ROM order, a pool missing an id, the wrong player sprite) are fed to
+the real `sprite_tiles` and each must be caught by at least one fixture, so a
+suite that has stopped biting fails loudly. The two fixtures are complementary,
+which is the argument for keeping both: only Route 32 catches unresolved variable
+sprites (its group's pool carries id 244 → Sudowoodo, `STANDING` not walking — the
+same 12-tile length, so it is the *sort order* that moves, 14 tiles' worth), and
+only New Bark Town catches the pool arriving pre-sorted. The original observation
+is back with it: sprite 35 → tile 36 on Route 32. **The one gap left:** no fixture
+sizes a still sprite as a walking one, because neither map has a still sprite on
+screen ahead of its NPCs — a busier outdoor save would close it.
 `test_family_sketch.py` covers the new-map form's picture on both real family
 trees — that it draws at the asked size in the tileset's colours, that each way
 it can be wrong is refused *by name*, and that the picture and the write refuse a
