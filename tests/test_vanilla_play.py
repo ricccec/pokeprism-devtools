@@ -425,74 +425,212 @@ def test_the_boot_rebuilds_the_whole_map() -> None:
               and any("people" in c for c in changes), str(changes))
 
 
+#: Saves the *game* wrote, kept under names the backup rotation cannot age out
+#: (it only ever writes `pokecrystal11_debug-<timestamp>.sav`). Ground truth for
+#: the VRAM check below has to be a save no boot has ever patched, and the working
+#: `pokecrystal11_debug.sav` is patched in place, so it can never be one of these.
+#: Each was made by warping in, walking through a door and back — `MAPSETUP_WARP`
+#: runs both `LoadMapGraphics` (rebuilding the VRAM allocation) and
+#: `LoadMapObjects` (writing the structs), so nothing the patcher wrote survives —
+#: then saving in-game.
+_GENUINE_SAVES = Path.home() / "code/ricccec/pokecrystal/.devtools/sav-backups"
+_FIXTURES = (
+    # file, the map it stands on, and what only this one reaches
+    ("GENUINE-route-32.sav", "ROUTE_32",
+     "its group's pool carries a variable sprite, so it is the only one that "
+     "reaches the still-vs-walking resolution"),
+    ("GENUINE-new-bark-town.sav", "NEW_BARK_TOWN",
+     "a different group and a different pool order"),
+)
+
+
+def _engine_wrote_the_structs(raw: bytes, syms: SymFile, rom: Path,
+                              group: int, number: int, x: int, y: int) -> tuple[bool, str]:
+    """Did the *game* write this save's `wObjectStructs`, or did we?
+
+    The question the old version of this test forgot to ask. `instantiate_visible_sprites`
+    writes the same `SPRITE_TILE` field the check below reads, so on a save any boot
+    has touched the comparison is self-confirming — it passes by construction and
+    can never fail. Provenance is therefore part of the check, not a property of the
+    filename.
+
+    Answered by re-running our own patcher on a copy at the save's own map and
+    position and looking for bytes the fixture has set where ours are zero. Our
+    writer zeroes each slot and fills only what `CopyMapObjectToObjectStruct` and
+    `CopySpriteMovementData` set, leaving the animated remainder (step type, step
+    frame, the standing/last tile) for the engine's first frame — so those bytes
+    are set *only* by a game that actually ran. Deriving the fingerprint from the
+    writer rather than listing offsets here means it cannot go stale when the
+    writer grows a field.
+    """
+    from pokeprism_devtools.shared.overworld import people  # noqa: PLC0415
+
+    ours = savefile.Save(bytearray(raw))
+    ours.stand_on(syms, group=group, number=number, y=y, x=x,
+                  rom_path=rom, keep_people=False)
+    at = ours._saved_offset(syms, "wObjectStructs")
+    span = people.NUM_OBJECT_STRUCTS * people.OBJECT_STRUCT_LEN
+    engine_only = [k for k in range(span) if raw[at + k] and not ours.data[at + k]]
+    if not engine_only:
+        return False, "our own patcher reproduces every byte — this save is our output"
+    slots = sorted({k // people.OBJECT_STRUCT_LEN for k in engine_only})
+    return True, (f"{len(engine_only)} bytes across struct(s) {slots} that our "
+                  "patcher leaves for the engine's first frame")
+
+
 def test_visible_sprites_get_the_right_vram_tile() -> None:
     """Every on-screen object must get the VRAM tile the game gives it — or it
     renders as whatever sprite happens to sit at the tile it falls back to (the
     player, at tile 0). This is the check the boot test lacked: it confirmed a
     sprite was *instantiated*, never that it pointed at the *right* graphics.
 
-    The real `pokecrystal11_debug` save is standing on a real outdoor map, and the
-    game wrote each visible object's `SPRITE_TILE` when it entered — ground truth
-    we recompute and compare against. The bug this guards: `outdoor_sprite_ids`
-    read a group's sprite list until a 0 byte, but stock's lists are a fixed 23
-    entries with no terminator, so it ran into the next groups' lists — a pool of
-    a hundred-plus ids that shouldered the map's own sprites (the boulders) out of
-    VRAM, so they fell back to the player's tile and rendered as the player.
+    Each fixture is a save the game wrote while standing on a real outdoor map, so
+    every visible object's `SPRITE_TILE` is the engine's own answer, which we
+    recompute from the ROM and compare against. The bug this first guarded:
+    `outdoor_sprite_ids` read a group's sprite list until a 0 byte, but stock's
+    lists are a fixed 23 entries with no terminator, so it ran into the next
+    groups' lists — a pool of a hundred-plus ids that shouldered the map's real
+    sprites out of VRAM, so they fell back to the player's tile and rendered as
+    the player.
+
+    Two things keep it from quietly rotting the way it did before. Provenance is
+    checked, not assumed (see :func:`_engine_wrote_the_structs`), because a save
+    the patcher has touched makes this comparison self-confirming. And the check is
+    *falsified*: each way the allocation can be got wrong is fed in and must be
+    caught by at least one fixture, so a suite that has stopped biting fails loudly
+    instead of printing OK. What no fixture reaches today is sizing a still sprite
+    as a walking one — neither map has a still sprite on screen ahead of its NPCs —
+    and a busier outdoor save would close that.
     """
-    from pokeprism_devtools.hacks.vanilla import play  # noqa: PLC0415
     from pokeprism_devtools.shared.overworld import blockdata, people, spritevram  # noqa: PLC0415
 
     root = Path.home() / "code/ricccec/pokecrystal"
     rom = root / "pokecrystal11_debug.gbc"
     sym = root / "pokecrystal11_debug.sym"
-    template = root / "pokecrystal11_debug.sav"
-    print("\nvisible objects get the game's VRAM tile (real save's current map)")
-    if not (rom.exists() and sym.exists() and template.exists()):
-        print("  --   no built debug ROM+save next door — skipping")
+    print("\nvisible objects get the game's VRAM tile (saves the game wrote)")
+    if not (rom.exists() and sym.exists()):
+        print("  --   no built debug ROM next door — skipping")
+        return
+    present = [f for f in _FIXTURES if (_GENUINE_SAVES / f[0]).exists()]
+    if not present:
+        print(f"  --   no genuine saves in {_GENUINE_SAVES} — skipping. Make one by "
+              "booting to an outdoor map, walking through a door and back, saving "
+              "in-game, and copying the .sav out before the next boot patches it.")
         return
 
     syms = SymFile.load(sym)
-    save = savefile.Save(bytearray(template.read_bytes()))
-    off = save._saved_offset
-    group, number = save.data[off(syms, "wMapGroup")], save.data[off(syms, "wMapNumber")]
-    os_off = off(syms, "wObjectStructs")
-    player = save.data[os_off + people.OBJ_SPRITE]
-    bd = blockdata.load(rom, syms, group, number)
-    if not blockdata.is_outdoor(bd.permission):
-        print(f"  --   save's current map (g{group} m{number}) is indoor — skipping the outdoor-pool check")
-        return
-
-    pool = spritevram.outdoor_sprite_ids(rom, syms, group)
-    # Falsify: the old zero-terminated read walked into adjacent groups. A correct
-    # fixed read is the group's own list — small, no 100+ overrun.
-    check("the outdoor sprite pool is the group's own fixed list, not an overrun "
-          "into the next groups", len(pool) <= 23, f"pool has {len(pool)} ids")
-
     pk, _vars = spritevram._sprite_cutoffs(root / "constants" / "sprite_constants.asm")
-    # The save's variable-sprite table: a variable sprite in the pool (a Sudowoodo,
-    # say) has no fixed type without it, and its length shifts every later tile.
-    vs = off(syms, "wVariableSprites")
-    variable_sprites = bytes(save.data[vs:vs + 16])
-    tiles = spritevram.sprite_tiles(rom, syms, player, pool,
-                                    variable_sprites=variable_sprites)
-    ok = True
-    for i in range(people.NUM_OBJECT_STRUCTS):
-        p = os_off + i * people.OBJECT_STRUCT_LEN
-        spr = save.data[p + people.OBJ_SPRITE]
-        if spr == 0 and i != 0:
+    # Every way the allocation can come out wrong, as inputs to the real
+    # `sprite_tiles` — no second implementation to drift from the first. Each must
+    # be caught somewhere in the fixture set; which fixture catches which is left
+    # open, because that depends on what happened to be on screen.
+    caught: dict[str, list[str]] = {
+        "a pool read to the first 0 byte (the historical overrun)": [],
+        "variable sprites left unresolved": [],
+        "the pool in sorted order, not the ROM's": [],
+        "a pool missing one id": [],
+        "the wrong player sprite in slot 0": [],
+    }
+
+    for filename, where, reaches in present:
+        raw = (_GENUINE_SAVES / filename).read_bytes()
+        save = savefile.Save(bytearray(raw))
+        off = save._saved_offset
+        group = save.data[off(syms, "wMapGroup")]
+        number = save.data[off(syms, "wMapNumber")]
+        x, y = save.data[off(syms, "wXCoord")], save.data[off(syms, "wYCoord")]
+        os_off = off(syms, "wObjectStructs")
+        player = save.data[os_off + people.OBJ_SPRITE]
+        print(f"  {filename} — {where} at ({x}, {y}), {reaches}")
+
+        check("    the save looks real", save.looks_real(syms))
+        genuine, detail = _engine_wrote_the_structs(raw, syms, rom, group, number, x, y)
+        check("    the *game* wrote these object structs, not our patcher "
+              "(without this the comparison below confirms itself)", genuine, detail)
+        if not genuine:
             continue
-        is_mon = spr >= pk                         # mon/variable ids: the game uses tile 0
-        game_tile = save.data[p + people.OBJ_SPRITE_TILE]
-        present = is_mon or spr in tiles           # a real sprite must never be absent
-        # Where the game placed one (non-zero), ours must equal it. (Zero can be a
-        # stale/uninstantiated slot in the save, so it isn't asserted against.)
-        matches = game_tile == 0 or tiles.get(spr) == game_tile
-        if not (present and matches):
-            ok = False
-            print(f"    sprite {spr}: game={game_tile} ours={tiles.get(spr)} "
-                  f"present={present} matches={matches}")
-    check("every visible object gets a real VRAM tile, matching the game where it "
-          "placed one (so a boulder is a boulder, not the player)", ok)
+
+        bd = blockdata.load(rom, syms, group, number)
+        check("    it stands on an outdoor map, so the group pool is in play",
+              blockdata.is_outdoor(bd.permission))
+        if not blockdata.is_outdoor(bd.permission):
+            continue
+
+        pool = spritevram.outdoor_sprite_ids(rom, syms, group)
+        check("    the outdoor sprite pool is the group's own fixed list, not an "
+              "overrun into the next groups", len(pool) <= 23, f"{len(pool)} ids")
+
+        vs = off(syms, "wVariableSprites")
+        variable_sprites = bytes(save.data[vs:vs + 16])
+
+        def agrees(tiles: dict[int, int], report: bool = False) -> bool:
+            ok = True
+            for i in range(people.NUM_OBJECT_STRUCTS):
+                p = os_off + i * people.OBJECT_STRUCT_LEN
+                spr = save.data[p + people.OBJ_SPRITE]
+                if spr == 0 and i != 0:
+                    continue
+                is_mon = spr >= pk              # mon/variable ids: the game uses tile 0
+                game_tile = save.data[p + people.OBJ_SPRITE_TILE]
+                # A real sprite must never be absent from the allocation; and where
+                # the game placed a tile (non-zero), ours must equal it. Zero can be
+                # a stale slot in the save, so it isn't asserted against.
+                if not ((is_mon or spr in tiles)
+                        and (game_tile == 0 or tiles.get(spr) == game_tile)):
+                    ok = False
+                    if report:
+                        print(f"      sprite {spr}: game={game_tile} "
+                              f"ours={tiles.get(spr)}")
+            return ok
+
+        def tiles_from(ids: list[int], *, variables: bytes = variable_sprites,
+                       slot0: int = player) -> dict[int, int]:
+            return spritevram.sprite_tiles(rom, syms, slot0, ids,
+                                           variable_sprites=variables)
+
+        check("    every visible object gets a real VRAM tile, matching the game "
+              "where it placed one (so a boulder is a boulder, not the player)",
+              agrees(tiles_from(pool), report=True))
+
+        # Falsify. Each mutation is the real allocator fed a wrong pool, a wrong
+        # variable-sprite table or a wrong player — if one of these still agrees
+        # with the game everywhere, this fixture is not watching that mistake.
+        mutants = {
+            "a pool read to the first 0 byte (the historical overrun)":
+                tiles_from(spritevram.outdoor_sprite_ids(rom, syms, group, count=None)),
+            "variable sprites left unresolved": tiles_from(pool, variables=b""),
+            "the pool in sorted order, not the ROM's": tiles_from(sorted(pool)),
+            "the wrong player sprite in slot 0": tiles_from(pool, slot0=0),
+        }
+        for name, tiles in mutants.items():
+            if not agrees(tiles):
+                caught[name].append(where)
+        # "Missing one id" is a family of mutations — the pool must be complete, and
+        # dropping an id only moves a tile when it sorts ahead of something on
+        # screen, so any one of them biting is what makes the claim true.
+        if any(not agrees(tiles_from(pool[:i] + pool[i + 1:])) for i in range(len(pool))):
+            caught["a pool missing one id"].append(where)
+
+    print("  the check bites — each way of getting the allocation wrong is caught:")
+    for name, by in caught.items():
+        check(f"    {name}", bool(by), "caught by " + (", ".join(by) or "NO fixture"))
+
+    # Falsify the provenance guard itself: patch one of these saves and it must
+    # stop being ground truth. Without this, a guard that returned True
+    # unconditionally would sit here looking green while the comparison above went
+    # back to reading its own writing — which is exactly how this test decayed.
+    filename, where, _ = present[0]
+    patched = savefile.Save(bytearray((_GENUINE_SAVES / filename).read_bytes()))
+    off = patched._saved_offset
+    group = patched.data[off(syms, "wMapGroup")]
+    number = patched.data[off(syms, "wMapNumber")]
+    x, y = patched.data[off(syms, "wXCoord")], patched.data[off(syms, "wYCoord")]
+    patched.stand_on(syms, group=group, number=number, y=y, x=x,
+                     rom_path=rom, keep_people=False)
+    genuine, detail = _engine_wrote_the_structs(bytes(patched.data), syms, rom,
+                                                group, number, x, y)
+    check(f"    a patched {where} save is refused as ground truth "
+          "(the provenance guard bites)", not genuine, detail)
 
 
 def main() -> int:
