@@ -190,14 +190,16 @@ def test_the_mount_tells_the_family_apart(root: Path) -> None:
     print("\nthe mount tells polished from vanilla by where the anchor sits")
     hack = hackmount.mount(root)
     check("mounted as polished", hack.name == "polished")
-    # No play adapter is a real absence — polished's save layout is its own and
-    # nobody has written it. No tile ruler is this *fixture's* absence: `measures`
-    # is asked of the tree, and this one ships no charmap and no n-gram table to
-    # count tiles with. A real polishedcrystal measures; test_family_lint.py checks it.
-    check("the family write adapter and a linter; it does not play, and cannot "
-          "measure a fixture with no text engine in it",
-          hack.ctx is not None and hack.writes is not None and not hack.plays
-          and not hack.measures)
+    # Polished now plays (Stage 1: a build-and-boot over its own save and block
+    # codec). The missing tile ruler is this *fixture's* absence, not the tree's:
+    # `measures` is asked of the tree, and this one ships no charmap and no n-gram
+    # table to count tiles with. A real polishedcrystal measures; test_family_lint.py
+    # checks it. The Player is constructed even on a fixture — it reads nothing
+    # until asked to build or boot.
+    check("a write adapter, a linter and a play adapter; it cannot measure a "
+          "fixture with no text engine in it",
+          hack.ctx is not None and hack.writes is not None
+          and hack.plays is not None and not hack.measures)
     check("the writer holds the head anchor",
           hack.writes.anchor == "_MapScriptHeader")
 

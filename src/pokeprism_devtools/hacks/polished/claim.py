@@ -51,7 +51,7 @@ def build(root: Path) -> Hack:
     same fixed-width path in both trees, which is what the count is of.
     """
     from .read import MeasuringReader, Reader
-    from . import lint, metrics
+    from . import lint, metrics, play
     from ..vanilla.metrics import engine_is_readable
     from ..vanilla.actions import POLISHED_ADDERS, POLISHED_EDITORS
     from ..vanilla.newmap import POLISHED as POLISHED_NEWMAP
@@ -73,6 +73,7 @@ def build(root: Path) -> Hack:
     tiles = engine_is_readable(root, metrics.ENGINE_FILES)
     return Hack("polished", (MeasuringReader if tiles else Reader)(root),
                 ctx=lint.build(root), measures=tiles,
+                plays=play.Player(root),
                 writes=Writer(root, _ANCHOR, POLISHED_WARPS,
                               POLISHED_CHOICES,
                               (POLISHED_ADDERS, POLISHED_EDITORS),

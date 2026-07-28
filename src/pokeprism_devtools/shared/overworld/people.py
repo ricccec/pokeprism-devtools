@@ -113,12 +113,21 @@ def reset_player_and_clear_npcs(
     x: int,
     y: int,
     keep_npcs: bool = False,
+    object_struct_len: int = OBJECT_STRUCT_LEN,
+    map_object_len: int = MAP_OBJECT_LEN,
 ) -> dict:
     """Reset the player ObjectStruct for new (x, y) and (unless keep_npcs)
     zero non-player slots in both wObjectStructs and wMapObjects.
 
     `*_offset` are file offsets inside the .sav. Caller resolves them via
     inventory or .sym + savefile.sram_to_file_offset.
+
+    The player-slot field offsets (`OBJ_STANDING_MAP_X` … `OBJECT_STRUCT_ID`) are
+    shared across the stock-family trees *and polished* — polished only resized
+    the struct tail and slot count, not these leading fields. Those two sizes are
+    the whole difference, so they cross as data: `object_struct_len` /
+    `map_object_len` default to stock's 40 / 16 (vanilla and prism unchanged) and
+    polished passes its own 34 / 14. Nothing here learns which tree it is.
 
     Returns a dict of human-readable changes for the launcher's diff log.
     """
@@ -155,20 +164,20 @@ def reset_player_and_clear_npcs(
         return changes
 
     # ── Zero non-player ObjectStructs (slots 1..N-1) ─────────────
-    npc_struct_bytes = (NUM_OBJECT_STRUCTS - 1) * OBJECT_STRUCT_LEN
+    npc_struct_bytes = (NUM_OBJECT_STRUCTS - 1) * object_struct_len
     sav.data[
-        object_structs_offset + OBJECT_STRUCT_LEN
-        : object_structs_offset + OBJECT_STRUCT_LEN + npc_struct_bytes
+        object_structs_offset + object_struct_len
+        : object_structs_offset + object_struct_len + npc_struct_bytes
     ] = bytes(npc_struct_bytes)
     changes["npc_structs"] = f"zeroed slots 1..{NUM_OBJECT_STRUCTS - 1}"
 
     # ── Zero non-player MapObjects (slots 1..N-1) ────────────────
-    npc_mapobj_bytes = map_objects_size - MAP_OBJECT_LEN
+    npc_mapobj_bytes = map_objects_size - map_object_len
     sav.data[
-        map_objects_offset + MAP_OBJECT_LEN
+        map_objects_offset + map_object_len
         : map_objects_offset + map_objects_size
     ] = bytes(npc_mapobj_bytes)
-    changes["map_object_slots"] = f"zeroed {npc_mapobj_bytes // MAP_OBJECT_LEN} NPC entries"
+    changes["map_object_slots"] = f"zeroed {npc_mapobj_bytes // map_object_len} NPC entries"
 
     return changes
 

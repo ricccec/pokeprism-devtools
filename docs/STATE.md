@@ -44,7 +44,7 @@ been.
 |---|---|---|---|---|---|
 | **prism** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **vanilla** | ✓ | ✓ | ✓ (dialogue overflow, name + buffer bounds) | ✓ (build ✓; boot rebuilds the map — tiles, objects, sprites, both checksums — confirmed live in SameBoy) | ✓ (tiles) |
-| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | — | ✓ (tiles, n-gram reader) |
+| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | ✓ (build ✓; boot rebuilds tiles + clears NPCs — Stage 1; loading NPCs/sprite VRAM deferred) | ✓ (tiles, n-gram reader) |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
 resize, new-map, **reword**, and the block scaffolding those ride — and the
@@ -59,9 +59,15 @@ primary and backup checksums. That rebuild runs on a shared Gen-2 core
 `play.py`. The family linters share everything but the width reader, which
 polished's Huffman n-gram engine spells differently (see below), and **both now
 measure**: the reword box carries a tile gutter, the same widths the linter reads,
-asked while the line is still yours to shorten. The one blank left is polished
-`plays`, which is the **absence by design** further down and the next family tree
-the build-and-boot seam is ready for.
+asked while the line is still yours to shorten. **Polished now builds and boots
+too** (Stage 1): its blocks are a custom `.ablk.lzp` codec and its object structs
+their own sizes, so — unlike prism, which shares the stock-family reader through a
+`MapFormat` — polished reads its own ROM dialect on its own side of the seam
+(`hacks/polished/lzp.py`, `mapread.py`), reusing only the genuinely neutral
+arithmetic (`compute_screen_save`, and `reset_player_and_clear_npcs` with its two
+struct sizes crossing as data). The boot rebuilds the tiles and clears the old
+NPCs; loading the destination map's NPCs and their sprite VRAM is the deferred
+Stage 2 below. The whole capability matrix is now filled in.
 
 `measures` was always two questions wearing one name, and only one of them was
 ever absent: *pixel* widths for a proportional dialogue font do not exist (a font
@@ -502,12 +508,16 @@ by what it costs versus what it buys, with the detail in the sections that follo
 
 | | Size | Where |
 |---|---|---|
-| **1. Polished `plays`** | large | Absences — the item that completes the capability matrix |
-| **2. Prism variable sprites in the boot** | one line, unverifiable alone | Absences — pair it with (1) or with sprite work |
+| **1. Polished `plays` Stage 2 — load NPCs + sprite VRAM** | large | Absences — builds on Stage 1's own-dialect reader |
+| **2. Prism variable sprites in the boot** | one line, unverifiable alone | Absences — pair it with polished Stage 2 or with sprite work |
 | **3. Connection *adding*** | needs design | Absences — two-sided |
 | **4. `EditMap` attributes tab** | unclaimed | Absences |
 
-Three items came off this list in as many days. The decayed VRAM test that used to
+**Polished `plays` Stage 1 landed 2026-07-28** — the item that completes the
+capability matrix (build + a clean tiles-and-clear boot); what remains is Stage 2
+(item 1 above), loading the destination map's NPCs and their sprite VRAM in
+polished's own object/sprite formats. Three more items came off this list in as
+many days. The decayed VRAM test that used to
 head it is **restored** (2026-07-28) — see Tests, below; it was the one the repo
 could not afford to leave, because it guards the sprite-VRAM allocator that (1)
 and (2) both go on to change, and it now proves it bites on every run. **Family
@@ -549,10 +559,23 @@ map, on the shared core, proven above.)
 full roadmap, grouped, is in `family-lint-plan.md` ("The roadmap past the
 seam"); the standing items:**
 
-- **Polished `plays`** — vanilla now builds and boots on the shared `overworld`
-  core; polished's save is its own layout (closer to prism's than to stock Gen-2),
-  so a polished `Player` over its own patcher — declaring its own `MapFormat` where
-  it diverges — is the next pick-up, on the same seam, neutral runner and rebuild core.
+- **Polished `plays` Stage 2 — load NPCs + sprite VRAM** — Stage 1 shipped
+  2026-07-28: polished builds and boots onto a clean, correctly-tiled map with the
+  old NPCs cleared. Its save framing turned out *stock*-like (only `sCurMapData`'s
+  mirror is renamed `sMapData`), not prism-like as this doc once guessed — so the
+  patcher (`hacks/polished/savefile.py`) is a near-copy of vanilla's. What is *not*
+  stock-family is the ROM: polished's map header is a different shape, its blocks a
+  custom `.ablk.lzp` codec (ported byte-exact in `hacks/polished/lzp.py`, verified
+  against all 452 plain `.ablk` siblings), and its object structs their own sizes.
+  So polished reads its own ROM dialect on its own side of the seam and does *not*
+  extend the stock-family reader through a `MapFormat` the way prism does — the
+  neutral core stays untouched but for two struct-size parameters on
+  `reset_player_and_clear_npcs`. Deferred to Stage 2: loading the destination map's
+  NPCs into `wMapObjects` (re-encoding polished's object record) and reproducing
+  its sprite-VRAM allocation (its own `SpriteHeaders`/movement formats) — the same
+  hard, engine-intricate half that gates prism's variable sprites below, and held
+  back for the same reason: there is no genuine game-written polished save to
+  verify it against yet.
 - **Prism variable sprites in the boot** — the shared sprite-VRAM allocator now
   resolves a *variable* sprite (id ≥ `SPRITE_VARS`) through the save's
   `wVariableSprites` before sizing it (a still sprite is 4 tiles, a walking NPC
@@ -677,6 +700,19 @@ preserved in the pokecrystal tree under `.devtools/sav-backups/GENUINE-*.sav` �
 after the first is a previous patch's output. Anything used as ground truth has to
 be copied out under a name the rotation won't age out — it only ever writes
 `pokecrystal11_debug-<timestamp>.sav`, so the `GENUINE-` prefix is what keeps these.
+
+**Polished's Stage-1 boot has its own two (2026-07-28), both provable without a
+game save.** `test_lzp.py` decompresses every one of the 452 built `.ablk.lzp`
+block files and asserts it equals the plain `.ablk` sibling the build compressed —
+ground truth that ships in the tree, so the custom codec is verified byte-exact
+across every map, falsified against a wrong map's bytes. `test_polished_play.py`
+proves the writer offline: the tiles half checks `mapread`'s ROM-decompressed
+`wScreenSave` against the same window from the plain `.ablk` on 200 maps, and the
+save half runs `stand_on` on a *synthetic* save sized to the real SRAM layout —
+real offsets from the real `.sym`, polished's own 34/14/21 struct sizes — proving
+the position, the player-struct `+4`, the cleared NPC slots and both checksums,
+with a tampered-byte falsification. The genuine round-trip and the clean SameBoy
+boot wait on a hand-made polished save (the one input Stage 1 cannot synthesize).
 
 **That cost one test its teeth, and the teeth are back (2026-07-28).**
 `test_visible_sprites_get_the_right_vram_tile` used to read the *working* debug
