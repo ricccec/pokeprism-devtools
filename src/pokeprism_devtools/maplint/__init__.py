@@ -33,6 +33,7 @@ import json
 import sys
 from pathlib import Path
 
+from ..shared.devtools import make_devtools_dir
 from ..shared.paths import RepoNotFound, repo_root
 from .diagnostics import Diagnostic, Severity, apply_suppressions
 
@@ -92,8 +93,7 @@ def _load_baseline(root: Path) -> set[tuple[str, str, str]]:
 
 
 def _write_baseline(root: Path, diagnostics: list[Diagnostic]) -> Path:
-    path = root / BASELINE
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = make_devtools_dir(root) / Path(BASELINE).name
     path.write_text(json.dumps({
         "comment": "Known maplint findings. Regenerate with `prism-maplint "
                    "--write-baseline`; `--baseline` fails only on findings not listed here.",

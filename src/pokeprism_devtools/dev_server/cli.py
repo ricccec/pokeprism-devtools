@@ -34,6 +34,7 @@ import sys
 from pathlib import Path
 
 from pokeprism_devtools.shared import paths
+from pokeprism_devtools.shared.devtools import make_devtools_dir
 
 from . import apply, inventory, playtest
 
@@ -102,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     root = paths.repo_root()
-    (root / ".devtools").mkdir(parents=True, exist_ok=True)
+    make_devtools_dir(root)
     layout = playtest.Layout.under(root)
     inventory_path = layout.inventory
     state_path = args.state if args.state is not None else layout.state
