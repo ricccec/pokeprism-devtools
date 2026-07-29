@@ -256,6 +256,63 @@ def test_stage2_instantiate_vs_genuine() -> None:
           _primary_ok(save, syms) and _backup_ok(save, syms))
 
 
+def test_edge_connection_tiles() -> None:
+    """The connected neighbours fill the map edges, byte-for-byte against a genuine
+    save standing at New Bark Town's east edge (Route 27 fills the border column)."""
+    print("edges — the neighbours' tiles fill the border, matched to a genuine save")
+    if not (_present() and GENUINE.exists()):
+        if not GENUINE.exists():
+            check("a genuine polished save is present", False, GENUINE.name)
+        return
+    rom = ROM.read_bytes()
+    syms = SymFile.load(SYM)
+    group, number, label, w, h = _map("NEW_BARK_TOWN")
+
+    # New Bark Town connects west→Route29 (24,3) and east→Route27 (24,2).
+    conns = [(c.direction, c.group, c.map_id)
+             for c in mapread.map_connections(rom, syms, label, w)]
+    check("New Bark Town reads its west+east connections in order",
+          conns == [("west", 24, 3), ("east", 24, 2)], f"got {conns}")
+
+    nbrs = mapread.neighbours(rom, syms, label, w, _resolver())
+    check("both neighbours load (Route29 west, Route27 east)",
+          [c.direction for c, _ in nbrs] == ["west", "east"])
+
+    # The genuine save stands at (y=6, x=15) — an east-edge position where Route27
+    # fills the window's last column. Its wScreenSave is the ground truth.
+    gen = savefile.Save.load(GENUINE)
+    ss_off = gen._saved_offset(syms, "wScreenSave")
+    genuine = bytes(gen.data[ss_off:ss_off + blockdata.SCREEN_SAVE_SIZE])
+    x, y = 15, 6
+    with_nb = mapread.screen_save_bytes(rom, syms, label, w, h, x, y, neighbors=nbrs)
+    without = mapread.screen_save_bytes(rom, syms, label, w, h, x, y)
+    check("the edge window with neighbours matches the genuine save byte-for-byte",
+          with_nb == genuine, f"got {with_nb.hex(' ')} vs {genuine.hex(' ')}")
+    # Falsify: without the overlay the border column is void, so it must NOT match.
+    check("without the overlay the border is void, so it does not match",
+          without != genuine and without != with_nb,
+          f"the interior-only window matched the genuine edge save: {without.hex(' ')}")
+
+    # End to end: stand_on with the resolver threads the overlay all the way through.
+    save = savefile.Save.load(GENUINE)
+    save.stand_on(syms, group=group, number=number, label=label,
+                  width=w, height=h, y=y, x=x, rom_path=ROM,
+                  resolve_neighbour=_resolver())
+    got = bytes(save.data[ss_off:ss_off + blockdata.SCREEN_SAVE_SIZE])
+    check("stand_on with the resolver reproduces the genuine edge window",
+          got == genuine, f"got {got.hex(' ')}")
+
+
+def _resolver():
+    """A `(group, map_id) -> (label, width, height) | None` over the map catalog,
+    as `play._neighbour_resolver` builds for the boot."""
+    d = dims(POLISHED)
+    labels = label_of(POLISHED)
+    rev = {(dim.group, dim.map_id): (labels[c], dim.width, dim.height)
+           for c, dim in d.items() if c in labels}
+    return lambda g, m: rev.get((g, m))
+
+
 def _map(const: str) -> tuple[int, int, str, int, int]:
     d = dims(POLISHED)[const]
     return d.group, d.map_id, label_of(POLISHED)[const], d.width, d.height
@@ -288,5 +345,6 @@ if __name__ == "__main__":
     test_positional_vtile()
     test_stand_on_synthetic()
     test_stage2_instantiate_vs_genuine()
+    test_edge_connection_tiles()
     print(f"\n{'FAILURES: ' + str(_failures) if _failures else 'all ok'}")
     sys.exit(1 if _failures else 0)

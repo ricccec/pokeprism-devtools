@@ -44,7 +44,7 @@ been.
 |---|---|---|---|---|---|
 | **prism** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **vanilla** | ✓ | ✓ | ✓ (dialogue overflow, name + buffer bounds) | ✓ (build ✓; boot rebuilds the map — tiles, objects, sprites, both checksums — confirmed live in SameBoy) | ✓ (tiles) |
-| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | ✓ (build ✓; boot rebuilds tiles + loads the map's NPCs + their VRAM tiles, confirmed live in SameBoy — edge connections aside) | ✓ (tiles, n-gram reader) |
+| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | ✓ (build ✓; boot rebuilds tiles + connected edges + loads the map's NPCs + their VRAM tiles, confirmed live in SameBoy) | ✓ (tiles, n-gram reader) |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
 resize, new-map, **reword**, and the block scaffolding those ride — and the
@@ -69,9 +69,14 @@ parameterised by struct sizes and two strategies crossing as data). The boot
 rebuilds the tiles, loads the destination map's own NPCs into `wMapObjects`, and
 instantiates the on-screen ones into `wObjectStructs` with the right VRAM tiles and
 palettes (Stage 2, landed 2026-07-28; **NPC spawning confirmed live in SameBoy
-2026-07-29**). The one deferral left is edge-connection
-tiles, which is its own pick-up item for every tree, not a polished gap. The whole
-capability matrix is now filled in.
+2026-07-29**). And the edges are filled now too: a spawn against a map border reads
+the connected neighbour's real tiles instead of void — polished's `<Label>_MapAttributes`
+holds the same 12-byte connection structs stock does (scratch-relative source,
+overworld-relative dest), so its own header reader feeds them through the *neutral*
+`connection_geometry`/`compute_screen_save`, and the neighbour's grid is loaded by
+label just like the current map. Verified byte-for-byte against the genuine save,
+which stands at New Bark Town's east edge (Route 27 fills the border column). The
+whole capability matrix is now filled in.
 
 The Stage-2 work turned out far smaller than the deferral feared, for one reason:
 **polished's VRAM is positional, not a pool.** `GetSpriteVTile` derives a sprite's

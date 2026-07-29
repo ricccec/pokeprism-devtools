@@ -9,10 +9,11 @@ does, so the buildable target is derived from its `NAME`/`VERSION` and whatever
 from the same `map_constants.asm` parse the reader draws the catalog with, so the
 boot and the map list can never disagree.
 
-Stage 1 rebuilds the tiles and clears the object engine; the destination map's
-NPCs and their sprite VRAM are not loaded yet, so the map comes up clean and
-unpopulated (see `savefile.Save.stand_on`). The `make` runner and the emulator are
-neutral (`shared.make`, `dev_server.emulator`).
+The boot rebuilds the tiles around the spawn — the interior grid plus the connected
+neighbours overlaid at the map edges — and repopulates the object engine with the
+destination map's own NPCs and their sprite VRAM, so teleporting in lands on a map
+that looks like itself (see `savefile.Save.stand_on`). The `make` runner and the
+emulator are neutral (`shared.make`, `dev_server.emulator`).
 """
 
 from __future__ import annotations
@@ -74,11 +75,10 @@ class Player:
         """Stand at (y, x) on `const`, in a built polishedcrystal, now.
 
         Patches the save to stand on the tile and rebuild the tiles around it
-        (from the built ROM, through polished's block codec), resets the object
-        engine so the previous map does not bleed through, fixes the primary and
-        backup checksums, and opens SameBoy. The destination map's NPCs are not
-        loaded yet (Stage 1), so it comes up clean and unpopulated. `keep_people`
-        preserves the objects already in the save.
+        (from the built ROM, through polished's block codec, with the connected
+        neighbours filled in at the edges), reloads the destination map's own NPCs,
+        fixes the primary and backup checksums, and opens SameBoy. `keep_people`
+        preserves the objects already in the save instead of reloading the map's.
         """
         target = self._target(target)
         rom = self._root / target
@@ -109,7 +109,8 @@ class Player:
             map_changes = save.stand_on(
                 syms, group=group, number=number, label=label,
                 width=width, height=height, y=y, x=x,
-                rom_path=rom, keep_people=keep_people)
+                rom_path=rom, keep_people=keep_people,
+                resolve_neighbour=self._neighbour_resolver())
             save.write(template)
         except savefile.SaveError as e:
             raise PlayError(str(e)) from e
@@ -139,6 +140,24 @@ class Player:
         if roms and target not in roms:
             raise PlayError(f"{target!r} is not a target — {', '.join(roms)}")
         return target
+
+    def _neighbour_resolver(self):
+        """A `(group, map_id) -> (label, width, height) | None` over the same
+        `map_constants.asm`/`attributes.asm` parse the catalog uses.
+
+        A connection names its neighbour by numeric (group, map_id), but polished
+        loads a map's blocks by label, so the edge overlay needs this reverse of the
+        map catalog to find the neighbour's `<label>_BlockData` and its dimensions. A
+        map with no attributes entry (no label) can't be a neighbour and is left out.
+        """
+        by_const = dims(self._root)
+        labels = label_of(self._root)
+        rev = {
+            (d.group, d.map_id): (labels[const], d.width, d.height)
+            for const, d in by_const.items()
+            if const in labels
+        }
+        return lambda group, map_id: rev.get((group, map_id))
 
     def _where(self, const: str) -> tuple[int, int, str, int, int]:
         """The `(group, number, label, width, height)` a map constant names, from

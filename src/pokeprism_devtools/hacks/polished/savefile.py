@@ -110,7 +110,8 @@ class Save:
     def stand_on(self, syms: SymFile, *, group: int, number: int, label: str,
                  width: int, height: int, y: int, x: int,
                  rom_path: Path | None = None,
-                 keep_people: bool = False) -> list[str]:
+                 keep_people: bool = False,
+                 resolve_neighbour: "mapread.NeighbourResolver | None" = None) -> list[str]:
         """Stand the player at tile `(y, x)` on `(group, number)`, cleanly.
 
         Writes the four position bytes and — **given `rom_path`** — rebuilds the
@@ -123,8 +124,11 @@ class Save:
         `label`/`width`/`height` describe the destination map (the caller resolves
         them from `map_constants.asm`); the block grid is named `<label>_BlockData`
         in the `.sym`. `y`/`x` are the raw `wYCoord`/`wXCoord` tiles (no `+4`).
-        `keep_people` preserves the objects already in the save. Returns the
-        rebuild's change lines (empty when no ROM was given).
+        `keep_people` preserves the objects already in the save. `resolve_neighbour`
+        turns a connection's (group, map_id) into the neighbour's `(label, width,
+        height)` so an edge position renders the connected map's tiles; without it
+        edges fall back to border void. Returns the rebuild's change lines (empty
+        when no ROM was given).
         """
         for lbl, value in (("wMapGroup", group), ("wMapNumber", number),
                            ("wYCoord", y), ("wXCoord", x)):
@@ -133,7 +137,8 @@ class Save:
         if rom_path is not None:
             changes = self._rebuild_map(syms, rom_path, label=label,
                                         width=width, height=height, x=x, y=y,
-                                        keep_people=keep_people)
+                                        keep_people=keep_people,
+                                        resolve_neighbour=resolve_neighbour)
         self._recompute_checksum(syms)
         if rom_path is not None:
             self._recompute_backup(syms)
@@ -141,24 +146,30 @@ class Save:
 
     def _rebuild_map(self, syms: SymFile, rom_path: Path, *, label: str,
                      width: int, height: int, x: int, y: int,
-                     keep_people: bool) -> list[str]:
+                     keep_people: bool,
+                     resolve_neighbour: "mapread.NeighbourResolver | None") -> list[str]:
         """Rebuild the tiles (Stage 1) and reset the object engine.
 
         The tiles come from polished's own `mapread` (its blocks are a custom
-        codec the shared reader cannot decompress); the object reset is the shared
-        `people` helper, which is genuinely neutral — polished's leading object
-        fields sit where stock's do, so only its struct sizes cross as data. Unless
-        `keep_people`, the destination map's own NPCs are then loaded into
-        `wMapObjects` and the on-screen ones instantiated into `wObjectStructs` with
-        polished's positional VRAM tiles and palettes (`objects`), so the map comes
-        up populated. Edge-connection tiles remain Stage-2-out (their own item).
+        codec the shared reader cannot decompress), with the connected neighbours
+        overlaid at the map edges when `resolve_neighbour` can find them; the object
+        reset is the shared `people` helper, which is genuinely neutral — polished's
+        leading object fields sit where stock's do, so only its struct sizes cross
+        as data. Unless `keep_people`, the destination map's own NPCs are then loaded
+        into `wMapObjects` and the on-screen ones instantiated into `wObjectStructs`
+        with polished's positional VRAM tiles and palettes (`objects`), so the map
+        comes up populated.
         """
         rom = rom_path.read_bytes()
-        ss = mapread.screen_save_bytes(rom, syms, label, width, height, x, y)
+        nbrs = (mapread.neighbours(rom, syms, label, width, resolve_neighbour)
+                if resolve_neighbour is not None else [])
+        ss = mapread.screen_save_bytes(rom, syms, label, width, height, x, y,
+                                       neighbors=nbrs)
         at = self._saved_offset(syms, "wScreenSave")
         self.data[at:at + len(ss)] = ss
+        edges = ", ".join(c.direction for c, _ in nbrs) or "none"
         changes = [f"recomputed wScreenSave from {width}x{height} block grid "
-                   f"for {label}"]
+                   f"(connections filled: {edges}) for {label}"]
 
         map_objects_size = NUM_OBJECTS * MAP_OBJECT_LEN
         object_structs_offset = self._saved_offset(syms, "wObjectStructs")

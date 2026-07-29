@@ -90,8 +90,10 @@ CONNECTION_STRUCT_SIZE = 12
 #: Connections in the order GetMapConnections reads them — N, S, W, E — with the
 #: bit each occupies in the second header's connection-flags byte. The flags are
 #: `shift_const EAST, WEST, SOUTH, NORTH` (constants/map_constants.asm), so EAST
-#: is bit 0 and NORTH is bit 3.
-_CONNECTION_DIRS = (("north", 0x08), ("south", 0x04), ("west", 0x02), ("east", 0x01))
+#: is bit 0 and NORTH is bit 3. Both this order and these bits are Gen-2 facts the
+#: whole family shares, so a fork's own header reader (polished's) walks the same
+#: table rather than restating it.
+CONNECTION_DIRS = (("north", 0x08), ("south", 0x04), ("west", 0x02), ("east", 0x01))
 
 #: FillNorth/SouthConnectionStrip copy 3 rows deep; FillWest/East copy 3 cols
 #: wide. The other dimension is the connection's own strip length.
@@ -362,21 +364,13 @@ def map_connections(
 
     at = hdr.secondary_off + SECOND_MAP_HEADER_SIZE
     out: list[Connection] = []
-    for direction, bit in _CONNECTION_DIRS:
+    for direction, bit in CONNECTION_DIRS:
         if not flags & bit:
             continue
-        c = rom[at : at + CONNECTION_STRUCT_SIZE]
+        struct = rom[at : at + CONNECTION_STRUCT_SIZE]
         at += CONNECTION_STRUCT_SIZE
-        if len(c) < CONNECTION_STRUCT_SIZE:
+        if len(struct) < CONNECTION_STRUCT_SIZE:
             raise ValueError(f"{who} {direction} connection struct runs past ROM end")
-
-        ngroup, nmap = c[0], c[1]
-        strip_ptr = _u16_le(c, 2)
-        strip_loc = _u16_le(c, 4)
-        strip_len = c[6]
-        connected_width = c[7]
-        if connected_width == 0:
-            raise ValueError(f"{who} {direction} connection has zero-width neighbour")
 
         # Where the strip pointer counts from. Stock: the neighbour's own blocks,
         # so resolve that neighbour's header for its block address; a neighbour we
@@ -385,38 +379,71 @@ def map_connections(
             src_base = syms["wDecompressScratch"].addr
         else:
             try:
-                nb_hdr = _headers(rom, syms, ngroup, nmap,
+                nb_hdr = _headers(rom, syms, struct[0], struct[1],
                                   f"{who} {direction} neighbour")
             except ValueError:
                 continue
             src_base = _u16_le(rom, nb_hdr.secondary_off + 4)
 
-        src_off = strip_ptr - src_base
-        dst_off = strip_loc - overworld_base
-        if src_off < 0 or dst_off < 0:
-            raise ValueError(
-                f"{who} {direction} connection pointer below its source/dest base "
-                f"(strip={strip_ptr:#06x}, loc={strip_loc:#06x})"
-            )
-        src_row, src_col = divmod(src_off, connected_width)
-        dst_row, dst_col = divmod(dst_off, dest_stride)
-        if direction in ("north", "south"):
-            rows, cols = CONNECTION_STRIP_DEPTH, strip_len
-        else:
-            rows, cols = strip_len, CONNECTION_STRIP_DEPTH
-
-        out.append(Connection(
-            direction=direction,
-            group=ngroup,
-            map_id=nmap,
-            source_row=src_row,
-            source_col=src_col,
-            dest_row=dst_row,
-            dest_col=dst_col,
-            rows=rows,
-            cols=cols,
-        ))
+        out.append(connection_geometry(
+            struct, direction, src_base=src_base, dest_base=overworld_base,
+            dest_stride=dest_stride, who=who))
     return out
+
+
+def connection_geometry(
+    struct: bytes,
+    direction: str,
+    *,
+    src_base: int,
+    dest_base: int,
+    dest_stride: int,
+    who: str,
+) -> Connection:
+    """Recover one connection's neighbour→overworld geometry from its 12-byte struct.
+
+    The struct layout — group, number, strip pointer, strip location, strip length,
+    connected width, then y/x/window the fill ignores — is a Gen-2 fact the whole
+    family shares; only the base addresses the two pointers count from differ by
+    tree, so the caller passes them resolved. `src_base` is where the strip pointer
+    is relative to (the neighbour's own blocks for stock, a shared decompress buffer
+    for prism *and* polished); `dest_base` is the overworld-map buffer; `dest_stride`
+    is this map's width + 6. Split out so a fork whose map header the stock walk
+    cannot reach (polished) can read its own connection structs and still land on
+    this one arithmetic.
+    """
+    strip_ptr = _u16_le(struct, 2)
+    strip_loc = _u16_le(struct, 4)
+    strip_len = struct[6]
+    connected_width = struct[7]
+    if connected_width == 0:
+        raise ValueError(f"{who} {direction} connection has zero-width neighbour")
+
+    src_off = strip_ptr - src_base
+    dst_off = strip_loc - dest_base
+    if src_off < 0 or dst_off < 0:
+        raise ValueError(
+            f"{who} {direction} connection pointer below its source/dest base "
+            f"(strip={strip_ptr:#06x}, loc={strip_loc:#06x})"
+        )
+    src_row, src_col = divmod(src_off, connected_width)
+    dst_row, dst_col = divmod(dst_off, dest_stride)
+    if direction in ("north", "south"):
+        rows, cols = CONNECTION_STRIP_DEPTH, strip_len
+    else:
+        rows, cols = strip_len, CONNECTION_STRIP_DEPTH
+
+    return Connection(
+        direction=direction,
+        group=struct[0],
+        map_id=struct[1],
+        source_row=src_row,
+        source_col=src_col,
+        dest_row=dst_row,
+        dest_col=dst_col,
+        rows=rows,
+        cols=cols,
+    )
 
 
 def compute_screen_save(
