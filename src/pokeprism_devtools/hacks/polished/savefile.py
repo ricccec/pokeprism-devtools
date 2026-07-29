@@ -26,7 +26,7 @@ from pathlib import Path
 
 from ...shared.overworld import people
 from ...shared.symfile import Symbol, SymFile
-from . import mapread
+from . import mapread, objects
 
 SRAM_BANK_SIZE = 0x2000
 SRAM_BASE = 0xA000
@@ -49,6 +49,7 @@ CHECK_VALUE_2 = 127
 OBJECT_STRUCT_LEN = 34
 MAP_OBJECT_LEN = 14
 NUM_OBJECTS = 21
+NUM_OBJECT_STRUCTS = 13
 
 #: The three WRAM blocks the game data spans, each mirrored into an SRAM copy
 #: (`ram/sram.asm`). Identical to vanilla's but for the current-map block's mirror
@@ -146,9 +147,11 @@ class Save:
         The tiles come from polished's own `mapread` (its blocks are a custom
         codec the shared reader cannot decompress); the object reset is the shared
         `people` helper, which is genuinely neutral — polished's leading object
-        fields sit where stock's do, so only its struct sizes cross as data. The
-        destination map's NPCs and their sprite VRAM are not loaded yet (Stage 2):
-        the map comes up correct and unpopulated, not corrupt.
+        fields sit where stock's do, so only its struct sizes cross as data. Unless
+        `keep_people`, the destination map's own NPCs are then loaded into
+        `wMapObjects` and the on-screen ones instantiated into `wObjectStructs` with
+        polished's positional VRAM tiles and palettes (`objects`), so the map comes
+        up populated. Edge-connection tiles remain Stage-2-out (their own item).
         """
         rom = rom_path.read_bytes()
         ss = mapread.screen_save_bytes(rom, syms, label, width, height, x, y)
@@ -157,15 +160,46 @@ class Save:
         changes = [f"recomputed wScreenSave from {width}x{height} block grid "
                    f"for {label}"]
 
+        map_objects_size = NUM_OBJECTS * MAP_OBJECT_LEN
+        object_structs_offset = self._saved_offset(syms, "wObjectStructs")
+        map_objects_offset = self._saved_offset(syms, "wMapObjects")
         people_changes = people.reset_player_and_clear_npcs(
             self,
-            object_structs_offset=self._saved_offset(syms, "wObjectStructs"),
-            map_objects_offset=self._saved_offset(syms, "wMapObjects"),
-            map_objects_size=NUM_OBJECTS * MAP_OBJECT_LEN,
+            object_structs_offset=object_structs_offset,
+            map_objects_offset=map_objects_offset,
+            map_objects_size=map_objects_size,
             x=x, y=y, keep_npcs=keep_people,
             object_struct_len=OBJECT_STRUCT_LEN,
             map_object_len=MAP_OBJECT_LEN,
         )
+
+        if not keep_people:
+            events = objects.object_events(rom, syms, label)
+            people_changes |= people.load_map_npcs(
+                self,
+                map_objects_offset=map_objects_offset,
+                map_objects_size=map_objects_size,
+                events=events,
+                map_object_len=MAP_OBJECT_LEN,
+                person_event_len=objects.OBJECT_EVENT_LEN,
+            )
+            palettes = objects.sprite_palettes(rom, syms, [ev[0] for ev in events])
+            people_changes |= people.instantiate_visible_sprites(
+                self,
+                object_structs_offset=object_structs_offset,
+                map_objects_offset=map_objects_offset,
+                map_objects_size=map_objects_size,
+                x=x, y=y,
+                sprite_tiles={}, sprite_palettes=palettes,
+                movement_data=objects.movement_data(rom, syms),
+                object_struct_len=OBJECT_STRUCT_LEN,
+                map_object_len=MAP_OBJECT_LEN,
+                num_objects=NUM_OBJECTS,
+                num_object_structs=NUM_OBJECT_STRUCTS,
+                tile_of=objects.tile_strategy(),
+                set_palette=objects.palette_strategy(palettes),
+            )
+
         changes.append("people: " + ", ".join(
             f"{k}={v}" for k, v in people_changes.items()))
         return changes

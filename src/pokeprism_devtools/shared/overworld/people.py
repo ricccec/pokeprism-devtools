@@ -188,6 +188,8 @@ def load_map_npcs(
     map_objects_offset: int,
     map_objects_size: int,
     events: list[bytes],
+    map_object_len: int = MAP_OBJECT_LEN,
+    person_event_len: int = PERSON_EVENT_LEN,
 ) -> dict:
     """Put the destination map's NPCs into wMapObjects[1..], from ROM.
 
@@ -198,6 +200,11 @@ def load_map_npcs(
     `+4` the macro added at assembly time, so they need no adjusting — the same
     convention the player's coords use, four lines up.
 
+    `map_object_len`/`person_event_len` default to stock's 16 / 13; polished's
+    map object is 14 bytes and its `object_event` still 13, so its record fills
+    the slot with no trailing pad. As in `reset_player_and_clear_npcs`, only the
+    sizes cross — the copy itself learns no tree.
+
     Call *after* `reset_player_and_clear_npcs`: the engine clears the object
     structs before it reads the headers, and so must we, or an NPC inherits the
     walk state of whoever stood in that slot on the last map.
@@ -205,13 +212,13 @@ def load_map_npcs(
     Slots past the last NPC get sprite 0 and y = -1, not zeros. Zero is a legal
     coordinate.
     """
-    slots = map_objects_size // MAP_OBJECT_LEN
+    slots = map_objects_size // map_object_len
     if slots < 1:
         raise ValueError(f"wMapObjects holds {map_objects_size} bytes — no room for the player")
     for i, event in enumerate(events):
-        if len(event) != PERSON_EVENT_LEN:
+        if len(event) != person_event_len:
             raise ValueError(
-                f"object event {i} is {len(event)} bytes, expected {PERSON_EVENT_LEN}"
+                f"object event {i} is {len(event)} bytes, expected {person_event_len}"
             )
 
     # Slot 0 is the player; the NPCs start at wMap1Object. A map with more
@@ -221,13 +228,16 @@ def load_map_npcs(
     loaded = events[:room]
 
     for i, event in enumerate(loaded):
-        at = map_objects_offset + (i + 1) * MAP_OBJECT_LEN
+        at = map_objects_offset + (i + 1) * map_object_len
         sav.data[at + MAPOBJ_OBJECT_STRUCT_ID] = OBJECT_STRUCT_ID_NONE
-        sav.data[at + MAPOBJ_SPRITE : at + MAPOBJ_SPRITE + PERSON_EVENT_LEN] = event
-        sav.data[at + MAPOBJ_E : at + MAP_OBJECT_LEN] = bytes(MAP_OBJECT_LEN - MAPOBJ_E)
+        sav.data[at + MAPOBJ_SPRITE : at + MAPOBJ_SPRITE + person_event_len] = event
+        # Zero any bytes between the copied record and the slot's end (stock
+        # leaves two unused trailing bytes; polished's record fills the slot).
+        sav.data[at + MAPOBJ_SPRITE + person_event_len : at + map_object_len] = bytes(
+            map_object_len - MAPOBJ_SPRITE - person_event_len)
 
     for i in range(len(loaded), room):
-        at = map_objects_offset + (i + 1) * MAP_OBJECT_LEN
+        at = map_objects_offset + (i + 1) * map_object_len
         sav.data[at + MAPOBJ_SPRITE] = 0
         sav.data[at + MAPOBJ_Y_COORD] = EMPTY_SLOT_Y
 
@@ -263,6 +273,12 @@ def instantiate_visible_sprites(
     default_tile: int = 0,
     global_offset_x: int = 0,
     global_offset_y: int = 0,
+    object_struct_len: int = OBJECT_STRUCT_LEN,
+    map_object_len: int = MAP_OBJECT_LEN,
+    num_objects: int = NUM_OBJECTS,
+    num_object_structs: int = NUM_OBJECT_STRUCTS,
+    tile_of=None,
+    set_palette=None,
 ) -> dict:
     """Populate `wObjectStructs` for the NPCs on screen, as the engine would.
 
@@ -284,13 +300,22 @@ def instantiate_visible_sprites(
     player coords (`wXCoord`/`wYCoord`); the map coords in `wMapObjects` already
     carry the `+4` the `person_event` macro added, and the window check mixes the
     two exactly as the engine does.
+
+    The `*_len`/`num_*` sizes default to stock's (vanilla and prism unchanged);
+    polished passes its own 34 / 14 / 21 / 13. The two behavioural forks cross as
+    adapter-supplied strategies, so the neutral loop names no tree: `tile_of(sprite,
+    struct_index)` yields the sprite's VRAM tile (stock looks it up in the pool
+    `sprite_tiles`; polished's tile is positional, `12*slot`), and `set_palette(sav,
+    struct_offset, sprite, mapobject_offset, move_palette)` writes the tree's palette
+    field(s) (stock combines a colour nibble into one byte; polished writes an index
+    and flags to two). Left `None`, both reproduce stock exactly.
     """
-    n_slots = map_objects_size // MAP_OBJECT_LEN
+    n_slots = map_objects_size // map_object_len
     struct_index = 1  # object struct 0 is the player
     instantiated: list[tuple[int, int, int]] = []
 
-    for mi in range(1, min(n_slots, NUM_OBJECTS)):
-        mo = map_objects_offset + mi * MAP_OBJECT_LEN
+    for mi in range(1, min(n_slots, num_objects)):
+        mo = map_objects_offset + mi * map_object_len
         sprite = sav.data[mo + MAPOBJ_SPRITE]
         if sprite == 0:
             continue
@@ -305,18 +330,19 @@ def instantiate_visible_sprites(
             continue
         if (my + 1 - y) & 0xFF >= MAPOBJECT_SCREEN_HEIGHT:
             continue
-        if struct_index >= NUM_OBJECT_STRUCTS:
+        if struct_index >= num_object_structs:
             break  # no free struct — CopyObjectStruct returns carry and gives up
 
         sav.data[mo + MAPOBJ_OBJECT_STRUCT_ID] = struct_index
         _write_object_struct(
             sav,
-            object_structs_offset + struct_index * OBJECT_STRUCT_LEN,
+            object_structs_offset + struct_index * object_struct_len,
+            struct_index=struct_index,
+            mapobject_offset=mo,
             map_object_index=mi,
             sprite=sprite,
             movement=sav.data[mo + MAPOBJ_MOVEMENT],
             radius=sav.data[mo + MAPOBJ_RADIUS],
-            color=sav.data[mo + MAPOBJ_COLOR],
             param=sav.data[mo + MAPOBJ_PARAMETER],
             mx=mx,
             my=my,
@@ -328,6 +354,9 @@ def instantiate_visible_sprites(
             default_tile=default_tile,
             global_offset_x=global_offset_x,
             global_offset_y=global_offset_y,
+            object_struct_len=object_struct_len,
+            tile_of=tile_of,
+            set_palette=set_palette,
         )
         instantiated.append((struct_index, mi, sprite))
         struct_index += 1
@@ -343,11 +372,12 @@ def _write_object_struct(
     sav,
     p: int,
     *,
+    struct_index: int,
+    mapobject_offset: int,
     map_object_index: int,
     sprite: int,
     movement: int,
     radius: int,
-    color: int,
     param: int,
     mx: int,
     my: int,
@@ -359,14 +389,19 @@ def _write_object_struct(
     default_tile: int,
     global_offset_x: int,
     global_offset_y: int,
+    object_struct_len: int = OBJECT_STRUCT_LEN,
+    tile_of=None,
+    set_palette=None,
 ) -> None:
     """Write one instantiated NPC into the object struct at file offset `p`.
 
     Mirrors `CopyTempObjectToObjectStruct` + `CopySpriteMovementData`. The slot is
     zeroed first so only the settled fields are set (the engine finds an empty slot
-    for the same reason).
+    for the same reason). The struct's leading fields are shared across the
+    stock-family and polished; only the VRAM-tile source and the palette field
+    layout fork, and both cross as adapter strategies (`tile_of` / `set_palette`).
     """
-    sav.data[p : p + OBJECT_STRUCT_LEN] = bytes(OBJECT_STRUCT_LEN)
+    sav.data[p : p + object_struct_len] = bytes(object_struct_len)
 
     sav.data[p + OBJ_MAP_OBJECT_INDEX] = map_object_index
 
@@ -380,12 +415,17 @@ def _write_object_struct(
     sav.data[p + OBJ_FLAGS1] = flags1
     sav.data[p + OBJ_FLAGS2] = flags2
 
-    # Palette: the sprite's default, overridden by the map object's colour nibble
-    # when set, then ORed with the movement row's palette flags.
-    palette = sprite_palettes.get(sprite, 0)
-    if color & 0xF0:
-        palette = (color >> 4) & 0x07
-    sav.data[p + OBJ_PALETTE] = palette | move_palette
+    # Palette. Stock (default) folds the sprite's default palette, the map object's
+    # colour nibble and the movement row's flags into the single OBJECT_PALETTE
+    # byte; a tree whose palette lives in different fields supplies `set_palette`.
+    if set_palette is not None:
+        set_palette(sav, p, sprite, mapobject_offset, move_palette)
+    else:
+        color = sav.data[mapobject_offset + MAPOBJ_COLOR]
+        palette = sprite_palettes.get(sprite, 0)
+        if color & 0xF0:
+            palette = (color >> 4) & 0x07
+        sav.data[p + OBJ_PALETTE] = palette | move_palette
 
     # Coords: the map object's own X/Y seed INIT / NEXT_MAP / MAP; SPRITE_X/Y are
     # the pixel offset from the player, (Δtile & $f) << 4 minus the global offset.
@@ -399,7 +439,9 @@ def _write_object_struct(
     sav.data[p + OBJ_SPRITE_Y] = ((((my - py) & 0x0F) << 4) - global_offset_y) & 0xFF
 
     sav.data[p + OBJ_SPRITE] = sprite
-    sav.data[p + OBJ_SPRITE_TILE] = sprite_tiles.get(sprite, default_tile)
+    sav.data[p + OBJ_SPRITE_TILE] = (
+        tile_of(sprite, struct_index) if tile_of is not None
+        else sprite_tiles.get(sprite, default_tile))
     sav.data[p + OBJ_STEP_TYPE] = STEP_TYPE_00
     sav.data[p + OBJ_FACING_STEP] = STANDING
     sav.data[p + OBJ_RADIUS] = _incremented_radius(radius)

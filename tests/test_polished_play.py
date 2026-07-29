@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools.hacks.polished import mapread, savefile  # noqa: E402
+from pokeprism_devtools.hacks.polished import mapread, objects, savefile  # noqa: E402
 from pokeprism_devtools.hacks.vanilla.read import dims, label_of  # noqa: E402
 from pokeprism_devtools.shared.overworld import blockdata  # noqa: E402
 from pokeprism_devtools.shared.symfile import SymFile  # noqa: E402
@@ -148,14 +148,23 @@ def test_stand_on_synthetic() -> None:
           and save.data[p + 20] == cx and save.data[p + 21] == cy,
           f"got x={save.data[p + 16]}, y={save.data[p + 17]}")
 
-    # NPC slots cleared (slot 1 of both arrays, polished's 34 / 14 strides).
+    # Stage 2: the map's own NPCs are loaded into wMapObjects[1..], each a $ff
+    # struct-id followed by the 13-byte ROM record — sprite ids in ROM order.
     ms = at("wMapObjects")
-    check("first NPC map-object slot is zeroed (14-byte stride)",
-          save.data[ms + savefile.MAP_OBJECT_LEN
-                    : ms + 2 * savefile.MAP_OBJECT_LEN] == bytes(savefile.MAP_OBJECT_LEN))
-    check("first NPC object struct is zeroed (34-byte stride)",
-          save.data[p + savefile.OBJECT_STRUCT_LEN
-                    : p + 2 * savefile.OBJECT_STRUCT_LEN] == bytes(savefile.OBJECT_STRUCT_LEN))
+    MOL = savefile.MAP_OBJECT_LEN
+    loaded = [save.data[ms + i * MOL + 1] for i in range(1, 6)]
+    check("the map's five NPCs are loaded into wMapObjects in ROM order",
+          loaded == [10, 9, 125, 105, 135], f"got {loaded}")
+    # A loaded slot is either unbound ($ff, off screen) or bound to an object
+    # struct that holds the very same sprite (on screen, instantiated).
+    OSL = savefile.OBJECT_STRUCT_LEN
+    def bound_ok(i: int) -> bool:
+        sid = save.data[ms + i * MOL]
+        if sid == 0xFF:
+            return True
+        return save.data[p + sid * OSL] == save.data[ms + i * MOL + 1]
+    check("each loaded NPC is unbound ($ff) or bound to a struct with its sprite",
+          all(bound_ok(i) for i in range(1, 6)))
 
     # Both checksums internally valid, as an in-game save leaves them.
     check("primary checksum verifies", _primary_ok(save, syms))
@@ -167,6 +176,84 @@ def test_stand_on_synthetic() -> None:
     check("a tampered saved byte breaks the primary checksum",
           not _primary_ok(save, syms),
           "the checksum still verified after tampering — it is not covering the data")
+
+
+GENUINE = POLISHED / "polishedcrystal-3.2.3_vanilla_outside.sav"
+
+
+def test_object_events_walk() -> None:
+    """The event walk from `<Label>_MapScriptHeader` reaches the object events."""
+    print("events — the map-script-header walk lands on the object records")
+    if not _present():
+        return
+    rom = ROM.read_bytes()
+    syms = SymFile.load(SYM)
+    events = objects.object_events(rom, syms, "NewBarkTown")
+    check("New Bark Town yields 5 object events, each 13 bytes",
+          len(events) == 5 and all(len(e) == objects.OBJECT_EVENT_LEN for e in events))
+    check("their sprite-id sequence is the ROM's [RIVAL, LYRA, POKEFAN_F, FAT_GUY, SCHOOLBOY]",
+          [e[0] for e in events] == [10, 9, 125, 105, 135],
+          f"got {[e[0] for e in events]}")
+    # Falsify: a different map's walk must not give the same records.
+    other = objects.object_events(rom, syms, "Route29")
+    check("a different map walks to different object events",
+          [e[0] for e in other] != [10, 9, 125, 105, 135])
+
+
+def test_positional_vtile() -> None:
+    """The VRAM tile is `12*(slot%8)`, banked, matched against a genuine save."""
+    print("vram — the positional tile formula matches the game's assignment")
+    if not GENUINE.exists():
+        check("a genuine polished save is present for the VRAM ground truth", False,
+              f"{GENUINE.name} — a game-written save standing on a populated map")
+        return
+    syms = SymFile.load(SYM)
+    gen = savefile.Save.load(GENUINE)
+    os0 = gen._saved_offset(syms, "wObjectStructs")
+    OSL = savefile.OBJECT_STRUCT_LEN
+    # Struct 0 is the player (sprite 1), struct 1 the game's first on-screen NPC.
+    player_tile = gen.data[os0 + 2]
+    npc_sprite = gen.data[os0 + OSL + 0]
+    npc_tile = gen.data[os0 + OSL + 2]
+    check("player struct 0 tile is $80 (12*0 | $80), as the game wrote it",
+          objects.sprite_vtile(0, 1) == player_tile == 0x80,
+          f"formula {objects.sprite_vtile(0, 1):#x} vs game {player_tile:#x}")
+    check("NPC struct 1 tile is $8c (12*1 | $80), as the game wrote it",
+          objects.sprite_vtile(1, npc_sprite) == npc_tile == 0x8c,
+          f"formula {objects.sprite_vtile(1, npc_sprite):#x} vs game {npc_tile:#x}")
+    check("the formula is positional, not a constant (slot 1 != slot 0)",
+          objects.sprite_vtile(1, npc_sprite) != objects.sprite_vtile(0, npc_sprite))
+
+
+def test_stage2_instantiate_vs_genuine() -> None:
+    """Standing onto New Bark Town at the genuine save's own spot instantiates the
+    same struct the game did — sprite, positional tile and map-object binding."""
+    print("stage2 — instantiating the on-screen NPC matches the genuine save")
+    if not (_present() and GENUINE.exists()):
+        if not GENUINE.exists():
+            check("a genuine polished save is present", False, GENUINE.name)
+        return
+    syms = SymFile.load(SYM)
+    gen = savefile.Save.load(GENUINE)
+    def gat(s: str) -> int:
+        return gen._saved_offset(syms, s)
+    OSL = savefile.OBJECT_STRUCT_LEN
+    g = gat("wObjectStructs")
+    want = (gen.data[g + OSL + 0], gen.data[g + OSL + 2], gen.data[g + OSL + 1])  # spr, vtile, moidx
+
+    save = savefile.Save.load(GENUINE)  # a copy
+    group, number, label, w, h = _map("NEW_BARK_TOWN")
+    save.stand_on(syms, group=group, number=number, label=label,
+                  width=w, height=h, y=6, x=15, rom_path=ROM)
+    s = gat("wObjectStructs")
+    got = (save.data[s + OSL + 0], save.data[s + OSL + 2], save.data[s + OSL + 1])
+    check("struct 1 = (sprite 105, tile $8c, map-object 4), as the game instantiated it",
+          got == want == (105, 0x8c, 4), f"got {got}, genuine {want}")
+    # Palette index follows the map object's override (FAT_GUY's slot has palette 3).
+    check("the palette index is the map object's override (3 - 1 = 2)",
+          save.data[s + OSL + 0x21] == 2, f"got {save.data[s + OSL + 0x21]}")
+    check("both checksums still verify after the Stage-2 rebuild",
+          _primary_ok(save, syms) and _backup_ok(save, syms))
 
 
 def _map(const: str) -> tuple[int, int, str, int, int]:
@@ -197,6 +284,9 @@ def _backup_ok(save: savefile.Save, syms: SymFile) -> bool:
 if __name__ == "__main__":
     test_screen_save_from_rom()
     test_screen_save_falsified()
+    test_object_events_walk()
+    test_positional_vtile()
     test_stand_on_synthetic()
+    test_stage2_instantiate_vs_genuine()
     print(f"\n{'FAILURES: ' + str(_failures) if _failures else 'all ok'}")
     sys.exit(1 if _failures else 0)
