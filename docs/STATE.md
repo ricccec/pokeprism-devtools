@@ -44,7 +44,7 @@ been.
 |---|---|---|---|---|---|
 | **prism** | ✓ | ✓ | ✓ | ✓ | ✓ |
 | **vanilla** | ✓ | ✓ | ✓ (dialogue overflow, name + buffer bounds) | ✓ (build ✓; boot rebuilds the map — tiles, objects, sprites, both checksums — confirmed live in SameBoy) | ✓ (tiles) |
-| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | ✓ (build ✓; boot rebuilds tiles + loads the map's NPCs + their VRAM tiles — edge connections aside) | ✓ (tiles, n-gram reader) |
+| **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | ✓ (build ✓; boot rebuilds tiles + loads the map's NPCs + their VRAM tiles, confirmed live in SameBoy — edge connections aside) | ✓ (tiles, n-gram reader) |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
 resize, new-map, **reword**, and the block scaffolding those ride — and the
@@ -68,7 +68,8 @@ neutral arithmetic (`compute_screen_save`, and the object-engine writers
 parameterised by struct sizes and two strategies crossing as data). The boot
 rebuilds the tiles, loads the destination map's own NPCs into `wMapObjects`, and
 instantiates the on-screen ones into `wObjectStructs` with the right VRAM tiles and
-palettes (Stage 2, landed 2026-07-28). The one deferral left is edge-connection
+palettes (Stage 2, landed 2026-07-28; **NPC spawning confirmed live in SameBoy
+2026-07-29**). The one deferral left is edge-connection
 tiles, which is its own pick-up item for every tree, not a polished gap. The whole
 capability matrix is now filled in.
 
