@@ -47,8 +47,8 @@ been.
 | **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | ✓ (build ✓; boot rebuilds tiles + connected edges + loads the map's NPCs + their VRAM tiles, confirmed live in SameBoy) | ✓ (tiles, n-gram reader) |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
-resize, new-map, **reword**, and the block scaffolding those ride — and the
-writes round-trip to the byte on all real maps. **Both family trees lint too** (the
+resize, new-map, **reword**, **edit the map header**, and the block scaffolding
+those ride — and the writes round-trip to the byte on all real maps. **Both family trees lint too** (the
 dialogue-overflow rules below), and **vanilla now builds and boots for real**: a
 stock pokecrystal builds, and the studio patches its save to stand you on a map —
 the *whole* map, not just the position. It writes the four position bytes and then
@@ -529,7 +529,6 @@ by what it costs versus what it buys, with the detail in the sections that follo
 |---|---|---|
 | **1. Prism variable sprites in the boot** | one line, unverifiable alone | Absences — pair it with sprite work |
 | **2. Connection *adding*** | needs design | Absences — two-sided |
-| **3. `EditMap` attributes tab** | unclaimed | Absences |
 
 **Polished `plays` Stage 2 landed 2026-07-28** — the boot now loads the map's own
 NPCs and their VRAM tiles, so a family teleport shows the NPCs, not an empty map;
@@ -551,6 +550,49 @@ and a font fact rather than a gap — not to be confused with the *tile* count, 
 is now wired into the reword form; doc accretion and the stashed
 map-studio restructure, which are housekeeping; and the three pre-existing test
 reds, which are true reports about the live prism tree and are left alone.
+
+## Landed — the family header editor, on a shared splicer (2026-07-30)
+
+`e` on the Attributes tab of a vanilla or polished map used to say editing the
+header "is not wired for this dialect yet." It is now, for **both** family trees
+off one module — the same way rewording mounts one class on both — because what
+forks is data the mount already hands over.
+
+**The header is split across two files**, unlike prism's one `map_header` pair:
+`data/maps/maps.asm` holds `map Label, <the tree's own arguments>` and
+`data/maps/attributes.asm` holds `map_attributes Label, CONST, border`. An edit
+rewrites one line in each, argument by argument, under the rule prism's editor
+works by — *an argument you did not change comes back exactly as it was written*.
+
+**The `map` arguments fork between the trees, and that fork already existed.**
+Vanilla ends in a fishing group; polished carries a location `sign` and no fishing
+group. That is the very `header_fields`/`header_args` the new-map form declares
+(`newmap.VANILLA_FIELDS`/`POLISHED_FIELDS`), so `hacks/vanilla/mapedit.py` takes
+the same `FamilyNewMap` dialect the mount hands `form("newmap")` and one module
+serves both trees. The form is stamped per tree exactly as `newmap_for` stamps
+its own — `editmap_for(dialect, set_of, tag)`.
+
+**What is not editable is prism's list unchanged**, with one refusal that gets
+*easier*: the label and the map id (`map_attributes`'s CONST, argument 0) are
+read-only for prism's reasons (a rename touches every reference; a renumber drops
+every `.sav`), the group/height/width are not in these two lines at all, and the
+family needs **no conn_flags refusal** — `MAP_CONNECTIONS_*` is macro-computed
+from the `connection` lines, never a typed argument, and the border splice leaves
+those lines untouched. Validation mirrors prism's `_unknown`: only *changed*
+constants are checked (the `MUSIC_NONE` lesson), driven by the field declarations
+themselves, so polished's unprefixed-landmark fork is right without a branch.
+
+**The splicer is now shared.** The argument-by-argument macro-line rewrite lived
+inside `hacks/prism/mapedit.py`, which the family cannot import; it was genuinely
+neutral rgbds syntax, so it moved to `wiring/macroline.py`
+(`splice_macro_args`) — the same shape as `wiring/warpdel`'s rule — and **prism
+was repointed at it**, byte-identical. `test_macroline.py` guards both the rule
+(comment/spacing preservation, prefix-name safety, out-of-range refusal) and that
+the extraction changed nothing prism writes. `test_family_mapedit.py` proves the
+write on both real trees, falsified first: a single field moved changes exactly
+one line, in exactly one file, at exactly one argument, with every other argument
+byte-for-byte its old source text — and the border block lands in
+`attributes.asm`, not `maps.asm`.
 
 ## Absences by design — none permanent but one, all otherwise deferred
 
@@ -620,7 +662,10 @@ seam"); the standing items:**
   than to re-derive them.
 - **Connection *adding*** — `wiring/connections` is two-sided; deserves its own
   look. Deletion already refuses on the neighbour's side, with teeth.
-- **`EditMap` (attributes tab)** for family trees — not claimed.
+- ~~**`EditMap` (attributes tab)** for family trees~~ — **done (2026-07-30)**, see
+  "Landed", below. The blocker recorded here — that the header lives in files this
+  adapter only read — was real; the answer was to write both of them, argument by
+  argument, on the same neutral splicer prism now shares.
 - ~~**Family map *sketch***~~ — **done (2026-07-27)**, see below. The blocker
   ("needs a family block renderer") turned out to be stale: each family reader
   had drawn existing maps through `swatches.for_tileset` since Phase 3.

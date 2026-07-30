@@ -309,20 +309,27 @@ class Writer:
     def editor(self, label: str, const: str, ref, said: list):
         """The form `e` would open on this row, filled in with what is there.
 
-        Keyed by the **list** the entry lives in rather than by `ref.what`.
-        The six tables above the seam are a reading of the block each entry
-        points at — an `object_event` is an NPC or a fruit tree depending on a
-        macro in another block entirely — but what an editor rewrites is a
-        line, and a line belongs to exactly one of four lists. So resolving the
-        handle *is* choosing the form, and the row's kind never comes into it.
+        The map row opens the header form (`.mapedit`), which crosses the same
+        way prism's does — the dialect's own `map` arguments plus the border
+        block, split across `maps.asm` and `attributes.asm`. Every other row is
+        keyed by the **list** the entry lives in rather than by `ref.what`: the
+        six tables above the seam are a reading of the block each entry points at
+        — an `object_event` is an NPC or a fruit tree depending on a macro in
+        another block entirely — but what an editor rewrites is a line, and a
+        line belongs to exactly one of four lists. So resolving the handle *is*
+        choosing the form, and the row's kind never comes into it.
 
         `said` goes unused: rewording is the text project, and a family text
         block is not a field on any of these forms.
         """
         if ref.what == "map":
-            raise Refused(
-                "the map's own attributes live in three files this adapter "
-                "only reads — editing them is not wired for this dialect yet.")
+            from . import mapedit
+            d = self._newmap or newmap.VANILLA
+            try:
+                return (mapedit.editmap_for(d, self.set_of, "Family"),
+                        mapedit.values(self.root, label, d), {})
+            except mapedit.EditError as exc:
+                raise Refused(str(exc)) from exc
         if ref.what == "connection":
             raise Refused(
                 "editing a connection means rewriting the neighbour's side "

@@ -422,19 +422,17 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
           s.form("resize").dialect.shape.height_first is False)
     check("newmap crosses too, asking this tree's own header arguments",
           "fishgroup" in [f.name for f in s.form("newmap").FIELDS])
-    # Editing an entry now crosses; editing the *map* does not, and the refusal
-    # is the interesting half — an absent key would say nothing.
+    # Editing an entry crosses, and so does editing the *map* now: the header
+    # form opens on the two files the family splits its header over.
     action, values, _ = s.editor("TownA", "TOWN_A",
                                  panels.Ref("npc", "TOWNA_TEACHER"))
     check("editing an npc opens the object editor on what is there",
           action.title == "Edit an object"
           and values["sprite"] == "SPRITE_TEACHER")
-    try:
-        s.editor("TownA", "TOWN_A", panels.Ref("map", "TOWN_A"))
-        check("editing the map itself refuses with a sentence", False)
-    except SessionError as exc:
-        check("editing the map itself refuses with a sentence",
-              "not wired" in str(exc))
+    action, values, _ = s.editor("TownA", "TOWN_A", panels.Ref("map", "TOWN_A"))
+    check("editing the map itself opens the header form, prefilled",
+          action.name == "editmap" and "fishgroup" in [f.name for f in action.FIELDS]
+          and values["const"] == "TOWN_A" and bool(values["tileset"]))
 
 
 def test_deletion_crosses_the_seam(root: Path) -> None:

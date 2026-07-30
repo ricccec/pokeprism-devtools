@@ -1,7 +1,7 @@
 """Growing or shrinking a map from an edge — the form half of `wiring/mapresize.py`.
 
 `e` on the Attributes tab changes what a map is *called* (`edits.EditMap`), and
-`wiring/mapedit.py` says why its size is not one of the fields there: changing
+`hacks/prism/mapedit.py` says why its size is not one of the fields there: changing
 it without resizing the `.blk` behind it corrupts the map. This is the key that
 does that resize properly, keeping the dimension constant, the block grid and
 (at the top or left) every object's coordinates all moving together — see
