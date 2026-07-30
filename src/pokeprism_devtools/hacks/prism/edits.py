@@ -271,7 +271,7 @@ class EditTrigger(_Edited):
 
 
 class EditMap(Action):
-    """`e` on the Attributes tab. See `wiring/mapedit.py` for what is *not* here
+    """`e` on the Attributes tab. See `hacks/prism/mapedit.py` for what is *not* here
     and why — the label, the map id, the group, the size and the conn_flags."""
 
     name = "editmap"
