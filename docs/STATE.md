@@ -529,7 +529,6 @@ by what it costs versus what it buys, with the detail in the sections that follo
 | | Size | Where |
 |---|---|---|
 | **1. Prism variable sprites in the boot** | one line, unverifiable alone | Absences — pair it with sprite work |
-| **2. Connection *adding*** | needs design | Absences — two-sided |
 
 **Polished `plays` Stage 2 landed 2026-07-28** — the boot now loads the map's own
 NPCs and their VRAM tiles, so a family teleport shows the NPCs, not an empty map;
