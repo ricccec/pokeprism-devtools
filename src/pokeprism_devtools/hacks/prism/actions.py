@@ -11,11 +11,11 @@ So they moved here, where the modules they call already live, and the base is
 left with nothing under it. The rule the move states: **adapters import the
 base; the base imports no adapter.**
 
-Their mirrors on the family side do not exist yet, and their absence is the
-honest kind — `Writer.adders("connection")` answers `()` there, and the tab foot
-simply has no "Add new…" row. `docs/family-write-plan.md` keeps connection
-*adding* out of Phase 6 on purpose: `wiring/connections` is two-sided and
-deserves its own look.
+Their mirrors on the family side exist now — `hacks/vanilla/mapactions.py`, kept
+out of that adapter's `content.py` for the same reason these are kept out of the
+base — and the move is what let them: the family's `FamilyConnect` writes the
+modern four-argument `connection` macro into the shared `attributes.asm`, which
+is a different job from the one below, and neither had to know about the other.
 """
 
 from __future__ import annotations
