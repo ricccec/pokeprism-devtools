@@ -20,7 +20,7 @@ from pokeprism_devtools.shared import constants, symfile
 
 # Bump when the inventory layout changes (new fields, new offsets); cached
 # inventory.json files with a different schema are rebuilt regardless of mtime.
-INVENTORY_SCHEMA = 3
+INVENTORY_SCHEMA = 4
 
 # WRAM symbols whose values the prism-dev tool will write. Resolved to
 # .sav file offsets in the inventory. Group them by save block so we can
@@ -49,6 +49,11 @@ WRITABLE_FIELDS: dict[str, dict[str, object]] = {
     # Engine state used by the people-reset (not user-writable).
     "wObjectStructs": {"size": 40 * 13, "block": "PlayerData"},
     "wMapObjects":    {"size": 16 * 16, "block": "PlayerData"},
+    # Read-only, and read by the sprite-VRAM allocator rather than written: a
+    # variable sprite (id >= SPRITE_VARS) names no graphic, so its real type —
+    # and therefore its VRAM length — is only knowable from this $100-SPRITE_VARS
+    # = 16-byte array the save carries. See `docs/save-patch.md`.
+    "wVariableSprites": {"size": 16, "block": "PlayerData"},
     # Pokemon block
     "wPartyCount":         {"size": 1,  "block": "PokemonData"},
     "wPartySpecies":       {"size": 7,  "block": "PokemonData"},  # 6 species + 0xFF terminator
