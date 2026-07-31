@@ -6,8 +6,10 @@ plans it replaces as a status source are journey logs and stay as history:
 - `adapter-plan.md` — the argument for one frontend / many hacks, and why the
   split is deferred. Its one scheduled piece (the pluggable mount) shipped.
 - `polished-crystal-feasibility.md` — the measured experiment. Phases 0–4.
-- `family-write-plan.md` — the family write story. Phases 5–10 (history).
-- `family-lint-plan.md` — the live plan: Phase 11 and the roadmap past the seam.
+- `family-write-plan.md` — the family write story. Phases 5–11 and the roadmap
+  past them, all landed (history).
+- `family-lint-plan.md` — the live plan, now down to one unsurveyed question and
+  one permanent absence.
 
 Read those for *why* a thing is shaped the way it is. Read this for *what shape
 it is in*. When a phase closes or an engineering item is paid, update this file
@@ -138,7 +140,7 @@ remains of prism showing up when a *family* tree mounts is the mount discovering
 every hack through `studio → session → mount` — the mount's job by design, not a
 wiring-layer leak. With this paid, the seam has no known structural debt left.
 
-## Landing now — family dialogue-overflow linting (Phase 11; `family-lint-plan.md`)
+## Landed — family dialogue-overflow linting (Phase 11; `family-write-plan.md`)
 
 **Move A — done.** `Hack.ctx` is a lint *capability* (`seam.Lints`): `lint()`,
 `mentions()`, `source_lines()`, `invalidate()`. The session lints through it and
@@ -216,7 +218,7 @@ its rule/context imports (all of `hacks.prism`) into `run()`/`main()`, so
 arithmetic) import without loading prism. That is what lets a family tree's
 linter reach the channel without dragging in the tree it is not written against.
 
-## Landing now — family build-and-boot (`plays` becomes a real capability)
+## Landed — family build-and-boot (`plays` becomes a real capability)
 
 `plays` was the last capability still carried as a bare `bool`, and because it was
 only a flag the session reached *around* the seam: it imported `dev_server.playtest`,
@@ -707,8 +709,9 @@ map, on the shared core, proven above.)
   never uses.
 
 **Deferred — implementable, deliberately out of the seam's current scope. The
-full roadmap, grouped, is in `family-lint-plan.md` ("The roadmap past the
-seam"); the standing items:**
+roadmap that grouped these has emptied; what it held is recorded in
+`family-write-plan.md` ("Past the seam — the roadmap, and how it emptied") and
+what survives it is in `family-lint-plan.md`. The standing items:**
 
 - ~~**Prism variable sprites in the boot**~~ — **done (2026-07-31)**, see
   "Landed", below. The stated blocker — that wiring it blind would change prism
@@ -800,8 +803,9 @@ for the two trees that have no presets.
 ## Doc hygiene — the accretion to watch
 
 `docs/` is accreting. Besides the three journey docs, this one, and the live
-`family-lint-plan.md` (Phase 11 + roadmap, split out of `family-write-plan.md`
-to keep the completed history off the hot path):
+`family-lint-plan.md` (the survivors of the roadmap; Phase 11 and the rest of
+that roadmap went back into `family-write-plan.md` as they landed, which is the
+split working as intended — completed history off the hot path):
 `devtools-plan.md` (historical), `bank-usage-plan.md` (spec, no code),
 `blockdata-plan.md` (shipped), `map-inspect-plan.md`, `devtools.md` (user
 reference). Separately, a `feat/map-studio` docs restructure sits **stashed**

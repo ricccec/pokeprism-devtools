@@ -1,12 +1,13 @@
-# The family write story — Phases 5–10, done (history)
+# The family write story — Phases 5–11, done (history)
 
-> **This doc is history.** Phases 5 through 10 are all shipped; what follows is
-> the recorded "why" — the surveys, the byte-level round-trips, the corrections
-> each phase made to its own plan — kept because git shows *what* changed and
-> never *what was broken and what it cost*. For **what is true now** (the
-> capability matrix, the seam's shape) read `STATE.md`; for the **live plan**
-> (Phase 11 and the roadmap past the seam) read `family-lint-plan.md`. Neither
-> needs this file loaded.
+> **This doc is history.** Phases 5 through 11 are all shipped, and so is every
+> capability the roadmap past them named except one unsurveyed question; what
+> follows is the recorded "why" — the surveys, the byte-level round-trips, the
+> corrections each phase made to its own plan — kept because git shows *what*
+> changed and never *what was broken and what it cost*. For **what is true now**
+> (the capability matrix, the seam's shape) read `STATE.md`; for the **live
+> plan** — now down to that one question and one permanent absence — read
+> `family-lint-plan.md`. Neither needs this file loaded.
 
 ## Phase index
 
@@ -19,6 +20,7 @@
 | 8 | family scaffolding — four block writers + the splicer/line-adder fixes | done |
 | 9a·9b·9c | the seam gets a type — four Protocols, one battery, the leak census | done |
 | 10 | the reader's macro vocabulary — ten shorthands expanded | done |
+| 11 | the family's first lint — does the dialogue fit the box | done |
 
 `polished-crystal-feasibility.md` ran Phases 0–4 and closed. What it left was not
 an unfinished phase but a recorded residue: the three writes a family tree still
@@ -740,9 +742,160 @@ did not claim is byte-identical, across 2,463 and 2,790 `.asm` files.
   (`test_reader_sees_every_item_ball`), counting the raw source independent of
   the reader so it stays honest whether the reader over- or under-counts.
 
+## Phase 11 — the family's first lint: does the dialogue fit the box
+
+**Done, both family trees; all three moves shipped, four rules.** The linter was
+prism-only, and the reason given had always been "the family has no VWF." That
+reason was measured and found to be answering the wrong question; the determinate
+overflow lint below ships for vanilla and polished.
+
+**The want.** Flag a dialogue line that crosses the screen boundary and overflows
+its box — for vanilla and polished, not only prism. A line one tile too wide
+writes over the box's right border; a speech with more visual lines than the box
+has rows draws into the map behind it. Both assemble cleanly and neither shows up
+until someone walks into that exact conversation.
+
+**The premise, corrected by measurement.** "The family is fixed-width" is not
+quite true: polished ships a variable-width font (`tools/vwf.c`, `home/vwf.asm`,
+`PlaceVWFString`) — but only for menus (Bill's PC item names, ability graphics).
+Overworld map dialogue in *both* trees runs through the fixed-width
+`PlaceString`/`PlaceNextChar` path in `home/text.asm`, one tile per glyph. So
+overflow of *map dialogue* is exact fixed-width tile counting in both trees. This
+is the sharp distinction the old note blurred: **overflow is a fit question and
+the fit is fixed-width, even where a menu elsewhere is not.** If polished ever
+routed dialogue through the VWF, this exactness would break and the lint would owe
+pixel widths; it does not today, and a rule asserts that the dialogue path is
+still `PlaceNextChar` so the assumption is checked, not trusted.
+
+**Why it is not `Measures.measure`.** `measure` refuses to answer in characters
+because *VWF pixel* width is unknowable without the glyph metrics — a live preview
+of proportional text. Overflow is the other question: count the printable tiles
+between the script's own break controls and compare to the box width. That is
+ground truth, not a guess, so it belongs in a lint `ctx`.
+
+**How much was already in place.** Less than the phase number suggested. The break
+vocabulary was already read — `hacks/vanilla/events.py` parses
+`text/line/cont/para/next`, and the family model is *simpler* than prism's because
+one macro is one visual line, with no inline `<LINE>`/`<NEXT>` cursor codes to
+interpret inside a string. The box geometry is one constant, `TEXTBOX_INNERW =
+SCREEN_WIDTH − BORDER_WIDTH = 18`, under the same names prism's `textbox.metrics`
+already read. The finding channel was hack-neutral already: `maplint/diagnostics.py`
+(`Diagnostic`, `Severity`, `apply_suppressions`) imports only stdlib, and the
+studio's Diagnostics panel renders it. And prism's own `rules_text.text_width` was
+*already* tile arithmetic (`line.determinate` vs `block.box.cols`), not VWF — the
+only prism-bound parts of it were the charmap and the `dtxt` control-code
+expansions.
+
+**The one architectural decision — a lint capability, not a rule-subset switch.**
+The session lints via `maplint.run(self.ctx)`, which ran *every* prism rule against
+a prism `LintContext`; a family ctx that only knows text would have crashed the
+geometry and sprite rules. So `Hack.ctx` became a lint capability that runs itself:
+`ctx.lint() -> list[Diagnostic]`, `ctx.mentions(d, const)`, `ctx.source_lines(rel)`.
+The session calls `self.ctx.lint()` instead of reaching into `maplint`. Prism's
+`LintContext` gained a three-line `lint()` wrapper; the family got a small
+`FamilyLintContext` whose `lint()` runs only the text rules. This keeps
+[[no-hack-branching-outside-mount]] intact — the session still branches only on
+`ctx is not None`, never on a name, and each context owns its rule set. The
+alternative, teaching the session which rules a tree supports, leaks rule-set
+knowledge above the seam and ages badly.
+
+**Where it lives.** `hacks/vanilla/lint/` — a family charmap reader, a family
+box-metrics reader (a trim of prism's, which already read `TEXTBOX_INNERW`), a
+dialogue→visual-lines pass, and the rules. The overflow *arithmetic* —
+determinate tiles vs cols, row vs last-row — is identical to prism's two rules, so
+just that comparison was lifted into a neutral helper both call; the parsing stayed
+family-local. No sharing past the arithmetic, and `keep-mechanics-cli-extractable`
+survives — a `family-maplint` CLI wraps the same rules.
+
+**Three moves.** (A) The `ctx.lint()`/`mentions()`/`source_lines()` capability
+refactor; prism behaviour unchanged, proven by `test_maplint`/`test_studio` staying
+green. (B) The family determinate-overflow lint: family charmap + box reader + two
+rules — `text-width` (a visual line past 18 tiles, counting control-code expansions
+like `<POKE>`) and `text-rows` (more visual lines than the box holds before a
+required `para`/scroll) — and `Hack.ctx` wired in both `claim.py`s. These were the
+first non-`None` family `ctx`s. (C) The buffer refinements: name worst-case
+(`<PLAYER>` at its seven-letter longest, prism's `text-width-name`) and unbounded
+headroom (`text-buffer`). `text-width-name` was the clean half — a name reads as
+nothing but draws up to `PLAYER_NAME_LENGTH-1` tiles, warn where the determinate
+fit passes but the worst case does not. `text-buffer` needed a parser rewrite: the
+family splits one visual line across separate `text`/`text_ram` script commands, so
+`dialogue.parse` became a cursor/command accumulator (`@` ends a *draw*, not the
+box; `text_ram` and the following `text` join the line in progress; `if
+DEF(FAITHFUL)` branches measure as siblings). It fires the one certain overflow —
+fixed text already fills the box and a buffer has nowhere to go — and stays silent
+on buffers it cannot bound. Both shipping trees are 0-findings under all four
+rules; the rewrite was diffed line-for-line against the old parse across both trees
+(only buffer lines and a few number-splices changed). Rules are `text-width`,
+`text-width-name`, `text-rows`, `text-buffer`.
+
+**The correction Move B forced, and how the fast-follow paid it.** The plan assumed
+one family text engine, so "polished imports vanilla's lint" whole. It does not:
+the map *event* format is shared, but the text engines diverge — vanilla is the
+classic `dict`+`print_name`→ROM `db`, polished is `_dtxt`/Huffman `ctxtmap` with an
+n-gram string table (closer to prism). The overflow *counting* holds for both, and
+the box, the dialogue parse, the rules and the neutral `maplint.textfit` arithmetic
+are all shared; only the width `Metrics` reader is engine-specific. So vanilla
+shipped first, then **polished followed** — `hacks/polished/metrics.py`, a `load`
+that resolves a byte through the n-gram table, and a `lint.py` whose `build` reuses
+vanilla's `FamilyLintContext` verbatim. The subtlety the fork carries is that an
+n-gram is one ROM byte but several screen tiles (`#`→`Poké`, `the `→four), so each
+n-gram token's width is *its expansion's* tile count — counted in the un-compressed
+charmap, where an apostrophe ligature (`'s`) is the one tile it draws and not two.
+Two shared seams let polished in without a branch: `FamilyLintContext` takes its
+engine files as declared data (the guard cannot hardcode one tree's
+`home/text.asm`), and the width message names tokens that draw *wider than they
+read* (`> len`, not `> 1`) so it surfaces `#` without burying it under polished's
+every n-gram.
+
+**Verification, the usual way.** The box width was calibrated by measuring the
+widest non-overflowing real line across both trees, then falsified: a known-good
+line widened one tile past 18 confirms the catch, and the intentional-overflow
+suppression path (`; maplint: ignore-file[text-width]`, the PhanceroRoom idiom)
+still works. Both real trees are baselined so the lint ships green and only *new*
+overflows fail.
+
+## Past the seam — the roadmap, and how it emptied
+
+Phase 11 closed with a roadmap of deferred capabilities, each its own phase, none
+blocking another. All but one have since landed; the survivors live in
+`family-lint-plan.md`. What was on it, and where each went:
+
+- **Connection *adding* (both trees).** Done 2026-07-30 (`a51d92d`). The bullet
+  had said adding "needs its own survey of how each tree wires the reciprocal
+  connection before it is scoped" — the survey found the family's modern
+  `connection` macro is the *easy* half of prism's: four args, and the assembler
+  computes strip, source, crossing-shift and the `MAP_CONNECTIONS_*` nibble, so
+  there is no geometry to write. Both sides live under each `map_attributes` block
+  in one shared `data/maps/attributes.asm`, and disconnect now removes *both*
+  sides — the bullet's "deletion already refuses on the neighbour's side" is no
+  longer true. See `STATE.md`, "Landed — family connections, both sides on one
+  splice".
+- **`EditMap` / attributes-tab editing.** Done 2026-07-30 (`2ee3bbd`), both trees
+  off one `hacks/vanilla/mapedit.py`, on the neutral `wiring/macroline` splicer
+  prism was repointed to byte-identically. See `STATE.md`, "Landed — the family
+  header editor, on a shared splicer".
+- **Family map *sketch*.** Done 2026-07-27 — the new-map form draws the grid while
+  you type. See `STATE.md`, "Landed — the family new-map form draws".
+- **Family `plays`.** Done, both trees, and this was the roadmap's one
+  *correction* rather than a clean absence: vanilla built and half-booted, writing
+  the position bytes but not rebuilding the map, so the overworld came up corrupted
+  — wrong sprites *and* wrong tiles. The bullet named two jobs, in order: lift the
+  hack-neutral parts of prism's map-entry patch into shared code, then finish
+  vanilla's boot on top. Both were done in that order — job (1) is
+  `shared/overworld/`, written once and driven by prism too; job (2) landed and was
+  confirmed live in SameBoy 2026-07-27, with polished's own boot following on the
+  same core (2026-07-28/29). `docs/save-patch.md` is the engine-level reference
+  that came out of it.
+- **Family `measures`.** Done 2026-07-28 — the reword box carries a tile gutter in
+  both trees, over the same widths and the same box the rules read. See `STATE.md`,
+  "Landed — the reword box counts tiles".
+- **Family rewording.** Done 2026-07-27 — `hacks/vanilla/text.py`, both dialects on
+  one class. What it actually needed was Phase 11's *parse*, promoted out of `lint/`
+  so the browser, the linter and the writer read one set of lines.
+
 ---
 
-*Phases 5–10 end here — the family write story is complete.* The live plan that
-used to close this file — **Phase 11** (the family dialogue-overflow lint) and
-**the roadmap past the seam** — moved to `family-lint-plan.md` so the history
-stops being loaded to reach it. Nothing was cut; it was relocated.
+*Phases 5–11 end here — the family write story is complete.* The sentence to keep:
+nothing in these phases taught the studio a hack name. Each phase moved a refusal
+downward — from a sentence the writer says, to data the writer declares, to a write
+that crosses.
