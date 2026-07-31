@@ -444,9 +444,15 @@ def fork(anchor: str, shape: ObjectShape, tag: str, *,
         return type(f"{tag}{cls.__name__}", (cls,),
                     {"anchor": anchor, "shape": shape, "layout": layout,
                      "__doc__": cls.__doc__})
+    from .mapactions import FamilyConnect
     adders = {**ADDERS, **(extra or {})}
-    return ({k: tuple(stamp(c) for c in v) for k, v in adders.items()},
-            {k: stamp(c) for k, c in EDITORS.items()})
+    stamped = {k: tuple(stamp(c) for c in v) for k, v in adders.items()}
+    # The connection adder forks on nothing — both trees write the same macro —
+    # so it mounts as itself, without an event anchor stamped onto it. It lives in
+    # `.mapactions` (map-to-map) rather than here (in-map), mirroring how prism
+    # keeps its `Connect` out of `content.py`.
+    stamped["connection"] = (FamilyConnect,)
+    return (stamped, {k: stamp(c) for k, c in EDITORS.items()})
 
 
 #: The trainer, forked. Both trees have it — the first block adder that does —

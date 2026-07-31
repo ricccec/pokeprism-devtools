@@ -47,8 +47,9 @@ been.
 | **polished** | ✓ | ✓ (head anchor, own warps/choices/adders/resize/newmap) | ✓ (dialogue overflow, name + buffer bounds, n-gram reader) | ✓ (build ✓; boot rebuilds tiles + connected edges + loads the map's NPCs + their VRAM tiles, confirmed live in SameBoy) | ✓ (tiles, n-gram reader) |
 
 The family trees (vanilla, polished) read and write — delete, edit, add,
-resize, new-map, **reword**, **edit the map header**, and the block scaffolding
-those ride — and the writes round-trip to the byte on all real maps. **Both family trees lint too** (the
+resize, new-map, **reword**, **edit the map header**, **connect and disconnect
+neighbours**, and the block scaffolding those ride — and the writes round-trip to
+the byte on all real maps. **Both family trees lint too** (the
 dialogue-overflow rules below), and **vanilla now builds and boots for real**: a
 stock pokecrystal builds, and the studio patches its save to stand you on a map —
 the *whole* map, not just the position. It writes the four position bytes and then
@@ -594,6 +595,42 @@ one line, in exactly one file, at exactly one argument, with every other argumen
 byte-for-byte its old source text — and the border block lands in
 `attributes.asm`, not `maps.asm`.
 
+## Landed — family connections, both sides on one splice (2026-07-30)
+
+The Connections tab of a vanilla or polished map used to have no "Add new…" row,
+and `d` on a connection refused: "rewriting the neighbour's side is not wired for
+this dialect yet." Both are wired now, for **both** trees off one shared module
+(`hacks/vanilla/connections.py`) — because the family's `connection` macro is the
+*easy half* of prism's.
+
+**The family macro does the work prism does by hand.** The modern macro — which
+pokecrystal and polishedcrystal share byte-for-byte — takes four things:
+direction, the neighbour's label and id, and the offset along the shared edge.
+From that one offset the assembler computes the strip's source and length, the
+player's crossing shift, **and the connection-flag nibble** (`MAP_CONNECTIONS_*`).
+So where prism's `hacks/prism/connections.py` derives all of that into a
+seven-argument macro and rewrites a flag nibble on each side, the family writes
+one line per side and lets rgbds expand it. No geometry, no nibble.
+
+**Both sides, always, in one file.** The pair lives in `data/maps/attributes.asm`
+under each map's `map_attributes` block, and the neighbour's offset is the
+negative of this side's — B sits `k` along A's edge, so from B, A sits `-k`. A
+connection the neighbour does not mirror is a wall you can walk through one way,
+so `connect` writes both and `disconnect` removes both — and if the far side was
+already absent, that is *said*, as a one-way note, not silently repaired. The
+macro refuses to assemble unless connections are in north/south/west/east order,
+so a new line is spliced into its slot, never appended.
+
+**Crossing the seam.** `FamilyConnect`/`FamilyDisconnect` mirror prism's
+`Connect`/`content.Disconnect`; they fork on nothing (both trees write the same
+macro), so `fork` injects the adder unstamped rather than stamping an event
+anchor onto it, and the write adapter's `deletion` hands back a disconnect for a
+connection row. In-place *editing* stays a refusal that now points at delete +
+re-add — the same place prism leaves it. `test_family_connections.py` proves it
+on both real trees, falsified first: the reciprocal must be present *and* carry
+`-k`, disconnect deletes exactly two lines and rewrites nothing else, and
+disconnect-then-reconnect returns the file byte-for-byte.
+
 ## Absences by design — none permanent but one, all otherwise deferred
 
 Each is a capability a family tree does not have *yet*. None is debt: none is the
@@ -660,8 +697,10 @@ seam"); the standing items:**
   recorded here — that the family's visual line is not its source line — was
   real, and the answer was to refuse the 1.3% of blocks where it bites rather
   than to re-derive them.
-- **Connection *adding*** — `wiring/connections` is two-sided; deserves its own
-  look. Deletion already refuses on the neighbour's side, with teeth.
+- ~~**Family connection *adding* (and delete)**~~ — **done (2026-07-30)**, see
+  "Landed", below. The family macro turned out to be the easy half of prism's:
+  four arguments the assembler expands, no flag nibble to write and no geometry
+  to derive, so both sides are a one-line splice apiece.
 - ~~**`EditMap` (attributes tab)** for family trees~~ — **done (2026-07-30)**, see
   "Landed", below. The blocker recorded here — that the header lives in files this
   adapter only read — was real; the answer was to write both of them, argument by

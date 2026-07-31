@@ -464,12 +464,27 @@ def test_deletion_crosses_the_seam(root: Path) -> None:
     check("a stale name refuses instead of guessing",
           _refused(s, "TownA", "TOWN_A", panels.Ref("trainer", "TOWNA_YOUNGSTER"),
                    "no longer"))
-    check("a connection refuses with the neighbour reason",
-          _refused(s, "TownA", "TOWN_A",
-                   panels.Ref("connection", key="west"), "neighbour"))
-
+    # A connection now deletes instead of refusing: the seam hands back a
+    # disconnect action, and applying it drops the line. RouteX is a phantom
+    # neighbour here (no block of its own), so the far side can't be mirrored —
+    # which must be *said*, as a one-way note, not crash the splice.
+    before_attrs = (root / "data/maps/attributes.asm").read_text()
+    act = s.deletion("TownA", "TOWN_A", panels.Ref("connection", key="west"))
+    check("a connection hands back a disconnect action, not a refusal",
+          act.name == "disconnect", act.describe())
+    preview = s.preview(act)
+    check("the one-way neighbour is a note, not a silent repair",
+          any("one-way" in n for n in preview.notes), str(preview.notes))
+    s.apply(preview)
+    check("TownA's west connection line is gone",
+          "connection west, RouteX" not in
+          (root / "data/maps/attributes.asm").read_text())
     s.undo()
-    check("undo puts the file back to the byte", src.read_text() == before)
+    check("undo restores attributes.asm to the byte",
+          (root / "data/maps/attributes.asm").read_text() == before_attrs)
+
+    s.undo()  # and the trainer deletion above it, off the same stack
+    check("undo puts the map file back to the byte", src.read_text() == before)
 
 
 # --------------------------------------------------------------------------- #

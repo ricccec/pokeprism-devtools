@@ -332,8 +332,8 @@ class Writer:
                 raise Refused(str(exc)) from exc
         if ref.what == "connection":
             raise Refused(
-                "editing a connection means rewriting the neighbour's side "
-                "too — not wired for this dialect yet.")
+                "editing a connection in place means rewriting the neighbour's "
+                "side too — not wired up. Delete it (`d`) and connect it again.")
 
         from . import actions as fa
         block = parse_map(self.root / f"maps/{label}.asm", self.anchor)
@@ -348,9 +348,8 @@ class Writer:
         if ref.what == "map":
             raise Refused("deleting a whole map is not something this does.")
         if ref.what == "connection":
-            raise Refused(
-                "removing a connection means rewriting the neighbour's side "
-                "too — not wired for this dialect yet.")
+            from .mapactions import FamilyDisconnect
+            return FamilyDisconnect(const, direction=ref.key)
 
         block = parse_map(self.root / f"maps/{label}.asm", self.anchor)
         kind, index = _resolve(block, label, ref)
