@@ -304,11 +304,26 @@ So "prism has been working fine" meant "prism was verified once, narrowly, and
 never stress-tested across maps with multiple NPCs." The vanilla cross-map
 playtest is what finally exercised the bugs. **The fixes improve prism too** (for
 prism maps where ties matter it was also wrong; the verified case is unchanged at
-200). Prism's variable-sprite handling is still unfixed — `apply.py` passes an
-empty `wVariableSprites`, so a prism map with a weird-tree/boulder in its pool
-would show the same class of bug. Wiring prism's own `wVariableSprites` through
-`apply.py` is the follow-up; it was left out because there is only one prism save
-to verify against.
+200).
+
+**Prism's variable-sprite handling was wired on 2026-07-31** — `apply.py` reads
+`off("wVariableSprites")`'s 16 bytes out of prism's save and passes them to
+`rebuild_map`, so bug 2's fix now applies to prism as well as vanilla. (It needed
+a `WRITABLE_FIELDS` entry in `dev_server/inventory.py` and an `INVENTORY_SCHEMA`
+bump so cached inventories rebuild.)
+
+It had been deferred as unverifiable against prism's single save. That premise
+asked about the save when the question was about the tree, and the tree answers
+it: **exactly one prism map places variable sprites** (`CastroGym`), every one of
+the 8 distinct `variablesprite` writes in the repo resolves to `SPRITE_LASS`,
+`SPRITE_YOUNGSTER` or `SPRITE_KOJI` — all walking — and no `OutdoorSprites` pool
+contains a variable sprite at all. So the resolved answer and the walking fallback
+agree on every input prism can produce: the wiring is a **provable no-op on prism
+today**, and becomes load-bearing the moment a slot is pointed at a still sprite.
+`tests/test_prism_variable_sprites.py` asserts that census (so the change is
+announced when it happens), proves the no-op on `CastroGym`'s real pool, and
+falsifies it — a still resolution must move the tiles, checked both in the
+allocator and end to end through `apply_state`.
 
 ---
 
@@ -377,8 +392,12 @@ Tests are scripts, run with `./.venv/bin/python tests/<name>.py`.
   pool *before* the sort via a `MAPCALLBACK_SPRITES` callback. Route 32 only had
   `MAPCALLBACK_OBJECTS`, so its pool was clean — but a map with a sprites callback
   could still mis-arrange VRAM. Not yet reproduced by the patcher.
-- **Prism variable sprites.** As above, `apply.py` passes an empty
-  `wVariableSprites`; prism maps that use variable sprites are unfixed.
+- **Still-sprite lengths are unconfirmed by the engine, in both trees.** Both
+  vanilla and polished feed `wVariableSprites` and prism now does too, but no save
+  in any tree points a slot at a *still* sprite, so nothing has ever booted a map
+  where the still-vs-walking branch decides a tile. The sort and the `const_next`
+  cutoff are proven live; that one length is not. Closing it needs a captured save
+  (vanilla's Route 37 twins are the nearest lever), not a code change.
 - **Runtime-only paths ruled out.** We cannot force the game to run
   `InitializeVisibleSprites` (gated on `hMapEntryMethod` at runtime), nor leave
   objects unbound (per-step spawn only binds at the leading edge) — so

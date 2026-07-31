@@ -523,12 +523,17 @@ found that dropping the verbatim copy-back is invisible on vanilla and shows up
 
 ## What's left — the pick-up list
 
-The seam has **no known structural debt**; everything below is elective. Ordered
-by what it costs versus what it buys, with the detail in the sections that follow.
+The seam has **no known structural debt**, and as of 2026-07-31 the elective list
+is **empty**. The last item on it — prism's variable sprites in the boot — landed
+that day; see "Landed", below.
 
-| | Size | Where |
-|---|---|---|
-| **1. Prism variable sprites in the boot** | one line, unverifiable alone | Absences — pair it with sprite work |
+What is left is not work but a **standing unknown**, and it is not prism's: no
+save in *either* family tree points a `wVariableSprites` slot at a **still**
+sprite, so nothing has ever confirmed against a real game-written save that the
+engine sizes a still resolution the way we now do. Both trees feed the array and
+both are proven to read it; what is unproven is one number, in one branch, that no
+fixture reaches. It is recorded in Absences, below, and in `save-patch.md`. Closing
+it needs a captured save, not a code change.
 
 **Polished `plays` Stage 2 landed 2026-07-28** — the boot now loads the map's own
 NPCs and their VRAM tiles, so a family teleport shows the NPCs, not an empty map;
@@ -536,8 +541,9 @@ see "Landed", below. That was the last large item; what remains is elective and
 small. Four items came off this list in as many days. The decayed VRAM test that
 used to
 head it is **restored** (2026-07-28) — see Tests, below; it was the one the repo
-could not afford to leave, because it guards the sprite-VRAM allocator that (1)
-and (2) both go on to change, and it now proves it bites on every run. **Family
+could not afford to leave, because it guards the sprite-VRAM allocator that the
+variable-sprite work went on to change, and it now proves it bites on every run.
+**Family
 `measures` is done** the same day — see "Landed", below. And the `.devtools/`
 housekeeping item is **done** (2026-07-28): every `mkdir` that creates the
 directory now goes through one `shared/devtools.py` helper that seeds a
@@ -630,6 +636,55 @@ on both real trees, falsified first: the reciprocal must be present *and* carry
 `-k`, disconnect deletes exactly two lines and rewrites nothing else, and
 disconnect-then-reconnect returns the file byte-for-byte.
 
+## Landed — prism's variable sprites, and the premise that had deferred them (2026-07-31)
+
+`dev_server/apply.py` called `rebuild_map` without `variable_sprites`, so prism
+took the empty default and every variable sprite it placed was sized as *walking*
+— the pre-fix behaviour vanilla had already left behind. It now passes the array,
+read out of prism's own save layout the same way `SaveOffsets` is.
+
+**It had been deferred on an unmeasured premise.** The recorded reason was that
+wiring it would change prism output on a path no fixture could check, since
+prism's one ground-truth save (MtEmberWest) has no variable sprites. That reasons
+from the *save*; the question is about the *tree*. Asked of the tree, the answer
+is the opposite:
+
+- Exactly **one** prism map places variable sprites — `CastroGym`
+  (`SPRITE_CASTRO_GYM_1..4`).
+- Every `variablesprite` write in the whole repo is **8 distinct pairs across 16
+  lines** (12 in `maps/CastroGym.asm`, 4 seeding the array at new game in
+  `engine/std_scripts.asm`), resolving to `SPRITE_LASS`, `SPRITE_YOUNGSTER` or
+  `SPRITE_KOJI` — **all `WALKING_SPRITE`**.
+- **Zero** of the 284 entries across every `OutdoorSprites` pool is a variable
+  sprite, so no outdoor map is in play at all.
+
+So every value prism's array can hold resolves to walking, which is exactly what
+the fallback assumed. The wiring **cannot** change prism output today. There was
+no untestable path — only an unasked question.
+
+**Which makes "nothing changed" a worthless result on its own**, and the test is
+built accordingly: `test_prism_variable_sprites.py` pairs each no-op claim with
+its falsification. It asserts the census above (so the day a slot is pointed at a
+still sprite, the test *says so* — and that is precisely when the wiring stops
+being a no-op and starts being load-bearing), then shows on `CastroGym`'s real
+pool that the resolved array gives byte-identical VRAM tiles to the empty
+default, then points one slot at a still sprite and requires the tiles to
+**move**. Both halves run twice: once against the allocator directly, once end to
+end through `apply_state`, which is what proves the array travels out of prism's
+save rather than merely existing in the inventory. Falsified first — with the
+pass-through removed, the end-to-end check fails (`$f7`: 24 → 24 instead of
+24 → 72) while the allocator-level checks correctly still pass.
+
+**The cost was three lines in two files**, not the one the pick-up list promised:
+`wVariableSprites` was not in `inventory.py`'s `WRITABLE_FIELDS`, so `off()` could
+not have resolved it, and adding a field means bumping `INVENTORY_SCHEMA` (3 → 4)
+so cached `inventory.json` files rebuild instead of `KeyError`-ing.
+
+**What this does not close** is the still-vs-walking question itself: no save in
+either tree points a slot at a still sprite, so the *engine* has never confirmed
+our still-length sizing. That was never prism-specific and no code change reaches
+it — see the standing unknown in Absences, below.
+
 ## Absences by design — none permanent but one, all otherwise deferred
 
 Each is a capability a family tree does not have *yet*. None is debt: none is the
@@ -655,29 +710,16 @@ map, on the shared core, proven above.)
 full roadmap, grouped, is in `family-lint-plan.md` ("The roadmap past the
 seam"); the standing items:**
 
-- **Prism variable sprites in the boot** — the shared sprite-VRAM allocator now
-  resolves a *variable* sprite (id ≥ `SPRITE_VARS`) through the save's
-  `wVariableSprites` before sizing it (a still sprite is 4 tiles, a walking NPC
-  12, and guessing wrong shifts every sprite placed after it — the class of glitch
-  that gave Route 32's cooltrainer another sprite's tile). Prism runs the same allocator, so
-  the *sort* half of that fix already applies to it; the *resolution* half is
-  **data-gated** and prism does not yet feed it. `dev_server/apply.py` calls
-  `rebuild_map` without `variable_sprites`, so it takes the empty default and
-  prism's variable sprites still fall back to walking — the old behaviour. This is
-  **not** a seam breach: the fix lives on the neutral side and prism executes it;
-  it is dormant only because prism has not handed it that one per-tree input, the
-  same way each tree supplies its own `SaveOffsets`. `wVariableSprites` is save
-  state, not ROM, so reading it out of *prism's* save layout is the adapter's job —
-  one line, passing `off("wVariableSprites")`'s 16 bytes into the `rebuild_map`
-  call (`apply.py`). Deferred, not done, because the only prism ground-truth save
-  (MtEmberWest) has no variable sprites in its pool, so the fix cannot be verified
-  against a real game-written save the way vanilla's was; wiring it blind would
-  change prism output on an untestable path. Harmless until a prism map that
-  teleports onto a weird-tree/boulder — the same class of glitch vanilla had. See
-  `save-patch.md`.
+- ~~**Prism variable sprites in the boot**~~ — **done (2026-07-31)**, see
+  "Landed", below. The stated blocker — that wiring it blind would change prism
+  output on a path no fixture reaches — turned out to rest on a premise nobody had
+  measured. Measured, it was false: prism's data cannot produce a resolution that
+  differs from the fallback, so the wiring is a provable no-op *today* and the
+  "untestable path" does not exist. What that left behind is the standing unknown
+  below, which was never prism's and is not closed by any code change.
 
-  **The vanilla side is less verified than that reads, and the gap is the same
-  one** (found 2026-07-27, `save-patch.md` has the detail). The stock debug save's
+  **The still-vs-walking half is unverified in *both* trees, and that is what
+  remains** (found 2026-07-27, `save-patch.md` has the detail). The stock debug save's
   `wVariableSprites` is untouched new-game state, and **every set slot in it
   resolves to a *walking* sprite** (`SPRITE_SUDOWOODO`, `SPRITE_RIVAL`,
   `SPRITE_ROCKET`, `SPRITE_JANINE`, `SPRITE_LASS` — all 12 tiles). Since the old
@@ -838,6 +880,23 @@ only New Bark Town catches the pool arriving pre-sorted. The original observatio
 is back with it: sprite 35 → tile 36 on Route 32. **The one gap left:** no fixture
 sizes a still sprite as a walking one, because neither map has a still sprite on
 screen ahead of its NPCs — a busier outdoor save would close it.
+
+**`test_prism_variable_sprites.py` (2026-07-31) guards the prism half of that same
+allocator input, and it is the odd one out: its headline claim is that *nothing
+changes*.** Prism now feeds `wVariableSprites` too, and on prism's current data
+that is a no-op — every `variablesprite` write in the tree resolves to a walking
+sprite, so the resolution and the fallback agree. A test that only asserted "no
+change" would pass on code that ignored the array entirely, so it does three
+things instead: it asserts the **census** that makes the no-op true (one map places
+variable sprites; 8 distinct writes, all walking; no outdoor pool carries one), so
+the day that stops holding the test says so; it proves the no-op on `CastroGym`'s
+real pool; and it **falsifies** — one slot pointed at a still sprite must move the
+tiles, checked both against the allocator and end to end through `apply_state`,
+the latter being what proves the array leaves prism's save at all. With the
+pass-through removed the end-to-end check fails and the allocator checks correctly
+do not, which is how the two levels were told apart. Same standing gap as above,
+from the other side: no *save* in any tree exercises the still branch.
+
 `test_family_sketch.py` covers the new-map form's picture on both real family
 trees — that it draws at the asked size in the tileset's colours, that each way
 it can be wrong is refused *by name*, and that the picture and the write refuse a

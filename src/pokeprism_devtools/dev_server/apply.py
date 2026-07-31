@@ -119,6 +119,11 @@ def apply_state(
         # inventory; vanilla resolves the same fields from its own symbols.
         label = map_label or f"(group {final_group}, id {final_map})"
         changes.append(f"map = {label} at ({final_x}, {final_y})")
+        # The variable-sprite table travels with the map cluster for the same
+        # reason it does in vanilla: the VRAM allocator sizes a variable sprite by
+        # resolving it through this array, and where it sits in *prism's* save is
+        # prism's fact to supply, exactly like SaveOffsets.
+        vs = off("wVariableSprites")
         changes.extend(rebuild.rebuild_map(
             sav,
             rom_path=rom_path,
@@ -134,6 +139,7 @@ def apply_state(
                 map_objects_size=offsets["wMapObjects"]["size"],
             ),
             keep_people=keep_people,
+            variable_sprites=bytes(sav.data[vs:vs + 16]),
             name=map_label or "",
             format=PRISM_FORMAT,
         ))
