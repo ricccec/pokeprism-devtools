@@ -21,8 +21,6 @@ from ...shared import coords
 from ...shared.constants import as_int as _as_int
 from ...shared.coords import Tile
 
-_MACRO_RE = re.compile(r"^\s*(?P<macro>[a-z_]\w*)\s+(?P<args>.*?)\s*(?P<comment>;.*)?$")
-
 #: The repo's dominant style for an entry line: a tab, the macro, `, ` between args.
 _INDENT = "\t"
 
