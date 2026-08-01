@@ -642,7 +642,7 @@ each blob's section, its **bank**, and its **size**:
 
 - block data — exact, via `utils/lzcomp` (omitted if lzcomp isn't built);
 - secondary header — `12 + 12·connections`;
-- primary header — 8 bytes (in the shared `Map Headers` bank);
+- primary header — 9 bytes (in the shared `Map Headers` bank);
 - script/event — exact from the `.map` if the map has its own `Map Scripts
   <Label>` section, else the source `.asm` byte count, marked `(src)`.
 
@@ -837,7 +837,7 @@ uniquely-named section** so the linker can pin it on its own:
 | block data | `Map block data <Label>` | compressing the `.blk` with `utils/lzcomp` (exact) |
 | secondary header | `Second Map Header <Label>` | `12 + 12·connections` |
 
-The positional 8-byte primary header (`map_header`) is *not* freely placeable —
+The positional 9-byte primary header (`map_header`) is *not* freely placeable —
 it's appended to its `MapGroupN` array in the shared `Map Headers` section.
 
 > **Section model.** The tool only manages maps whose blobs live in their own
@@ -938,7 +938,7 @@ already built, so their sizes are read from the current `.map`.
 
 Free-space accounting credits a map's *current* footprint back to its banks
 before re-placing it (so a re-alloc doesn't hunt for new room while ignoring
-the hole it already occupies), and debits the `Map Headers` bank the +8 bytes a
+the hole it already occupies), and debits the `Map Headers` bank the +9 bytes a
 brand-new primary header adds.
 
 ### Exit codes — matches `prism-sym`
