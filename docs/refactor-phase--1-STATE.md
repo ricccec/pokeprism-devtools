@@ -14,11 +14,13 @@ measured with the probe described beside it. Counts carry the date they were tak
   better → [The grep was wrong in both directions](#the-grep-was-wrong-in-both-directions)
 - `maps.py` is a Gen-2 fact — its catalog walk reads all three trees unchanged
   → [Measurement 1](#measurement-1--the-catalog-walk-is-the-familys)
-- `blobsizes.PRIMARY_HEADER_GROWTH` is 8; prism's macro emits 9 bytes
-  → [Measurement 2](#measurement-2--primary_header_growth-is-8-the-macro-emits-9)
-- The macro-line reader is hand-rolled 15 times, with three different answers
+- `blobsizes.PRIMARY_HEADER_GROWTH` was 8; prism's macro emits 9 bytes — **fixed
+  2026-08-01** → [Measurement 2](#measurement-2--primary_header_growth-is-8-the-macro-emits-9)
+- The macro-line reader was hand-rolled 15 times, with three different answers —
+  the label-anchored ones **lifted 2026-08-01**; the rest ask a different question
   → [Measurement 3](#measurement-3--the-macro-line-reader-written-a-dozen-times)
-- Prism's header read path and its own write path disagree about arguments
+- Prism's header read path and its own write path disagreed about arguments —
+  **fixed**, they share one anchor
   → [Measurement 3](#measurement-3--the-macro-line-reader-written-a-dozen-times)
 - **B ships separately** — no CLI needs it; every adapter does, and must not reach C
   → [Resolved: B ships separately](#resolved-b-ships-separately)
@@ -112,9 +114,29 @@ the built `.sym` agrees — consecutive headers are 9 apart
 (`IntroOutside_MapHeader 25:40c0`, `IntroCave_MapHeader 25:40c9`). The constant is
 charged as headroom when `mapfit` places a new map (`mapfit/__init__.py:130`), so
 the packer under-reserves the shared `Map Headers` section by one byte per map
-added. `SECONDARY_BASE = 12` was checked the same way and is correct. Not fixed
-here — this session changed no production code — but it is a one-line fix and a
-test, and it should not wait for the split.
+added. `SECONDARY_BASE = 12` was checked the same way and is correct.
+
+**Fixed 2026-08-01**, before Phase 0, on the tree as it stood. The constant is 9,
+and the three prose restatements of the wrong number went with it
+(`blobsizes`'s own docstring, `mapfit/__init__.baseline_free_space`,
+`packing.FreeSpace.reserve`, plus three lines of `docs/devtools.md`).
+
+The test is `test_mapfit.py::test_header_sizes_match_the_macros`, and it does not
+restate the number either — it **counts the bytes prism's macro body emits**
+(`db`×1, `dw`×2, `dba`×3, `dn` two nibbles to a byte) and compares. Falsified
+first: with the constant back at 8 it fails with `macro emits 9, constant says 8`.
+An unknown directive raises rather than counting nothing, which is also why
+`connection` is not covered — its `if`/`elif` on the direction argument means a
+body's size is not a property of the body.
+
+**Two tests were pinning the bug.** `test_mapfit.py::test_baseline_credit_back`
+asserted the debit was `- 8` as a literal, and `test_mapsource.py`'s
+`gather_blobs` asserted `primary is 8 B` — so the wrong constant had two green
+tests under it, and fixing it turned one of them red. Both now read
+`blobsizes.PRIMARY_HEADER_GROWTH`, leaving exactly one place that states the size
+and one test that checks that place against the macro. **The general form is
+worth carrying into every phase:** a test that restates a constant instead of
+naming it defends nothing, and reads as coverage.
 
 ### Measurement 3 — the macro-line reader, written a dozen times
 
@@ -151,13 +173,42 @@ broken *now*; it breaks the first time somebody annotates a header, and then a
 fishgroup is called `FISHGROUP_SHORE ; a note` and is validated against the
 constants file under that name.
 
-**This is pinned by a test, not only by this paragraph.**
-`tests/test_macroline.py::test_readers_disagree_about_comments` asserts the
-divergence *and* the census, so the day the premise stops holding a test says so.
-When the lift lands, its first check flips to "all three agree" and the census
-check stops being needed — that is what done looks like. Scheduled in
-`refactor-plan.md` under "Before anything", because `wiring/` is product A's code
-and A carves cleaner with one reader in it than with three.
+**Lifted 2026-08-01**, before Phase 0, so `wiring/` carves into product A with
+one reader in it. `wiring/macroline.py` now holds both halves:
+
+- `read_macro_line(line) -> MacroLine(macro, args, comment) | None` — the general
+  one, moved out of `hacks/prism/eventmodel.py:24` where it was mis-filed. The
+  label, where there is one, is `args[0]`.
+- `find_macro_args(text, macro, label) -> list[str] | None` — the anchored one,
+  indexed **the way `splice_macro_args` writes**, which is the property the
+  hand-rolled copies lacked.
+
+Both go through one `_anchored(macro, label)`, and the writer was repointed at it
+too — that shared function *is* the fix. Three call sites moved:
+`hacks/prism/mapsource.py` (`_split_fields` gone, and the connection-block scan
+split out as `_connections_under`), `hacks/vanilla/mapedit.py` (`_find_args` and
+its two module-level regexes gone), and `hacks/prism/eventheader.py`
+(`eventmodel._MACRO_RE` gone).
+
+**The name is `read_macro_line`, not `macro_line` as scheduled** — CLAUDE.md's
+verb-and-object rule is authoritative and a bare noun does not say what the
+function does.
+
+`test_macroline.py::test_readers_agree_about_comments` is the flipped test: it
+asserts all three agree, on a line that carries a comment, **through the
+adapters' real read paths** (`mapsource.primary_header`, the family's `_args_of`)
+rather than against copies of their old regexes — so a site that re-rolls its own
+reader fails here. The census check is gone with the premise it guarded.
+Falsified: widening `_anchored` to fold the comment back into the last argument
+fails all three checks.
+
+**The lift stopped where the shapes stop matching, and that was the instruction.**
+The remaining sites ask different questions, and the one they share is *not* the
+one lifted: `maplint/context.py`, `hacks/prism/spritesets.py` and
+`hacks/polished/read.py:203` each scan **every** line of a macro, with no label to
+anchor on, and pick typed fields out positionally. A label-anchored reader cannot
+serve them. If a second primitive is ever wanted it is "every line of macro X",
+not a flag on this one.
 
 ### Incidental — the LZ codecs, asked about and answered *no*
 

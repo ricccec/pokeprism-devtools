@@ -11,30 +11,22 @@ Nothing is argued here — follow the link when a line matters to you.
 were taken; re-verify the ones your phase leans on, not all of them (plan →
 "Starting a session", step 1).
 
-## Before anything — two defects, neither is refactoring
-
-Found by Phase −1 while reading for something else. Fix on the current tree, each
-with its own test, *before* any phase moves a file — a move must never be the thing
-that fixes a bug. Evidence: `refactor-phase--1-STATE.md`.
-
-- **One macro-line reader** — not started. Prism's header read path and its own
-  write path disagree about a line's arguments. Latent; pinned by
-  `tests/test_macroline.py::test_readers_disagree_about_comments`.
-- **`PRIMARY_HEADER_GROWTH` is 8, the macro emits 9** — not started. `mapfit`
-  under-reserves the shared header section by a byte per map added.
-
-Also outstanding: **push the branch.** Phase 0 clones the repo, and a clone carries
-only what was pushed.
-
 ## Phase −1 · the product survey — **done 2026-08-01**
 
 **Findings:** `refactor-phase--1-STATE.md` · no PLAN (it predates the convention)
 
 - Import greps were wrong three ways; a path literal measures hack-specificity better.
 - `maps.py` is a Gen-2 fact — its catalog walk reads all three trees unchanged.
-- `blobsizes.PRIMARY_HEADER_GROWTH` is 8; prism's macro emits 9 bytes.
-- The macro-line reader is hand-rolled 15 times, with three different answers.
-- Prism's header read path and its own write path disagree about arguments.
+- `blobsizes.PRIMARY_HEADER_GROWTH` was 8; prism's macro emits 9 bytes — **fixed
+  2026-08-01**, and the test counts the macro's bytes rather than restating them.
+- The macro-line reader was hand-rolled 15 times, with three different answers — the
+  label-anchored ones **lifted into `wiring/macroline.py` 2026-08-01**; the rest ask
+  an unanchored question a label-keyed reader cannot serve.
+- Prism's header read path and its own write path disagreed about arguments — **fixed
+  2026-08-01**, they share the writer's anchor.
+- **Both defects had a green test pinning the wrong answer.** A test that restates a
+  constant instead of naming it defends nothing; when a check spells a value out, ask
+  what would ever tell it the value is wrong.
 - **B ships separately** — no CLI needs it; every adapter does, and must not reach C.
 - Every CLI got an (a)/(b)/(c) call; `mapview` is the strongest candidate for (b).
 - `dev_server`'s service half *is* prism's `Plays`, wearing a CLI's name.

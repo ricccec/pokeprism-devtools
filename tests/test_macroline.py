@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for `wiring/macroline.splice_macro_args` — the dialect-free rule for
+"""Tests for `wiring/macroline` — the dialect-free rule for reading and
 rewriting one `macro Label, …` line, argument by argument.
 
 The rule this guards is the one the whole header-edit path rests on: *an argument
@@ -8,14 +8,13 @@ intact, and a label that is a prefix of another (`Route30` vs `Route30Gate`) is
 not matched by its neighbour's line. Each is shown failing first where a wrong
 answer would otherwise look fine.
 
-The middle section pins a **finding, not a rule**: the same "read one macro line's
-arguments" mechanic is hand-rolled a dozen times across the repo with three
-different answers about a trailing comment, and prism's reader disagrees with
-prism's own writer. It is latent today only because no prism header carries a
-comment — which the census there checks, so the day it stops being true a test
-says so instead of a map header quietly gaining a fishgroup called
-`FISHGROUP_SHORE ; a note`. Recorded in `docs/refactor-STATE.md`, scheduled in
-`docs/refactor-plan.md` under "Before anything".
+The middle section guards the **reader and the writer agreeing**. They did not
+until the reader was lifted here: it was hand-rolled once per site, and prism's
+copy folded a trailing comment into the last argument while prism's own writer
+kept it separate, so the same line had two different argument lists depending on
+which half of the edit cycle asked. It was latent only because no map header in
+any tree carries a comment — so the line under test carries one. Recorded in
+`docs/refactor-STATE.md`, with the measurement in `refactor-phase--1-STATE.md`.
 
 The last section is a **byte-identical guard on prism**: the splicer was lifted
 out of `hacks/prism/mapedit.py` and prism repointed at it, so this proves the
@@ -147,64 +146,65 @@ def test_prism_byte_identical() -> None:
           and (PRISM / mapedit.SECONDARY).read_text() == before_secondary)
 
 
-def test_readers_disagree_about_comments() -> None:
-    """The three implementations of *read one macro line's arguments*, side by side.
+def test_readers_agree_about_comments() -> None:
+    """*Read one macro line's arguments* — one implementation, three callers.
 
-    There is one writer (`splice_macro_args`) and two hand-rolled readers, and they
-    do not agree about a trailing `; comment`: the family drops it, prism folds it
-    into the last argument, the writer preserves it. So prism's read path and
-    prism's *own* write path disagree about what the arguments of one line are.
+    This used to pin a divergence: prism's reader folded a trailing `; comment`
+    into the last argument, the family's dropped it, the writer preserved it, so
+    prism's read path and prism's *own* write path disagreed about what the
+    arguments of one line were. The reader was lifted to `wiring/macroline`
+    beside the writer (`docs/refactor-STATE.md`, Phase −1), so the assertion
+    is now that **all three agree**, and it is made through the two adapters'
+    real read paths rather than against a copy of their regexes — a site that
+    quietly re-rolled its own would fail here.
 
-    This test does not assert that the divergence is right. It **pins it in place
-    so it cannot be rediscovered a third time**, and it fails the day the premise
-    that keeps it harmless stops holding — see the census below. When the reader is
-    lifted (`refactor-plan.md`, "Before anything"), the first check flips to *all
-    three agree* and the second one stops being needed. That is what done looks
-    like.
+    The line carries a comment on purpose. No header in any tree does today, but
+    that was the only reason the old divergence was harmless, and this is what
+    the fix is for.
     """
-    print("\nthe three macro-line readers (see refactor-STATE.md)")
+    print("\nthe one macro-line reader, from both adapters' read paths")
 
-    import re
+    from pokeprism_devtools.hacks.prism import mapsource
+    from pokeprism_devtools.hacks.vanilla import mapedit as family_mapedit
+    from pokeprism_devtools.wiring.macroline import read_macro_line
 
-    from pokeprism_devtools.hacks.prism.mapsource import _split_fields
-    from pokeprism_devtools.hacks.vanilla.mapedit import _find_args  # noqa: F401
+    args = ("TILESET_CAVE, CAVE, LM_MT_EMBER, MUSIC_CAVE, 0, PALETTE_NITE, "
+            "FISHGROUP_SHORE")
+    label = "MtEmberSmallRoom"
+    line = f"\tmap_header {label}, {args} ; a note"
+    expected = [a.strip() for a in args.split(",")]
 
-    line = ("\tmap_header MtEmberSmallRoom, TILESET_CAVE, CAVE, LM_MT_EMBER, "
-            "MUSIC_CAVE, 0, PALETTE_NITE, FISHGROUP_SHORE ; a note")
+    # Prism's read path, through the file layout it actually reads.
+    root = _tree("")
+    (root / "maps").mkdir()
+    (root / "maps/map_headers.asm").write_text(line + "\n")
+    prism = mapsource.primary_header(root, label)
+    check("prism's reader drops the comment from the last argument",
+          prism.fishgroup == "FISHGROUP_SHORE", repr(prism.fishgroup))
 
-    prism = _split_fields(
-        re.match(r"^\s*map_header\s+MtEmberSmallRoom\s*,(.*)$", line).group(1))
-    family = [a.strip() for a in
-              re.match(r"^\s*map_header\s+(\w+)\s*,\s*(.+)", line)
-              .group(2).split(";")[0].split(",")]
-    w = re.match(r"^(?P<head>\s*map_header\s+MtEmberSmallRoom\s*,)"
-                 r"(?P<args>.*?)(?P<comment>\s*;.*)?$", line)
-    writer = [a.strip() for a in w.group("args").split(",")]
+    # The family's read path, on its own two-file layout.
+    family_root = _tree("")
+    (family_root / "data/maps").mkdir(parents=True)
+    (family_root / family_mapedit.MAPS).write_text(
+        f"\tmap {label}, {args} ; a note\n")
+    family = family_mapedit._args_of(family_root, family_mapedit.MAPS,
+                                     "map", label)
+    check("the family's reader agrees, argument for argument",
+          family == expected, f"{family}")
 
-    check("the family reader agrees with the writer about the arguments",
-          family == writer, f"{family[-1]!r} vs {writer[-1]!r}")
-    check("prism's reader does NOT — the comment lands in the last argument",
-          prism != writer and prism[-1].endswith("; a note"), repr(prism[-1]))
-    check("the writer keeps the comment it found",
-          w.group("comment") == " ; a note", repr(w.group("comment")))
+    # And the writer, which is what those indices are handed back to.
+    e = splice_macro_args(root, "maps/map_headers.asm", "map_header", label,
+                          {6: "FISHGROUP_LAKE"}, "d")
+    check("the writer indexes the same arguments and keeps the comment",
+          e.new_text.strip().endswith("FISHGROUP_LAKE ; a note"),
+          e.new_text.strip())
 
-    # The premise that keeps prism's version harmless: no prism header carries a
-    # comment today. This is the check that announces the day that stops being
-    # true — at which point prism reads a fishgroup called "FISHGROUP_SHORE ; a
-    # note" and validates it against the constants file.
-    if not PRISM.exists():
-        print(f"  --   no pokeprism checkout at {PRISM} — census skipped")
-        return
-    from pokeprism_devtools.hacks.prism import mapedit
-    commented = {}
-    for rel, macro in ((mapedit.PRIMARY, "map_header"),
-                       (mapedit.SECONDARY, "map_header_2")):
-        rx = re.compile(rf"^\s*{macro}\s+\w+\s*,.*;")
-        commented[rel] = sum(bool(rx.match(ln))
-                             for ln in (PRISM / rel).read_text().splitlines())
-    check("no prism map header carries a trailing comment, so the gap is latent",
-          not any(commented.values()),
-          f"{commented} — the reader must be lifted before this ships")
+    # The general reader, whose first argument is the label — the shape prism's
+    # event header wants, and the one that must not be confused with the above.
+    read = read_macro_line(line)
+    check("read_macro_line splits macro / args / comment",
+          read.macro == "map_header" and read.args == [label, *expected]
+          and read.comment == "; a note", f"{read}")
 
 
 def _some_prism_label() -> str | None:
@@ -220,7 +220,7 @@ def _some_prism_label() -> str | None:
 
 def main() -> int:
     test_splicer()
-    test_readers_disagree_about_comments()
+    test_readers_agree_about_comments()
     test_prism_byte_identical()
     print("\nall checks passed" if not _failures else f"\n{_failures} FAILED")
     return 1 if _failures else 0

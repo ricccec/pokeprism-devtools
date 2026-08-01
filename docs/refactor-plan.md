@@ -86,31 +86,16 @@ never grows past a sketch and a link, and that is how the cap survives six phase
 Only then does the phase start. If step 1 or 2 changes what the phase should even be,
 that is a result — record it and re-plan.
 
-## Before anything
-
-Three items. **The last two are not refactoring** — they are defects that exist today,
-found by Phase −1 while reading for something else. They are here rather than in a
-phase because a move must never be the thing that fixes a bug: you could never again
-say whether the move was behaviour-neutral. Fix them on the current tree, each with
-its own test, and the phases keep their "nothing changed" claim honest. Evidence for
-all three is in `refactor-STATE.md`.
-
-- **Push the branch.** A five-phase refactor on an unpushed branch means one bad day
-  loses both, and Phase 0 clones the repo — which carries only what was pushed.
-- **One macro-line reader.** Prism's header read path and its own write path disagree
-  about what a line's arguments are, because the reader is hand-rolled once per site.
-  Latent today, and pinned by
-  `tests/test_macroline.py::test_readers_disagree_about_comments`, which flips to "all
-  three agree" when this is done. Before Phase 0: `wiring/` is A's code, and A carves
-  cleaner with one reader in it than three.
-- **`blobsizes.PRIMARY_HEADER_GROWTH` is 8; the macro emits 9.** `mapfit`
-  under-reserves the shared header section by a byte per map added. One line, one test.
-
 ## Ground rules
 
 **`CLAUDE.md` is the standard**, and it is authoritative. Read it carefully and apply
 the rules during this refactoring. **The job is done only once every single file in 
 this repo comply with all the rules.**
+
+**A move must never be the thing that fixes a bug.** Find a defect mid-phase and it
+is fixed on the tree as it stands, with its own test, before the file moves —
+otherwise no one can ever say again whether the move was behaviour-neutral, and every
+phase's "nothing changed" claim is worth less.
 
 Two rules carry more weight in this refactor than anywhere else, and are worth
 re-reading before each phase rather than re-typing: **naming files and folders**
@@ -183,8 +168,8 @@ gate: mechanical, no false positives.
 ### Phase −1 — The product survey · **done, answers in `refactor-STATE.md`**
 Per module: **is this a prism fact or a Gen-2/pret fact?** It produced a product
 assignment for every surveyed module, a three-way call per CLI, the B-vs-C
-decision, three measurements that each moved an answer, two defects now listed
-under "Before anything", and one question handed to Phase 5.
+decision, three measurements that each moved an answer, two defects since fixed on
+the untouched tree, and one question handed to Phase 5.
 
 ### Phase 0 — Split the git history, while the tree is still untouched
 Before any file moves. Clone once per product and `git filter-repo --path <dir>` to

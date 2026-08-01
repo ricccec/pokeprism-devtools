@@ -35,14 +35,13 @@ module serves both trees; only the dialect it is called with differs.
 from __future__ import annotations
 
 import difflib
-import re
 
 from pathlib import Path
 
 from ...shared.constants import read_set
 from ...studio.actions import Action, ActionError, Field, Result
 from ...wiring.editvocab import Change, EditError, same
-from ...wiring.macroline import splice_macro_args
+from ...wiring.macroline import find_macro_args, splice_macro_args
 
 #: The two files the header is split across — the same in both family trees.
 MAPS = "data/maps/maps.asm"
@@ -50,9 +49,6 @@ ATTRS = "data/maps/attributes.asm"
 #: Where the border block sits in `map_attributes`'s arguments, after the label:
 #: the map const (read-only), then the border block.
 BORDER = 1
-
-_MAP = re.compile(r"^\s*map\s+(\w+)\s*,\s*(.+)")
-_ATTR = re.compile(r"^\s*map_attributes\s+(\w+)\s*,\s*(.+)")
 
 
 def values(root: Path, label: str, dialect) -> dict[str, str]:
@@ -63,14 +59,14 @@ def values(root: Path, label: str, dialect) -> dict[str, str]:
     argument the writer will splice. Keyed by the dialect's `header_args`, so the
     prefill names line up with the fields and the splice indices exactly.
     """
-    header = _find_args(root, MAPS, _MAP, label)
+    header = _args_of(root, MAPS, "map", label)
     if header is None:
         raise EditError(f"{label} has no map line in {MAPS}")
     if len(header) < len(dialect.header_args):
         raise EditError(
             f"{label}'s map line has {len(header)} arguments; this tree's macro "
             f"takes {len(dialect.header_args)} ({', '.join(dialect.header_args)})")
-    attr = _find_args(root, ATTRS, _ATTR, label)
+    attr = _args_of(root, ATTRS, "map_attributes", label)
     if attr is None or len(attr) <= BORDER:
         raise EditError(f"{label} has no map_attributes line in {ATTRS}")
 
@@ -142,18 +138,16 @@ def _unknown(root: Path, dialect, set_of, was: dict[str, str],
     return out
 
 
-def _find_args(root: Path, rel: str, rx: re.Pattern, label: str) -> list[str] | None:
-    """The comma-separated arguments of the `rx` line for `label`, or None.
+def _args_of(root: Path, rel: str, macro: str, label: str) -> list[str] | None:
+    """This map's `macro` arguments in `rel`, or None if the file has no such line.
 
-    Anchored on the label by the regex, and the comment is dropped before the
-    split so a trailing `; …` never becomes a phantom argument."""
+    The read half of `wiring/macroline`, so the index a field is read at is the
+    index :func:`edit_map` splices it back at.
+    """
     path = root / rel
     if not path.exists():
         return None
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if (m := rx.match(line)) and m.group(1) == label:
-            return [a.strip() for a in m.group(2).split(";")[0].split(",")]
-    return None
+    return find_macro_args(path.read_text(encoding="utf-8"), macro, label)
 
 
 # --------------------------------------------------------------------------- #

@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from ...wiring.macroline import find_macro_args
 from .mapspec import MapSpec
 
 
@@ -98,33 +99,23 @@ class SecondaryHeader:
     connections: list[str]
 
 
-def _split_fields(rest: str) -> list[str]:
-    return [f.strip() for f in rest.split(",")]
-
-
 def primary_header(root: Path, label: str) -> PrimaryHeader | None:
     """Parse `map_header <label>, TILESET, PERMISSION, LANDMARK, MUSIC, phone,
     PALETTE, FISHGROUP` from maps/map_headers.asm."""
     path = root / "maps/map_headers.asm"
     if not path.exists():
         return None
-    rx = re.compile(rf"^\s*map_header\s+{re.escape(label)}\s*,(.*)$")
-    for ln in path.read_text().splitlines():
-        m = rx.match(ln)
-        if not m:
-            continue
-        f = _split_fields(m.group(1))
-        if len(f) < 7:
-            return None
-        try:
-            phone = int(f[4], 0)
-        except ValueError:
-            phone = 0
-        return PrimaryHeader(
-            label=label, tileset=f[0], permission=f[1], landmark=f[2],
-            music=f[3], phone=phone, palette=f[5], fishgroup=f[6],
-        )
-    return None
+    f = find_macro_args(path.read_text(), "map_header", label)
+    if f is None or len(f) < 7:
+        return None
+    try:
+        phone = int(f[4], 0)
+    except ValueError:
+        phone = 0
+    return PrimaryHeader(
+        label=label, tileset=f[0], permission=f[1], landmark=f[2],
+        music=f[3], phone=phone, palette=f[5], fishgroup=f[6],
+    )
 
 
 def secondary_header(root: Path, label: str) -> SecondaryHeader | None:
@@ -134,30 +125,37 @@ def secondary_header(root: Path, label: str) -> SecondaryHeader | None:
     path = root / "maps/second_map_headers.asm"
     if not path.exists():
         return None
-    lines = path.read_text().splitlines()
-    head = re.compile(rf"^\s*map_header_2\s+{re.escape(label)}\s*,(.*)$")
+    text = path.read_text()
+    f = find_macro_args(text, "map_header_2", label)
+    if f is None or len(f) < 3:
+        return None
+    return SecondaryHeader(
+        label=label, const=f[0], border_block=f[1], conn_flags=f[2],
+        connections=_connections_under(text, label),
+    )
+
+
+def _connections_under(text: str, label: str) -> list[str]:
+    """The contiguous `connection …` lines beneath this map's `map_header_2`.
+
+    A whole-line capture, comment and all, because a connection is handed on as
+    written; anything that is not a `connection` line — a blank, the next
+    `map_header_2`, a SECTION — ends the block.
+    """
+    head = re.compile(rf"^\s*map_header_2\s+{re.escape(label)}\s*,")
     conn = re.compile(r"^\s*connection\s+(.*)$")
+    lines = text.splitlines()
     for i, ln in enumerate(lines):
-        m = head.match(ln)
-        if not m:
+        if not head.match(ln):
             continue
-        f = _split_fields(m.group(1))
-        if len(f) < 3:
-            return None
-        connections: list[str] = []
+        out = []
         for nxt in lines[i + 1:]:
-            cm = conn.match(nxt)
-            if cm:
-                connections.append(cm.group(1).strip())
-                continue
-            if nxt.strip() == "":
-                break          # blank line ends this map's connection block
-            break              # any other line (next map_header_2 / SECTION)
-        return SecondaryHeader(
-            label=label, const=f[0], border_block=f[1], conn_flags=f[2],
-            connections=connections,
-        )
-    return None
+            m = conn.match(nxt)
+            if not m:
+                break
+            out.append(m.group(1).strip())
+        return out
+    return []
 
 
 def blk_path(root: Path, label: str) -> str | None:
