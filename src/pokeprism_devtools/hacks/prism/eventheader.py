@@ -41,18 +41,19 @@ from ...shared.edits import Edit
 # What an entry *means* is :mod:`.eventmodel`; this module is about the file it
 # lives in. Re-exported, because every caller wants both and the split is ours,
 # not theirs.
+from ...wiring.macroline import read_macro_line
 from .eventmodel import (LIST_MACROS, LIST_ORDER, PROPS, Entry, EventList,
                          Handle, ListKind, Prop, Trainer, UnparseableHeader,
                          as_int, format_entry, markers, script_block,
-                         trainer_of, _INDENT, _MACRO_RE, _split_args)
+                         trainer_of, _INDENT, _split_args)
 
 __all__ = ["LIST_MACROS", "LIST_ORDER", "PROPS", "Entry", "EventHeader",
            "EventList", "Handle", "ListKind", "Prop", "Trainer",
            "UnparseableHeader", "as_int", "format_entry", "markers",
            "parse_map", "parse_text", "script_block", "trainer_of"]
 
-#: Finding the block in a file, which is this module's whole job. The regex that
-#: reads *one line of it* is `eventmodel._MACRO_RE` — a different question.
+#: Finding the block in a file, which is this module's whole job. Reading *one
+#: line of it* is `wiring.macroline.read_macro_line` — a different question.
 _HEADER_RE = re.compile(r"^(\w+)_MapEventHeader::?(.*)$")
 _DB_RE = re.compile(r"^(?P<prefix>.*?\bdb\s+)(?P<args>.+?)\s*(?P<comment>;.*)?$")
 
@@ -154,8 +155,8 @@ class EventHeader:
         if chosen not in LIST_MACROS[kind]:
             raise UnparseableHeader(f"{chosen} is not a {kind.value} macro — those "
                                     f"are {', '.join(LIST_MACROS[kind])}")
-        m = _MACRO_RE.match(entry.raw)
-        comment = m.group("comment") if m else None
+        was = read_macro_line(entry.raw)
+        comment = was.comment if was else ""
         line = format_entry(chosen, args)
         self.lines[entry.lineno] = f"{line} {comment}" if comment else line
         self._reparse()
@@ -321,11 +322,10 @@ def _entry_at(lines: list[str], j: int, legal: tuple[str, ...]) -> Entry | None 
         return _SKIP
     if s.startswith("."):
         return None
-    m = _MACRO_RE.match(line)
-    if not m or m.group("macro") not in legal:
+    read = read_macro_line(line)
+    if read is None or read.macro not in legal:
         return None
-    return Entry(macro=m.group("macro"), args=_split_args(m.group("args")),
-                 lineno=j, raw=line)
+    return Entry(macro=read.macro, args=read.args, lineno=j, raw=line)
 
 
 def _next_count(path: Path, lines: list[str], i: int, kind: ListKind) -> tuple[int, int]:
