@@ -422,3 +422,124 @@ turn out to share evidence.
 183 files, 38,909 LOC. Eight files over 500, fifty-seven in 250–500. 1,236 `#:`
 doc-comment lines, 2,726 comment lines total. `hacks/prism` is 10,577 LOC across
 47 files — big because prism is big, averaging 225/file, and not a target.
+
+## Phase −1 — findings
+
+Done 2026-08-01. No code changed. Each module below was read and asked the one
+question: **prism fact, or Gen-2/pret fact?** Two claims were not settled by
+reading and were measured instead — both are recorded in place, and both moved an
+answer.
+
+**The grep was wrong in both directions again, and worse than for `render.py`.**
+The dependency table in "The four products" was assembled from static imports. Two
+of its rows do not survive an import-time trace, and one CLI is four times more
+prism than its row says:
+
+| CLI | the table said | actually reaches (import-time) |
+|---|---|---|
+| `metatiles` | `render` | **nothing** — the `render` import is inside two functions (Pillow is lazy) |
+| `map_show` | `blobsizes`, `mapspec` | **ten**: `blobsizes blocksrc eventheader eventmodel mapformat maps mapsource mapspec render swatches` |
+| `maplint` | (not listed) | **nothing** at import; every rule module is imported inside `run` |
+
+And the reverse error: `gfx_view` and `metatiles` reach *less* prism through
+imports than they contain. Both hardcode prism's tileset file naming in their own
+bodies — `tilesets/NN_metatiles.bin`, `gfx/tilesets/NN.2bpp`, `tilesets/bg.pal`,
+where the family names tilesets by name (`battle_factory.2bpp`) — and `metatiles`
+additionally reads `maps/blockdata.asm`, `maps/map_headers.asm` and
+`constants/tilemap_constants.asm` straight off disk. An import edge is not the
+unit of hack-specificity; **a path literal is.**
+
+### Per-module verdicts
+
+| module | LOC | fact | product | why |
+|---|---|---|---|---|
+| `hacks/prism/render.py` | 338 | **both** | split: pipeline → **A**, tables → **D** | as already argued; the survey adds two functions to the prism side that the earlier read left on the fence — `load_tileset_files` (prism's numeric tileset naming) and `get_map_palettes` (transcribes prism's `LoadMapPals`) |
+| `hacks/prism/maps.py` | 92 | **Gen-2** | **A** | the catalog walk is the family's, unmodified; see the measurement below |
+| `hacks/prism/mapsource.py` § `enclosing_section`, `section_banks` | ~40 | **pret/RGBDS** | **A** | `SECTION` membership and the linker-script format are RGBDS, not prism — pokecrystal's `layout.link` has the same syntax; only the path (`contents/romx.link` vs `layout.link`) is prism's. Belongs next to `shared/mapfile.py`, which already parses the *other* RGBDS artefact |
+| `hacks/prism/mapsource.py` § header/path parsers | ~250 | **prism** | **D** | `map_header`/`map_header_2` is prism's old-pret two-header layout; the family split the same facts across `data/maps/maps.asm` + `data/maps/attributes.asm` years ago. But the *mechanic* — find the macro line for this label, split its comma arguments, drop the trailing comment — is already written a second time as `hacks/vanilla/mapedit._find_args`, and a third time for writes as `wiring/macroline.splice_macro_args`. One neutral reader, three dialects |
+| `hacks/prism/mapspec.py` | 259 | **prism** | **D** | bank placement. `AUTO`/`INTO`/`BANK`, the `"<Kind> <Label>"` section convention, `romx.link` pinning, and a field list that is prism's two header macros argument for argument. Nothing here is a question pokecrystal has — it is not 91% full and does not pin sections by hand |
+| `hacks/prism/blobsizes.py` | 49 | **prism** | **D** | the byte sizes of prism's own macros, plus `utils/lzcomp` (the family builds `tools/lzcomp`). One of the three numbers is wrong — see below |
+| `dev_server/emulator.py`, `launcher.py` | 216 | **Gen-2** | **A** | "launching a Game Boy ROM and killing the last window is the same whether the ROM is prism's or a stock pokecrystal's" — and that is no longer a claim: `hacks/vanilla/play.py:26` and `hacks/polished/play.py:27` both already import `dev_server.emulator`. Two family adapters depend on it today |
+| `dev_server/apply.py`, `inventory.py`, `playtest.py` | 1,062 | **prism** | **D, and specifically (a)** | this *is* prism's `Plays` implementation. `hacks/prism/play.py` (146 LOC) is a wrapper over it — the adapter imports the CLI package, not the other way round. The neutral half was already extracted: `shared/overworld/rebuild.py` says so in its header |
+| `dev_server/cli.py`, `tui.py`, `test_maps.py` | 1,295 | **prism** | **D, (c)** | two front ends and a sweep script over the service above. Phase 4's `DevServer` split is unaffected by which repo they land in |
+| `maplint/diagnostics.py` | 103 | **Gen-2** | **B** | `Diagnostic`, `Severity`, `apply_suppressions` and the `; maplint: ignore[…]` channel. Three consumers today and only one is prism's: `hacks/vanilla/lint/context.py:23`, `hacks/seam.py:34` (the `Lints` protocol's return type) and `studio/session.py:41`. This is contract vocabulary filed inside a prism CLI |
+| `maplint/textfit.py` | 33 | **Gen-2** | **A** | the width comparisons themselves; `hacks/vanilla/lint/rules.py:25` already imports it |
+| `maplint/context.py` + the seven prism rule modules | 1,546 | **prism** | **D** | Phase 5's subject, unchanged. Listed here only so the package's split is on one page |
+| `maplint/rules_geometry.py`, `__init__.py` | 435 | **untested** | defer to Phase 5 | prism-free by import, but both reach prism through `.context`. Whether the geometry rules are Gen-2 facts is the Phase-5 question and evidence for it was not gathered here |
+| `usage`, `sym_lookup` | 592 | **pret/RGBDS** | **A** | unchanged from the plan; confirmed — neither imports any `hacks/` module, at import time or lazily |
+
+### Two measurements
+
+**The catalog walk is the family's, not prism's — run on all three trees.** The
+plan's likeliest reading of `maps.py` was "prism's own dimension macro, therefore
+prism's". It is not. Prism's `mapgroup NAME, H, W` and the family's
+`map_const NAME, W, H` differ in exactly two things — the macro's name and whether
+height comes first — and the group/enum counting (`newgroup` bumps the group,
+resets the within-group enum to 1) is byte-identical across pokecrystal,
+polishedcrystal and pokeprism. Prism's parser with those two values changed reads:
+
+    pokeprism         452 maps, groups 1..96   first=(INTRO_OUTSIDE, 1, 1, 18, 11)
+    pokecrystal       388 maps, groups 1..26   first=(OLIVINE_POKECENTER_1F, 1, 1, 4, 5)
+    polishedcrystal   607 maps, groups 1..37   first=(OLIVINE_POKECENTER_1F, 1, 1, 4, 6)
+
+and the dialect it needs is **already declared data on the neutral side**:
+`wiring/mapresize.MapShape(path, macro, height_first)` carries all three values and
+is already handed prism's and the family's. `MapShape` reads *one* map's dimensions
+by const; the whole-file catalog walk is the piece missing from it. So `maps.py`
+is not a port, it is a `MapShape` method that has not been written yet.
+
+**`blobsizes.PRIMARY_HEADER_GROWTH = 8` is wrong; prism's `map_header` is 9
+bytes.** `macros/map.asm:94` emits `db`×3 + `dw` + `db`×2 + `dn` + `db` = 9, and
+the built `.sym` agrees — consecutive headers are 9 apart
+(`IntroOutside_MapHeader 25:40c0`, `IntroCave_MapHeader 25:40c9`). The constant is
+charged as headroom when `mapfit` places a new map (`mapfit/__init__.py:130`), so
+the packer under-reserves the shared `Map Headers` section by one byte per map
+added. `SECONDARY_BASE = 12` was checked the same way and is correct. Not fixed
+here — this session changed no code — but it is a one-line fix and a test, and it
+should not wait for the split.
+
+### The three-way call, per CLI
+
+| CLI | call | reason |
+|---|---|---|
+| `prism-usage` (`usage`) | — | product **A** outright; asks an RGBDS question, names no hack |
+| `prism-sym` (`sym_lookup`) | — | product **A** outright; same |
+| `prism-mapview` (`mapview`) | **(b)** | the strongest candidate in the repo, ahead of the two the plan nominated: its catalog dependency is now proven neutral, `MapFormat` already crosses the seam as declared data, and `shared/overworld/blockdata.py` already reads all three trees. Only `render`'s palette tables stand between it and a family tool |
+| `prism-gfx` (`gfx_view`) | **(b)** | the plan's call stands, at a higher price than the import graph implied: the palette tables *and* the tileset file-naming scheme have to cross, and the naming is hardcoded in `gfx_view` itself, not only in `render` |
+| `prism-metatiles` (`metatiles`) | **(b)** | same question every hack has (which metatiles does this tileset actually use), same price plus two more prism paths of its own (`maps/blockdata.asm`, `maps/map_headers.asm`). The largest of the (b)s and the one to do last |
+| `prism-maps` (`map_inspect`) | **(c)** | a table of prism's map catalog. Half its dependency is now neutral (`maps.py`), but the other half is `mapsource`'s two-header dialect and the four asm files it names |
+| `prism-map` (`map_show`) | **(c)** | reaches ten prism modules including the event-header parser and the block-data renderer; it is prism's map inspector and nothing smaller |
+| `prism-newmap` (`map_new`) | **(c)** | authors a map into prism's five asm files and emits a `MapSpec` for the packer. The family's equivalent already exists on the other side of the seam as `hacks/vanilla/newmap.py` — the studio's new-map form, not a CLI |
+| `prism-mapfit` (`mapfit`) | **(c)** | bank placement in a 91%-full ROM. The purest (c) in the repo |
+| `prism-maplint` (`maplint`) | **(c)**, after (b) is carved out | ships as prism's linter; `diagnostics.py` leaves for **B** and `textfit.py` for **A** first, because the family adapters already import both |
+| `prism-dev` (`dev_server`) | **(a)** for `apply`/`inventory`/`playtest`, **(c)** for `cli`/`tui`/`test_maps`, **A** for `emulator`/`launcher` | the one CLI that is genuinely adapter work wearing a CLI's name — exactly the "two things wearing one name" the (a) bullet warns about, and the warning is right: it should stop being a CLI package that an adapter imports |
+
+Nothing lands in **(a)** except the dev-server's service half, which is what the
+plan predicted for (a) — rare, and a sign of misfiling rather than a design.
+
+### Resolved: B ships separately
+
+**The plan's criterion returns empty, so it does not decide.** The question was
+"who needs the vocabulary besides the IDE", and the answer for the CLIs is
+*nobody*: not one of the eleven CLI packages imports `studio/` or `hacks/seam.py`,
+at import time or lazily — traced, not grepped, by importing each entry point with
+a cold `sys.modules` and counting what landed. They consume prism's *parsers*
+(`maps`, `mapsource`, `mapspec`, `render`, `savefile`), never its contract. The
+worry that folding B into C would drag the IDE into every CLI was unfounded in
+both directions: the CLIs need neither B nor C.
+
+**So the decision falls to the remaining constituency, and there it is one-sided.**
+Three in-tree adapters need B, plus every third-party adapter the goal exists to
+serve. B inside C makes `adapter → IDE` a real dependency edge — the exact edge
+Phase 2's acceptance test greps for, which cannot both be the gate and be where
+the vocabulary lives. And the "it costs nothing" half does not hold on measurement:
+**12 of `studio/`'s 19 modules import `textual` at module scope.** The package is
+importable without a widget library only because `__init__` imports `session` and
+defers `app`, an invariant protected by nothing but one lazy import and a
+docstring. One `import textual` at the top of any studio module would break every
+adapter in the world.
+
+`maplint/diagnostics.py` settles the last of it: it is contract vocabulary
+(`seam.Lints` returns it) that **two family adapters already import without the
+IDE in sight**. B has a live constituency outside C today, in a package neither of
+them belongs to. It ships separately.
