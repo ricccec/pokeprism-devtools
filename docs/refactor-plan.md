@@ -1,99 +1,122 @@
 # The refactoring plan — from one repo to four products
 
-**Status: draft, under discussion.** Nothing here has been executed.
+**This file is the argument**: what we are doing, in what order, and why. It is not
+a status source. Three kinds of file, and each phase owns two of them:
+
+- `refactor-STATE.md` — the index. Every phase, its files, one line per finding.
+- `refactor-phase-<n>-PLAN.md` — a phase's working plan, written when it opens.
+- `refactor-phase-<n>-STATE.md` — that phase's findings, written as it runs.
 
 ## The goal
 
-This codebase contains 4 things that deserve their own place:
-1. A set of utilities for reading and manipulating assembly files belonging to the
-pret-disassembly family of pokemon ROM-hacks;
-1-bis. Utilities specifically designed for `Pokemon Prism`, a ROM-hack of Pokemon
-Crystal;
-2. CLI tools for working on these hacks;
-2-bis. Prism-specifica CLI tools;
-3. `Prism-Studio`, a TUI tool for these hacks that, despite its name, could be used
-(or extended to use) any hack in the family;
-4. `Prism-studio` and CLI tools adapters meant for specific ROM hacks in the family
-(currently `Pokemon Prism`, `Crystal` and `Polished Crystal`)
+Four things in this repo deserve their own place: a library for reading and editing
+pret-family ROM-hack assembly; the CLI tools built on it; the studio (a TUI that,
+despite its name, suits any hack in the family); and the per-hack adapters that teach
+both about one tree — today `Pokemon Prism`, `Crystal` and `Polished Crystal`.
 
+The studio and some of the CLIs are meant to be *extended with hack adapters*.
+Everything below serves one measurable outcome:
 
-The studio and some of the CLI tools is meant to be *extended with hack adapters*. Everything below
-serves one measurable outcome:
+> A developer with their own ROM hack can answer **"what do I need to do to make an
+> adapter?"** by reading one small package — and nothing they write ever imports
+> anything from above the seam.
 
-> A developer with their own ROM hack can answer **"what do I need to do to make
-> an adapter?"** by reading one small package — and nothing they write ever
-> imports anything from above the seam.
+A rule about **direction, not quantity**. An adapter is *expected* to lean on the
+shared library and the domain entities; extracting those is why they exist. What it
+must never import is the far side of the seam — the IDE, its widgets, its screens,
+its edit cycle. Imports point down, never up.
 
-This is a rule about **direction, not quantity**. An adapter is *expected* to lean
-on the shared library and the domain entities; extracting those is why they exist.
-What an adapter must never import is anything on the far side of the seam — the
-IDE, its widgets, its screens, its edit cycle. Imports point down, never up.
-
-That is not true today. All three in-tree adapters import the IDE at runtime
+That is not true today: all three in-tree adapters import the IDE at runtime
 (`hacks/prism/read.py:33`, `hacks/polished/read.py:20`,
-`hacks/vanilla/eventblock.py:54`, and six more), so the seam the branch was built
-to create does not hold at the only place it matters.
+`hacks/vanilla/eventblock.py:54`, and six more), so the seam this branch was built to
+create does not hold at the only place it matters.
+
+## Maintaining this file
+
+> A multi-session, long-horizon refactoring carried by a multitude of agents. This
+> document and `refactor-STATE.md` are the primary means of information sharing, so
+> keeping them current and easy to digest is essential.
+
+- **Write it down.** Anything contradicting the plan, any fact about the refactoring
+  (a bug, a duplicate, a convention violated), anything that might help another agent
+  later even if not you now. Doing it now beats re-discovering it every session.
+- **Replace, never append.** A correction *removes* the passage it corrects. Never
+  leave the wrong version standing with a note beneath it: the next agent reads both
+  and believes the first.
+- **Keep this file under ~250 lines, no duplicates.** Written for agents, not humans.
+
+**Which file — not a choice.** A finding, a count, a measurement, a verdict: your
+phase's `-STATE.md`, plus **the same one line in two places** — the phase entry in
+`refactor-STATE.md`, and a linked copy at the top of your `-STATE.md` pointing at
+the section that proves it. That pair is what lets an agent arrive from the index
+and land on the evidence without reading the file. How you intend to do the phase:
+its `-PLAN.md`. **This file** changes only when *intent* does. If you cannot tell
+which it is, it is a finding.
+
+## Starting a session, or starting a phase
+
+**Fresh session, or an existing one opening a new phase — the same three steps.** Do
+them before writing any code or any plan.
+
+A phase is planned before its evidence exists; that is what planning is. The phases
+below were drawn from an import grep, and Phase −1 found three of its rows wrong and
+a fourth short by eight modules. Going straight from plan to work would have mis-filed
+three tools and never learned why. **So the first job of every phase is to find out
+what changed since it was written.**
+
+**1 · Re-verify what this phase leans on.** Read `refactor-STATE.md` — the index,
+one line per finding — then open only the phase STATE files whose lines matter to
+you. Check the claims *this* phase rests on: the tree moves, the live hack repos
+move, and a finding is only as current as its last measurement. The load-bearing
+ones only; a finding this phase never touches does not become a task.
+
+**2 · Correct the drift in place.** A claim that no longer holds is fixed in the file
+that made it, replacing the wrong version rather than annotating it. Never leave a
+correction only in a commit message or a reply — the next session reads the docs, not
+the transcript. If it invalidates an earlier decision, say so and say what that costs.
+
+**3 · Open the phase's two files.** The sections below are sketches; **do not grow
+them.** Write the real plan in `refactor-phase-<n>-PLAN.md` — what changes, in what
+order, what proves each step, what it must not break — and start
+`refactor-phase-<n>-STATE.md` empty, filling it as you go. Add both to the phase's
+entry in `refactor-STATE.md`. When the phase closes, its two files stay as the
+journey log, which is what the other landed plans in `docs/` are; the section here
+never grows past a sketch and a link, and that is how the cap survives six phases.
+
+Only then does the phase start. If step 1 or 2 changes what the phase should even be,
+that is a result — record it and re-plan.
+
+## Before anything
+
+Three items. **The last two are not refactoring** — they are defects that exist today,
+found by Phase −1 while reading for something else. They are here rather than in a
+phase because a move must never be the thing that fixes a bug: you could never again
+say whether the move was behaviour-neutral. Fix them on the current tree, each with
+its own test, and the phases keep their "nothing changed" claim honest. Evidence for
+all three is in `refactor-STATE.md`.
+
+- **Push the branch.** A five-phase refactor on an unpushed branch means one bad day
+  loses both, and Phase 0 clones the repo — which carries only what was pushed.
+- **One macro-line reader.** Prism's header read path and its own write path disagree
+  about what a line's arguments are, because the reader is hand-rolled once per site.
+  Latent today, and pinned by
+  `tests/test_macroline.py::test_readers_disagree_about_comments`, which flips to "all
+  three agree" when this is done. Before Phase 0: `wiring/` is A's code, and A carves
+  cleaner with one reader in it than three.
+- **`blobsizes.PRIMARY_HEADER_GROWTH` is 8; the macro emits 9.** `mapfit`
+  under-reserves the shared header section by a byte per map added. One line, one test.
 
 ## Ground rules
 
-These apply to every line any phase touches. They are the standard, not a phase.
+**`CLAUDE.md` is the standard**, and it is authoritative. Read it carefully and apply
+the rules during this refactoring. **The job is done only once every single file in 
+this repo comply with all the rules.**
 
-### Abstraction levels
-Keep each function at one abstraction level. Smells: more than 2–3 levels of
-nested blocks, or a body longer than ~40 LOC. The test: every line in a function
-should answer the same kind of question.
-
-### File size
-One file holds at most one or two responsibilities; LOC is a proxy for responsibility
-count. ~150 LOC is one responsibility. Over 250 is a smell — a prompt to look,
-not a failure. Tests are exempt.
-When a file grows, give each responsibility its own file and consider
-collecting them in a folder whose name says what domain they share. The folder name
-is the explanation; if it can't be named, the grouping is wrong. 
-
-### Magic values
-Every magic number or string that encodes a protocol decision must be named.
-
-### Naming functions
-Verb **and its object** — say what the function does *to what*. A bare verb
-(`handle`, `process`, `run`, `discover`) tells the reader nothing. The test:
-reading the name alone, could someone answer *what does this return or change?*
-
-### Naming files and folders
-A **folder is an address** — its job is to answer *"What kind of things are here?"*.
-Use GBC rom-hacking terms like `save` or `VRAM`, or pret domain names like 
-`overworld` or `pokemon-stats`. Architecture-adjacent names (`shared/`, `core/`,
-`services/`) are also fine and often helpful.
-
-A **file that defines a domain entity must carry that entity's name** — its job
-is to answer *"what is this?"*. 
-
-Don't use an architectural noun if a domain one is available: `seam.py` defines
-`Hack`; the domain noun was right there.
-
-### Comments
-A code file should explain itself. Nobody reads 100 lines of prose and then 100
-lines of code saying the same thing — if the code needs the prose, it needs
-better function names, some responsibility dropped and single-abstration level
-functions. Refactoring beats comments. The header comment states intent plus
-anything genuinely non-obvious or contestable. Delete the rest.
-
-One exception, and it is narrow: prose recording a **measurement or a
-falsification** ("reading polished with vanilla's record returns exactly one
-palette, so the box silently stops suggesting") is a fact that cost work to find.
-Route it to a test, a commit body or record it somewhere in `docs`. Do not simply
-delete it.
-
-### Validate at system boundaries
-Validate at system boundaries (user input, external APIs, file formats). Trust
-internal code and framework guarantees — no defensive validation inside private
-functions or between layers we control.
-
-### Commit style
-Imperative mood; subject under 50 characters; the body explains **why** — what
-was wrong before and how this fixes it. Scope is a module, package, feature or
-component, never a phase number or plan name. **Never** a `Co-Authored-By`
-trailer unless `.claude/settings.json` sets `attribution.commit`.
+Two rules carry more weight in this refactor than anywhere else, and are worth
+re-reading before each phase rather than re-typing: **naming files and folders**
+(the whole exercise is deciding what a file is for and calling it that) and
+**comments** (Phase 2 deletes three comment walls, and the narrow exception —
+never delete a measurement, route it somewhere — is what `refactor-STATE.md` is).
 
 ## The four products
 
@@ -101,445 +124,124 @@ The dependency graph already permits this split — measured, not assumed:
 
 | product | contents | today's blocker |
 |---|---|---|
-| **A · pret/RGBDS library** | `shared` + `wiring` + `usage` + `sym_lookup`, ~6,300 LOC | none — zero dependency on any hack or the IDE |
-| **B · adapter contract** | `Hack`, its capability protocols, and the domain vocabulary | does not exist; split across `hacks/seam.py` and `studio/` |
+| **A · pret/RGBDS library** | `shared` + `wiring` + `usage` + `sym_lookup` | none — zero dependency on any hack or the IDE |
+| **B · adapter contract** | `Hack`, its capability protocols, the domain vocabulary | does not exist; split across `hacks/seam.py` and `studio/` |
 | **C · the IDE** | `studio` | depends on B, which is inside it |
-| **D · prism** | `hacks/prism` + the nine CLIs that import it | fused to C |
+| **D · prism** | `hacks/prism` + the CLI packages Phase −1 assigned it | fused to C |
 
-`usage` (RGBDS link-map analysis) and `sym_lookup` are pret-general, not prism —
-they belong to A. **Which product owns each remaining CLI is not yet decided**;
-an import grep proves an edge exists, not that it is load-bearing. Phase −1
-settles it. The early evidence already shows the naive answer is wrong:
-
-```
-gfx_view    -> hacks.prism.render   (only)
-metatiles   -> hacks.prism.render   (only)
-mapview     -> maps, PRISM_FORMAT, render
-map_inspect -> maps, mapsource
-map_new     -> maps, mapsource, mapspec
-map_show    -> blobsizes, mapspec
-```
-
-`gfx_view` and `metatiles` touch nothing but `render.py` — and that file has now
-been read. **It is prism-specific**, despite a docstring that opens "Shared map
-rendering library": it hardcodes `_TILESET_TUNOD`, `_TILESET_ESPO_FOREST` and
-`_TILESET_OLCAN_ISLE` (Prism's own regions, absent from Crystal), a
-`_COLOR_TABLES` block transcribed from Prism's `engine/color.asm`, and
-`render_map` loads through `PRISM_FORMAT`.
-
-But it splits along the seam this branch already knows how to cut — **neutral
-mechanics welded to declared data.** Pure Gen-2 pipeline: `_read_or_lz`,
-`_png_to_2bpp`, `parse_pal_file`, `decode_2bpp_tile`, `_composite_block`,
-`render_tileset_sheet`, and the `TILE_PX`/`BLOCK_PX` geometry. Prism facts:
-`_SPECIAL_TILESET_PALS`, `_PERM_TO_TABLE`, `_COLOR_TABLES`, `PALETTE_TABLES`, and
-the format argument.
-
-**So `gfx_view` and `metatiles` are prism tools today.** They become hack-generic
-only once the palette and tileset tables cross the seam as declared data, the way
-`MapFormat` and `SaveOffsets` already do. That is a piece of work, not a filing
-decision, and it is exactly what the survey is for.
-
-### Open: does B ship separately, or inside C?
-
-Measured, the vocabulary is *already* dependency-clean — `panels.py` imports only
-`shared.coords`; `model.py` and `actions.py` pull in no widget library; and
-`studio/__init__.py:31` already documents the package as "importable, without a
-widget library installed". So B is mis-sited, not entangled, and extracting it is
-cheap either way.
-
-The deciding question is **who needs the vocabulary besides the IDE**. Today the
-nine CLIs consume adapters without the IDE, so folding B into C would make every
-CLI — and every third-party adapter — depend on the IDE package to get twenty
-dataclasses. But if Phase −1 shows those CLIs are all prism's, and prism ships
-alongside the studio anyway, then B-inside-C is the simpler answer and costs
-nothing. **Decide after Phase −1, not before.**
+**Phase −1 assigned every CLI; the calls are in `refactor-STATE.md`** — as is the
+lesson behind them: an import grep proves an edge exists, not that it is load-bearing,
+and a path literal measures hack-specificity better. **B ships separately**, decided
+there too — adapters need B and must never reach C to get it.
 
 ### Every prism-specific CLI faces the same three-way choice
 
-"This CLI is prism-specific" does not by itself say where it goes. Each one
-lands in exactly one of:
+"This CLI is prism-specific" does not say where it goes. Each lands in exactly one:
+**(a) part of the prism adapter**, only if the tool *is* adapter work — rare, since
+libraries that ship CLIs are usually two things wearing one name; **(b) refactored to
+cross the seam**, when every hack has the question and only the *data* is prism's —
+the option that grows the product, and real work; **(c) its own repo depending on the
+prism adapter**, when the question is Prism's alone (bank placement, Prism's catalog)
+and making it generic would only weigh down A or C.
 
-- **(a) Part of the prism adapter.** Only if the tool *is* adapter work. Rare —
-  an adapter is a library, and libraries that ship CLIs tend to be two things
-  wearing one name.
-- **(b) Refactored to cross the seam.** The tool asks a question every hack in the
-  family has, and only its *data* is prism's. `gfx_view` and `metatiles` are the
-  clear candidates: the rendering pipeline is Gen-2, the palette tables are
-  Prism's. This is the option that grows the product, and it is real work.
-- **(c) Its own repo, depending on the prism adapter.** The tool asks a question
-  only Prism has — bank placement, Prism's map catalog. Nothing is gained by
-  making it generic, and it should not weigh down A or C.
-
-Phase −1 assigns one of these per CLI with a one-line reason. **"Product D" is
-therefore not a single bucket** — it is (a) + (c), with (b) draining into A over
-time.
+**"Product D" is therefore not one bucket** — it is (a) + (c), with (b) draining into
+A over time.
 
 ## The naming census
 
-### Tier 1 — entity files wearing an architecture name
+**The inventory is in `refactor-STATE.md`** — which file wears which wrong name, the
+duplicate-class counts, what is already clean. The argument belongs here:
 
-| file | what it actually defines |
-|---|---|
-| `hacks/seam.py` | `Hack` + its six capability protocols |
-| `studio/panels.py` | 20 classes: `Npc` `Trainer` `Prop` `Signpost` `Warp` `Trigger` `Link` `Blocks` `Sketch` `Attributes` `Roof` `WildMon` `TextRef` `MapTables` `Ref` `Row` `Tab` … |
-| `studio/model.py` | `MapRef` `MapGeometry` `Draft` `MapData` `Preview` `Applied` `Finding` `Mutation` |
-| `hacks/prism/eventmodel.py` | `Entry` `EventList` `Trainer` `Prop` `Handle` `ListKind` |
-| `hacks/prism/content.py` | `AddNpc` `AddTrainer` `AddProp` `AddSignpost` `EditText` `Remove` `Disconnect` |
-| `wiring/editvocab.py` | `Change` — the central entity of the asm-editing layer |
+**A bad name costs twice.** `studio/panels.py` is the headline: twenty of the map's
+nouns (`Npc`, `Warp`, `Trainer`, …) filed under a UI location — and that same name is
+why every adapter imports the IDE. Phase 2 fixes both at once, which is what makes it
+the keystone rather than a tidy-up. Two more files are named for an architecture
+instead of their contents (`seam.py` defines `Hack`; `model.py` holds the edit cycle's
+records and belongs with `flow.py`, which runs it), and `content.py` is generic enough
+to have hidden a bug: `Connect` sits in `actions.py` while `Disconnect` sits in
+`content.py`, though the split is meant to be map-to-map versus in-map.
 
-`studio/panels.py` is the headline: twenty of the map's actual nouns filed under a
-UI location. It is also the file that forces every adapter to import the IDE. One
-bad name, two problems.
+**`wiring/` is not exempt**, though earlier drafts said so — neither a GBC/pret term
+nor an architecture noun, and the cost shows: `WiringError` is defined three times in
+three unrelated files, because a meaningless folder name attaches to anything. Its
+contents are one thing, **editing pret assembly source**. Rename on the way into A.
 
-**`model` is a bad fit** — it holds `MapData`, `Preview`, `Applied`, `Mutation`,
-`Finding`. Those are not a model of anything; they are the *records of the edit
-cycle*, which is what `flow.py` runs. They should sit with it under a name that
-says so.
-
-**Why `Trainer` is in `eventmodel` and not `model`: there are three `Trainer`s.**
-`prism/eventmodel.Trainer` is what prism's parser produces, `vanilla/trainer.Trainer`
-is the action that adds one, `studio/panels.Trainer` is what the IDE displays.
-Legitimately distinct things, illegibly named — and Phase 1 fixes it by moving the
-view entity out into the contract, leaving the parse entity alone in the adapter.
-
-**`content` is too generic, and it hides a real bug:** `Connect` lives in
-`hacks/prism/actions.py` while `Disconnect` lives in `content.py`. The intended
-split is map-to-map actions versus in-map ones, so `Disconnect` is on the wrong
-side of it.
-
-### Tier 2 — minor, fix in passing
-**`dev_server/` mixes a service with its consumers.** The service is `apply` (478),
-`inventory` (460), `playtest` (124), `launcher` (114), `emulator` (102); `tui.py`
-(914) and `cli.py` (226) are two front ends onto it. They should not share a
-folder, let alone the naming.
-
-`hacks/prism/objedit.py` defines `MapEdit`. `studio/flow.py` defines `Flow`, which
-is self-consistent but the *class* is the architecture word — it is the write
-cycle (preview → agree → re-read), and `model.py`'s records belong with it.
-
-`studio/status.py` — not a status bar, and worse than "too generic": the docstring
-says "three read-only panels" and the file defines five classes (`Banner`, `Where`,
-`Legend`, `Diagnostics`, `Centre`). It has already drifted past its own
-description, which is the responsibility-count smell showing up as prose rot.
-
-### Corroborating symptom — measured
-**38 duplicated class names across 85 definitions.** They are three different
-phenomena and only two are problems:
-
-- **Legitimate — do not touch.** `Reader`×3, `Player`×3, `Writer`×2, `Save`×2,
-  and the `Add*`/`Edit*` action families. One implementation per adapter of one
-  protocol. This is the design working.
-- **Genuine collisions.** `WiringError`×3, `Connection`×3, `Layout`×2, `MapInfo`×2,
-  `Section`×2, `Placement`×2, `NewMap`×2, `EventFlags`×2, and `Dialect`×2 — the
-  last two *both inside `wiring/`*.
-- **View-versus-parse.** `Block`×4, `Trainer`×3, `Line`×3, `Entry`×3, and
-  `Prop`/`Roof`/`Warp`/`Box`/`Cursor`/`Metrics`×2. Phase 1 disambiguates these.
-
-**Enforcement, in two layers.**
-
-*Not by name.* A "no duplicate class names" rule cannot separate the three
-categories above, so it would fire on `Reader`×3 — the design working — and be
-switched off within a week.
-
-*By functionality, advisory, scoped.* A hook that checks whether newly written
-code re-implements something that already exists — matched on what it *does*, not
-what it is called — is the right instrument, and it catches the thing names miss:
-`Placement` in `mapfit/packing.py` versus `Placement` in `wiring/placement.py`
-share a name *and* a job, and nobody noticed.
-
-Two constraints make it survivable:
-
-- **Never compare across adapters.** The three `Reader`s are functionally near
-  identical *on purpose* — that is what implementing one protocol three times
-  looks like. A functionality matcher will rank them as the strongest duplicate in
-  the repo. Scope it within a product/layer, never across the seam.
-- **Advisory, not blocking.** It reports a candidate and the file it resembles.
-  A gate on a fuzzy signal gets disabled; a report gets read.
-
-*Mechanically, with no false positives:* the import-direction rule from the goal.
-That one is a gate.
-
-### `wiring/` is not exempt after all
-Earlier drafts marked it clean. It is not: `wiring` is neither a GBC/pret term nor
-a recognised architecture noun, and the cost is visible — **`WiringError` is
-defined three times, in three unrelated files.** That is what a meaningless folder
-name does; it attaches to anything. Its contents (`warpdel`, `mapnew`, `blocks`,
-`mapresize`, `regions`, `flagalloc`, `editvocab`, `placement`, `macroline`) are all
-one thing: **editing pret assembly source.** Rename on the way into product A.
-
-### Genuinely clean — do not touch
-`shared/` as a folder, `shared/constants.py`, `maplint/context.py` (defines
-`LintContext`), and all of `hacks/prism/*` that names its entity (`warps.py`,
-`roofs.py`, `species.py`, `savefile.py`).
+**Enforce it in two layers, and neither is by name.** A "no duplicate class names"
+rule cannot tell the three duplicate kinds apart — one-per-adapter implementations,
+genuine collisions, view-versus-parse pairs — so it fires on the design working and
+gets switched off in a week. What works is a hook matching on what code *does*:
+Phase −1 found two the same day (`Placement` in `mapfit/packing.py` versus
+`wiring/placement.py` share a name *and* a job; `_bit_reverse` and `_flip_bits` share
+a body and nothing else). Two constraints keep it alive — **never compare across
+adapters**, since the three `Reader`s are near-identical on purpose and would rank
+first, and **advisory, never blocking**, since a gate on a fuzzy signal gets disabled
+while a report gets read. The import-direction rule from the goal is the one true
+gate: mechanical, no false positives.
 
 ## Phases
 
-### Phase −1 — The product survey
-An import edge proves a dependency exists, not that it is load-bearing or that it
-is *correct*. Before any boundary is drawn, answer per module: **is this a prism
-fact or a Gen-2/pret fact?**
-
-`hacks/prism/render.py` (338 LOC) has been checked — see "The four products"
-above. Verdict: prism-specific as written, but it splits into a Gen-2 pipeline and
-a table of Prism facts. It is the worked example of what this phase produces, and
-of why the grep answer was wrong in both directions: the file is *more* prism than
-its docstring claims, and *less* prism than its location implies.
-
-Still open, same question: `hacks/prism/maps.py` (the map catalog) and
-`mapsource.py` (header parsing), which `map_inspect` and `map_new` depend on; and
-`blobsizes.py`/`mapspec.py`, which `map_show` and `mapfit` depend on — bank
-placement smells genuinely Prism-only, so those are likely (c).
-
-**Output:** for every module in the survey, a product assignment plus, for each
-CLI, one of the three choices above and a one-line reason. This also resolves
-whether B ships separately or inside C.
+### Phase −1 — The product survey · **done, answers in `refactor-STATE.md`**
+Per module: **is this a prism fact or a Gen-2/pret fact?** It produced a product
+assignment for every surveyed module, a three-way call per CLI, the B-vs-C
+decision, three measurements that each moved an answer, two defects now listed
+under "Before anything", and one question handed to Phase 5.
 
 ### Phase 0 — Split the git history, while the tree is still untouched
-Do this before any file moves. Clone the repo once per product and use
-`git filter-repo --path <dir>` to carve history by folder, so each product keeps
-the "why" behind its code rather than starting at one squashed commit.
+Before any file moves. Clone once per product and `git filter-repo --path <dir>` to
+carve history by folder, so each product keeps the "why" behind its code instead of
+starting at one squashed commit. Two corrections to the naive version:
 
-Two corrections to the naive version of this plan:
+**Not now-or-never:** `filter-repo` takes multiple `--path` arguments, so a folder
+renamed later still carves with full history by naming both paths — losing history
+takes forgetting, not moving. **Only A can split now:** B, C and D are fused by the
+`hacks → studio` cycle, and splitting today produces two repos that import each other.
 
-- **It is not now-or-never.** `git filter-repo` accepts multiple `--path`
-  arguments, so a folder that gets renamed later can still be carved with full
-  history by naming both its old and new paths. Losing history requires
-  forgetting to, not moving files.
-- **Only product A can split now.** B, C and D are fused by the `hacks → studio`
-  cycle; splitting them today produces two repos that import each other. They stay
-  in this repo until Phase 1 breaks the cycle, then split.
-
-So: carve A now — it has zero dependencies and the carve doubles as proof the
-tooling works — and carve B/C/D immediately after Phase 1. Keep a record of every
-path rename so the later filter can name both.
+So carve A now — zero dependencies, and the carve doubles as proof the tooling works
+— then B/C/D after **Phase 2**, whose acceptance test *is* the cycle being gone.
+Record every path rename so the later filter can name both.
 
 ### Phase 1 — Calibration: the six CLI packages
-`metatiles` (670 LOC), `mapfit` (602), `usage` (445), `map_new` (354), `map_show`
-(340), `map_inspect` (287). Split parse / analyse / render / CLI out of each
-`__init__.py`, leaving the package's public surface *as* its `__init__`.
-`metatiles` and `mapfit` already carry `# ---` banners drawn on the seams.
+`metatiles`, `mapfit`, `usage`, `map_new`, `map_show`, `map_inspect`. Split
+parse / analyse / render / CLI out of each `__init__.py`, leaving the package's
+public surface *as* its `__init__`; `metatiles` and `mapfit` already carry `# ---`
+banners on the seams.
 
 **Why first:** it depends on nothing, all six are test-covered, and it is where we
-settle what "done to the standard" means on code where a mistake costs nothing.
-
-**Not targets:** `mapview` (167), `gfx_view` (164), `sym_lookup` (147) are already
-at the ~150 target. Splitting them would be chasing the number.
+settle what "done to the standard" means where a mistake costs nothing. **Not
+targets:** `mapview`, `gfx_view`, `sym_lookup` are already at ~150 lines.
 
 ### Phase 2 — The keystone: give `Hack` and its vocabulary one home
-The phase that makes the goal true. Tier-1 of the census and the `hacks → studio`
-cycle in one move.
+**Plan: `refactor-phase-2-PLAN.md`** — what the package is, and what is not.
 
-- `hacks/seam.py` → `hack.py`, in a package neither the IDE nor the adapters own.
-- The 20 entities from `studio/panels.py`, the 8 from `studio/model.py`, and the
-  `Action`/`Field`/constant vocabulary adapters import from `studio/actions.py` —
-  into that package, split by domain into files named for what they define.
-- The comment walls die here: `panels.py` (74 `#:` lines), `hacks/vanilla/write.py`
-  (73), `studio/actions.py` (56) are the same files this phase rewrites.
+The phase that makes the goal true: the census's tier 1 and the `hacks → studio`
+cycle in one move. `hacks/seam.py` becomes `hack.py` in a package neither the IDE nor
+the adapters own; the entities in `studio/panels.py` and `studio/model.py` and the
+`Action`/`Field` vocabulary in `studio/actions.py` move there, split by domain into
+files named for what they define. The comment walls die here — same three files.
 
-**Acceptance test, falsifiable:** grep `hacks/` for any import of the IDE package.
-Empty result passes. This is the check `seam.py`'s docstring already invites,
-pointed at the file where it would have caught something.
-
-#### What this package actually is
-
-**One sentence:** it is the *noun list and the question list* that an IDE and an
-adapter must agree on before either can be written — and nothing else.
-
-**What is inside.** Two kinds of thing, both pure data:
-
-1. **The entities a Gen-2 map is made of** — `Npc`, `Trainer`, `Prop`,
-   `Signpost`, `Warp`, `Trigger`, `Link`, `WildMon`, `Roof`, `Attributes`,
-   `Blocks`, `Sketch`, and the table/row/reference types that carry them. Today
-   these are the twenty classes in `studio/panels.py`.
-2. **`Hack` and its six capability protocols** — `Reads`, `Writes`, `Lints`,
-   `Plays`, `Measures`, `Sketches`. The questions an adapter may be asked. Today
-   this is `hacks/seam.py`.
-
-**What is *not* inside:** any parsing, any file I/O, any ROM knowledge, any
-widgets. It reads no bytes and draws no pixels. Measured, the current
-`panels.py` already meets that bar — its only import is `shared.coords`.
-
-**Its one responsibility:** to be the thing both sides depend on so that neither
-depends on the other. It exists to be *pointed at*, not executed.
-
-**Why you need it.** Without it the vocabulary lives in the IDE, so every adapter
-imports the IDE to describe a warp — which is exactly today's cycle, and exactly
-why the seam does not hold. With it, the dependency arrows go
-`adapter → contract ← IDE`, and neither end can reach the other.
-
-**How a hack developer uses it.** Install it, read `hack.py` to see the six
-protocols, implement the ones your tree can answer, and return the entities above.
-Capabilities you do not implement degrade to *absence* in the IDE — no lint panel,
-no boot key — never a crash and never an `if <hack name>`. That is the whole
-contract, and it is meant to be readable in one sitting.
-
-**Naming.** By the folder rule an architecture-adjacent name qualifies:
-`contract/`, `adapter/`, `api/`. Leaning `contract/` — it answers "where do I look
-to find what I owe?" Still open.
+**Acceptance test, falsifiable:** grep `hacks/` for any import of the IDE package;
+empty passes. The check `seam.py`'s docstring already invites, pointed at the file
+where it would have caught something.
 
 ### Phase 3 — Split the remaining products
-Mechanical once Phase 2 lands: B is Phase 2's package, C and D fall out, and the
-`git filter-repo` carve from Phase 0 runs again for each.
+Mechanical once Phase 2 lands: B is its package, C and D fall out, Phase 0's carve runs again.
 
 ### Phase 4 — The god objects
 Deliberately *after* the keystone, because `Session`'s seams move once the
-vocabulary leaves `studio/`.
+vocabulary leaves `studio/`. Three targets, sized in `refactor-STATE.md`.
 
-| class | file | lines | tests |
-|---|---|---|---|
-| `Session` | `studio/session.py:81-596` | 515 | 3 files |
-| `DevServer` | `dev_server/tui.py:67-905` | 838 | **none** |
-| `Studio` | `studio/app.py:82-502` | 420 | 1 file |
-
-- **`Session`** — 45 methods that group onto the seam's own six capabilities.
-  Once the contract package exists, that parallel is structural rather than
-  coincidental.
-- **`DevServer`** — ten editors welded onto a server (`_edit_player` through
-  `_edit_tmhms`, lines 243–813, ~620 of the 838). CLAUDE.md's "cluster of related
-  responsibilities → a folder that names the domain" almost verbatim:
-  `dev_server/editors/`, and `tui.py` drops to ~250. **Mandatory prerequisite:** a
-  characterization test driving the editors through scripted stdin, priced as its
-  own step. Without it this is a rewrite with no oracle.
-- **`Studio`** — mostly not a target; Textual concentrates handlers by design.
-  Only the `action_*` mixin, and only if Phase 1 leaves it obviously wanting.
+- **`Session`** — its methods group onto the seam's own six capabilities, a parallel
+  that becomes structural rather than coincidental once the contract package exists.
+- **`DevServer`** — ten editors welded onto a server, ~3/4 of the file. CLAUDE.md's
+  "cluster of related responsibilities → a folder that names the domain", almost
+  verbatim. **Mandatory prerequisite:** a characterization test driving the editors
+  through scripted stdin, priced as its own step — without it this is a rewrite with
+  no oracle.
+- **`Studio`** — mostly not a target; Textual concentrates handlers by design. Only
+  the `action_*` mixin, and only if Phase 1 leaves it obviously wanting.
 
 ### Phase 5 — The maplint survey, then the family port
-Seven rule modules import `hacks.prism` (`context`, `rules_content`,
-`rules_objects`, `rules_trainers`, `rules_sprites`, `rules_flags`, `rules_text`).
-Decoupling them *is* the family-rule port, gated on the survey the live plan still
-carries: for each rule, does it describe a Gen-2 fact or a prism fact? Same
-question as Phase −1, one layer up — and worth asking together if the answers
-turn out to share evidence.
-
-## Before anything
-
-- **Push the 14 commits.** A five-phase refactor on top of an unpushed branch
-  means one bad day loses both. This matters more now that Phase 0 clones the
-  repo: a clone carries only what was pushed or committed.
-
-## Measurements as of 2026-07-31
-
-183 files, 38,909 LOC. Eight files over 500, fifty-seven in 250–500. 1,236 `#:`
-doc-comment lines, 2,726 comment lines total. `hacks/prism` is 10,577 LOC across
-47 files — big because prism is big, averaging 225/file, and not a target.
-
-## Phase −1 — findings
-
-Done 2026-08-01. No code changed. Each module below was read and asked the one
-question: **prism fact, or Gen-2/pret fact?** Two claims were not settled by
-reading and were measured instead — both are recorded in place, and both moved an
-answer.
-
-**The grep was wrong in both directions again, and worse than for `render.py`.**
-The dependency table in "The four products" was assembled from static imports. Two
-of its rows do not survive an import-time trace, and one CLI is four times more
-prism than its row says:
-
-| CLI | the table said | actually reaches (import-time) |
-|---|---|---|
-| `metatiles` | `render` | **nothing** — the `render` import is inside two functions (Pillow is lazy) |
-| `map_show` | `blobsizes`, `mapspec` | **ten**: `blobsizes blocksrc eventheader eventmodel mapformat maps mapsource mapspec render swatches` |
-| `maplint` | (not listed) | **nothing** at import; every rule module is imported inside `run` |
-
-And the reverse error: `gfx_view` and `metatiles` reach *less* prism through
-imports than they contain. Both hardcode prism's tileset file naming in their own
-bodies — `tilesets/NN_metatiles.bin`, `gfx/tilesets/NN.2bpp`, `tilesets/bg.pal`,
-where the family names tilesets by name (`battle_factory.2bpp`) — and `metatiles`
-additionally reads `maps/blockdata.asm`, `maps/map_headers.asm` and
-`constants/tilemap_constants.asm` straight off disk. An import edge is not the
-unit of hack-specificity; **a path literal is.**
-
-### Per-module verdicts
-
-| module | LOC | fact | product | why |
-|---|---|---|---|---|
-| `hacks/prism/render.py` | 338 | **both** | split: pipeline → **A**, tables → **D** | as already argued; the survey adds two functions to the prism side that the earlier read left on the fence — `load_tileset_files` (prism's numeric tileset naming) and `get_map_palettes` (transcribes prism's `LoadMapPals`) |
-| `hacks/prism/maps.py` | 92 | **Gen-2** | **A** | the catalog walk is the family's, unmodified; see the measurement below |
-| `hacks/prism/mapsource.py` § `enclosing_section`, `section_banks` | ~40 | **pret/RGBDS** | **A** | `SECTION` membership and the linker-script format are RGBDS, not prism — pokecrystal's `layout.link` has the same syntax; only the path (`contents/romx.link` vs `layout.link`) is prism's. Belongs next to `shared/mapfile.py`, which already parses the *other* RGBDS artefact |
-| `hacks/prism/mapsource.py` § header/path parsers | ~250 | **prism** | **D** | `map_header`/`map_header_2` is prism's old-pret two-header layout; the family split the same facts across `data/maps/maps.asm` + `data/maps/attributes.asm` years ago. But the *mechanic* — find the macro line for this label, split its comma arguments, drop the trailing comment — is already written a second time as `hacks/vanilla/mapedit._find_args`, and a third time for writes as `wiring/macroline.splice_macro_args`. One neutral reader, three dialects |
-| `hacks/prism/mapspec.py` | 259 | **prism** | **D** | bank placement. `AUTO`/`INTO`/`BANK`, the `"<Kind> <Label>"` section convention, `romx.link` pinning, and a field list that is prism's two header macros argument for argument. Nothing here is a question pokecrystal has — it is not 91% full and does not pin sections by hand |
-| `hacks/prism/blobsizes.py` | 49 | **prism** | **D** | the byte sizes of prism's own macros, plus `utils/lzcomp` (the family builds `tools/lzcomp`). One of the three numbers is wrong — see below |
-| `dev_server/emulator.py`, `launcher.py` | 216 | **Gen-2** | **A** | "launching a Game Boy ROM and killing the last window is the same whether the ROM is prism's or a stock pokecrystal's" — and that is no longer a claim: `hacks/vanilla/play.py:26` and `hacks/polished/play.py:27` both already import `dev_server.emulator`. Two family adapters depend on it today |
-| `dev_server/apply.py`, `inventory.py`, `playtest.py` | 1,062 | **prism** | **D, and specifically (a)** | this *is* prism's `Plays` implementation. `hacks/prism/play.py` (146 LOC) is a wrapper over it — the adapter imports the CLI package, not the other way round. The neutral half was already extracted: `shared/overworld/rebuild.py` says so in its header |
-| `dev_server/cli.py`, `tui.py`, `test_maps.py` | 1,295 | **prism** | **D, (c)** | two front ends and a sweep script over the service above. Phase 4's `DevServer` split is unaffected by which repo they land in |
-| `maplint/diagnostics.py` | 103 | **Gen-2** | **B** | `Diagnostic`, `Severity`, `apply_suppressions` and the `; maplint: ignore[…]` channel. Three consumers today and only one is prism's: `hacks/vanilla/lint/context.py:23`, `hacks/seam.py:34` (the `Lints` protocol's return type) and `studio/session.py:41`. This is contract vocabulary filed inside a prism CLI |
-| `maplint/textfit.py` | 33 | **Gen-2** | **A** | the width comparisons themselves; `hacks/vanilla/lint/rules.py:25` already imports it |
-| `maplint/context.py` + the seven prism rule modules | 1,546 | **prism** | **D** | Phase 5's subject, unchanged. Listed here only so the package's split is on one page |
-| `maplint/rules_geometry.py`, `__init__.py` | 435 | **untested** | defer to Phase 5 | prism-free by import, but both reach prism through `.context`. Whether the geometry rules are Gen-2 facts is the Phase-5 question and evidence for it was not gathered here |
-| `usage`, `sym_lookup` | 592 | **pret/RGBDS** | **A** | unchanged from the plan; confirmed — neither imports any `hacks/` module, at import time or lazily |
-
-### Two measurements
-
-**The catalog walk is the family's, not prism's — run on all three trees.** The
-plan's likeliest reading of `maps.py` was "prism's own dimension macro, therefore
-prism's". It is not. Prism's `mapgroup NAME, H, W` and the family's
-`map_const NAME, W, H` differ in exactly two things — the macro's name and whether
-height comes first — and the group/enum counting (`newgroup` bumps the group,
-resets the within-group enum to 1) is byte-identical across pokecrystal,
-polishedcrystal and pokeprism. Prism's parser with those two values changed reads:
-
-    pokeprism         452 maps, groups 1..96   first=(INTRO_OUTSIDE, 1, 1, 18, 11)
-    pokecrystal       388 maps, groups 1..26   first=(OLIVINE_POKECENTER_1F, 1, 1, 4, 5)
-    polishedcrystal   607 maps, groups 1..37   first=(OLIVINE_POKECENTER_1F, 1, 1, 4, 6)
-
-and the dialect it needs is **already declared data on the neutral side**:
-`wiring/mapresize.MapShape(path, macro, height_first)` carries all three values and
-is already handed prism's and the family's. `MapShape` reads *one* map's dimensions
-by const; the whole-file catalog walk is the piece missing from it. So `maps.py`
-is not a port, it is a `MapShape` method that has not been written yet.
-
-**`blobsizes.PRIMARY_HEADER_GROWTH = 8` is wrong; prism's `map_header` is 9
-bytes.** `macros/map.asm:94` emits `db`×3 + `dw` + `db`×2 + `dn` + `db` = 9, and
-the built `.sym` agrees — consecutive headers are 9 apart
-(`IntroOutside_MapHeader 25:40c0`, `IntroCave_MapHeader 25:40c9`). The constant is
-charged as headroom when `mapfit` places a new map (`mapfit/__init__.py:130`), so
-the packer under-reserves the shared `Map Headers` section by one byte per map
-added. `SECONDARY_BASE = 12` was checked the same way and is correct. Not fixed
-here — this session changed no code — but it is a one-line fix and a test, and it
-should not wait for the split.
-
-### The three-way call, per CLI
-
-| CLI | call | reason |
-|---|---|---|
-| `prism-usage` (`usage`) | — | product **A** outright; asks an RGBDS question, names no hack |
-| `prism-sym` (`sym_lookup`) | — | product **A** outright; same |
-| `prism-mapview` (`mapview`) | **(b)** | the strongest candidate in the repo, ahead of the two the plan nominated: its catalog dependency is now proven neutral, `MapFormat` already crosses the seam as declared data, and `shared/overworld/blockdata.py` already reads all three trees. Only `render`'s palette tables stand between it and a family tool |
-| `prism-gfx` (`gfx_view`) | **(b)** | the plan's call stands, at a higher price than the import graph implied: the palette tables *and* the tileset file-naming scheme have to cross, and the naming is hardcoded in `gfx_view` itself, not only in `render` |
-| `prism-metatiles` (`metatiles`) | **(b)** | same question every hack has (which metatiles does this tileset actually use), same price plus two more prism paths of its own (`maps/blockdata.asm`, `maps/map_headers.asm`). The largest of the (b)s and the one to do last |
-| `prism-maps` (`map_inspect`) | **(c)** | a table of prism's map catalog. Half its dependency is now neutral (`maps.py`), but the other half is `mapsource`'s two-header dialect and the four asm files it names |
-| `prism-map` (`map_show`) | **(c)** | reaches ten prism modules including the event-header parser and the block-data renderer; it is prism's map inspector and nothing smaller |
-| `prism-newmap` (`map_new`) | **(c)** | authors a map into prism's five asm files and emits a `MapSpec` for the packer. The family's equivalent already exists on the other side of the seam as `hacks/vanilla/newmap.py` — the studio's new-map form, not a CLI |
-| `prism-mapfit` (`mapfit`) | **(c)** | bank placement in a 91%-full ROM. The purest (c) in the repo |
-| `prism-maplint` (`maplint`) | **(c)**, after (b) is carved out | ships as prism's linter; `diagnostics.py` leaves for **B** and `textfit.py` for **A** first, because the family adapters already import both |
-| `prism-dev` (`dev_server`) | **(a)** for `apply`/`inventory`/`playtest`, **(c)** for `cli`/`tui`/`test_maps`, **A** for `emulator`/`launcher` | the one CLI that is genuinely adapter work wearing a CLI's name — exactly the "two things wearing one name" the (a) bullet warns about, and the warning is right: it should stop being a CLI package that an adapter imports |
-
-Nothing lands in **(a)** except the dev-server's service half, which is what the
-plan predicted for (a) — rare, and a sign of misfiling rather than a design.
-
-### Resolved: B ships separately
-
-**The plan's criterion returns empty, so it does not decide.** The question was
-"who needs the vocabulary besides the IDE", and the answer for the CLIs is
-*nobody*: not one of the eleven CLI packages imports `studio/` or `hacks/seam.py`,
-at import time or lazily — traced, not grepped, by importing each entry point with
-a cold `sys.modules` and counting what landed. They consume prism's *parsers*
-(`maps`, `mapsource`, `mapspec`, `render`, `savefile`), never its contract. The
-worry that folding B into C would drag the IDE into every CLI was unfounded in
-both directions: the CLIs need neither B nor C.
-
-**So the decision falls to the remaining constituency, and there it is one-sided.**
-Three in-tree adapters need B, plus every third-party adapter the goal exists to
-serve. B inside C makes `adapter → IDE` a real dependency edge — the exact edge
-Phase 2's acceptance test greps for, which cannot both be the gate and be where
-the vocabulary lives. And the "it costs nothing" half does not hold on measurement:
-**12 of `studio/`'s 19 modules import `textual` at module scope.** The package is
-importable without a widget library only because `__init__` imports `session` and
-defers `app`, an invariant protected by nothing but one lazy import and a
-docstring. One `import textual` at the top of any studio module would break every
-adapter in the world.
-
-`maplint/diagnostics.py` settles the last of it: it is contract vocabulary
-(`seam.Lints` returns it) that **two family adapters already import without the
-IDE in sight**. B has a live constituency outside C today, in a package neither of
-them belongs to. It ships separately.
+Seven rule modules import `hacks.prism`, and decoupling them *is* the family-rule
+port. Gated on a survey — for each rule, Gen-2 fact or prism fact? Same question as
+Phase −1, one layer up. Phase −1 confirmed the seven, carved two neutral modules out
+ahead of the port, and left one module it declined to answer without evidence.

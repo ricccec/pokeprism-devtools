@@ -15,6 +15,18 @@ Read those for *why* a thing is shaped the way it is. Read this for *what shape
 it is in*. When a phase closes or an engineering item is paid, update this file
 first.
 
+**A second story runs alongside this one and does not belong in it** — splitting
+the repo into four products. It has its own pair of docs, on the same
+argument/status split as the four above:
+
+- `refactor-plan.md` — the argument. Four products, the phases, the order.
+- `refactor-STATE.md` — its index: every phase, its files, one line per finding.
+  Each phase then owns a `refactor-phase-<n>-PLAN.md` and `-STATE.md`. That set is
+  the sidequest's own current-state map; do not mirror any of it here.
+
+It is a **sidequest**: see "The four-product split", below, for why it is filed
+that way and what it is allowed to change.
+
 ## The seam, as it exists
 
 `hacks/seam.py` is the contract, provably free of hack names. `hacks/mount.py`
@@ -556,8 +568,38 @@ we do not own — no longer report `?? .devtools/`. See "Landed", below.
 **Not on this list, on purpose:** family VWF *pixel* metrics, which is permanent
 and a font fact rather than a gap — not to be confused with the *tile* count, which
 is now wired into the reword form; doc accretion and the stashed
-map-studio restructure, which are housekeeping; and the three pre-existing test
-reds, which are true reports about the live prism tree and are left alone.
+map-studio restructure, which are housekeeping; the three pre-existing test
+reds, which are true reports about the live prism tree and are left alone; and the
+four-product split, which is a sidequest with its own docs — next.
+
+## The four-product split — a sidequest (`refactor-*.md`)
+
+Running alongside the seam work: carving this repo into four products — a
+pret/RGBDS library, the adapter contract, the IDE, and prism. **Status lives in
+`refactor-STATE.md`, not here** — it indexes every phase, one line per finding. As
+of 2026-08-01 one phase has closed (the product survey) and **no phase has changed a
+line of production code**.
+
+**Why it is a sidequest and not the next phase of this document.** It moves files;
+it does not answer a new question about a tree. Everything in this file is a
+capability some adapter gained or an absence it still has — facts about pokeprism,
+pokecrystal and polishedcrystal. The split is a fact about *our* packaging, and
+mixing the two would mean this file could no longer be read as "what the seam can
+do".
+
+**What it is allowed to change, and what it is not.** It may move code and rename
+files and folders. It may not change what any adapter can do, and it may not
+change a byte any writer emits — every capability in the matrix above must still
+hold, with the same tests passing, after every phase. Where the split needs
+behaviour to change first, that is a normal item and belongs on the pick-up list,
+not inside a move.
+
+**The one place the two stories touch.** The split's goal — *nothing an adapter
+imports may point up at the IDE* — is a restatement of what `hacks/seam.py`
+already claims and does not yet enforce: all three in-tree adapters import
+`studio/` at runtime. That is the same debt this document has been carrying
+implicitly, and the split is where it gets paid, in its Phase 2. Until then it
+stays a known, deliberate exception rather than a surprise.
 
 ## Landed — the family header editor, on a shared splicer (2026-07-30)
 
@@ -808,9 +850,15 @@ that roadmap went back into `family-write-plan.md` as they landed, which is the
 split working as intended — completed history off the hot path):
 `devtools-plan.md` (historical), `bank-usage-plan.md` (spec, no code),
 `blockdata-plan.md` (shipped), `map-inspect-plan.md`, `devtools.md` (user
-reference). Separately, a `feat/map-studio` docs restructure sits **stashed**
+reference), and the sidequest's `refactor-*.md` set (live).
+Separately, a `feat/map-studio` docs restructure sits **stashed**
 (`git stash@{0}`), unlanded. None of this is on the critical path; it is the
 entropy to prune when convenient, not now.
+
+The sidequest's files are the one bit of accretion that is *load-bearing* rather
+than residue: an argument, an index, and two per phase, on purpose — and the reason
+this file does not carry the split's progress. They are capped and cross-linked;
+prune them only if a phase closes without collapsing its plan back to a sketch.
 
 ## Tests
 
