@@ -1,25 +1,33 @@
-# Ruflo — Claude Code Configuration
-
-## Rules
+## General rules
 
 - Do what has been asked; nothing more, nothing less
 - NEVER create files unless absolutely necessary — prefer editing existing files
 - NEVER create documentation files unless explicitly requested
 - NEVER save working files or tests to root — use `/src`, `/tests`, `/docs`, `/config`, `/scripts`
 - ALWAYS read a file before editing it
+- ALWAYS run tests after code changes
 - NEVER commit secrets, credentials, or .env files
 - NEVER add a `Co-Authored-By` trailer to user commits unless this project's `.claude/settings.json` has `attribution.commit` set (#2078). The Claude Code Bash tool may suggest one in its default commit-message template — ignore it. `Co-Authored-By` is semantic authorship attribution under git/GitHub convention; the tool is the facilitator, not a co-author.
-- Keep source files small — see **File size** below for what the numbers mean
-- Name functions with a verb **and its object** — say what the function does
-  *to what*. A function *does* something; a name that is a noun (`registered`,
-  `config`) is usually a value that has not admitted it yet. But a bare verb
-  (`discover`, `process`, `handle`, `run`) is barely better: it passes a shallow
-  "is it a verb?" check and still tells the reader nothing. The test that
+
+## Functions
+- **Name functions with a verb and its object** — say what the function does
+  *to what*. A function *does* something, but a bare verb
+  (`discover`, `process`, `handle`, `run`) is barely better and still tells the
+  reader nothing. The test that
   matters: reading the name alone, could someone answer *what does this return or
   change?* `get_registered_hacks` passes; `discover` does not. When a verb needs
   no object because the object is the whole module (`mount`, `build`), that is
   fine — the object is implied, not missing.
-- Validate input at system boundaries
+- Keep each function at **one abstraction level**. Smells: more than 2–3 levels
+  of nested blocks, or a body longer than ~30 LOC. The test: every line in a
+  function should answer the same kind of question. No function should be > 50 LOC.
+- Validate input at system boundaries (user input, external APIs, file formats) —
+  and **trust internal code and framework guarantees**. No defensive validation
+  inside private functions or between layers we control.
+- Keep every magic value named. A number or string that encodes a protocol
+  decision — a record length, a bank, an opcode, a sentinel — is a fact, and a
+  fact needs a name to be checkable.
+
 
 ## File size
 
@@ -28,15 +36,36 @@ measured. **One file holds one or two responsibilities**, which in practice
 lands around **~150 LOC**.
 
 - **Over 250 LOC** is a smell, not a violation: it usually means responsibilities
-  have been stuffed in together. Read it as a prompt to look, not as a failure.
-- **Up to ~500 LOC** is fine for a file or two in the codebase, but each one
-  needs a reason that survives being said out loud. "It grew" is not one.
+  have been stuffed in together. Read it as a prompt to look.
 - When a cluster of related responsibilities piles up, **give each file one or
   two and put the files in a folder** whose name says what domain they share.
   The folder name is the explanation; if it can't be named, the grouping is
   wrong.
-- **Tests are exempt.** A test file grows one case at a time, and splitting it
-  to hit a number costs more than it saves. Let them be as big as they need.
+- **Tests are exempt.** Let them be as big as they need.
+
+## Naming files and folders
+
+A **folder is an address** — its job is to answer *"what kind of things are
+here?"*. Use GBC rom-hacking terms like `save` or `VRAM`, or pret domain names
+like `overworld` or `pokemon-stats`. Architecture-adjacent names (`shared/`,
+`core/`, `services/`) are also fine.
+
+A **file that defines a domain entity must carry that entity's name** — its job
+is to answer *"what is this?"*. Never use an architectural noun where a domain one is
+available.
+
+## Comments
+
+A code file should explain itself. Nobody reads 100 lines of prose and then 100
+lines of code saying the same thing — if the code needs the prose, it needs better
+function names, a responsibility dropped, and functions at a single abstraction
+level. Refactoring beats comments. The header comment states intent plus anything
+genuinely non-obvious or contestable. Delete the rest.
+
+**One exception, and it is narrow:** prose recording a **measurement or a
+falsification** ("reading polished with vanilla's record returns exactly one
+palette, so the box silently stops suggesting") is a fact that cost work to find.
+Route it to a test, a commit body, or a doc. Never simply delete it.
 
 ## Commit style
 
@@ -50,166 +79,3 @@ lands around **~150 LOC**.
   still mean something in a year. **Never a phase number or a plan name.**
   Plans are throwaway specs; git history is not, and `feat(9a,9b)` is unreadable
   the moment the plan it referenced is gone.
-
-## Agent Comms (SendMessage-First Coordination)
-
-Named agents coordinate via `SendMessage`, not polling or shared state.
-
-```
-Lead (you) ←→ architect ←→ developer ←→ tester ←→ reviewer
-              (named agents message each other directly)
-```
-
-### Spawning a Coordinated Team
-
-```javascript
-// ALL agents in ONE message, each knows WHO to message next
-Agent({ prompt: "Research the codebase. SendMessage findings to 'architect'.",
-  subagent_type: "researcher", name: "researcher", run_in_background: true })
-Agent({ prompt: "Wait for 'researcher'. Design solution. SendMessage to 'coder'.",
-  subagent_type: "system-architect", name: "architect", run_in_background: true })
-Agent({ prompt: "Wait for 'architect'. Implement it. SendMessage to 'tester'.",
-  subagent_type: "coder", name: "coder", run_in_background: true })
-Agent({ prompt: "Wait for 'coder'. Write tests. SendMessage results to 'reviewer'.",
-  subagent_type: "tester", name: "tester", run_in_background: true })
-Agent({ prompt: "Wait for 'tester'. Review code quality and security.",
-  subagent_type: "reviewer", name: "reviewer", run_in_background: true })
-
-// Kick off the pipeline
-SendMessage({ to: "researcher", summary: "Start", message: "[task context]" })
-```
-
-### Patterns
-
-| Pattern | Flow | Use When |
-|---------|------|----------|
-| **Pipeline** | A → B → C → D | Sequential dependencies (feature dev) |
-| **Fan-out** | Lead → A, B, C → Lead | Independent parallel work (research) |
-| **Supervisor** | Lead ↔ workers | Ongoing coordination (complex refactor) |
-
-### Rules
-
-- ALWAYS name agents — `name: "role"` makes them addressable
-- ALWAYS include comms instructions in prompts — who to message, what to send
-- Spawn ALL agents in ONE message with `run_in_background: true`
-- After spawning: STOP, tell user what's running, wait for results
-- NEVER poll status — agents message back or complete automatically
-
-## Swarm & Routing
-
-### Config
-- **Topology**: hierarchical-mesh (anti-drift)
-- **Max Agents**: 15
-- **Memory**: hybrid
-- **HNSW**: Enabled
-- **Neural**: Enabled
-
-```bash
-npx @claude-flow/cli@latest swarm init --topology hierarchical --max-agents 8 --strategy specialized
-```
-
-### Agent Routing
-
-| Task | Agents | Topology |
-|------|--------|----------|
-| Bug Fix | researcher, coder, tester | hierarchical |
-| Feature | architect, coder, tester, reviewer | hierarchical |
-| Refactor | architect, coder, reviewer | hierarchical |
-| Performance | perf-engineer, coder | hierarchical |
-| Security | security-architect, auditor | hierarchical |
-
-### When to Swarm
-- **YES**: 3+ files, new features, cross-module refactoring, API changes, security, performance
-- **NO**: single file edits, 1-2 line fixes, docs updates, config changes, questions
-
-### 3-Tier Model Routing
-
-| Tier | Handler | Use Cases |
-|------|---------|-----------|
-| 1 | Agent Booster (WASM) | Simple transforms — skip LLM, use Edit directly |
-| 2 | Haiku | Simple tasks, low complexity |
-| 3 | Sonnet/Opus | Architecture, security, complex reasoning |
-
-## Memory & Learning
-
-### Before Any Task
-```bash
-npx @claude-flow/cli@latest memory search --query "[task keywords]" --namespace patterns
-npx @claude-flow/cli@latest hooks route --task "[task description]"
-```
-
-### After Success
-```bash
-npx @claude-flow/cli@latest memory store --namespace patterns --key "[name]" --value "[what worked]"
-npx @claude-flow/cli@latest hooks post-task --task-id "[id]" --success true --store-results true
-```
-
-### MCP Tools (use `ToolSearch("keyword")` to discover)
-
-| Category | Key Tools |
-|----------|-----------|
-| **Memory** | `memory_store`, `memory_search`, `memory_search_unified` |
-| **Bridge** | `memory_import_claude`, `memory_bridge_status` |
-| **Swarm** | `swarm_init`, `swarm_status`, `swarm_health` |
-| **Agents** | `agent_spawn`, `agent_list`, `agent_status` |
-| **Hooks** | `hooks_route`, `hooks_post-task`, `hooks_worker-dispatch` |
-| **Security** | `aidefence_scan`, `aidefence_is_safe`, `aidefence_has_pii` |
-| **Hive-Mind** | `hive-mind_init`, `hive-mind_consensus`, `hive-mind_spawn` |
-
-### Background Workers
-
-| Worker | When |
-|--------|------|
-| `audit` | After security changes |
-| `optimize` | After performance work |
-| `testgaps` | After adding features |
-| `map` | Every 5+ file changes |
-| `document` | After API changes |
-
-```bash
-npx @claude-flow/cli@latest hooks worker dispatch --trigger audit
-```
-
-## Agents
-
-**Core**: `coder`, `reviewer`, `tester`, `planner`, `researcher`
-**Architecture**: `system-architect`, `backend-dev`, `mobile-dev`
-**Security**: `security-architect`, `security-auditor`
-**Performance**: `performance-engineer`, `perf-analyzer`
-**Coordination**: `hierarchical-coordinator`, `mesh-coordinator`, `adaptive-coordinator`
-**GitHub**: `pr-manager`, `code-review-swarm`, `issue-tracker`, `release-manager`
-
-Any string works as a custom agent type.
-
-## Build & Test
-
-- ALWAYS run tests after code changes
-- ALWAYS verify build succeeds before committing
-
-```bash
-npm run build && npm test
-```
-
-## CLI Quick Reference
-
-```bash
-npx @claude-flow/cli@latest init --wizard           # Setup
-npx @claude-flow/cli@latest swarm init --v3-mode     # Start swarm
-npx @claude-flow/cli@latest memory search --query "" # Vector search
-npx @claude-flow/cli@latest hooks route --task ""    # Route to agent
-npx @claude-flow/cli@latest doctor --fix             # Diagnostics
-npx @claude-flow/cli@latest security scan            # Security scan
-npx @claude-flow/cli@latest performance benchmark    # Benchmarks
-```
-
-26 commands, 140+ subcommands. Use `--help` on any command for details.
-
-## Setup
-
-```bash
-claude mcp add claude-flow -- npx -y @claude-flow/cli@latest
-npx @claude-flow/cli@latest daemon start
-npx @claude-flow/cli@latest doctor --fix
-```
-
-**Agent tool** handles execution (agents, files, code, git). **MCP tools** handle coordination (swarm, memory, hooks). **CLI** is the same via Bash.
