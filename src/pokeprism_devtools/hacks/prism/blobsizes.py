@@ -2,7 +2,7 @@
 
 A map contributes four blobs to the ROM:
 
-* primary header — a fixed 8 bytes appended to the shared ``Map Headers`` array.
+* primary header — a fixed 9 bytes appended to the shared ``Map Headers`` array.
 * secondary header — ``12 + 12·connections`` bytes (a 12-byte base plus 12 per
   ``connection`` line).
 * block data — the LZ-compressed ``.blk`` (sized exactly by ``utils/lzcomp``).
@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 
-PRIMARY_HEADER_GROWTH = 8        # bytes a map_header adds to the "Map Headers" section
+PRIMARY_HEADER_GROWTH = 9        # bytes a map_header adds to the "Map Headers" section
 SECONDARY_BASE = 12              # map_header_2 base bytes (before connections)
 SECONDARY_PER_CONNECTION = 12    # bytes each `connection` line emits
 

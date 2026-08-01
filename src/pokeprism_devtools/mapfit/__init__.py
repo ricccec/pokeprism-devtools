@@ -120,7 +120,7 @@ def baseline_free_space(
 
     If the map is already in the .map (a re-alloc), its sections are credited
     back and no header growth is charged (its primary header is already
-    counted). If it's new, the 'Map Headers' bank is debited the +8 bytes the
+    counted). If it's new, the 'Map Headers' bank is debited the +9 bytes the
     new positional primary header adds.
     """
     own = set()

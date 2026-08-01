@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools import map_show  # noqa: E402
-from pokeprism_devtools.hacks.prism import mapsource # noqa: E402
+from pokeprism_devtools.hacks.prism import blobsizes, mapsource # noqa: E402
 from pokeprism_devtools.shared.mapfile import Bank, MapFile, Section  # noqa: E402
 from pokeprism_devtools.hacks.prism.mapspec import MapSpec  # noqa: E402
 
@@ -153,8 +153,11 @@ def test_gather_blobs(root: Path) -> None:
     print("\nmap_show.gather_blobs (no .map)")
     spec = map_show.build_spec(root, "MtEmberSmallRoom")
     blobs = {b.blob: b for b in map_show.gather_blobs(root, spec, None)}
-    check("primary is 8 B in 'Map Headers'",
-          blobs["primary"].size == 8 and blobs["primary"].section == "Map Headers")
+    # The size is named, not restated — a literal here is how the constant stayed
+    # a byte short of what the macro emits (`test_mapfit`, header sizes).
+    check(f"primary is {blobsizes.PRIMARY_HEADER_GROWTH} B in 'Map Headers'",
+          blobs["primary"].size == blobsizes.PRIMARY_HEADER_GROWTH
+          and blobs["primary"].section == "Map Headers")
     check("secondary size = 12 + 12*conns = 24",
           blobs["secondary"].size == 24, str(blobs["secondary"].size))
     check("blk size unknown when lzcomp unavailable (graceful)",
