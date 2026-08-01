@@ -8,7 +8,16 @@ intact, and a label that is a prefix of another (`Route30` vs `Route30Gate`) is
 not matched by its neighbour's line. Each is shown failing first where a wrong
 answer would otherwise look fine.
 
-The second half is a **byte-identical guard on prism**: the splicer was lifted
+The middle section pins a **finding, not a rule**: the same "read one macro line's
+arguments" mechanic is hand-rolled a dozen times across the repo with three
+different answers about a trailing comment, and prism's reader disagrees with
+prism's own writer. It is latent today only because no prism header carries a
+comment — which the census there checks, so the day it stops being true a test
+says so instead of a map header quietly gaining a fishgroup called
+`FISHGROUP_SHORE ; a note`. Recorded in `docs/refactor-STATE.md`, scheduled in
+`docs/refactor-plan.md` under "Before anything".
+
+The last section is a **byte-identical guard on prism**: the splicer was lifted
 out of `hacks/prism/mapedit.py` and prism repointed at it, so this proves the
 extraction did not change what prism writes — a real prism header, edited with
 its own values, must come back unchanged, and one field moved must move exactly
@@ -138,6 +147,66 @@ def test_prism_byte_identical() -> None:
           and (PRISM / mapedit.SECONDARY).read_text() == before_secondary)
 
 
+def test_readers_disagree_about_comments() -> None:
+    """The three implementations of *read one macro line's arguments*, side by side.
+
+    There is one writer (`splice_macro_args`) and two hand-rolled readers, and they
+    do not agree about a trailing `; comment`: the family drops it, prism folds it
+    into the last argument, the writer preserves it. So prism's read path and
+    prism's *own* write path disagree about what the arguments of one line are.
+
+    This test does not assert that the divergence is right. It **pins it in place
+    so it cannot be rediscovered a third time**, and it fails the day the premise
+    that keeps it harmless stops holding — see the census below. When the reader is
+    lifted (`refactor-plan.md`, "Before anything"), the first check flips to *all
+    three agree* and the second one stops being needed. That is what done looks
+    like.
+    """
+    print("\nthe three macro-line readers (see refactor-STATE.md)")
+
+    import re
+
+    from pokeprism_devtools.hacks.prism.mapsource import _split_fields
+    from pokeprism_devtools.hacks.vanilla.mapedit import _find_args  # noqa: F401
+
+    line = ("\tmap_header MtEmberSmallRoom, TILESET_CAVE, CAVE, LM_MT_EMBER, "
+            "MUSIC_CAVE, 0, PALETTE_NITE, FISHGROUP_SHORE ; a note")
+
+    prism = _split_fields(
+        re.match(r"^\s*map_header\s+MtEmberSmallRoom\s*,(.*)$", line).group(1))
+    family = [a.strip() for a in
+              re.match(r"^\s*map_header\s+(\w+)\s*,\s*(.+)", line)
+              .group(2).split(";")[0].split(",")]
+    w = re.match(r"^(?P<head>\s*map_header\s+MtEmberSmallRoom\s*,)"
+                 r"(?P<args>.*?)(?P<comment>\s*;.*)?$", line)
+    writer = [a.strip() for a in w.group("args").split(",")]
+
+    check("the family reader agrees with the writer about the arguments",
+          family == writer, f"{family[-1]!r} vs {writer[-1]!r}")
+    check("prism's reader does NOT — the comment lands in the last argument",
+          prism != writer and prism[-1].endswith("; a note"), repr(prism[-1]))
+    check("the writer keeps the comment it found",
+          w.group("comment") == " ; a note", repr(w.group("comment")))
+
+    # The premise that keeps prism's version harmless: no prism header carries a
+    # comment today. This is the check that announces the day that stops being
+    # true — at which point prism reads a fishgroup called "FISHGROUP_SHORE ; a
+    # note" and validates it against the constants file.
+    if not PRISM.exists():
+        print(f"  --   no pokeprism checkout at {PRISM} — census skipped")
+        return
+    from pokeprism_devtools.hacks.prism import mapedit
+    commented = {}
+    for rel, macro in ((mapedit.PRIMARY, "map_header"),
+                       (mapedit.SECONDARY, "map_header_2")):
+        rx = re.compile(rf"^\s*{macro}\s+\w+\s*,.*;")
+        commented[rel] = sum(bool(rx.match(ln))
+                             for ln in (PRISM / rel).read_text().splitlines())
+    check("no prism map header carries a trailing comment, so the gap is latent",
+          not any(commented.values()),
+          f"{commented} — the reader must be lifted before this ships")
+
+
 def _some_prism_label() -> str | None:
     from pokeprism_devtools.hacks.prism import mapedit, mapsource
     for label, _ in mapsource.header_pairs(PRISM):
@@ -151,6 +220,7 @@ def _some_prism_label() -> str | None:
 
 def main() -> int:
     test_splicer()
+    test_readers_disagree_about_comments()
     test_prism_byte_identical()
     print("\nall checks passed" if not _failures else f"\n{_failures} FAILED")
     return 1 if _failures else 0
