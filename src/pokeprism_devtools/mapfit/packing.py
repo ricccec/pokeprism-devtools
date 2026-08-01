@@ -91,7 +91,7 @@ class FreeSpace:
         return cls(free)
 
     def reserve(self, bank: int, amount: int) -> None:
-        """Account for bytes consumed outside the packer (e.g. the +8 the
+        """Account for bytes consumed outside the packer (e.g. the +9 the
         positional primary header adds to whichever bank holds 'Map Headers')."""
         self.free[bank] = self.free.get(bank, BANK_CAPACITY) - amount
 

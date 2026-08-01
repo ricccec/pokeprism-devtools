@@ -11,6 +11,7 @@ lzcomp checks use the real pokeprism repo if one is reachable, and are skipped
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import tempfile
@@ -24,10 +25,12 @@ from pokeprism_devtools.mapfit import mapwire  # noqa: E402
 from pokeprism_devtools.mapfit.packing import (  # noqa: E402
     FreeSpace, Item, NoFitError, pack,
 )
-from pokeprism_devtools.hacks.prism import mapsource # noqa: E402
+from pokeprism_devtools.hacks.prism import blobsizes, mapsource # noqa: E402
 from pokeprism_devtools.shared import paths # noqa: E402
 from pokeprism_devtools.shared.mapfile import Bank, MapFile, Section  # noqa: E402
 from pokeprism_devtools.hacks.prism.mapspec import MapSpec  # noqa: E402
+
+PRISM = Path.home() / "code/ricccec/pokeprism"
 
 _failures = 0
 
@@ -213,15 +216,18 @@ def test_baseline_credit_back() -> None:
     check("script bytes credited back to its bank",
           fs.free[0x30] == 0x4000, f"{fs.free[0x30]:#x}")
     check("blk bytes credited back", fs.free[0x31] == 0x4000)
-    check("Map Headers bank not double-debited (+8) when already placed",
+    check("Map Headers bank not double-debited when already placed",
           fs.free[0x25] == 0x4000 - 0x107e, f"{fs.free[0x25]:#x}")
     check("Map Headers bank identified", hdr_bank == 0x25)
 
-    # A *new* map (not in the .map) still gets the +8 debit and no credit-back.
+    # A *new* map (not in the .map) still gets the header debit and no
+    # credit-back. The size is named, not restated: spelling it `8` here is how
+    # the under-reservation stayed pinned while the macro emitted 9.
+    growth = blobsizes.PRIMARY_HEADER_GROWTH
     fresh = MapSpec(**{**spec.__dict__, "label": "BrandNew", "const": "BRAND_NEW"})
     fs2, _ = mapfit.baseline_free_space(mp, fresh)
-    check("new map: Map Headers debited by +8",
-          fs2.free[0x25] == 0x4000 - 0x107e - 8, f"{fs2.free[0x25]:#x}")
+    check(f"new map: Map Headers debited by +{growth}",
+          fs2.free[0x25] == 0x4000 - 0x107e - growth, f"{fs2.free[0x25]:#x}")
     check("new map: unrelated bank untouched", fs2.free[0x30] == 0x4000 - 640)
 
 
@@ -596,6 +602,87 @@ def test_pinning(tmp: Path) -> None:
           not mapwire.unpin_sections(root, ["Map block data X"]).changed)
 
 
+BYTES_PER_ARGUMENT = {"db": 1, "dw": 2, "dl": 4, "dba": 3, "dab": 3, "dbw": 3}
+NIBBLES_PER_BYTE = 2             # `dn` packs two nibbles into one byte
+
+
+def _macro_body(text: str, macro: str) -> list[str]:
+    """The lines between `MACRO <macro>` and its `ENDM`, comments stripped."""
+    body: list[str] = []
+    inside = False
+    for line in text.splitlines():
+        code = line.split(";")[0].strip()
+        if re.fullmatch(rf"MACRO\s+{macro}", code):
+            inside = True
+        elif inside and code == "ENDM":
+            return body
+        elif inside and code:
+            body.append(code)
+    raise AssertionError(f"no `MACRO {macro}` in the file")
+
+
+def _count_arguments(operands: str) -> int:
+    """Comma-separated arguments, ignoring commas inside `BANK(…)`."""
+    if not operands.strip():
+        return 0
+    depth, count = 0, 1
+    for ch in operands:
+        depth += (ch == "(") - (ch == ")")
+        if ch == "," and depth == 0:
+            count += 1
+    return count
+
+
+def _emitted_bytes(body: list[str]) -> int:
+    """How many bytes one invocation of this macro body emits.
+
+    An unrecognised directive raises rather than counting nothing: a silent
+    zero is exactly the under-count this exists to catch. That also rules out
+    rgbds conditionals — `connection`'s size depends on which branch its
+    direction argument takes, which counting a body cannot answer.
+    """
+    total = 0
+    for line in body:
+        if line.endswith(":"):
+            continue                                  # a label emits nothing
+        directive, operands = (re.split(r"\s+", line, maxsplit=1) + [""])[:2]
+        args = _count_arguments(operands)
+        if directive == "dn":
+            total += -(-args // NIBBLES_PER_BYTE)
+        elif directive in BYTES_PER_ARGUMENT:
+            total += BYTES_PER_ARGUMENT[directive] * args
+        else:
+            raise AssertionError(f"cannot size `{line}` — unknown directive")
+    return total
+
+
+def test_header_sizes_match_the_macros() -> None:
+    """The header sizes `mapfit` reserves, counted from prism's own macros.
+
+    `PRIMARY_HEADER_GROWTH` said 8 while `map_header` emits 9, so the packer
+    under-reserved the shared `Map Headers` section by a byte for every map
+    added. The constants are a transcription of the macros; nothing but a
+    reader checked them.
+    """
+    print("\nblobsizes constants vs prism's macros/map.asm")
+    macros = PRISM / "macros" / "map.asm"
+    if not macros.exists():
+        skip("header sizes against the macros", f"no pokeprism at {PRISM}")
+        return
+    text = macros.read_text()
+
+    primary = _emitted_bytes(_macro_body(text, "map_header"))
+    check("PRIMARY_HEADER_GROWTH is what `map_header` emits",
+          primary == blobsizes.PRIMARY_HEADER_GROWTH,
+          f"macro emits {primary}, constant says "
+          f"{blobsizes.PRIMARY_HEADER_GROWTH}")
+
+    secondary = _emitted_bytes(_macro_body(text, "map_header_2"))
+    check("SECONDARY_BASE is what `map_header_2` emits",
+          secondary == blobsizes.SECONDARY_BASE,
+          f"macro emits {secondary}, constant says {blobsizes.SECONDARY_BASE}")
+
+
 def test_lzcomp_sizing() -> None:
     print("\nmapfit.compressed_blk_size (lzcomp)")
     try:
@@ -632,6 +719,7 @@ def main() -> int:
         test_manual_placement_fit(tmp)
         test_shared_section_detection(tmp)
         test_pinning(tmp)
+        test_header_sizes_match_the_macros()
         test_lzcomp_sizing()
     print()
     if _failures:
