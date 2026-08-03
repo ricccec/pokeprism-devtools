@@ -1,7 +1,7 @@
 """What one tileset's metatiles look like: how used, how covered, how big.
 
 Everything above `_blob_sizes` is pure — bytes in, numbers out — so the counting
-rules can be tested without a checkout. `analyze` is the one function that needs
+rules can be tested without a checkout. `analyze_tileset` is the one function that needs
 the tree, and it imports the renderer lazily because that pulls in Pillow.
 """
 
@@ -150,7 +150,7 @@ def load_syms(root: Path) -> SymFile | None:
         return None
 
 
-def analyze(
+def analyze_tileset(
     root: Path, tileset_id: int, uses: list[MapUse], syms: SymFile | None = None
 ) -> TilesetAnalysis:
     from ..hacks.prism.render import load_tileset_files

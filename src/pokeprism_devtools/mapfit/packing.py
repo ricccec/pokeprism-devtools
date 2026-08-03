@@ -99,7 +99,7 @@ class FreeSpace:
         return FreeSpace(dict(self.free))
 
 
-def pack(
+def pack_into_banks(
     items: list[Item],
     free: FreeSpace,
     *,
