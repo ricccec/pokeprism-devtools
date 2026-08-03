@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools import mapfit  # noqa: E402
-from pokeprism_devtools.mapfit import mapwire  # noqa: E402
+from pokeprism_devtools.mapfit import freespace, mapwire  # noqa: E402
 from pokeprism_devtools.mapfit.packing import (  # noqa: E402
     FreeSpace, Item, NoFitError, pack,
 )
@@ -128,7 +128,7 @@ def test_consolidate_core() -> None:
         for it in mapfit.map_items(spec, sizes):
             items.append(it)
             names.add(it.key)
-    fs, _ = mapfit._lift_free_space(mp, names, header_growth=0)
+    fs, _ = freespace._lift_free_space(mp, names, header_growth=0)
     check("parked banks fully credited back", fs.free[0x76] == 0x4000 and fs.free[0x77] == 0x4000)
 
     placements = pack(items, fs, margin=16, strategy="tight")
@@ -154,7 +154,7 @@ def test_consolidate_core() -> None:
     sized = mapfit.map_items(a, mapfit.sizes_from_map_strict(mp, a))
     only_blk = [it for it in sized if it.key in sel]
     check("only one item selected for blk-only move", len(only_blk) == 1)
-    fs2, _ = mapfit._lift_free_space(mp, {it.key for it in only_blk}, header_growth=0)
+    fs2, _ = freespace._lift_free_space(mp, {it.key for it in only_blk}, header_growth=0)
     check("script's parked bank NOT credited back when moving only blk",
           fs2.free[0x76] == 0x4000 - (600 + 20 + 12) + 20, f"{fs2.free[0x76]:#x}")
 
