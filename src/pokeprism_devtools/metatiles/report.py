@@ -60,71 +60,92 @@ def _compact_ranges(nums: list[int]) -> str:
     return ", ".join(parts)
 
 
-def render_report(a: TilesetAnalysis, *, top: int, color: bool) -> str:
-    out: list[str] = []
-    out.append(
-        f"Tileset {a.tileset_id} (0x{a.tileset_id:02X})  {a.name}"
-    )
-    out.append(
-        f"  metatiles defined: {a.n_defined}/{_METATILE_CAP}    "
-        f"maps using it: {len(a.map_labels)}"
-    )
+_MAPS_PER_ROW = 3
+_MAP_LABEL_WIDTH = 24
 
-    out.append("\nMaps using this tileset:")
-    if a.map_labels:
-        for chunk_start in range(0, len(a.map_labels), 3):
-            out.append("  " + "  ".join(
-                f"{lbl:<24}" for lbl in a.map_labels[chunk_start:chunk_start + 3]
-            ).rstrip())
-    else:
-        out.append("  (none)")
 
-    out.append("\nMetatile usage heatmap (maps referencing each metatile):")
-    for row_start in range(0, a.n_defined, _HEAT_COLS):
-        row = a.usage[row_start:row_start + _HEAT_COLS]
-        out.append("  " + "".join(_square(c, color=color) for c in row))
+def _render_map_list(labels: list[str]) -> list[str]:
+    if not labels:
+        return ["  (none)"]
+    return [
+        "  " + "  ".join(
+            f"{lbl:<{_MAP_LABEL_WIDTH}}"
+            for lbl in labels[start:start + _MAPS_PER_ROW]
+        ).rstrip()
+        for start in range(0, len(labels), _MAPS_PER_ROW)
+    ]
+
+
+def _render_heatmap(usage: list[int], n_defined: int, *, color: bool) -> list[str]:
+    rows = [
+        "  " + "".join(
+            _square(c, color=color) for c in usage[start:start + _HEAT_COLS])
+        for start in range(0, n_defined, _HEAT_COLS)
+    ]
     legend = "  ".join(
-        f"{_square(lo, color=color)} {label}" for lo, _c, _ch, label in reversed(_BUCKETS)
+        f"{_square(lo, color=color)} {label}"
+        for lo, _c, _ch, label in reversed(_BUCKETS)
     )
-    out.append("  legend: " + legend)
+    return [*rows, "  legend: " + legend]
 
+
+def _render_rankings(a: TilesetAnalysis, top: int) -> list[str]:
     ranked = a.ranked()
-    out.append(f"\nTop {top} most-used metatiles:")
-    out.append("  " + (", ".join(f"#{m}×{c}" for m, c in ranked[:top]) or "(none)"))
-
+    out = [
+        f"\nTop {top} most-used metatiles:",
+        "  " + (", ".join(f"#{m}×{c}" for m, c in ranked[:top]) or "(none)"),
+        f"Top {top} least-used (referenced) metatiles:",
+    ]
     least = sorted(ranked, key=lambda t: (t[1], t[0]))[:top]
-    out.append(f"Top {top} least-used (referenced) metatiles:")
-    if least:
-        idx_w = max(len(str(m)) for m, _ in least)
-        cnt_w = max(len(str(c)) for _, c in least)
-        for m, c in least:
-            maps = ", ".join(a.users.get(m, []))
-            out.append(f"  #{m:<{idx_w}} ×{c:<{cnt_w}}  {maps}")
-    else:
-        out.append("  (none)")
+    if not least:
+        return [*out, "  (none)"]
+    idx_w = max(len(str(m)) for m, _ in least)
+    cnt_w = max(len(str(c)) for _, c in least)
+    return out + [
+        f"  #{m:<{idx_w}} ×{c:<{cnt_w}}  {', '.join(a.users.get(m, []))}"
+        for m, c in least
+    ]
 
-    unused = a.unused
-    out.append(f"\nUnused metatiles: {len(unused)} of {a.n_defined}")
-    out.append("  " + _compact_ranges(unused))
 
-    out.append(
-        f"\n8x8 tile coverage: {a.tiles_used}/{a.tiles_total} used"
-        + (f"  ({a.tiles_total - a.tiles_used} unused)" if a.tiles_total else "")
-    )
-    if a.unused_tiles:
-        out.append("  unused tiles: " + _compact_ranges(a.unused_tiles))
-
-    out.append("\nBlob sizes (bytes):")
-    out.append(f"  {'BLOB':<11} {'RAW':>7} {'LZ':>7}  {'RATIO':>5}  BANK")
-    for b in a.blobs:
+def _render_blob_sizes(blobs: list[BlobSize]) -> list[str]:
+    out = ["\nBlob sizes (bytes):",
+           f"  {'BLOB':<11} {'RAW':>7} {'LZ':>7}  {'RATIO':>5}  BANK"]
+    for b in blobs:
         ratio = "—" if b.ratio is None else f"{b.ratio * 100:.0f}%"
         bank = "—" if b.bank is None else f"0x{b.bank:02X}"
         out.append(
             f"  {b.name:<11} {_fmt_size(b.raw):>7} {_fmt_size(b.lz):>7}  "
             f"{ratio:>5}  {bank}"
         )
+    return out
 
-    return "\n".join(out)
+
+def _render_coverage(a: TilesetAnalysis) -> list[str]:
+    unused = a.unused
+    out = [
+        f"\nUnused metatiles: {len(unused)} of {a.n_defined}",
+        "  " + _compact_ranges(unused),
+        f"\n8x8 tile coverage: {a.tiles_used}/{a.tiles_total} used"
+        + (f"  ({a.tiles_total - a.tiles_used} unused)" if a.tiles_total else ""),
+    ]
+    if a.unused_tiles:
+        out.append("  unused tiles: " + _compact_ranges(a.unused_tiles))
+    return out
+
+
+def render_report(a: TilesetAnalysis, *, top: int, color: bool) -> str:
+    return "\n".join([
+        f"Tileset {a.tileset_id} (0x{a.tileset_id:02X})  {a.name}",
+        f"  metatiles defined: {a.n_defined}/{_METATILE_CAP}    "
+        f"maps using it: {len(a.map_labels)}",
+        "\nMaps using this tileset:",
+        *_render_map_list(a.map_labels),
+        "\nMetatile usage heatmap (maps referencing each metatile):",
+        *_render_heatmap(a.usage, a.n_defined, color=color),
+        *_render_rankings(a, top),
+        *_render_coverage(a),
+        *_render_blob_sizes(a.blobs),
+    ])
 
 
 def render_summary(rows: list[TilesetAnalysis]) -> str:
