@@ -11,7 +11,15 @@ from .template import place_blk, write_template
 from .wizard import _Aborted, _gather_spec
 
 
-def main() -> None:
+_BANNER_WIDTH = 56
+
+
+def _import_questionary():
+    """The prompt library, or an exit telling the user how to get it.
+
+    It is imported here rather than at module scope so the other five console
+    entry points do not depend on it: only this one asks questions.
+    """
     try:
         import questionary
     except ImportError:
@@ -21,25 +29,19 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(2)
+    return questionary
 
-    try:
-        root = repo_root()
-    except RepoNotFound as e:
-        print(f"prism-newmap: {e}", file=sys.stderr)
-        sys.exit(2)
 
+def _print_banner() -> None:
     print()
-    print("=" * 56)
+    print("=" * _BANNER_WIDTH)
     print("  prism-newmap — add a new map")
-    print("=" * 56)
+    print("=" * _BANNER_WIDTH)
     print()
 
-    try:
-        spec, blk_src = _gather_spec(root, questionary)
-    except _Aborted:
-        print("\nAborted — no files written.")
-        sys.exit(1)
 
+def _write_map_files(root, spec, blk_src) -> None:
+    """Create the map's two files, before anything is wired to them."""
     print(f"\nWill create maps/{spec.label}.asm (empty template)")
     print(f"Will copy {blk_src} -> {spec.blk}")
     try:
@@ -55,6 +57,44 @@ def main() -> None:
             print(f"error: {p}", file=sys.stderr)
         sys.exit(2)
 
+
+def _save_spec(root, spec):
+    """Write the spec where `prism-mapfit add` will look for it."""
+    spec_path = make_devtools_dir(root, "specs") / f"{spec.label}.toml"
+    spec_path.write_text(spec.to_toml())
+    return spec_path
+
+
+def _print_next_steps(root, spec, spec_path) -> None:
+    rel = spec_path.relative_to(root)
+    print(f"\nWired {spec.label} ({spec.const}). Spec saved to {rel}")
+    if not spec.connections:
+        print("Note: no connections were added — if this map borders another, "
+              "add `connection ...` lines to both maps by hand in "
+              "maps/second_map_headers.asm.")
+    print(f"\nNext: prism-mapfit add --spec {rel}  "
+          "(add --park for a still-growing map)")
+
+
+def main() -> None:
+    questionary = _import_questionary()
+
+    try:
+        root = repo_root()
+    except RepoNotFound as e:
+        print(f"prism-newmap: {e}", file=sys.stderr)
+        sys.exit(2)
+
+    _print_banner()
+
+    try:
+        spec, blk_src = _gather_spec(root, questionary)
+    except _Aborted:
+        print("\nAborted — no files written.")
+        sys.exit(1)
+
+    _write_map_files(root, spec, blk_src)
+
     edits = [editor(root, spec) for editor in mapwire.ALL_ASM_EDITORS]
     print("\nWiring edits:")
     for e in edits:
@@ -66,16 +106,4 @@ def main() -> None:
         sys.exit(1)
 
     mapwire.apply_edits(root, edits, dry_run=False)
-
-    spec_dir = make_devtools_dir(root, "specs")
-    spec_path = spec_dir / f"{spec.label}.toml"
-    spec_path.write_text(spec.to_toml())
-
-    print(f"\nWired {spec.label} ({spec.const}). Spec saved to "
-          f"{spec_path.relative_to(root)}")
-    if not spec.connections:
-        print("Note: no connections were added — if this map borders another, "
-              "add `connection ...` lines to both maps by hand in "
-              "maps/second_map_headers.asm.")
-    print(f"\nNext: prism-mapfit add --spec {spec_path.relative_to(root)}  "
-          "(add --park for a still-growing map)")
+    _print_next_steps(root, spec, _save_spec(root, spec))
