@@ -5,7 +5,7 @@ Run from anywhere inside the pokeprism checkout. No ROM required.
 """
 
 from .cli import main
-from .mapinfo import MapInfo, collect
+from .mapinfo import MapInfo, collect_map_info
 from .table import render_table
 
-__all__ = ["MapInfo", "collect", "main", "render_table"]
+__all__ = ["MapInfo", "collect_map_info", "main", "render_table"]

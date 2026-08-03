@@ -9,7 +9,7 @@ import sys
 from dataclasses import asdict
 
 from ..shared.paths import RepoNotFound, repo_root
-from .mapinfo import _NULLABLE_SORTS, _SORT_KEYS, MapInfo, collect
+from .mapinfo import _NULLABLE_SORTS, _SORT_KEYS, MapInfo, collect_map_info
 from .table import render_table
 
 
@@ -82,7 +82,7 @@ def main() -> None:
         print(f"prism-maps: {e}", file=sys.stderr)
         sys.exit(2)
 
-    rows = _select_rows(collect(root), args)
+    rows = _select_rows(collect_map_info(root), args)
     if not rows:
         sys.exit(1)
     _order_rows(rows, args)

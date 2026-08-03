@@ -23,7 +23,7 @@ from .freespace import (
     PlacementError, _lift_free_space, baseline_free_space, map_items,
     plan_placement,
 )
-from .packing import FreeSpace, NoFitError, pack
+from .packing import FreeSpace, NoFitError, pack_into_banks
 from .sizes import estimate_sizes, sizes_from_map, sizes_from_map_strict
 from .specload import _check_dedicated_sections, _load_baseline, _load_spec
 
@@ -204,7 +204,7 @@ def cmd_consolidate(args) -> int:
 
     fs, _ = _lift_free_space(mp, all_names, header_growth=0)
     try:
-        placements = pack(items, fs, margin=args.margin, strategy="tight")
+        placements = pack_into_banks(items, fs, margin=args.margin, strategy="tight")
     except NoFitError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

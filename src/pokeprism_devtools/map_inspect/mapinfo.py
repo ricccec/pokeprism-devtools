@@ -102,7 +102,7 @@ def _measure_script(path: Path | None) -> tuple[int | None, int | None]:
             sum(1 for line in text.splitlines() if _NPC_RE.match(line)))
 
 
-def collect(root: Path) -> list[MapInfo]:
+def collect_map_info(root: Path) -> list[MapInfo]:
     """Build MapInfo list from source files under *root*."""
     map_defs = maps_mod.parse_maps(
         root / "constants" / "map_dimension_constants.asm"
