@@ -13,6 +13,7 @@ from pathlib import Path
 from ..shared.mapfile import MapFile
 from .ansi import _color, _fmt, _yellow
 from .maploader import _fill_cartridge_banks
+from .reports import DEFAULT_MAX_BANK_USAGE
 
 
 def _load_map_file(raw: str) -> MapFile:
@@ -102,7 +103,7 @@ def _print_added_and_removed(old_secs: dict, new_secs: dict) -> None:
 
 
 def cmd_diff(args: argparse.Namespace) -> int:
-    threshold = getattr(args, "max_bank_usage", 95.0)
+    threshold = getattr(args, "max_bank_usage", DEFAULT_MAX_BANK_USAGE)
     old = _load_map_file(args.old_map)
     new = _load_map_file(args.new_map)
 

@@ -8,8 +8,8 @@ import sys
 from .diffreport import cmd_diff
 from .maploader import _load
 from .reports import (
-    cmd_bank, cmd_banks, cmd_check, cmd_free, cmd_largest, cmd_section,
-    cmd_summary,
+    DEFAULT_MAX_BANK_USAGE, cmd_bank, cmd_banks, cmd_check, cmd_free,
+    cmd_largest, cmd_section, cmd_summary,
 )
 
 
@@ -46,13 +46,15 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="section name(s) (exact match first, then substring); repeat to search several")
 
     pc = sub.add_parser("check", help="exit 1 if any ROM bank exceeds threshold")
-    pc.add_argument("--max-bank-usage", type=float, default=95.0, metavar="P",
+    pc.add_argument("--max-bank-usage", type=float,
+                    default=DEFAULT_MAX_BANK_USAGE, metavar="P",
                     help="threshold %% (default: 95)")
 
     pd = sub.add_parser("diff", help="per-bank/section deltas between two .map files")
     pd.add_argument("old_map", help="old .map file")
     pd.add_argument("new_map", help="new .map file")
-    pd.add_argument("--max-bank-usage", type=float, default=95.0, metavar="P",
+    pd.add_argument("--max-bank-usage", type=float,
+                    default=DEFAULT_MAX_BANK_USAGE, metavar="P",
                     help="threshold for ⚠ warning (default: 95)")
 
     return p
