@@ -14,8 +14,9 @@ entry. Everything else happens in the new repo.
 
 ## What A is called, and where it lives — decided
 
-`~/code/ricccec/pokecrystal-asm-lib`, local, no remote. The user's call, taken
-2026-08-03. Alongside this repo and the three game trees.
+`~/code/ricccec/pokecrystal-asm-lib-history-2026-08-03`, local, no remote. The name is
+the user's call, taken 2026-08-03; the `-history-<date>` suffix says what it is — a
+dated snapshot of A's history, superseded by Phase 3's re-carve, not the product.
 
 No remote yet because there is nothing to install or run: `pyproject.toml`, the
 entry points and every test live **outside** A's four folders, so the carved repo is
@@ -33,8 +34,9 @@ whose premise is that the tree is still untouched, and then carried by B, C and 
 which do not care. It also buys nothing: the rename commit would be *in the history
 being carved*, so the filter still has to name both spellings either way.
 
-Carving first means the rename happens once, inside A's own repo, as A's own commit,
-against A's own imports — which is where the decision belongs.
+Carving first means the rename is not this phase's business at all: it happens once,
+after Phase 3's final carve, against A's own imports. It cannot happen in
+the snapshot before then — see "the snapshot" below, and the STATE section it links.
 
 **Cost, stated plainly — and this is about history, not imports.** `--path` selects
 commits by the path they touched *in the history being filtered*, and that history
@@ -67,10 +69,12 @@ now in A:
 | the prism round trip | `src/pokeprism_devtools/hacks/prism/{blockdata,people,spritevram}.py` |
 | pre-`src/` | `sym-lookup/sym-lookup.py` |
 
-**Empty files are not in the ledger.** `--follow` reports `_lib/__init__.py` as the
-ancestor of *both* `shared/__init__.py` and `wiring/__init__.py`; all three are zero
-bytes, so the similarity heuristic is matching nothing against nothing. A ledger
-built from `--follow` output alone contains invented entries.
+**Rebuild it from the renames git recorded**, walking the chains backward from today's
+paths — `git log --diff-filter=R --name-status -M`. Not from `git log --follow`, which
+was used the first time and reports `_lib/__init__.py` as the ancestor of *both*
+`shared/__init__.py` and `wiring/__init__.py`: all three are zero bytes, so the
+similarity heuristic matches nothing against nothing. A ledger built from `--follow`
+contains invented rows. Full recipe in STATE.
 
 ## Steps, and what proves each
 
@@ -92,8 +96,8 @@ working repo.
    files and nothing else — no `hacks/`, no `studio/`, no `pyproject.toml`.
 6. **Prove nothing leaked in.** The carved repo's tip content is byte-identical to
    this repo's A, checked with `diff -r`.
-7. **Move it to `~/code/ricccec/pokecrystal-asm-lib`** only once 3–6 pass, and
-   confirm it has no remote.
+7. **Move it to `~/code/ricccec/pokecrystal-asm-lib-history-2026-08-03`** only once
+   3–6 pass, and confirm it has no remote.
 8. **Record.** One line per finding in `refactor-STATE.md`, the evidence in
    `refactor-phase-0-STATE.md`, including the exact command so Phase 3 re-runs it
    rather than re-deriving it.
@@ -120,10 +124,28 @@ naming a file is the cheap way to under-collect.
 under-collecting silently loses the reasoning behind a live one. When the ledger is
 ambiguous, prefer over-collecting.
 
+## The snapshot is a by-product, not the deliverable
+
+The carve **copied** A; it deleted nothing. **This repo is A's only editable copy, and
+the snapshot takes no commits at all** — not even the `wiring/` rename. Phase 3 re-runs
+the carve and builds a fresh history: anything committed in the snapshot meanwhile is
+discarded, not merged.
+
+Freezing A *here* is not the alternative. `usage/` is one of Phase 1's six CLI packages,
+and CLAUDE.md compliance covers every file in this repo, so A's code is meant to keep
+changing here.
+
+**What this phase actually delivers is the rehearsal and the ledger** — the script and
+the measurements, both of which live in this repo. The snapshot's only unique value is
+as a dated backup should *this* repo's history ever be rewritten; everything else about
+it Phase 3 reproduces on demand. Evidence and the corrected consequences: STATE, "the
+carved repo is a snapshot".
+
 ## Handed forward
 
-- **To Phase 3, before it re-runs this:** re-derive the ledger, do not trust this
-  table. Phases 1 and 2 move files, and every move adds a row.
+- **To Phase 3, before it re-runs this:** re-derive the ledger from recorded renames,
+  do not trust this table. Phases 1 and 2 move files, and every move adds a row — but
+  the recipe recovers them, so the table needs no hand-maintenance in between.
 - **To Phase 3, for D specifically:** name the eight `wiring/*` paths above, not the
   folder. This is the one row Phase 0's ordering decision put there.
 - **To Phase 3, on imports — a separate job from any of this.** Carving history never
@@ -132,8 +154,9 @@ ambiguous, prefer over-collecting.
   import of that package. That edit is code, it happens once, and it is what makes the
   `wiring/` rename visible outside A.
 - **To Phase 3, as A's unfinished half:** packaging and tests. A has no
-  `pyproject.toml`, no entry points, no test file. Until it does, `pokecrystal-asm-lib`
-  is a history archive, not an installable library.
-- **To A's own first commit:** rename `wiring/`. Phase −1 named its contents —
-  editing pret assembly source — and `WiringError` is defined three times because the
-  folder name means nothing.
+  `pyproject.toml`, no entry points, no test file. Until Phase 3 writes them, no repo
+  anywhere holds an installable product A.
+- **To Phase 3, once the final carve lands:** rename `wiring/`. Phase −1 named its
+  contents — editing pret assembly source — and `WiringError` is defined three times
+  because the folder name means nothing. Not before: a rename committed in the snapshot
+  is discarded by the re-carve.

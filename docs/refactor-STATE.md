@@ -35,21 +35,25 @@ were taken; re-verify the ones your phase leans on, not all of them (plan →
 - The LZ codec fork is legitimate; one duplicated helper, deliberately not scheduled.
 - `rules_geometry.py` was deferred to Phase 5 rather than answered without evidence.
 
-## Phase 0 · split the git history — **A carved 2026-08-03**
+## Phase 0 · split the git history — **tooling proven; A snapshotted 2026-08-03**
 
 **Plan:** `refactor-phase-0-PLAN.md` · **Findings:** `refactor-phase-0-STATE.md`
 
-A is `~/code/ricccec/pokecrystal-asm-lib` — `main`, 88 commits, 34 files, no remote.
-B, C and D still wait on Phase 2, the phase that breaks the `hacks → studio` cycle.
-The command is `scripts/carve-product-a.sh`; re-run it, do not re-derive it.
+**No product exists yet.** What Phase 0 delivered is a proven carve and a correct path
+list: `scripts/carve-product-a.sh` — re-run it, do not re-derive it. Its output sits at
+`~/code/ricccec/pokecrystal-asm-lib-history-2026-08-03` (`main`, 88 commits, 34 files,
+no remote) as a **dated backup only**; Phase 3 re-carves and supersedes it. B, C and D
+still wait on Phase 2, the phase that breaks the `hacks → studio` cycle.
 
 - **A naive carve loses A's first month** — 73 commits by folder, 88 with every
   historical spelling; the 15 lost are the birth of the LZ decompressor, the sym
   reader and both CLIs. **The oldest reasoning is the most renamed.**
 - Three layouts (`_lib/` → flat → subfolders) plus a round trip through `hacks/prism/`:
   "record every rename" reads forward, but the past needed it first.
-- **`--follow` invents ancestry for empty files** — a ledger built from it unchecked
-  is wrong.
+- **Build the ledger from recorded renames** — `git log --diff-filter=R --name-status -M`
+  walked backward from today's paths, not `git log --follow`, which invents ancestry
+  for empty files. One reads a chain git wrote down; the other asks a heuristic to
+  guess one. `--follow` is still right for *verifying* a finished carve.
 - **Carve first, rename `wiring/` after** — renaming first is a 31-file, 50-import
   commit in the phase premised on an untouched tree, and buys nothing since the rename
   lands inside the carved history anyway.
@@ -67,6 +71,11 @@ The command is `scripts/carve-product-a.sh`; re-run it, do not re-derive it.
 - SHAs are rewritten, so any SHA quoted in `docs/` never resolves in A.
 - **A is history plus source and nothing else** — packaging, entry points and all 34
   tests are outside its four folders. Phase 3 owes A a packaging story.
+- **Carving early bought the rehearsal, not the repo** — the plan's own "not
+  now-or-never" holds: this repo's past is immutable and A's four folders are stable
+  paths, so Phase 3 re-carves the same history. The snapshot takes **no commits**, the
+  `wiring/` rename moves to Phase 3, and A's code keeps changing **here** — `usage/` is
+  one of Phase 1's six packages.
 - Re-verified: A imports nothing from `studio`, `hacks` or `maplint` — 25 grep hits,
   **every one in a docstring**. The word says entangled; the import says free.
 

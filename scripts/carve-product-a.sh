@@ -12,8 +12,13 @@
 # and both CLIs. See docs/refactor-phase-0-STATE.md, "The ledger".
 #
 # Rebuild the ledger before reusing this; phases 1 and 2 move files, and every
-# move adds a row. Do not build it from `git log --follow` alone: --follow
-# invents ancestry for empty files.
+# move adds a row. Read the rows off the renames git recorded, walking the chains
+# backward from today's paths:
+#
+#   git log --diff-filter=R --name-status -M --format='' \
+#     | awk '$1 ~ /^R/ {print $2" -> "$3}' | sort -u
+#
+# Not `git log --follow`, which invents ancestry for empty files.
 
 set -e
 

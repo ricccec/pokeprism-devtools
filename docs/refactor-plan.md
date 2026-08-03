@@ -171,7 +171,7 @@ assignment for every surveyed module, a three-way call per CLI, the B-vs-C
 decision, three measurements that each moved an answer, two defects since fixed on
 the untouched tree, and one question handed to Phase 5.
 
-### Phase 0 — Split the git history · **A carved; B/C/D wait on Phase 2**
+### Phase 0 — Split the git history · **tooling proven; every carve is Phase 3's**
 Before any file moves. Clone once per product and `git filter-repo --path <dir>` to
 carve history by folder, so each product keeps the "why" behind its code instead of
 starting at one squashed commit. Two corrections to the naive version:
@@ -181,9 +181,12 @@ renamed later still carves with full history by naming both paths — losing his
 takes forgetting, not moving. **Only A can split now:** B, C and D are fused by the
 `hacks → studio` cycle, and splitting today produces two repos that import each other.
 
-So carve A now — zero dependencies, and the carve doubles as proof the tooling works
-— then B/C/D after **Phase 2**, whose acceptance test *is* the cycle being gone.
-Record every path rename so the later filter can name both.
+So A was carved first — zero dependencies, and the carve doubles as proof the tooling
+works — then B/C/D after **Phase 2**, whose acceptance test *is* the cycle being gone.
+**The early carve is a rehearsal, not a
+deliverable:** until Phase 3, **this repo is every
+product's only editable copy**, and the carved repo takes **no commits at all**. A carved repo is named
+`-history-<date>` so its status is legible from the folder name alone.
 
 ### Phase 1 — Calibration: the six CLI packages
 `metatiles`, `mapfit`, `usage`, `map_new`, `map_show`, `map_inspect`. Split

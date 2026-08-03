@@ -5,13 +5,15 @@ phase runs. Findings dated 2026-08-03 unless stated.
 
 ## Findings — the same list as the index, each linked to its evidence
 
-- A naive carve loses A's first month — [the rename ledger](#the-ledger-a-naive-carve-loses-15-commits).
-- D's ledger needs eight `wiring/*` files, and A over-collected seven commits — [the folder-vs-file call](#folder-or-file-the-two-ways-a-ledger-is-wrong).
-- `--follow` invents ancestry for empty files — [same section](#empty-files-poison-the-ledger).
+- A naive carve loses A's first month — [the rename ledger](#the-ledger--a-naive-carve-loses-15-commits).
+- D's ledger needs eight `wiring/*` files, and A over-collected seven commits — [the folder-vs-file call](#folder-or-file--the-two-ways-a-ledger-is-wrong).
+- Build the ledger from recorded renames; `--follow` invents ancestry for empty files — [the recipe](#build-the-ledger-from-recorded-renames-not---follow).
 - Carve first, rename `wiring/` after — [the measurement behind it](#renaming-first-is-a-31-file-commit-in-the-phase-that-touches-nothing).
 - The carve is proven walkable, not just present — [the checks](#what-was-proved).
 - `--no-local` + `filter-repo` carves **every** branch — [the surprise](#the-carve-brought-four-branches-nobody-asked-for).
-- A has no packaging and no tests; both live outside its four folders — [handed to Phase 3](#what-a-does-not-have-yet).
+- The carved repo is a dated snapshot, not the product — and A still has no packaging
+  or tests, both outside its four folders — [what the snapshot is for, and what Phase 3
+  owes A](#the-carved-repo-is-a-snapshot-not-product-a).
 - Re-verified: A imports nothing from `studio`, `hacks` or `maplint` — [still true](#re-verification-step-1).
 
 ## Re-verification (step 1)
@@ -61,28 +63,47 @@ f5e752b restructure: src/ layout + pyproject.toml for pipx install
 … and 8 more
 ```
 
-A carve that drops these gives `pokecrystal-asm-lib` an LZ decompressor whose first
+A carve that drops these gives the carved repo an LZ decompressor whose first
 commit is a subfolder reshuffle. **The "why" Phase 0 exists to preserve is exactly
 the part a naive carve throws away** — because the oldest reasoning is the most
 renamed.
 
-### Empty files poison the ledger
+### Build the ledger from recorded renames, not `--follow`
 
-The ledger was built from `git log --follow` over each of A's 34 current files. That
-output cannot be used raw: it reports `_lib/__init__.py` as the ancestor of **both**
-`shared/__init__.py` and `wiring/__init__.py`. All three files are **zero bytes**, so
-the rename-detection heuristic is scoring nothing against nothing and matching
-whatever it meets first.
+**The recipe, for Phase 3:**
 
-The three `__init__.py` files were therefore left out of the ledger. Generalising:
-**a rename ledger derived from `--follow` contains invented entries wherever a file is
-trivial**, and the check is content, not the tool's confidence. Phase 3 rebuilds this
-ledger and will hit the same trap.
+```sh
+git log --diff-filter=R --name-status -M --format='' \
+  | awk '$1 ~ /^R/ {print $2" -> "$3}' | sort -u
+```
+
+Then walk the chains backward from today's paths. It recovers every era of A —
+`sym-lookup/sym-lookup.py` → `sym_lookup.py` → `sym_lookup/__init__.py`, and all nine
+`_lib/*` moves — because it reads the rename **git actually recorded in a commit**,
+one row per event.
+
+**The first ledger was built the other way, from `git log --follow` per file, and that
+output cannot be used raw.** It reports `_lib/__init__.py` as the ancestor of **both**
+`shared/__init__.py` and `wiring/__init__.py`. All three are **zero bytes**, so the
+similarity heuristic is scoring nothing against nothing and matching whatever it meets
+first. The three `__init__.py` files were left out of the ledger by hand. The query
+above names `_lib/__init__.py` exactly once, which is the truth.
+
+Generalising: **`--follow` asks the heuristic to invent a chain and it obliges wherever
+a file is trivial; `--diff-filter=R` reads a chain that was already written down.** The
+check on the first is content, not the tool's confidence — there is no check to run on
+the second.
+
+`--follow` is still the right tool for the *other* job, verifying a finished carve
+(see [what was proved](#what-was-proved)). Deriving history and confirming it survived
+are different questions.
 
 ## Renaming first is a 31-file commit in the phase that touches nothing
 
 Phase −1 scheduled `wiring/` for renaming "on the way into A" and left the order open.
-**Decided: carve first, rename inside A's own repo.** The measurement:
+**Decided: carve first, rename later.** (Later means *after Phase 3's re-carve* — see
+[the snapshot](#the-carved-repo-is-a-snapshot-not-product-a), which corrected this
+section's original answer of "inside A's own repo".) The measurement:
 
 - **31 files** outside A import `wiring`, over **50 import lines** — 2 in `studio/`,
   9 in `hacks/prism/`, 11 in `hacks/vanilla/`, 9 in `tests/`.
@@ -106,7 +127,7 @@ stated correctly. It was not.
 
 `--path` matches the path a commit touched **in the history being filtered**. This
 repo's history spells the folder `wiring/` permanently — renaming it inside
-`pokecrystal-asm-lib` cannot reach back into commits already made here. So D's ledger
+the carved repo cannot reach back into commits already made here. So D's ledger
 carries a `wiring/` row regardless of what A calls the folder afterwards.
 
 **But it is eight files, not the folder.** `033fbe4` (2026-07-25) moved eight modules
@@ -173,17 +194,40 @@ renamed `main`, re-verifying afterwards that `--follow` still reaches the `_lib`
 **For Phase 3:** the carve's default output is not a clean repo. Prune branches, and
 check ancestry before pruning rather than after.
 
-## What A does not have yet
+## The carved repo is a snapshot, not product A
 
-`~/code/ricccec/pokecrystal-asm-lib`, `main`, 88 commits, 34 files, no remote.
+`~/code/ricccec/pokecrystal-asm-lib-history-2026-08-03` — `main`, 88 commits, 34 files,
+no remote. **The folder name is the finding.** It was `pokecrystal-asm-lib` for an
+afternoon, and that name claimed something untrue.
 
-It is **history plus source, and nothing else.** `pyproject.toml`, the entry points
-and all 34 test files live outside A's four folders, so they were not carved. The
-carved repo does not even contain `src/pokeprism_devtools/__init__.py` — that file is
-shared with every product, so naming it would have pulled in the whole repo's history.
-As it stands `pokecrystal-asm-lib` is not an importable package.
+`filter-repo` **copies** history; it never deletes from the source. So A's 34 files are
+in two places — here, where everything imports them, and there, where nothing does.
+**This repo is A's only editable copy. The snapshot takes no commits at all**, not even
+a rename, because Phase 3 re-runs the carve and a carve builds a **fresh** history:
+anything committed in the snapshot meanwhile is discarded, not merged.
 
-That is the carve doing its job, not a defect: Phase 0 was scoped to history. **Phase 3
-owes A a packaging and test story**, and until it lands, A is an archive rather than a
-library. `usage` and `sym_lookup` are CLI packages whose `console_scripts` entries
-stayed behind in this repo's `pyproject.toml`.
+**Its one job is to be a dated backup** of A's 88 commits against a rewrite of *this*
+repo's history. That is the only scenario where it is not reproducible on demand — and
+it is why it was kept rather than deleted.
+
+**Phase 0's real deliverable is the rehearsal and the ledger**, both of which live in
+this repo (`scripts/carve-product-a.sh` and the sections above). The snapshot is a
+by-product. Read "Phase 0 carved A" as *"the carve is known to work and the path list
+is known to be right"*, never as *"product A exists"*.
+
+**It is not a library and could not be one.** `pyproject.toml`, the entry points and all
+34 test files live outside A's four folders, so they were not carved; the snapshot does
+not even contain `src/pokeprism_devtools/__init__.py`, which is shared with every
+product and would have dragged in the whole repo's history. **Phase 3 owes A a packaging
+and test story.** `usage` and `sym_lookup` are CLI packages whose `console_scripts`
+entries stayed behind in this repo's `pyproject.toml`.
+
+**One question Phase 0 got backwards.** The carve-first decision was argued as if A's
+repo would take its own first commit — the `wiring/` rename — "against A's own imports".
+It cannot: the re-carve would throw that commit away. The rename belongs to Phase 3,
+after the final carve. Corrected in the PLAN rather than annotated.
+
+**And freezing A *here* was never the alternative**, which is what forces the direction:
+`usage/` is both one of A's four folders and one of **Phase 1's** six CLI packages, and
+CLAUDE.md compliance is scoped to every file in this repo. A's code is *supposed* to
+change here. The snapshot is what holds still.
