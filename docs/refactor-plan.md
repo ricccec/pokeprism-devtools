@@ -188,15 +188,24 @@ deliverable:** until Phase 3, **this repo is every
 product's only editable copy**, and the carved repo takes **no commits at all**. A carved repo is named
 `-history-<date>` so its status is legible from the folder name alone.
 
-### Phase 1 — Calibration: the six CLI packages
+### Phase 1 — Calibration: the six CLI packages · **done; rules in its PLAN**
 `metatiles`, `mapfit`, `usage`, `map_new`, `map_show`, `map_inspect`. Split
 parse / analyse / render / CLI out of each `__init__.py`, leaving the package's
-public surface *as* its `__init__`; `metatiles` and `mapfit` already carry `# ---`
-banners on the seams.
+public surface *as* its `__init__`.
 
-**Why first:** it depends on nothing, all six are test-covered, and it is where we
-settle what "done to the standard" means where a mistake costs nothing. **Not
-targets:** `mapview`, `gfx_view`, `sym_lookup` are already at ~150 lines.
+**Why first:** it depends on nothing, and it settles what "done to the standard"
+means where a mistake costs nothing. That settlement is **R1–R5** in
+`refactor-phase-1-PLAN.md`, and Phases 2–5 inherit it. Two premises were wrong:
+the six were *not* all test-covered, and no test could certify these moves at all
+— so a move is proved *textually*, by digesting content. **Not targets:**
+`mapview`, `gfx_view`, `sym_lookup`, already ~150 lines.
+
+### Phase 1b — Pay what Phase 1 could not
+R5 forbids an edit riding along with a move, so every CLAUDE.md violation inside a
+moved body survived Phase 1 intact: eleven over-long functions, a 357-line file,
+four bare-verb names. **Test-first — eight of the eleven are executed by nothing**,
+and shortening those is a rewrite with no oracle, the same objection Phase 4 makes
+below about `DevServer`.
 
 ### Phase 2 — The keystone: give `Hack` and its vocabulary one home
 **Plan: `refactor-phase-2-PLAN.md`** — what the package is, and what is not.

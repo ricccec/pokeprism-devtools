@@ -79,11 +79,90 @@ still wait on Phase 2, the phase that breaks the `hacks → studio` cycle.
 - Re-verified: A imports nothing from `studio`, `hacks` or `maplint` — 25 grep hits,
   **every one in a docstring**. The word says entangled; the import says free.
 
-## Phase 1 · calibration, the six CLI packages — not started
+## Phase 1 · calibration, the six CLI packages — **all six split 2026-08-03**
 
-**Plan:** not written · **Findings:** none yet
+**Plan:** `refactor-phase-1-PLAN.md` · **Findings:** `refactor-phase-1-STATE.md`
+
+**The rules are the deliverable, and they are in the PLAN as R1–R5** — Phases 2–5
+inherit them. In short: an `__init__.py` re-exports and defines nothing; a split
+may not edit a body, so a CLAUDE.md violation that survives the move gets its own
+commit afterwards; `scripts/surface-snapshot.py` proves a move textually, because
+the tests cannot. Every file is now under 250 LOC, all but four under 150.
+
+- The filename test for coverage was wrong both ways — `map_show` is covered by two
+  tests not named for it, `usage` by nothing.
+- **Coverage tracks the split that already happened** — the six `__init__.py` ran
+  28–54% of themselves (`usage` 0%), the two files already carved out of `mapfit`
+  ran 93–95%. "Is it test-covered?" was never a question these tests could answer
+  for this phase: the uncovered majority is the render/CLI half a split relocates.
+  **So a move is proved textually, not by test** — content digested and compared,
+  which is a stronger claim than a sampled behaviour still agreeing.
+- An `__init__.py` re-exports its own imports by accident — `map_show` exposed 9
+  foreign modules and 7 stdlib names. Splitting shrank the six surfaces by 20–38
+  names each, so the post-move check **cannot** be "surface identical".
+- **Comparing what `__init__` exposes cannot tell a moved private from a deleted
+  one** — the check has to be over what the package *defines*. Found on the first
+  package, which is why the first package was the smallest.
+- The verification tool was confidently wrong twice before it worked: unstable
+  `repr` (hash seed, addresses) made it cry wolf every run, and trusting
+  `__module__` on non-callables silently dropped every `_FOO_RE` constant.
+- **A stale `.pyc` faked a passing mutation test** — same-length edit, same second,
+  so mtime and size both matched. Aimed straight at this refactor's method: clear
+  `__pycache__` before believing a suite that follows a revert.
+- Tests reach package-private names (`metatiles._blob_sizes`,
+  `mapfit._lift_free_space`, `map_new._consts`) — 4 names across 3 packages, each
+  now imported from the submodule that owns it. A fifth, `mapfit.compressed_blk_size`,
+  was a false alarm: the grep matched a `print` label, not a call.
+- `tests/test_mapnew.py` does not test `map_new` — it covers `wiring/mapnew.py` and
+  `hacks/vanilla/newmap.py`. One underscore apart, unrelated code.
+- `usage/` has no parse/analyse seam: its analysis is `shared/mapfile.py`'s. The
+  four-way template is a hypothesis about seams, not a filing system — `map_inspect`
+  filed sort keys under "Rendering", and they belong with the record they order.
+- **`usage/` now has the test it never had** — golden output for all eight
+  subcommands, written before the split and **unchanged** across it.
+- 11 functions still break CLAUDE.md's 50-LOC limit, 5 of them the same `main`
+  shape; `mapfit/mapwire.py` (357, untouched here) still breaks the 250-LOC one.
+  Not fixed here, because a move may not — **this list is Phase 1b**.
 
 Sizes to work from are in `refactor-phase--1-STATE.md` → "Phase 1's six CLI packages".
+
+- The filename test for coverage was wrong both ways — `map_show` is covered by two
+  tests not named for it, `usage` by nothing.
+- **Coverage tracks the split that already happened** — the six `__init__.py` run
+  28–54% of themselves (`usage` 0%), the two files already carved out of `mapfit`
+  run 93–95%. "Is it test-covered?" was never a question these tests could answer
+  for this phase: the uncovered majority is the render/CLI half a split relocates.
+- An `__init__.py` re-exports its own imports by accident — `map_show` exposes 9
+  foreign modules and 7 stdlib names. A split therefore *shrinks* the surface, so
+  the post-move check cannot be "surface identical".
+- Tests reach package-private names (`metatiles._blob_sizes`,
+  `mapfit._lift_free_space`, `map_new._consts`) — 4 names across 3 packages, each
+  now imported from the submodule that owns it. A fifth, `mapfit.compressed_blk_size`,
+  was a false alarm: the grep matched a `print` label, not a call.
+- `tests/test_mapnew.py` does not test `map_new` — it covers `wiring/mapnew.py` and
+  `hacks/vanilla/newmap.py`. One underscore apart, unrelated code.
+- `usage/` has no parse/analyse seam: its analysis is `shared/mapfile.py`'s. The
+  four-way template is a hypothesis about seams, not a filing system.
+
+## Phase 1b · pay what Phase 1 could not — **planned 2026-08-03, not started**
+
+**Plan:** `refactor-phase-1b-PLAN.md` · **Findings:** `refactor-phase-1b-STATE.md`
+
+The second commit R5 promised: every CLAUDE.md violation Phase 1 moved without
+fixing, because a move may not edit a body. **Numbered 1b so Phases 2–5 keep their
+numbers** — they are cross-referenced from four documents.
+
+- **Eight of the eleven over-long functions are executed by nothing**, so the phase
+  is test-first: no function is shortened before something runs it. Steps 1–5 are
+  characterization tests; 6–11 are cheap once they exist and impossible before.
+- Two of the three that *are* covered are covered only because Phase 1 wrote
+  `tests/test_usage.py` — which is also the pattern the five new tests copy.
+- **The snapshot tool changes job (R6).** In Phase 1 it proved CONTENT identical;
+  here every commit edits by intent, so it proves the change is *confined* to the
+  functions named in the commit. Same question, different expected answer.
+- Also owed: `mapfit/mapwire.py` (357 LOC, but 95% covered — the cheapest item),
+  4 bare-verb names CLAUDE.md rejects, 2 bodies nested four deep, and one
+  threshold spelled twice with the second copy unreachable.
 
 ## Phase 2 · the keystone, `Hack` and its vocabulary — not started
 
