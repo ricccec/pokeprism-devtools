@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
 """Tests for prism-metatiles: the pure analysis helpers (usage counting,
-unused detection, top-k ordering, 8x8 tile coverage, TILESET->id resolution).
+unused detection, top-k ordering, 8x8 tile coverage, TILESET->id resolution),
+and the exact output of the command that prints them.
 Hermetic — synthetic data and temp fixtures, no ROM/build.
 
     python tests/test_metatiles.py
+
+The CLI half is characterization, added before `main` and `render_report` are
+shortened: measured against the whole suite, `main`'s 69 lines and
+`render_report`'s 65 ran none of themselves. Goldens are recorded from the
+behaviour as it stood, not written by hand.
 """
 
 from __future__ import annotations
 
+import contextlib
+import io
+import os
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from pokeprism_devtools import metatiles  # noqa: E402
 from pokeprism_devtools.metatiles import (  # noqa: E402
     MapUse,
     TilesetAnalysis,
@@ -198,6 +208,579 @@ def test_blank_unused_metatiles() -> None:
     check("empty unused → no change (co)", co2 == collision)
 
 
+_TILES = 16          # 8x8 tile references per metatile
+_COLL = 4            # collision bytes per metatile
+_BYTES_PER_TILE = 16  # a 2bpp 8x8 tile
+
+
+#: Tileset 00's shape. Every number here is load-bearing for the report, and
+#: the report is what these goldens pin:
+#:
+#: - 20 metatiles is **more than one heatmap row** (16 per row), so a change to
+#:   the row width shows up.
+#: - 8 metatiles end up referenced, which is **more than `--top 3`**, so a
+#:   change to the top-k slice shows up.
+#: - the unused ones fall in two runs, `5-9` and `12-18`, so **range compaction
+#:   has something to compact**.
+#: - 24 gfx tiles against 20 referenced leaves `20-23` unused, a third range.
+#:
+#: A 4-metatile tileset — the first draft — executed every line of the report
+#: and could not tell any of those three mutations from correct output.
+_N_DEFINED = 20
+_TILES_TOTAL = 24
+
+
+def _fixture_repo(tmp: Path) -> Path:
+    """A two-tileset tree: one in use by three maps, one used by nothing.
+
+    Metatile 19 is reached *solely* by a `changeblock` in a script, which is
+    the case `collect` exists to get right; two labels share one INCBIN, which
+    is the case `blockdata_index` exists to get right.
+    """
+    root = tmp / "repo"
+    (root / "constants").mkdir(parents=True)
+    (root / "maps" / "blk").mkdir(parents=True)
+    (root / "tilesets").mkdir()
+    (root / "gfx" / "tilesets").mkdir(parents=True)
+
+    (root / "Makefile").write_text("all:\n")
+    (root / "main.asm").write_text('INCLUDE "constants.asm"\n')
+
+    (root / "constants" / "tilemap_constants.asm").write_text(
+        "const_value = 0\n"
+        "\tconst TILESET_CAPER ;0\n"
+        "\tconst TILESET_EMBER ;1\n",
+        encoding="utf-8",
+    )
+
+    (root / "maps" / "map_headers.asm").write_text(
+        "\tmap_header CaperRidge, TILESET_CAPER, PALETTE_AUTO, FISHGROUP_SHORE\n"
+        "\tmap_header MoundB2F, TILESET_CAPER, PALETTE_AUTO, FISHGROUP_SHORE\n"
+        "\tmap_header KindleRoad, TILESET_CAPER, PALETTE_AUTO, FISHGROUP_SHORE\n"
+        # Two maps the tool must complain about rather than silently drop.
+        "\tmap_header GhostTown, TILESET_NOSUCH, PALETTE_AUTO, FISHGROUP_SHORE\n"
+        "\tmap_header OldLab, TILESET_EMBER, PALETTE_AUTO, FISHGROUP_SHORE\n",
+        encoding="utf-8",
+    )
+
+    (root / "maps" / "blockdata.asm").write_text(
+        'SECTION "Map block data 1", ROMX\n'
+        "CaperRidge_BlockData:\n"
+        '\tINCBIN "maps/blk/CaperRidge.blk"\n'
+        'SECTION "Map block data 2", ROMX\n'
+        # Two labels sharing one INCBIN — the aliasing run blockdata_index
+        # emits an entry for every label of.
+        "MoundB2F_BlockData:\n"
+        "KindleRoad_BlockData:\n"
+        '\tINCBIN "maps/blk/MoundB2F.blk"\n',
+        encoding="utf-8",
+    )
+
+    # Between them these leave 5-9 and 12-18 referenced by nothing.
+    (root / "maps" / "blk" / "CaperRidge.blk").write_bytes(bytes([0, 1, 2, 3, 4]))
+    (root / "maps" / "blk" / "MoundB2F.blk").write_bytes(bytes([1, 2, 10, 11]))
+
+    # Metatile 19 appears nowhere in the block data; only this places it.
+    (root / "maps" / "CaperRidge.asm").write_text(
+        "CaperRidge_MapScriptHeader:\n\tchangeblock 4, 6, 19\n", encoding="utf-8"
+    )
+
+    # Metatile m points every one of its 16 sub-tiles at gfx tile m, so tiles
+    # 0-19 are used and 20-23 are not.
+    (root / "tilesets" / "00_metatiles.bin").write_bytes(
+        bytes(m for m in range(_N_DEFINED) for _ in range(_TILES))
+    )
+    (root / "tilesets" / "00_attributes.bin").write_bytes(bytes(_N_DEFINED * _TILES))
+    (root / "tilesets" / "00_collision.bin").write_bytes(
+        bytes([0x0A] * _N_DEFINED * _COLL)
+    )
+    (root / "gfx" / "tilesets" / "00.2bpp").write_bytes(
+        bytes(_TILES_TOTAL * _BYTES_PER_TILE)
+    )
+
+    # Tileset 01 exists so the summary has a second row, and is used by a map
+    # with no block data at all.
+    (root / "tilesets" / "01_metatiles.bin").write_bytes(bytes(_TILES))
+    (root / "tilesets" / "01_attributes.bin").write_bytes(bytes(_TILES))
+    (root / "gfx" / "tilesets" / "01.2bpp").write_bytes(bytes(2 * _BYTES_PER_TILE))
+
+    return root
+
+
+def _run_cli(argv: list[str], cwd: Path) -> tuple[int, str, str]:
+    """Run `prism-metatiles <argv>` with *cwd* as the repo.
+
+    `main` takes its argv and returns an exit code, which is what the console
+    script uses — but argparse still reports a bad flag by raising, so both
+    ways out are read.
+    """
+    out, err = io.StringIO(), io.StringIO()
+    old_cwd = Path.cwd()
+    os.chdir(cwd)
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                rc = metatiles.main(argv)
+            except SystemExit as e:
+                rc = e.code if isinstance(e.code, int) else 0
+    finally:
+        os.chdir(old_cwd)
+    return rc, out.getvalue(), err.getvalue()
+
+
+#: (label, argv, expected rc, expected stdout, expected stderr). Recorded from
+#: the package as it stood, not written by hand.
+_CLI_CASES: list[tuple[str, list[str], int, str, str]] = [
+    (
+        'summary of every tileset', [], 0,
+        """ ID  NAME                     META MAPS UNUSED     RAW      LZ
+--------------------------------------------------------------
+  0  TILESET_CAPER              20    3     12     320       —
+  1  TILESET_EMBER               1    0      1      16       —
+""",
+        """  warning: GhostTown: unknown tileset TILESET_NOSUCH
+  warning: OldLab: no block-data file
+""",
+    ),
+    (
+        'summary as JSON', ['--json'], 0,
+        """[
+  {
+    "tileset_id": 0,
+    "name": "TILESET_CAPER",
+    "n_defined": 20,
+    "maps": [
+      "CaperRidge",
+      "KindleRoad",
+      "MoundB2F"
+    ],
+    "usage": [
+      1,
+      3,
+      3,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    "unused_metatiles": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18
+    ],
+    "tiles_used": 20,
+    "tiles_total": 24,
+    "unused_tiles": [
+      20,
+      21,
+      22,
+      23
+    ],
+    "users": {
+      "0": [
+        "CaperRidge"
+      ],
+      "1": [
+        "CaperRidge",
+        "KindleRoad",
+        "MoundB2F"
+      ],
+      "2": [
+        "CaperRidge",
+        "KindleRoad",
+        "MoundB2F"
+      ],
+      "3": [
+        "CaperRidge"
+      ],
+      "4": [
+        "CaperRidge"
+      ],
+      "10": [
+        "KindleRoad",
+        "MoundB2F"
+      ],
+      "11": [
+        "KindleRoad",
+        "MoundB2F"
+      ],
+      "19": [
+        "CaperRidge"
+      ]
+    },
+    "blobs": [
+      {
+        "name": "metatiles",
+        "raw": 320,
+        "lz": null,
+        "bank": null
+      },
+      {
+        "name": "attributes",
+        "raw": 320,
+        "lz": null,
+        "bank": null
+      },
+      {
+        "name": "collision",
+        "raw": 80,
+        "lz": null,
+        "bank": null
+      },
+      {
+        "name": "gfx",
+        "raw": 384,
+        "lz": null,
+        "bank": null
+      }
+    ]
+  },
+  {
+    "tileset_id": 1,
+    "name": "TILESET_EMBER",
+    "n_defined": 1,
+    "maps": [],
+    "usage": [
+      0
+    ],
+    "unused_metatiles": [
+      0
+    ],
+    "tiles_used": 1,
+    "tiles_total": 2,
+    "unused_tiles": [
+      1
+    ],
+    "users": {},
+    "blobs": [
+      {
+        "name": "metatiles",
+        "raw": 16,
+        "lz": null,
+        "bank": null
+      },
+      {
+        "name": "attributes",
+        "raw": 16,
+        "lz": null,
+        "bank": null
+      },
+      {
+        "name": "collision",
+        "raw": null,
+        "lz": null,
+        "bank": null
+      },
+      {
+        "name": "gfx",
+        "raw": 32,
+        "lz": null,
+        "bank": null
+      }
+    ]
+  }
+]
+""",
+        """  warning: GhostTown: unknown tileset TILESET_NOSUCH
+  warning: OldLab: no block-data file
+""",
+    ),
+    (
+        "one tileset's report", ['0', '--top', '3'], 0,
+        """Tileset 0 (0x00)  TILESET_CAPER
+  metatiles defined: 20/256    maps using it: 3
+
+Maps using this tileset:
+  CaperRidge                KindleRoad                MoundB2F
+
+Metatile usage heatmap (maps referencing each metatile):
+  █████·····██····
+  ···█
+  legend: · 0 (unused)  █ 1  █ 2  █ 3  █ 4  █ 5  █ 6+
+
+Top 3 most-used metatiles:
+  #1×3, #2×3, #10×2
+Top 3 least-used (referenced) metatiles:
+  #0 ×1  CaperRidge
+  #3 ×1  CaperRidge
+  #4 ×1  CaperRidge
+
+Unused metatiles: 12 of 20
+  5-9, 12-18
+
+8x8 tile coverage: 20/24 used  (4 unused)
+  unused tiles: 20-23
+
+Blob sizes (bytes):
+  BLOB            RAW      LZ  RATIO  BANK
+  metatiles       320       —      —  —
+  attributes      320       —      —  —
+  collision        80       —      —  —
+  gfx             384       —      —  —
+""",
+        """  warning: GhostTown: unknown tileset TILESET_NOSUCH
+  warning: OldLab: no block-data file
+""",
+    ),
+    (
+        'one tileset as JSON', ['0', '--json'], 0,
+        """{
+  "tileset_id": 0,
+  "name": "TILESET_CAPER",
+  "n_defined": 20,
+  "maps": [
+    "CaperRidge",
+    "KindleRoad",
+    "MoundB2F"
+  ],
+  "usage": [
+    1,
+    3,
+    3,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+  ],
+  "unused_metatiles": [
+    5,
+    6,
+    7,
+    8,
+    9,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18
+  ],
+  "tiles_used": 20,
+  "tiles_total": 24,
+  "unused_tiles": [
+    20,
+    21,
+    22,
+    23
+  ],
+  "users": {
+    "0": [
+      "CaperRidge"
+    ],
+    "1": [
+      "CaperRidge",
+      "KindleRoad",
+      "MoundB2F"
+    ],
+    "2": [
+      "CaperRidge",
+      "KindleRoad",
+      "MoundB2F"
+    ],
+    "3": [
+      "CaperRidge"
+    ],
+    "4": [
+      "CaperRidge"
+    ],
+    "10": [
+      "KindleRoad",
+      "MoundB2F"
+    ],
+    "11": [
+      "KindleRoad",
+      "MoundB2F"
+    ],
+    "19": [
+      "CaperRidge"
+    ]
+  },
+  "blobs": [
+    {
+      "name": "metatiles",
+      "raw": 320,
+      "lz": null,
+      "bank": null
+    },
+    {
+      "name": "attributes",
+      "raw": 320,
+      "lz": null,
+      "bank": null
+    },
+    {
+      "name": "collision",
+      "raw": 80,
+      "lz": null,
+      "bank": null
+    },
+    {
+      "name": "gfx",
+      "raw": 384,
+      "lz": null,
+      "bank": null
+    }
+  ]
+}
+""",
+        """  warning: GhostTown: unknown tileset TILESET_NOSUCH
+  warning: OldLab: no block-data file
+""",
+    ),
+    (
+        'a tileset nothing uses', ['1'], 0,
+        """Tileset 1 (0x01)  TILESET_EMBER
+  metatiles defined: 1/256    maps using it: 0
+
+Maps using this tileset:
+  (none)
+
+Metatile usage heatmap (maps referencing each metatile):
+  ·
+  legend: · 0 (unused)  █ 1  █ 2  █ 3  █ 4  █ 5  █ 6+
+
+Top 10 most-used metatiles:
+  (none)
+Top 10 least-used (referenced) metatiles:
+  (none)
+
+Unused metatiles: 1 of 1
+  0
+
+8x8 tile coverage: 1/2 used  (1 unused)
+  unused tiles: 1
+
+Blob sizes (bytes):
+  BLOB            RAW      LZ  RATIO  BANK
+  metatiles        16       —      —  —
+  attributes       16       —      —  —
+  collision         —       —      —  —
+  gfx              32       —      —  —
+""",
+        """  warning: GhostTown: unknown tileset TILESET_NOSUCH
+  warning: OldLab: no block-data file
+""",
+    ),
+    (
+        '--blank-unused without an id is refused', ['--blank-unused'], 2,
+        "",
+        """  warning: GhostTown: unknown tileset TILESET_NOSUCH
+  warning: OldLab: no block-data file
+prism-metatiles: --blank-unused requires a tileset id
+""",
+    ),
+]
+
+
+def test_cli(root: Path) -> None:
+    print("\nprism-metatiles — exact output")
+    for label, argv, want_rc, want_out, want_err in _CLI_CASES:
+        rc, out, err = _run_cli(argv, root)
+        check(f"{label}: exit code", rc == want_rc,
+              "" if rc == want_rc else f"got {rc}, want {want_rc}")
+        check(f"{label}: stdout", out == want_out,
+              "" if out == want_out else f"\n--- got ---\n{out}--- want ---\n{want_out}")
+        check(f"{label}: stderr", err == want_err,
+              "" if err == want_err else f"\n--- got ---\n{err}--- want ---\n{want_err}")
+
+
+def test_blank_unused_writes_only_with_write() -> None:
+    """The dry-run/write pair, on its own tree because it mutates one.
+
+    Metatiles 5-9 and 12-18 are the unused ones, so exactly their bytes may
+    change — and only under `--write`. Checking the untouched ones matters as
+    much as the blanked ones: a blanker with the wrong stride passes any test
+    that only looks at what it was told to zero.
+    """
+    print("\nprism-metatiles --blank-unused")
+    unused = [*range(5, 10), *range(12, 19)]
+    kept = [m for m in range(_N_DEFINED) if m not in unused]
+    for write in (False, True):
+        with tempfile.TemporaryDirectory() as td:
+            root = _fixture_repo(Path(td))
+            mt_path = root / "tilesets" / "00_metatiles.bin"
+            co_path = root / "tilesets" / "00_collision.bin"
+            before_mt, before_co = mt_path.read_bytes(), co_path.read_bytes()
+
+            argv = ["0", "--blank-unused"] + (["--write"] if write else [])
+            rc, out, _err = _run_cli(argv, root)
+            after_mt, after_co = mt_path.read_bytes(), co_path.read_bytes()
+
+            what = "--write" if write else "dry-run"
+            written = "Written: 00_metatiles.bin, 00_attributes.bin, 00_collision.bin"
+            check(f"{what}: exit code 0", rc == 0, f"got {rc}")
+            check(f"{what}: counts the unused metatiles and names their runs",
+                  f"\nUnused metatiles to blank: {len(unused)}\n  5-9, 12-18\n" in out,
+                  out[-300:])
+            check(f"{what}: reports writing only when it wrote",
+                  (written in out) == write, out[-200:])
+            check(f"{what}: the dry-run notice appears only without --write",
+                  ("(dry-run — pass --write to apply changes)" in out) != write)
+            if write:
+                check("--write: every unused metatile is zeroed",
+                      all(after_mt[m * _TILES:(m + 1) * _TILES] == bytes(_TILES)
+                          for m in unused))
+                check("--write: every used metatile is untouched",
+                      all(after_mt[m * _TILES:(m + 1) * _TILES]
+                          == before_mt[m * _TILES:(m + 1) * _TILES] for m in kept))
+                check("--write: unused collision is zeroed",
+                      all(after_co[m * _COLL:(m + 1) * _COLL] == bytes(_COLL)
+                          for m in unused))
+                check("--write: used collision is untouched",
+                      all(after_co[m * _COLL:(m + 1) * _COLL]
+                          == before_co[m * _COLL:(m + 1) * _COLL] for m in kept))
+            else:
+                check("dry-run: the .bin files are byte-identical",
+                      after_mt == before_mt and after_co == before_co)
+
+
+def test_cli_outside_a_repo(tmp: Path) -> None:
+    print("\nprism-metatiles — run from outside a game repo")
+    outside = tmp / "elsewhere"
+    outside.mkdir()
+    rc, out, err = _run_cli([], outside)
+    check("exit code is 2", rc == 2, f"got {rc}")
+    check("stdout is empty", out == "", out)
+    check("stderr names the tool", err.startswith("prism-metatiles: Could not find "),
+          repr(err))
+
+
 def main() -> None:
     test_metatile_usage()
     test_metatile_users()
@@ -207,6 +790,10 @@ def main() -> None:
     test_tile_coverage()
     test_tileset_id_map()
     test_blank_unused_metatiles()
+    with tempfile.TemporaryDirectory() as td:
+        test_cli(_fixture_repo(Path(td)))
+        test_cli_outside_a_repo(Path(td))
+    test_blank_unused_writes_only_with_write()
     print()
     if _failures:
         print(f"{_failures} check(s) failed.")
