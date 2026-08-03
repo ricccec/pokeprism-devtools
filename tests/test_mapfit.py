@@ -11,6 +11,9 @@ lzcomp checks use the real pokeprism repo if one is reachable, and are skipped
 
 from __future__ import annotations
 
+import contextlib
+import io
+import os
 import re
 import subprocess
 import sys
@@ -704,6 +707,506 @@ def test_lzcomp_sizing() -> None:
               f"{out.stat().st_size} bytes")
 
 
+# --------------------------------------------------------------------------- #
+# The command line
+# --------------------------------------------------------------------------- #
+
+#: A baseline .map with three ROMX banks of very different shapes, so best-fit
+#: and worst-fit choose *different* banks and the goldens can tell the two
+#: strategies apart: $01 nearly full, $02 with a middling hole, $03 wide open.
+_BASELINE_MAP = """ROMX bank #1:
+  SECTION: $4000-$7e7f ($3e80 bytes) ["Code 1"]
+  TOTAL EMPTY: $0180 bytes
+ROMX bank #2:
+  SECTION: $4000-$5fff ($2000 bytes) ["Map Headers"]
+  TOTAL EMPTY: $2000 bytes
+ROMX bank #3:
+  SECTION: $4000-$40ff ($0100 bytes) ["Sprites"]
+  TOTAL EMPTY: $3f00 bytes
+"""
+
+#: The same ROM after the map has been built into it — what `consolidate`
+#: needs, because it reads exact sizes out of the .map rather than estimating.
+#:
+#: The secondary header is deliberately in bank $01 already, sized so that a
+#: tight re-pack puts it **back where it is**. A layout where every section
+#: moves cannot tell "count the ones that moved" from "count them all", and
+#: cannot tell "banks freed" from "banks touched" — two mutations that both
+#: survived against a first draft where all three moved.
+_BUILT_MAP = """ROMX bank #1:
+  SECTION: $4000-$7dff ($3e00 bytes) ["Code 1"]
+  SECTION: $7e00-$7e1a ($001b bytes) ["Second Map Header MtEmberSmallRoom"]
+  TOTAL EMPTY: $01e5 bytes
+ROMX bank #2:
+  SECTION: $4000-$5fff ($2000 bytes) ["Map Headers"]
+  TOTAL EMPTY: $2000 bytes
+ROMX bank #3:
+  SECTION: $4000-$40ff ($0100 bytes) ["Sprites"]
+  SECTION: $4100-$45ff ($0500 bytes) ["Map Scripts MtEmberSmallRoom"]
+  SECTION: $4600-$47ff ($0200 bytes) ["Map block data MtEmberSmallRoom"]
+  TOTAL EMPTY: $3800 bytes
+"""
+
+#: `compressed_blk_size` shells out to `utils/lzcomp` and takes the size of
+#: what it writes. Stubbing the binary keeps the test hermetic and its numbers
+#: fixed; it stands in at a real process boundary, so the code under test runs
+#: unchanged, subprocess and all. The ratio is arbitrary but constant.
+_LZCOMP_STUB = """#!/bin/sh
+# args: -- <src> <out>
+wc -c < "$2" | awk '{ n = int($1 / 2); s = ""; while (length(s) < n) s = s "z"; \
+printf "%s", s }' > "$3"
+"""
+
+
+def _cli_repo(tmp: Path, name: str) -> tuple[Path, Path]:
+    """A fixture repo the command line can actually be run against.
+
+    Adds to `_fixture_repo` the four things the CLI needs and the editors do
+    not: the files the spec points at, a stub `lzcomp`, a `Makefile`/`main.asm`
+    for `repo_root`, and the spec itself on disk.
+    """
+    root = _fixture_repo(tmp, name)
+    (root / "Makefile").write_text("all:\n")
+    (root / "main.asm").write_text('INCLUDE "constants.asm"\n')
+
+    (root / "maps" / "MtEmberSmallRoom.asm").write_text(
+        "MtEmberSmallRoom_MapScriptHeader:\n\tdb 0\n\tdb 0\n"
+    )
+    (root / "maps" / "blk").mkdir(exist_ok=True)
+    (root / "maps" / "blk" / "MtEmberSmallRoom.blk").write_bytes(bytes(90))
+
+    (root / "utils").mkdir()
+    lzcomp = root / "utils" / "lzcomp"
+    lzcomp.write_text(_LZCOMP_STUB)
+    lzcomp.chmod(0o755)
+
+    spec_path = root / "MtEmberSmallRoom.toml"
+    spec_path.write_text(_spec_for_fixture().to_toml())
+    return root, spec_path
+
+
+def _run_cli(argv: list[str], cwd: Path) -> tuple[int, str, str]:
+    """Run `prism-mapfit <argv>` with *cwd* as the repo.
+
+    `_load_spec` reports a bad spec by calling `sys.exit` while everything else
+    returns a code, so both ways out are read.
+    """
+    out, err = io.StringIO(), io.StringIO()
+    old_cwd = Path.cwd()
+    os.chdir(cwd)
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                rc = mapfit.main(argv)
+            except SystemExit as e:
+                rc = e.code if isinstance(e.code, int) else 0
+    finally:
+        os.chdir(old_cwd)
+    return rc, out.getvalue(), err.getvalue()
+
+
+#: (label, argv, expected rc, expected stdout, expected stderr). `{spec}` and
+#: `{map}` are filled in per run. Recorded from the package as it stood.
+#:
+#: Every case is a `plan` or a `--dry-run`: those are the paths that neither
+#: build nor write, and `run_make` is the one thing here that cannot be run in
+#: a fixture. What a build would have measured is supplied by `--script-size`,
+#: which is the flag that exists for exactly that reason.
+_CLI_CASES: list[tuple[str, list[str], int, str, str]] = [
+    (
+        'plan',
+        ['plan', '--spec', '{spec}', '--map', '{map}', '--script-size', '600'], 0,
+        """Strategy: tight (best-fit)
+Map: MtEmberSmallRoom  (MT_EMBER_SMALL_ROOM)  group 2  10x9
+
+Blob sizes
+  block data       45 bytes  (compressed, exact)
+  secondary        24 bytes  (1 connections)
+  script/event    600 bytes  (given)
+  primary hdr       9 bytes  (in place, bank $02)
+
+Placement
+  $01  [scrap ]  Map block data MtEmberSmallRoom  (45 bytes)
+  $02  [scrap ]  Map Scripts MtEmberSmallRoom  (600 bytes)
+  $01  [scrap ]  Second Map Header MtEmberSmallRoom  (24 bytes)
+""",
+        "",
+    ),
+    (
+        'plan --park picks the roomiest bank instead of the tightest',
+        ['plan', '--spec', '{spec}', '--map', '{map}', '--script-size', '600', '--park'], 0,
+        """Strategy: park (worst-fit, biggest chunk)
+Map: MtEmberSmallRoom  (MT_EMBER_SMALL_ROOM)  group 2  10x9
+
+Blob sizes
+  block data       45 bytes  (compressed, exact)
+  secondary        24 bytes  (1 connections)
+  script/event    600 bytes  (given)
+  primary hdr       9 bytes  (in place, bank $02)
+
+Placement
+  $05  [scrap ]  Map block data MtEmberSmallRoom  (45 bytes)
+  $04  [scrap ]  Map Scripts MtEmberSmallRoom  (600 bytes)
+  $06  [scrap ]  Second Map Header MtEmberSmallRoom  (24 bytes)
+""",
+        "",
+    ),
+    (
+        'plan without a script size refuses rather than guessing',
+        ['plan', '--spec', '{spec}', '--map', '{map}'], 2,
+        "",
+        """error: script size unknown — pass --script-size N or run `add` to measure it with a build.
+""",
+    ),
+    (
+        'plan with a blob appended into an existing section',
+        ['plan', '--spec', '{spec}', '--map', '{map}', '--script-size', '600', '--blockdata-into', 'Sprites'], 0,
+        """Strategy: tight (best-fit)
+Map: MtEmberSmallRoom  (MT_EMBER_SMALL_ROOM)  group 2  10x9
+
+Blob sizes
+  block data       45 bytes  (compressed, exact)
+  secondary        24 bytes  (1 connections)
+  script/event    600 bytes  (given)
+  primary hdr       9 bytes  (in place, bank $02)
+
+Placement
+  $03  [shared]  Sprites  (45 bytes) (appended into an existing section — not pinned)
+  $02  [scrap ]  Map Scripts MtEmberSmallRoom  (600 bytes)
+  $01  [scrap ]  Second Map Header MtEmberSmallRoom  (24 bytes)
+""",
+        "",
+    ),
+    (
+        'add --dry-run',
+        ['add', '--spec', '{spec}', '--map', '{map}', '--script-size', '600', '--dry-run'], 0,
+        """  [edit] constants/map_dimension_constants.asm: added 'mapgroup MT_EMBER_SMALL_ROOM, 10, 9' to group 2
+  [edit] maps/map_headers.asm: appended map_header MtEmberSmallRoom to MapGroup2
+  [edit] maps/second_map_headers.asm: added section 'Second Map Header MtEmberSmallRoom'
+  [edit] maps/blockdata.asm: added section 'Map block data MtEmberSmallRoom'
+  [edit] maps/map_scripts.asm: added section 'Map Scripts MtEmberSmallRoom'
+
+Strategy: tight (best-fit)
+Map: MtEmberSmallRoom  (MT_EMBER_SMALL_ROOM)  group 2  10x9
+
+Blob sizes
+  block data       45 bytes  (compressed, exact)
+  secondary        24 bytes  (1 connections)
+  script/event    600 bytes  (given)
+  primary hdr       9 bytes  (in place, bank $02)
+
+Placement
+  $01  [scrap ]  Map block data MtEmberSmallRoom  (45 bytes)
+  $02  [scrap ]  Map Scripts MtEmberSmallRoom  (600 bytes)
+  $01  [scrap ]  Second Map Header MtEmberSmallRoom  (24 bytes)
+
+  [edit] contents/romx.link: Map block data MtEmberSmallRoom -> ROMX $01; Map Scripts MtEmberSmallRoom -> new ROMX $02; Second Map Header MtEmberSmallRoom -> ROMX $01
+
+(dry run — no files written)
+""",
+        "",
+    ),
+    (
+        'add with a hand-picked bank',
+        ['add', '--spec', '{spec}', '--map', '{map}', '--script-size', '600', '--blockdata-bank', '0x03', '--dry-run'], 0,
+        """  [edit] constants/map_dimension_constants.asm: added 'mapgroup MT_EMBER_SMALL_ROOM, 10, 9' to group 2
+  [edit] maps/map_headers.asm: appended map_header MtEmberSmallRoom to MapGroup2
+  [edit] maps/second_map_headers.asm: added section 'Second Map Header MtEmberSmallRoom'
+  [edit] maps/blockdata.asm: added section 'Map block data MtEmberSmallRoom'
+  [edit] maps/map_scripts.asm: added section 'Map Scripts MtEmberSmallRoom'
+
+Strategy: tight (best-fit)
+Map: MtEmberSmallRoom  (MT_EMBER_SMALL_ROOM)  group 2  10x9
+
+Blob sizes
+  block data       45 bytes  (compressed, exact)
+  secondary        24 bytes  (1 connections)
+  script/event    600 bytes  (given)
+  primary hdr       9 bytes  (in place, bank $02)
+
+Placement
+  $03  [pinned]  Map block data MtEmberSmallRoom  (45 bytes) (bank chosen by hand)
+  $02  [scrap ]  Map Scripts MtEmberSmallRoom  (600 bytes)
+  $01  [scrap ]  Second Map Header MtEmberSmallRoom  (24 bytes)
+
+  [edit] contents/romx.link: Map block data MtEmberSmallRoom -> new ROMX $03; Map Scripts MtEmberSmallRoom -> new ROMX $02; Second Map Header MtEmberSmallRoom -> ROMX $01
+
+(dry run — no files written)
+""",
+        "",
+    ),
+    (
+        'add with a $-hex bank, the spelling the linker script uses',
+        ['add', '--spec', '{spec}', '--map', '{map}', '--script-size', '600', '--blockdata-bank', '$03', '--dry-run'], 0,
+        """  [edit] constants/map_dimension_constants.asm: added 'mapgroup MT_EMBER_SMALL_ROOM, 10, 9' to group 2
+  [edit] maps/map_headers.asm: appended map_header MtEmberSmallRoom to MapGroup2
+  [edit] maps/second_map_headers.asm: added section 'Second Map Header MtEmberSmallRoom'
+  [edit] maps/blockdata.asm: added section 'Map block data MtEmberSmallRoom'
+  [edit] maps/map_scripts.asm: added section 'Map Scripts MtEmberSmallRoom'
+
+Strategy: tight (best-fit)
+Map: MtEmberSmallRoom  (MT_EMBER_SMALL_ROOM)  group 2  10x9
+
+Blob sizes
+  block data       45 bytes  (compressed, exact)
+  secondary        24 bytes  (1 connections)
+  script/event    600 bytes  (given)
+  primary hdr       9 bytes  (in place, bank $02)
+
+Placement
+  $03  [pinned]  Map block data MtEmberSmallRoom  (45 bytes) (bank chosen by hand)
+  $02  [scrap ]  Map Scripts MtEmberSmallRoom  (600 bytes)
+  $01  [scrap ]  Second Map Header MtEmberSmallRoom  (24 bytes)
+
+  [edit] contents/romx.link: Map block data MtEmberSmallRoom -> new ROMX $03; Map Scripts MtEmberSmallRoom -> new ROMX $02; Second Map Header MtEmberSmallRoom -> ROMX $01
+
+(dry run — no files written)
+""",
+        "",
+    ),
+    (
+        'consolidate --dry-run',
+        ['consolidate', '--spec', '{spec}', '--map', '{built}', '--dry-run'], 0,
+        """Consolidating 1 map(s), blobs: script, blk, secondary -> tightest existing space
+
+MtEmberSmallRoom
+  [scrap] Map block data MtEmberSmallRoom  (512 B)  $03 -> $02  *moved*
+  [scrap] Map Scripts MtEmberSmallRoom  (1280 B)  $03 -> $02  *moved*
+  [scrap] Second Map Header MtEmberSmallRoom  (27 B)  $01 -> $01
+
+2 section(s) relocated; banks possibly freed: $03
+
+  [edit] contents/romx.link: Map block data MtEmberSmallRoom -> new ROMX $02; Map Scripts MtEmberSmallRoom -> ROMX $02; Second Map Header MtEmberSmallRoom -> ROMX $01
+
+(dry run — no files written)
+""",
+        "",
+    ),
+    (
+        'consolidate before the map has been built',
+        ['consolidate', '--spec', '{spec}', '--map', '{map}', '--dry-run'], 2,
+        "",
+        """error: MtEmberSmallRoom: not in the .map yet (Map Scripts MtEmberSmallRoom, Map block data MtEmberSmallRoom, Second Map Header MtEmberSmallRoom). Allocate and build it with `add` before consolidating.
+""",
+    ),
+]
+
+
+def test_cli(root: Path, spec: Path, baseline: Path, built: Path) -> None:
+    print("\nprism-mapfit — exact output")
+    for label, argv_t, want_rc, want_out, want_err in _CLI_CASES:
+        argv = [a.format(spec=spec, map=baseline, built=built) for a in argv_t]
+        rc, out, err = _run_cli(argv, root)
+        check(f"{label}: exit code", rc == want_rc,
+              "" if rc == want_rc else f"got {rc}, want {want_rc}")
+        check(f"{label}: stdout", out == want_out,
+              "" if out == want_out else f"\n--- got ---\n{out}--- want ---\n{want_out}")
+        check(f"{label}: stderr", err == want_err,
+              "" if err == want_err else f"\n--- got ---\n{err}--- want ---\n{want_err}")
+
+
+#: `run_make` shells out to `make` in the repo root. A stub on PATH reaches
+#: `cmd_add`'s two build branches — the measurement build and the verify build
+#: — which are half the function and the half that is hard to reason about:
+#: the measurement build only works because the map's sections are *unpinned*
+#: first, so a map that outgrew its bank does not overflow on a stale pin.
+#: Without this, the branch that unpins is untested and step 7 would be
+#: rewriting it blind.
+_MAKE_OK = "#!/bin/sh\nexit 0\n"
+_MAKE_FAILS = "#!/bin/sh\necho 'section overflows bank' >&2\nexit 1\n"
+
+
+@contextlib.contextmanager
+def _make_on_path(root: Path, script: str):
+    """Put a stub `make` first on PATH for the duration."""
+    bindir = root / "stub-bin"
+    bindir.mkdir(exist_ok=True)
+    make = bindir / "make"
+    make.write_text(script)
+    make.chmod(0o755)
+    old = os.environ["PATH"]
+    os.environ["PATH"] = f"{bindir}:{old}"
+    try:
+        yield
+    finally:
+        os.environ["PATH"] = old
+
+
+def _built_artifacts(root: Path) -> None:
+    """What `paths.map_path()` looks for after a build: a ROM and its .map."""
+    (root / "pokeprism_nodebug.gbc").write_bytes(bytes(64))
+    (root / "pokeprism_nodebug.map").write_text(_BUILT_MAP)
+
+
+def test_add_measures_the_script_with_a_build(tmp: Path) -> None:
+    """No `--script-size`, so `add` must unpin, build to measure, then verify."""
+    print("\nprism-mapfit add — the build path")
+    root, spec = _cli_repo(tmp, "build")
+    baseline = root / "baseline.map"
+    baseline.write_text(_BASELINE_MAP)
+    _built_artifacts(root)
+
+    with _make_on_path(root, _MAKE_OK):
+        rc, out, err = _run_cli(
+            ["add", "--spec", str(spec), "--map", str(baseline)], root)
+
+    check("exit code 0", rc == 0, f"got {rc}\n{err}")
+    check("it measures before it places",
+          "\nMeasuring script size (build with floating sections)…\n" in out, out[:400])
+    check("the script size comes from the .map, marked measured",
+          "script/event   1280 bytes  (measured)" in out, out[-600:])
+    check("it verifies afterwards",
+          "\nVerifying (make nodebug)…\nBuild OK. Map wired and placed.\n" in out,
+          out[-200:])
+    check("the wiring actually landed on disk",
+          "mapgroup MT_EMBER_SMALL_ROOM, 10, 9"
+          in (root / "constants" / "map_dimension_constants.asm").read_text())
+    check("the sections were pinned in the linker script",
+          "Map Scripts MtEmberSmallRoom"
+          in (root / "contents" / "romx.link").read_text())
+
+
+def test_add_unpins_before_measuring(tmp: Path) -> None:
+    """A re-alloc: the map is already pinned, and the measurement build must
+    float it first.
+
+    This is the branch `commands.py`'s own header comment is about — a map that
+    outgrew its bank would overflow the measurement build on its stale pin. It
+    only runs when there *is* a pin to remove, so a fresh-map fixture never
+    reaches it, and a mutation that skips the unpin survives everything else.
+    """
+    print("\nprism-mapfit add — re-allocating an already-pinned map")
+    root, spec = _cli_repo(tmp, "repin")
+    baseline = root / "baseline.map"
+    baseline.write_text(_BASELINE_MAP)
+    _built_artifacts(root)
+    (root / "contents" / "romx.link").write_text(
+        'ROMX $01\n\t"Code 1"\n\n'
+        'ROMX $05\n\t"Map Scripts MtEmberSmallRoom"\n'
+        '\t"Map block data MtEmberSmallRoom"\n\n'
+        'ROMX $25\n\t"Sprites"\n'
+    )
+
+    with _make_on_path(root, _MAKE_OK):
+        rc, out, err = _run_cli(
+            ["add", "--spec", str(spec), "--map", str(baseline)], root)
+
+    check("exit code 0", rc == 0, f"got {rc}\n{err}")
+    link = (root / "contents" / "romx.link").read_text()
+    check("it says it unpinned before measuring",
+          "unpinned" in out.split("Measuring script size")[0], out[:800])
+    check("nothing is left pinned to the stale $05",
+          'ROMX $05\n\t"Map' not in link, link)
+    check("the sections were re-pinned somewhere",
+          '"Map Scripts MtEmberSmallRoom"' in link, link)
+
+
+def test_add_sizes_a_blob_appended_into_a_section(tmp: Path) -> None:
+    """A blob that joins an existing section has no section of its own, so its
+    measured size is how much that section *grew* — which needs the pre-wiring
+    .map to subtract. Without an INTO placement nothing reads that baseline,
+    and dropping it survives every other case here.
+    """
+    print("\nprism-mapfit add — a blob appended into an existing section")
+    root, spec = _cli_repo(tmp, "into")
+
+    # "Map block data 1" is a real SECTION in the fixture's blockdata.asm —
+    # the blob is appended into that, so its own section is never created.
+    # It is $0100 before the build and $0300 after: the blob is the delta.
+    baseline = root / "baseline.map"
+    baseline.write_text(
+        'ROMX bank #1:\n'
+        '  SECTION: $4000-$7e7f ($3e80 bytes) ["Code 1"]\n'
+        '  TOTAL EMPTY: $0180 bytes\n'
+        'ROMX bank #2:\n'
+        '  SECTION: $4000-$5fff ($2000 bytes) ["Map Headers"]\n'
+        '  TOTAL EMPTY: $2000 bytes\n'
+        'ROMX bank #3:\n'
+        '  SECTION: $4000-$40ff ($0100 bytes) ["Map block data 1"]\n'
+        '  TOTAL EMPTY: $3f00 bytes\n'
+    )
+    (root / "pokeprism_nodebug.gbc").write_bytes(bytes(64))
+    (root / "pokeprism_nodebug.map").write_text(
+        'ROMX bank #1:\n'
+        '  SECTION: $4000-$7e7f ($3e80 bytes) ["Code 1"]\n'
+        '  TOTAL EMPTY: $0180 bytes\n'
+        'ROMX bank #2:\n'
+        '  SECTION: $4000-$5fff ($2000 bytes) ["Map Headers"]\n'
+        '  SECTION: $6000-$601a ($001b bytes) ["Second Map Header MtEmberSmallRoom"]\n'
+        '  TOTAL EMPTY: $1fe5 bytes\n'
+        'ROMX bank #3:\n'
+        '  SECTION: $4000-$42ff ($0300 bytes) ["Map block data 1"]\n'
+        '  SECTION: $4300-$47ff ($0500 bytes) ["Map Scripts MtEmberSmallRoom"]\n'
+        '  TOTAL EMPTY: $3800 bytes\n'
+    )
+
+    with _make_on_path(root, _MAKE_OK):
+        rc, out, err = _run_cli(
+            ["add", "--spec", str(spec), "--map", str(baseline),
+             "--blockdata-into", "Map block data 1"], root)
+
+    check("exit code 0", rc == 0, f"got {rc}\n{err}")
+    check("block data is sized as the section's growth, not its total",
+          "block data      512 bytes" in out, out[:800])
+    check("it is not pinned, having inherited the section's bank",
+          "(appended into an existing section — not pinned)" in out, out[-800:])
+    # The report saying "not pinned" and the linker script agreeing are two
+    # different claims. Pinning a section shared with other maps would move
+    # their block data too.
+    link = (root / "contents" / "romx.link").read_text()
+    check("the shared section is left out of the linker script",
+          '"Map block data 1"' not in link, link)
+
+
+def test_add_reports_a_failed_build(tmp: Path) -> None:
+    """A build that fails is reported with its log, and does not read as success."""
+    print("\nprism-mapfit add — a failing build")
+    root, spec = _cli_repo(tmp, "buildfail")
+    baseline = root / "baseline.map"
+    baseline.write_text(_BASELINE_MAP)
+    _built_artifacts(root)
+
+    with _make_on_path(root, _MAKE_FAILS):
+        rc, out, err = _run_cli(
+            ["add", "--spec", str(spec), "--map", str(baseline),
+             "--script-size", "600"], root)
+
+    check("exit code 1", rc == 1, f"got {rc}")
+    check("the build log is passed through", "section overflows bank" in err, err[-200:])
+    check("it names the likely cause",
+          "error: verify build failed. If a section overflowed its bank, "
+          "re-run with a larger --margin or free a bank." in err, err[-200:])
+    check("it does not claim success", "Build OK" not in out, out[-200:])
+
+
+def test_dry_run_writes_nothing(tmp: Path) -> None:
+    """`--dry-run` prints the whole plan and must leave the tree byte-identical.
+
+    The check that matters is the negative one: `cmd_add` calls the same
+    `apply_edits` and `pin_sections` the real run does, and the only thing
+    standing between it and the files is the flag.
+    """
+    print("\nprism-mapfit add --dry-run")
+    root, spec = _cli_repo(tmp, "dryrun")
+    baseline = root / "baseline.map"
+    baseline.write_text(_BASELINE_MAP)
+
+    tracked = sorted(p for p in root.rglob("*") if p.is_file())
+    before = {p: p.read_bytes() for p in tracked}
+
+    rc, out, _err = _run_cli(
+        ["add", "--spec", str(spec), "--map", str(baseline),
+         "--script-size", "600", "--dry-run"], root)
+
+    after = {p: p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+    check("exit code 0", rc == 0, f"got {rc}")
+    check("it says it wrote nothing", "\n(dry run — no files written)\n" in out, out[-200:])
+    check("no file appeared or vanished", set(after) == set(before),
+          str(set(after) ^ set(before)))
+    changed = [p.name for p in before if p in after and after[p] != before[p]]
+    check("every file is byte-identical", changed == [], str(changed))
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
@@ -721,6 +1224,17 @@ def main() -> int:
         test_pinning(tmp)
         test_header_sizes_match_the_macros()
         test_lzcomp_sizing()
+
+        cli_root, cli_spec = _cli_repo(tmp, "cli")
+        baseline, built = cli_root / "baseline.map", cli_root / "built.map"
+        baseline.write_text(_BASELINE_MAP)
+        built.write_text(_BUILT_MAP)
+        test_cli(cli_root, cli_spec, baseline, built)
+        test_add_measures_the_script_with_a_build(tmp)
+        test_add_unpins_before_measuring(tmp)
+        test_add_sizes_a_blob_appended_into_a_section(tmp)
+        test_add_reports_a_failed_build(tmp)
+        test_dry_run_writes_nothing(tmp)
     print()
     if _failures:
         print(f"{_failures} check(s) FAILED")
