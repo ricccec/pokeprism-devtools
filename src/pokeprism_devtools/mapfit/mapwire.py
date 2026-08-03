@@ -1,4 +1,9 @@
-"""Idempotent, anchor-based editors that wire a new map into the asm sources.
+"""The five editors that wire a new map into the asm sources.
+
+The primitives they are built from are in `asmblocks.py`, and the linker
+script they are paired with is in `linkscript.py`; both are re-exported here,
+because "wire this map in" is one job to a caller even though it is three
+files' worth of code.
 
 Every editor reads its target file, makes the smallest edit that adds the map,
 and is a no-op if the map is already wired (matched on a stable token, never a
@@ -26,12 +31,18 @@ from pathlib import Path
 
 from ..shared.edits import Edit, apply_edits
 from ..hacks.prism.mapspec import INTO, MapSpec
+from .asmblocks import (
+    WiringError, _append_into_section, _group_block, _label_block,
+    _last_match_in, _place, _section_exists,
+)
+from .linkscript import pin_sections, unpin_sections
 
-__all__ = ["Edit", "apply_edits", "WiringError", "SCRIPTS_GUARD"]
+__all__ = [
+    "Edit", "apply_edits", "WiringError", "SCRIPTS_GUARD",
+    "pin_sections", "unpin_sections", "ALL_ASM_EDITORS",
+]
 
 SCRIPTS_GUARD = "DO NOT ADD ANYTHING BELOW THIS LINE"
-
-_SECTION_RE = re.compile(r'^\s*SECTION\s+"([^"]+)"')
 
 
 # --------------------------------------------------------------------------- #
@@ -167,185 +178,6 @@ def wire_script(root: Path, spec: MapSpec) -> Edit:
     text = "\n".join(new_lines) + "\n"
     return Edit(rel, True, f"added section '{spec.section_script}'", text,
                 base=original)
-
-
-# --------------------------------------------------------------------------- #
-# contents/romx.link — pin each section to its chosen bank                     #
-# --------------------------------------------------------------------------- #
-
-def pin_sections(root: Path, assignments: dict[str, int]) -> Edit:
-    """Pin ``{section name: bank}`` in the linker script.
-
-    Re-pins cleanly: any existing entry for a section is removed first, then the
-    section is added under its target bank, declaring ``ROMX $XX`` blocks for
-    empty high banks that aren't listed yet. Idempotent for an unchanged plan.
-    """
-    rel = "contents/romx.link"
-    path = root / rel
-    original = path.read_text()
-    lines = original.splitlines()
-
-    wanted = {name: f'\t"{name}"' for name in assignments}
-    # Strip any stale placement of these sections.
-    before = list(lines)
-    lines = [ln for ln in lines if ln not in wanted.values()]
-
-    changed_detail = []
-    for name, bank in assignments.items():
-        header = _romx_header(bank)
-        idx = next((i for i, ln in enumerate(lines) if ln.strip() == header.strip()), None)
-        if idx is None:
-            # Declare a new (empty high) bank block at EOF.
-            if lines and lines[-1].strip() != "":
-                lines.append("")
-            lines.append(header)
-            lines.append(wanted[name])
-            changed_detail.append(f"{name} -> new {header.strip()}")
-            continue
-        # Append under the existing bank block, after its last section line.
-        end = idx + 1
-        while end < len(lines) and lines[end].strip() and not lines[end].startswith("ROMX"):
-            end += 1
-        lines.insert(end, wanted[name])
-        changed_detail.append(f"{name} -> {header.strip()}")
-
-    text = "\n".join(lines) + "\n"
-    changed = lines != before
-    detail = "; ".join(changed_detail) if changed else "linker pins already current"
-    return Edit(rel, changed, detail, text, base=original)
-
-
-def unpin_sections(root: Path, names: list[str]) -> Edit:
-    """Remove any linker pins for ``names`` so the sections float.
-
-    Used before a measurement build of an *already-pinned* map: if the map grew
-    past its current bank, building with the stale pin would overflow, so we let
-    the sections float (rgblink auto-places them, typically into the empty high
-    banks) just long enough to measure their true sizes, then re-pin properly.
-    A no-op for a map that was never pinned (e.g. first allocation).
-    """
-    rel = "contents/romx.link"
-    path = root / rel
-    original = path.read_text()
-    lines = original.splitlines()
-    targets = {f'\t"{n}"' for n in names}
-    kept = [ln for ln in lines if ln not in targets]
-    changed = len(kept) != len(lines)
-    text = "\n".join(kept) + "\n"
-    detail = f"unpinned {len(lines) - len(kept)} section(s) for measurement" if changed \
-        else "nothing pinned to unpin"
-    return Edit(rel, changed, detail, text, base=original)
-
-
-def _romx_header(bank: int) -> str:
-    return f"ROMX ${bank:02X}"
-
-
-# --------------------------------------------------------------------------- #
-# helpers                                                                      #
-# --------------------------------------------------------------------------- #
-
-class WiringError(RuntimeError):
-    pass
-
-
-# --------------------------------------------------------------------------- #
-# placing a blob: its own new SECTION, or inside one that already exists       #
-# --------------------------------------------------------------------------- #
-
-def _place(rel: str, text: str, placement, entry: list[str],
-           barrier: str | None = None) -> Edit:
-    """Write `entry` where `placement` says it goes.
-
-    Both modes are anchor-based and idempotent in the same way the rest of this
-    module is — the caller has already checked the map isn't wired, and neither
-    mode depends on a line number.
-    """
-    # INTO says "join this section" outright; but even an own-section placement
-    # must join a section of that name if one already exists — writing a second
-    # `SECTION "<name>"` is not a rename, it is a duplicate the linker splits back
-    # apart. So a section name you reuse in the form appends, it does not fork.
-    if placement.mode == INTO or _section_exists(text, placement.section):
-        lines = _append_into_section(text.split("\n"), placement.section, entry, barrier)
-        return Edit(rel, True,
-                    f"appended into existing section '{placement.section}' "
-                    f"(inherits its bank)",
-                    "\n".join(lines), base=text)
-
-    block = ["", f'SECTION "{placement.section}", ROMX', *entry]
-    return Edit(rel, True, f"added section '{placement.section}'",
-                text.rstrip("\n") + "\n" + "\n".join(block) + "\n", base=text)
-
-
-def _section_exists(text: str, section: str) -> bool:
-    """Whether a ``SECTION "<section>"`` is already declared in this file."""
-    return any((m := _SECTION_RE.match(ln)) and m.group(1) == section
-               for ln in text.splitlines())
-
-
-def _append_into_section(lines: list[str], section: str, entry: list[str],
-                         barrier: str | None = None) -> list[str]:
-    """Insert `entry` at the end of an existing ``SECTION "<section>"`` block.
-
-    A section runs until the next ``SECTION`` line, a `barrier` line, or the end
-    of the file — and the barrier matters: the last section in map_scripts.asm
-    runs to EOF *through* the "DO NOT ADD ANYTHING BELOW THIS LINE" banner, so
-    without it an append would land underneath the one comment in the repo that
-    exists to say don't.
-
-    The entry goes after the section's last non-blank line, so it lands inside
-    the section rather than in the gap before whatever follows.
-    """
-    start = next((i for i, ln in enumerate(lines)
-                  if (m := _SECTION_RE.match(ln)) and m.group(1) == section), None)
-    if start is None:
-        raise WiringError(
-            f"no SECTION \"{section}\" to append into — check the name, or let "
-            f"mapfit place this blob automatically"
-        )
-
-    def ends_here(line: str) -> bool:
-        return bool(_SECTION_RE.match(line)) or (barrier is not None and barrier in line)
-
-    end = next((i for i in range(start + 1, len(lines)) if ends_here(lines[i])),
-               len(lines))
-    while end > start + 1 and not lines[end - 1].strip():
-        end -= 1                       # step back over the blank gap to what follows
-
-    return lines[:end] + entry + lines[end:]
-
-
-def _group_block(lines, n, delimiter_re):
-    """Return [start, end) line indices of the n-th block delimited by a regex
-    (1-based). `start` is the delimiter line; `end` is the next delimiter / EOF."""
-    delim = re.compile(delimiter_re)
-    starts = [i for i, ln in enumerate(lines) if delim.match(ln)]
-    if n < 1 or n > len(starts):
-        return None, None
-    start = starts[n - 1]
-    end = starts[n] if n < len(starts) else len(lines)
-    return start, end
-
-
-def _label_block(lines, label, label_re):
-    """Like _group_block but keyed on a specific label line (e.g. 'MapGroup7:')."""
-    delim = re.compile(label_re)
-    starts = [i for i, ln in enumerate(lines) if delim.match(ln)]
-    target = next((i for i in starts if lines[i].rstrip(":") == label or lines[i].strip() == f"{label}:"), None)
-    if target is None:
-        return None, None
-    after = [i for i in starts if i > target]
-    end = after[0] if after else len(lines)
-    return target, end
-
-
-def _last_match_in(lines, start, end, pattern):
-    rx = re.compile(pattern)
-    found = None
-    for i in range(start, end):
-        if rx.match(lines[i]):
-            found = i
-    return found
 
 
 ALL_ASM_EDITORS = (
