@@ -1,12 +1,25 @@
 #!/usr/bin/env python3
-"""Tests for prism-maps: the used/RAW/LZ detection in map_inspect.collect().
+"""Tests for prism-maps: the used/RAW/LZ detection in map_inspect.collect(),
+and the exact output of every flag its command line offers.
 Hermetic — temp fixtures, no ROM/build.
 
     python tests/test_map_inspect.py
+
+The CLI half is characterization, added before `main` and `collect` are
+shortened: measured against the whole suite, `main`'s 65 lines ran none and
+`collect`'s 61 ran 46, so nothing pinned what the command actually prints.
+Goldens are recorded from the behaviour as it stood, not written by hand.
+
+`main` is driven through `sys.argv` and `SystemExit`, not by passing an argv
+list, because that is how the console entry point really calls it — and it
+keeps the test honest if `main` later grows a parameter.
 """
 
 from __future__ import annotations
 
+import contextlib
+import io
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -30,6 +43,10 @@ def _fixture_repo(tmp: Path) -> Path:
     root = tmp / "repo"
     (root / "constants").mkdir(parents=True)
     (root / "maps" / "blk").mkdir(parents=True)
+
+    # What repo_root() walks up looking for; the CLI locates the tree by cwd.
+    (root / "Makefile").write_text("all:\n")
+    (root / "main.asm").write_text('INCLUDE "constants.asm"\n')
 
     (root / "constants" / "map_dimension_constants.asm").write_text(
         "\tconst_def\n"
@@ -103,6 +120,206 @@ def _fixture_repo(tmp: Path) -> Path:
     return root
 
 
+def _run_cli(argv: list[str], cwd: Path) -> tuple[int, str, str]:
+    """Run `prism-maps <argv>` with *cwd* as the repo, capturing everything.
+
+    `main` locates the tree from the working directory and reports by exiting,
+    so both have to be staged: chdir in, and read the code off SystemExit. An
+    exit that never happens is a 0, which is what the console script sees.
+    """
+    out, err = io.StringIO(), io.StringIO()
+    old_cwd, old_argv = Path.cwd(), sys.argv
+    os.chdir(cwd)
+    sys.argv = ["prism-maps", *argv]
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                map_inspect.main()
+                rc = 0
+            except SystemExit as e:
+                rc = e.code if isinstance(e.code, int) else 0
+    finally:
+        os.chdir(old_cwd)
+        sys.argv = old_argv
+    return rc, out.getvalue(), err.getvalue()
+
+
+#: (label, argv, expected rc, expected stdout). Recorded from the package as it
+#: stood, not written by hand. stderr is empty for all of these; the one command
+#: that writes to it is checked separately, where the message is the point.
+_CLI_CASES: list[tuple[str, list[str], int, str]] = [
+    (
+        'default table, sorted by name', [], 0,
+        """NAME            W   H   BLKS  RAW  LZ   RATIO  SCRIPT  NPCS  USED
+--------------  --  --  ----  ---  ---  -----  ------  ----  ----
+CAPER_RIDGE     9   10  90    90   40   44%    40      0     ✓   
+GHOST_TOWN      4   4   16    —    —    —      —       —     ✗   
+MOUND_B2F       8   8   64    64   30   47%    38      0     ✓   
+MT_EMBER_SOUTH  52  15  780   780  300  38%    42      0     ✓   
+OLD_LAB         4   4   16    —    —    —      —       —     ✗   
+""",
+    ),
+    (
+        '--reverse turns the name order around', ['--reverse'], 0,
+        """NAME            W   H   BLKS  RAW  LZ   RATIO  SCRIPT  NPCS  USED
+--------------  --  --  ----  ---  ---  -----  ------  ----  ----
+OLD_LAB         4   4   16    —    —    —      —       —     ✗   
+MT_EMBER_SOUTH  52  15  780   780  300  38%    42      0     ✓   
+MOUND_B2F       8   8   64    64   30   47%    38      0     ✓   
+GHOST_TOWN      4   4   16    —    —    —      —       —     ✗   
+CAPER_RIDGE     9   10  90    90   40   44%    40      0     ✓   
+""",
+    ),
+    (
+        '--sort blocks', ['--sort', 'blocks'], 0,
+        """NAME            W   H   BLKS  RAW  LZ   RATIO  SCRIPT  NPCS  USED
+--------------  --  --  ----  ---  ---  -----  ------  ----  ----
+GHOST_TOWN      4   4   16    —    —    —      —       —     ✗   
+OLD_LAB         4   4   16    —    —    —      —       —     ✗   
+MOUND_B2F       8   8   64    64   30   47%    38      0     ✓   
+CAPER_RIDGE     9   10  90    90   40   44%    40      0     ✓   
+MT_EMBER_SOUTH  52  15  780   780  300  38%    42      0     ✓   
+""",
+    ),
+    (
+        '--sort raw keeps the unmeasured maps last', ['--sort', 'raw'], 0,
+        """NAME            W   H   BLKS  RAW  LZ   RATIO  SCRIPT  NPCS  USED
+--------------  --  --  ----  ---  ---  -----  ------  ----  ----
+MOUND_B2F       8   8   64    64   30   47%    38      0     ✓   
+CAPER_RIDGE     9   10  90    90   40   44%    40      0     ✓   
+MT_EMBER_SOUTH  52  15  780   780  300  38%    42      0     ✓   
+GHOST_TOWN      4   4   16    —    —    —      —       —     ✗   
+OLD_LAB         4   4   16    —    —    —      —       —     ✗   
+""",
+    ),
+    (
+        '--sort raw --reverse keeps them last too', ['--sort', 'raw', '--reverse'], 0,
+        """NAME            W   H   BLKS  RAW  LZ   RATIO  SCRIPT  NPCS  USED
+--------------  --  --  ----  ---  ---  -----  ------  ----  ----
+MT_EMBER_SOUTH  52  15  780   780  300  38%    42      0     ✓   
+CAPER_RIDGE     9   10  90    90   40   44%    40      0     ✓   
+MOUND_B2F       8   8   64    64   30   47%    38      0     ✓   
+GHOST_TOWN      4   4   16    —    —    —      —       —     ✗   
+OLD_LAB         4   4   16    —    —    —      —       —     ✗   
+""",
+    ),
+    (
+        '--search is a case-insensitive substring', ['--search', 'mound'], 0,
+        """NAME       W  H  BLKS  RAW  LZ  RATIO  SCRIPT  NPCS  USED
+---------  -  -  ----  ---  --  -----  ------  ----  ----
+MOUND_B2F  8  8  64    64   30  47%    38      0     ✓   
+""",
+    ),
+    (
+        '--min-blocks', ['--min-blocks', '90'], 0,
+        """NAME            W   H   BLKS  RAW  LZ   RATIO  SCRIPT  NPCS  USED
+--------------  --  --  ----  ---  ---  -----  ------  ----  ----
+CAPER_RIDGE     9   10  90    90   40   44%    40      0     ✓   
+MT_EMBER_SOUTH  52  15  780   780  300  38%    42      0     ✓   
+""",
+    ),
+    (
+        '--max-blocks', ['--max-blocks', '16'], 0,
+        """NAME        W  H  BLKS  RAW  LZ  RATIO  SCRIPT  NPCS  USED
+----------  -  -  ----  ---  --  -----  ------  ----  ----
+GHOST_TOWN  4  4  16    —    —   —      —       —     ✗   
+OLD_LAB     4  4  16    —    —   —      —       —     ✗   
+""",
+    ),
+    (
+        '--min-blocks and --max-blocks are ANDed', ['--min-blocks', '17', '--max-blocks', '90'], 0,
+        """NAME         W  H   BLKS  RAW  LZ  RATIO  SCRIPT  NPCS  USED
+-----------  -  --  ----  ---  --  -----  ------  ----  ----
+CAPER_RIDGE  9  10  90    90   40  44%    40      0     ✓   
+MOUND_B2F    8  8   64    64   30  47%    38      0     ✓   
+""",
+    ),
+    (
+        '--used', ['--used'], 0,
+        """NAME            W   H   BLKS  RAW  LZ   RATIO  SCRIPT  NPCS  USED
+--------------  --  --  ----  ---  ---  -----  ------  ----  ----
+CAPER_RIDGE     9   10  90    90   40   44%    40      0     ✓   
+MOUND_B2F       8   8   64    64   30   47%    38      0     ✓   
+MT_EMBER_SOUTH  52  15  780   780  300  38%    42      0     ✓   
+""",
+    ),
+    (
+        '--unused', ['--unused'], 0,
+        """NAME        W  H  BLKS  RAW  LZ  RATIO  SCRIPT  NPCS  USED
+----------  -  -  ----  ---  --  -----  ------  ----  ----
+GHOST_TOWN  4  4  16    —    —   —      —       —     ✗   
+OLD_LAB     4  4  16    —    —   —      —       —     ✗   
+""",
+    ),
+    (
+        '--json emits the record, not the table', ['--json', '--search', 'ghost'], 0,
+        """[
+  {
+    "name": "GHOST_TOWN",
+    "group": 1,
+    "map_id": 4,
+    "width": 4,
+    "height": 4,
+    "blocks": 16,
+    "blk_raw": null,
+    "blk_lz": null,
+    "lz_ratio": null,
+    "script_src": null,
+    "npc_count": null,
+    "used": false
+  }
+]
+""",
+    ),
+    (
+        'a filter that matches nothing exits 1 and prints nothing', ['--search', 'nosuchmap'], 1,
+        "",
+    ),
+]
+
+
+def test_goldens_kept_their_padding() -> None:
+    """`render_table` pads the last column, so every data row ends in spaces.
+
+    That is invisible in an editor and the first thing a stray "strip trailing
+    whitespace" would eat — which would fail every golden below at once and
+    look like a code defect. This check fails first, and says what happened.
+    """
+    print("\nthe goldens' trailing padding")
+    padded = sum(
+        1 for _, _, _, out in _CLI_CASES for line in out.splitlines()
+        if line.endswith(" ")
+    )
+    check("the recorded tables still carry their right-hand padding",
+          padded > 0,
+          "every golden lost its trailing spaces — an editor stripped them, "
+          "the table did not stop emitting them")
+
+
+def test_cli(root: Path) -> None:
+    print("\nprism-maps — every flag's exact output")
+    for label, argv, want_rc, want_out in _CLI_CASES:
+        rc, out, err = _run_cli(argv, root)
+        check(f"{label}: exit code", rc == want_rc,
+              "" if rc == want_rc else f"got {rc}, want {want_rc}")
+        check(f"{label}: stdout", out == want_out,
+              "" if out == want_out else f"\n--- got ---\n{out}--- want ---\n{want_out}")
+        check(f"{label}: stderr empty", err == "", err)
+
+
+def test_cli_outside_a_repo(tmp: Path) -> None:
+    """The one path that reports on stderr: no Makefile above the cwd."""
+    print("\nprism-maps — run from outside a game repo")
+    outside = tmp / "elsewhere"
+    outside.mkdir()
+    rc, out, err = _run_cli([], outside)
+    check("exit code is 2", rc == 2, f"got {rc}")
+    check("stdout is empty", out == "", out)
+    check("stderr names the tool and the missing root",
+          err.startswith("prism-maps: Could not find pokeprism repo root from ")
+          and err.endswith("found in any parent directory.\n"), repr(err))
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as d:
         root = _fixture_repo(Path(d))
@@ -133,6 +350,10 @@ def main() -> int:
             "OLD_LAB (commented-out _BlockData:) used=False",
             not rows["OLD_LAB"].used,
         )
+
+        test_goldens_kept_their_padding()
+        test_cli(root)
+        test_cli_outside_a_repo(Path(d))
 
     print()
     if _failures:
