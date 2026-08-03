@@ -15,8 +15,20 @@ Two sections, because a split changes one and must not change the other.
 
 CONTENT is every function, class and constant the package defines, anywhere in
 it, with a digest of its source and no mention of which file holds it. Moving a
-function between files does not touch this section; editing one does. **CONTENT
-must not change at all.**
+function between files does not touch this section; editing one does.
+
+**What CONTENT is asked to prove depends on the commit**, and both phases ask
+the same question — "did anything else change?" — expecting different answers:
+
+- **A move** (Phase 1's package splits, and Phase 1b's step 9). CONTENT must not
+  change *at all*. Anything that fails this was not a move.
+- **An edit by intent** (Phase 1b's shortenings). CONTENT is expected to change,
+  so the check is that the change is **confined**: the digests that differ must
+  be exactly the functions the commit set out to change, plus the new names it
+  extracted, and nothing else. A shrink that silently altered a neighbour shows
+  up as an extra changed digest. A rename done right appears as one name leaving
+  and one arriving with an *unchanged* digest; if the digest moved too, the
+  rename was not just a rename.
 
 SURFACE is what `import <package>` exposes. It is *expected* to shrink: an
 `__init__.py` re-exports its own imports by accident, so `map_show` exposes nine

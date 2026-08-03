@@ -13,7 +13,7 @@ from .reports import (
 )
 
 
-def main(argv: list[str] | None = None) -> int:
+def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="prism-usage",
         description="Analyze RGBDS link-map bank usage.",
@@ -55,7 +55,26 @@ def main(argv: list[str] | None = None) -> int:
     pd.add_argument("--max-bank-usage", type=float, default=95.0, metavar="P",
                     help="threshold for ⚠ warning (default: 95)")
 
-    args = p.parse_args(argv)
+    return p
+
+
+#: Every subcommand that reads one .map, by the name argparse parses. `diff`
+#: is absent on purpose: it takes two .map files and loads them itself, so it
+#: runs before the single-file load below.
+_COMMANDS = {
+    "summary": cmd_summary,
+    "banks": cmd_banks,
+    "bank": cmd_bank,
+    "largest": cmd_largest,
+    "free": cmd_free,
+    "section": cmd_section,
+    "check": cmd_check,
+}
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
 
     if args.cmd == "diff":
         return cmd_diff(args)
@@ -64,21 +83,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd is None or args.cmd == "summary":
         return cmd_summary(mp, map_path, args)
-    if args.cmd == "banks":
-        return cmd_banks(mp, args)
-    if args.cmd == "bank":
-        return cmd_bank(mp, args)
-    if args.cmd == "largest":
-        return cmd_largest(mp, args)
-    if args.cmd == "free":
-        return cmd_free(mp, args)
-    if args.cmd == "section":
-        return cmd_section(mp, args)
-    if args.cmd == "check":
-        return cmd_check(mp, args)
 
-    p.print_help()
-    return 2
+    command = _COMMANDS.get(args.cmd)
+    if command is None:
+        parser.print_help()
+        return 2
+    return command(mp, args)
 
 
 if __name__ == "__main__":
