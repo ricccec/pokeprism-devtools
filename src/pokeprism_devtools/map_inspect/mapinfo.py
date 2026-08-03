@@ -56,50 +56,70 @@ def _blk_sizes(root: Path, target: str) -> tuple[int | None, int | None]:
     return raw, lz
 
 
+def _group_labels_by_const(root: Path) -> dict[str, list[str]]:
+    """`MAP_CONST -> [PascalCase label, ...]` from the secondary headers.
+
+    A const can carry several labels — a half-deleted map leaves an alias
+    behind — so the value is a list and `_resolve_wiring` picks between them.
+    """
+    const_to_labels: dict[str, list[str]] = {}
+    for label, const in mapsource.header_pairs(root):
+        const_to_labels.setdefault(const, []).append(label)
+    return const_to_labels
+
+
+def _index_scripts(root: Path) -> dict[str, Path]:
+    """`normalised stem -> maps/<Label>.asm`, skipping the aggregate files."""
+    index: dict[str, Path] = {}
+    maps_dir = root / "maps"
+    if maps_dir.is_dir():
+        for p in maps_dir.glob("*.asm"):
+            if p.name not in _AGGREGATE_SCRIPTS:
+                index[_norm(p.stem)] = p
+    return index
+
+
+def _resolve_wiring(labels: list[str], bd_labels: dict[str, str],
+                    script_labels: set[str]) -> tuple[str | None, bool]:
+    """(the label whose block data to measure, whether the map is wired).
+
+    Wired means the three-way agreement in this module's header: a label with
+    both a block-data label and a map-script-header label. A label with only
+    block data still gives a size to report, but does not make the map used.
+    """
+    wired = [l for l in labels if l in bd_labels and l in script_labels]
+    if wired:
+        return wired[0], True
+    return next((l for l in labels if l in bd_labels), None), False
+
+
+def _measure_script(path: Path | None) -> tuple[int | None, int | None]:
+    """(source bytes, NPC count) for a map's script, or (None, None)."""
+    if path is None:
+        return None, None
+    text = path.read_text(encoding="utf-8")
+    return (len(text.encode("utf-8")),
+            sum(1 for line in text.splitlines() if _NPC_RE.match(line)))
+
+
 def collect(root: Path) -> list[MapInfo]:
     """Build MapInfo list from source files under *root*."""
     map_defs = maps_mod.parse_maps(
         root / "constants" / "map_dimension_constants.asm"
     )
-
-    # Ground truth for "used": a map_header_2 entry ties a Pascal-case label
-    # to its ALL_CAPS const; the map is only really wired if that label also
-    # has a block-data label and a map-script-header label (see mapsource.py).
-    const_to_labels: dict[str, list[str]] = {}
-    for label, const in mapsource.header_pairs(root):
-        const_to_labels.setdefault(const, []).append(label)
-
+    const_to_labels = _group_labels_by_const(root)
     bd_labels = mapsource.blockdata_labels(root)
     script_labels = mapsource.script_header_labels(root)
-
-    # Script file index: stem normalised → Path
-    script_index: dict[str, Path] = {}
-    maps_dir = root / "maps"
-    if maps_dir.is_dir():
-        for p in maps_dir.glob("*.asm"):
-            if p.name not in _AGGREGATE_SCRIPTS:
-                script_index[_norm(p.stem)] = p
+    script_index = _index_scripts(root)
 
     result: list[MapInfo] = []
     for md in map_defs:
-        labels = const_to_labels.get(md.name, [])
-        wired = [l for l in labels if l in bd_labels and l in script_labels]
-        used = bool(wired)
-
-        blk_label = wired[0] if wired else next((l for l in labels if l in bd_labels), None)
+        blk_label, used = _resolve_wiring(
+            const_to_labels.get(md.name, []), bd_labels, script_labels)
         raw = lz = None
         if blk_label is not None:
             raw, lz = _blk_sizes(root, bd_labels[blk_label])
-        ratio = (lz / raw) if raw and lz else None
-
-        key = _norm(md.name)
-        script_path = script_index.get(key)
-        script_src: int | None = None
-        npc_count: int | None = None
-        if script_path is not None:
-            text = script_path.read_text(encoding="utf-8")
-            script_src = len(text.encode("utf-8"))
-            npc_count = sum(1 for line in text.splitlines() if _NPC_RE.match(line))
+        script_src, npc_count = _measure_script(script_index.get(_norm(md.name)))
 
         result.append(MapInfo(
             name=md.name,
@@ -110,7 +130,7 @@ def collect(root: Path) -> list[MapInfo]:
             blocks=md.width * md.height,
             blk_raw=raw,
             blk_lz=lz,
-            lz_ratio=ratio,
+            lz_ratio=(lz / raw) if raw and lz else None,
             script_src=script_src,
             npc_count=npc_count,
             used=used,

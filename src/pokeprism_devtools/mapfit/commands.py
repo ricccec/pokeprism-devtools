@@ -78,73 +78,56 @@ def cmd_plan(args) -> int:
     return 0
 
 
-def cmd_add(args) -> int:
-    spec, root = _load_spec(args)
-    if not _check_dedicated_sections(root, spec):
-        return 2
-    mp = _load_baseline(root, args)
-    fs, hdr_bank = baseline_free_space(mp, spec)
-    _warn_header_overflow(fs, hdr_bank, args.margin)
-
-    # 1. Wire the asm sources (sections float for now — not yet in romx.link).
+def _wire_asm_sources(root: Path, spec, *, dry_run: bool) -> None:
+    """Edit the five asm files. The sections float until they are pinned."""
     asm_edits = [editor(root, spec) for editor in mapwire.ALL_ASM_EDITORS]
     for e in asm_edits:
         print(f"  [{'edit' if e.changed else 'skip'}] {e.path}: {e.detail}")
-    mapwire.apply_edits(root, asm_edits, dry_run=args.dry_run)
+    mapwire.apply_edits(root, asm_edits, dry_run=dry_run)
 
-    # 2. Determine sizes. Measure the script via a build unless given one.
-    sizes = estimate_sizes(root, spec, args.script_size)
-    if sizes.script < 0 and not args.no_build and not args.dry_run:
-        # Unpin this map's sections first: if it's a re-alloc of a map that grew
-        # past its current bank, the stale pin would overflow the measurement
-        # build. Floating lets rgblink place them anywhere just to measure.
-        unpin = mapwire.unpin_sections(root, [
-            spec.section_script, spec.section_blockdata, spec.section_secondary,
-        ])
-        if unpin.changed:
-            print(f"  [edit] {unpin.path}: {unpin.detail}")
-            mapwire.apply_edits(root, [unpin], dry_run=False)
-        print("\nMeasuring script size (build with floating sections)…")
-        ok, log = run_make(root)
-        if not ok:
-            print(log[-2000:], file=sys.stderr)
-            print("error: measurement build failed — see log above.", file=sys.stderr)
-            return 1
-        sizes = sizes_from_map(MapFile.parse(paths.map_path()), spec, sizes, before=mp)
-    if sizes.script < 0:
-        print("error: script size unknown — pass --script-size N (no build was run).",
-              file=sys.stderr)
-        return 2
 
-    # 3. Pack and pin.
-    strategy = _strategy(args)
-    try:
-        placements = plan_placement(spec, sizes, fs, args.margin, strategy, mp)
-    except (NoFitError, PlacementError) as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 1
-    print(f"\nStrategy: {'park (worst-fit, biggest chunk)' if strategy == 'loose' else 'tight (best-fit)'}")
-    _print_plan(spec, sizes, placements, hdr_bank, fs)
+def _measure_script_size(root: Path, spec, sizes, mp: MapFile):
+    """Build once with this map's sections floating, to learn the script size.
 
-    # Blobs appended into an existing section inherit its bank — there is no new
-    # section for the linker to place, so they are deliberately left unpinned.
+    Unpinning first is the point. On a re-alloc of a map that outgrew its bank,
+    the stale pin would overflow the measurement build itself — floating lets
+    rgblink put the sections anywhere, since the only question being asked is
+    how big they are. Returns None if the build failed.
+    """
+    unpin = mapwire.unpin_sections(root, [
+        spec.section_script, spec.section_blockdata, spec.section_secondary,
+    ])
+    if unpin.changed:
+        print(f"  [edit] {unpin.path}: {unpin.detail}")
+        mapwire.apply_edits(root, [unpin], dry_run=False)
+
+    print("\nMeasuring script size (build with floating sections)…")
+    ok, log = run_make(root)
+    if not ok:
+        print(log[-2000:], file=sys.stderr)
+        print("error: measurement build failed — see log above.", file=sys.stderr)
+        return None
+    return sizes_from_map(MapFile.parse(paths.map_path()), spec, sizes, before=mp)
+
+
+def _pin_placements(root: Path, spec, placements, *, dry_run: bool) -> None:
+    """Pin every blob that has a section of its own.
+
+    A blob appended *into* an existing section inherits that section's bank, so
+    there is no new section for the linker to place — pinning it would move the
+    other maps sharing it.
+    """
     shared = {p.section for p in spec.placements if not p.needs_pin}
     to_pin = {p.item.key: p.bank for p in placements if p.item.key not in shared}
-    if to_pin:
-        pin = mapwire.pin_sections(root, to_pin)
-        print(f"\n  [{'edit' if pin.changed else 'skip'}] {pin.path}: {pin.detail}")
-        mapwire.apply_edits(root, [pin], dry_run=args.dry_run)
-    else:
+    if not to_pin:
         print("\n  [skip] contents/romx.link: every blob joined an existing section")
+        return
+    pin = mapwire.pin_sections(root, to_pin)
+    print(f"\n  [{'edit' if pin.changed else 'skip'}] {pin.path}: {pin.detail}")
+    mapwire.apply_edits(root, [pin], dry_run=dry_run)
 
-    if args.dry_run:
-        print("\n(dry run — no files written)")
-        return 0
 
-    # 4. Verify.
-    if args.no_build:
-        print("\nWired in. Skipping verify build (--no-build); run `make nodebug`.")
-        return 0
+def _verify_build(root: Path) -> int:
     print("\nVerifying (make nodebug)…")
     ok, log = run_make(root)
     if not ok:
@@ -154,6 +137,46 @@ def cmd_add(args) -> int:
         return 1
     print("Build OK. Map wired and placed.")
     return 0
+
+
+def cmd_add(args) -> int:
+    spec, root = _load_spec(args)
+    if not _check_dedicated_sections(root, spec):
+        return 2
+    mp = _load_baseline(root, args)
+    fs, hdr_bank = baseline_free_space(mp, spec)
+    _warn_header_overflow(fs, hdr_bank, args.margin)
+
+    _wire_asm_sources(root, spec, dry_run=args.dry_run)
+
+    sizes = estimate_sizes(root, spec, args.script_size)
+    if sizes.script < 0 and not args.no_build and not args.dry_run:
+        sizes = _measure_script_size(root, spec, sizes, mp)
+        if sizes is None:
+            return 1
+    if sizes.script < 0:
+        print("error: script size unknown — pass --script-size N (no build was run).",
+              file=sys.stderr)
+        return 2
+
+    strategy = _strategy(args)
+    try:
+        placements = plan_placement(spec, sizes, fs, args.margin, strategy, mp)
+    except (NoFitError, PlacementError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(f"\nStrategy: {'park (worst-fit, biggest chunk)' if strategy == 'loose' else 'tight (best-fit)'}")
+    _print_plan(spec, sizes, placements, hdr_bank, fs)
+
+    _pin_placements(root, spec, placements, dry_run=args.dry_run)
+
+    if args.dry_run:
+        print("\n(dry run — no files written)")
+        return 0
+    if args.no_build:
+        print("\nWired in. Skipping verify build (--no-build); run `make nodebug`.")
+        return 0
+    return _verify_build(root)
 
 
 def _warn_header_overflow(fs: FreeSpace, hdr_bank: int | None, margin: int) -> None:
@@ -172,29 +195,12 @@ def cmd_consolidate(args) -> int:
     measurement build is needed — just one verify build at the end."""
     root = paths.repo_root()
     specs = [MapSpec.from_toml(Path(s)) for s in args.spec]
-    for spec in specs:
-        problems = spec.validate(root)
-        if problems:
-            for p in problems:
-                print(f"error: {spec.label}: {p}", file=sys.stderr)
-            return 2
-        if not _check_dedicated_sections(root, spec):
-            return 2
+    if not _specs_are_consolidatable(root, specs):
+        return 2
 
     kinds = parse_blobs(args.blobs)
     mp = _load_baseline(root, args)
-
-    # Exact sizes from the current build; lift the selected blobs of every map
-    # out of the free space (non-selected blobs stay put and stay counted).
-    all_names: set[str] = set()
-    items = []
-    for spec in specs:
-        sizes = sizes_from_map_strict(mp, spec)   # raises if not built yet
-        selected = selected_section_names(spec, kinds)
-        for it in map_items(spec, sizes):
-            if it.key in selected:
-                items.append(it)
-                all_names.add(it.key)
+    items, all_names = _select_blobs(mp, specs, kinds)
 
     fs, _ = _lift_free_space(mp, all_names, header_growth=0)
     try:
@@ -203,24 +209,9 @@ def cmd_consolidate(args) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 1
 
-    # Report, grouped per map, flagging which sections actually move banks.
-    current = {s.name: s.bank for s in mp.all_sections()}
     print(f"Consolidating {len(specs)} map(s), blobs: {', '.join(kinds)} "
           "-> tightest existing space\n")
-    moves = 0
-    for spec in specs:
-        print(f"{spec.label}")
-        for p in [pl for pl in placements if pl.item.key.endswith(spec.label)]:
-            was = current.get(p.item.key)
-            arrow = f"${was:02x} -> ${p.bank:02x}" if was is not None else f"-> ${p.bank:02x}"
-            moved = "" if was == p.bank else "  *moved*"
-            if was != p.bank:
-                moves += 1
-            print(f"  [{p.tier:<5}] {p.item.key}  ({p.item.size} B)  {arrow}{moved}")
-    freed = sorted({current[n] for n in all_names if n in current}
-                   - {p.bank for p in placements})
-    print(f"\n{moves} section(s) relocated; banks possibly freed: "
-          f"{', '.join(f'${b:02x}' for b in freed) or 'none'}")
+    _print_relocations(mp, specs, placements, all_names)
 
     pin = mapwire.pin_sections(root, {p.item.key: p.bank for p in placements})
     print(f"\n  [{'edit' if pin.changed else 'skip'}] {pin.path}: {pin.detail}")
@@ -240,4 +231,59 @@ def cmd_consolidate(args) -> int:
         return 1
     print("Build OK. Maps consolidated.")
     return 0
+
+
+def _specs_are_consolidatable(root: Path, specs) -> bool:
+    """Every spec must be valid and live in its own per-map sections."""
+    for spec in specs:
+        problems = spec.validate(root)
+        if problems:
+            for p in problems:
+                print(f"error: {spec.label}: {p}", file=sys.stderr)
+            return False
+        if not _check_dedicated_sections(root, spec):
+            return False
+    return True
+
+
+def _select_blobs(mp: MapFile, specs, kinds) -> tuple[list, set[str]]:
+    """The items to re-pack, and the section names they occupy today.
+
+    Sizes are exact, read from the current build — these maps are already
+    built, so nothing needs a measurement build. A blob whose kind was not
+    selected stays where it is and stays counted against its bank.
+    """
+    all_names: set[str] = set()
+    items = []
+    for spec in specs:
+        sizes = sizes_from_map_strict(mp, spec)   # raises if not built yet
+        selected = selected_section_names(spec, kinds)
+        for it in map_items(spec, sizes):
+            if it.key in selected:
+                items.append(it)
+                all_names.add(it.key)
+    return items, all_names
+
+
+def _print_relocations(mp: MapFile, specs, placements, all_names: set[str]) -> None:
+    """Per map, where each blob goes and whether that is a move.
+
+    A bank counts as freed only if nothing landed back in it — packing tightly
+    often refills the bank it just emptied.
+    """
+    current = {s.name: s.bank for s in mp.all_sections()}
+    moves = 0
+    for spec in specs:
+        print(f"{spec.label}")
+        for p in [pl for pl in placements if pl.item.key.endswith(spec.label)]:
+            was = current.get(p.item.key)
+            arrow = f"${was:02x} -> ${p.bank:02x}" if was is not None else f"-> ${p.bank:02x}"
+            moved = "" if was == p.bank else "  *moved*"
+            if was != p.bank:
+                moves += 1
+            print(f"  [{p.tier:<5}] {p.item.key}  ({p.item.size} B)  {arrow}{moved}")
+    freed = sorted({current[n] for n in all_names if n in current}
+                   - {p.bank for p in placements})
+    print(f"\n{moves} section(s) relocated; banks possibly freed: "
+          f"{', '.join(f'${b:02x}' for b in freed) or 'none'}")
 
