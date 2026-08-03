@@ -78,7 +78,7 @@ def _do_blank(root: Path, a: TilesetAnalysis, *, write: bool) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="prism-metatiles",
         description="Analyze how a tileset's metatiles are used across maps.",
@@ -97,7 +97,39 @@ def main(argv: list[str] | None = None) -> int:
                         "(requires a tileset id; dry-run unless --write is also passed).")
     p.add_argument("--write", action="store_true",
                    help="With --blank-unused: write changes to disk (default is dry-run).")
-    args = p.parse_args(argv)
+    return p
+
+
+def _print_all_tilesets(root: Path, by_tileset, syms, *, as_json: bool) -> None:
+    rows = [
+        analyze(root, tid, by_tileset.get(tid, []), syms)
+        for tid in all_tileset_ids(root)
+    ]
+    if as_json:
+        print(json.dumps([_as_dict(a) for a in rows], indent=2))
+    else:
+        print(render_summary(rows))
+
+
+def _print_one_tileset(a: TilesetAnalysis, *, as_json: bool, top: int) -> None:
+    if as_json:
+        print(json.dumps(_as_dict(a), indent=2))
+    else:
+        color = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+        print(render_report(a, top=top, color=color))
+
+
+def _open_tileset_sheet(root: Path, tileset_id: int, force: bool) -> int:
+    try:
+        open_images([_render_sheet(root, tileset_id, force)])
+    except Exception as e:
+        print(f"prism-metatiles: render failed: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
 
     try:
         root = paths.repo_root()
@@ -115,33 +147,17 @@ def main(argv: list[str] | None = None) -> int:
         print("prism-metatiles: --blank-unused requires a tileset id", file=sys.stderr)
         return 2
 
-    # Summary mode (no id given)
     if args.tileset_id is None:
-        rows = [
-            analyze(root, tid, by_tileset.get(tid, []), syms)
-            for tid in all_tileset_ids(root)
-        ]
-        if args.json:
-            print(json.dumps([_as_dict(a) for a in rows], indent=2))
-        else:
-            print(render_summary(rows))
+        _print_all_tilesets(root, by_tileset, syms, as_json=args.json)
         return 0
 
-    # Single-tileset report
     a = analyze(root, args.tileset_id, by_tileset.get(args.tileset_id, []), syms)
-    if args.json:
-        print(json.dumps(_as_dict(a), indent=2))
-    else:
-        color = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
-        print(render_report(a, top=args.top, color=color))
+    _print_one_tileset(a, as_json=args.json, top=args.top)
 
     if args.render:
-        try:
-            out = _render_sheet(root, args.tileset_id, args.force)
-            open_images([out])
-        except Exception as e:
-            print(f"prism-metatiles: render failed: {e}", file=sys.stderr)
-            return 1
+        failed = _open_tileset_sheet(root, args.tileset_id, args.force)
+        if failed:
+            return failed
 
     if args.blank_unused:
         return _do_blank(root, a, write=args.write)

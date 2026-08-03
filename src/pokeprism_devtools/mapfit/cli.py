@@ -19,13 +19,13 @@ def _bank(raw: str) -> int:
     except ValueError:
         raise argparse.ArgumentTypeError(f"{raw!r} is not a bank number") from None
 
-def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(
-        prog="prism-mapfit",
-        description="Find ROM banks for a new map and wire it in.",
-    )
-    sub = p.add_subparsers(dest="cmd", required=True)
+def _build_shared_flags() -> argparse.ArgumentParser:
+    """The flags `plan` and `add` have in common, as a parent parser.
 
+    Each blob gets the same exclusive pair: `--<blob>-into` to join an existing
+    section and inherit its bank, or `--<blob>-bank` to claim its own section
+    pinned by hand. Given neither, the packer chooses.
+    """
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--spec", required=True, metavar="FILE", help="map spec .toml")
     common.add_argument("--script-size", type=int, metavar="N",
@@ -42,6 +42,16 @@ def main(argv: list[str] | None = None) -> int:
             f"--{blob}-bank", metavar="BANK", type=_bank,
             help=f"give the {blob} its own SECTION pinned to this bank "
                  f"(e.g. 0x4d), instead of letting the packer choose")
+    return common
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="prism-mapfit",
+        description="Find ROM banks for a new map and wire it in.",
+    )
+    sub = p.add_subparsers(dest="cmd", required=True)
+    common = _build_shared_flags()
 
     pp = sub.add_parser("plan", parents=[common], help="show the bank placement, write nothing")
     pp.add_argument("--park", action="store_true",
@@ -70,7 +80,11 @@ def main(argv: list[str] | None = None) -> int:
     pc.add_argument("--no-build", action="store_true", help="re-pin but skip the verify build")
     pc.set_defaults(func=cmd_consolidate)
 
-    args = p.parse_args(argv)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
     try:
         return args.func(args)
     except (paths.RepoNotFound, FileNotFoundError, ValueError, mapwire.WiringError) as e:
