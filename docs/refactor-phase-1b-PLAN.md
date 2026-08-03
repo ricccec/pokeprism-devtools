@@ -62,9 +62,16 @@ would fail on purpose and tell nobody anything.
 **It proves confinement instead.** Before each edit, snapshot; after, diff; the
 CONTENT lines that changed must be **exactly** the functions the commit set out
 to change, and no others. A shrink that silently altered a neighbour shows up as
-an extra changed digest. Renaming a function appears as one name leaving and one
-arriving with an unchanged digest — which is the signature of a rename done right,
-and its absence is the signature of one done wrong.
+an extra changed digest.
+
+*Corrected while running step 10.* This section first claimed that renaming a
+function "appears as one name leaving and one arriving with an unchanged digest".
+**It does not, and cannot.** The digest is of the function's source and the
+source contains the `def` line, so a rename always changes it — as does every
+caller that names the function. The check is still worth running on a rename,
+but for the other side of the list: renaming `pack` to `pack_into_banks` moved
+exactly three digests, the function and its two callers, and a fourth would have
+meant the rename reached something it should not.
 
 So the tool answers "did anything else move?" in both phases. Only the expected
 answer differs.

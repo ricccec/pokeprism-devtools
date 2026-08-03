@@ -16,16 +16,16 @@ inside the pokeprism checkout.
 """
 
 from .cli import main
-from .mapuse import MapUse, blockdata_index, collect, script_block_ids, tileset_id_map
+from .mapuse import MapUse, blockdata_index, group_maps_by_tileset, script_block_ids, tileset_id_map
 from .report import render_report, render_summary
 from .tileset import (
-    BlobSize, TilesetAnalysis, all_tileset_ids, analyze, blank_unused_metatiles,
+    BlobSize, TilesetAnalysis, all_tileset_ids, analyze_tileset, blank_unused_metatiles,
     load_syms, metatile_usage, metatile_users, tile_coverage,
 )
 
 __all__ = [
-    "BlobSize", "MapUse", "TilesetAnalysis", "all_tileset_ids", "analyze",
-    "blank_unused_metatiles", "blockdata_index", "collect", "load_syms",
+    "BlobSize", "MapUse", "TilesetAnalysis", "all_tileset_ids", "analyze_tileset",
+    "blank_unused_metatiles", "blockdata_index", "group_maps_by_tileset", "load_syms",
     "main", "metatile_usage", "metatile_users", "render_report",
     "render_summary", "script_block_ids", "tile_coverage", "tileset_id_map",
 ]

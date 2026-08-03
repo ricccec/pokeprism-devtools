@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from pokeprism_devtools import mapfit  # noqa: E402
 from pokeprism_devtools.mapfit import freespace, mapwire  # noqa: E402
 from pokeprism_devtools.mapfit.packing import (  # noqa: E402
-    FreeSpace, Item, NoFitError, pack,
+    FreeSpace, Item, NoFitError, pack_into_banks,
 )
 from pokeprism_devtools.hacks.prism import blobsizes, mapsource # noqa: E402
 from pokeprism_devtools.shared import paths # noqa: E402
@@ -57,38 +57,38 @@ def test_packing() -> None:
 
     # Best fit: a 100-byte item should take the tightest scrap (120), not 500.
     fs = FreeSpace({0x10: 500, 0x11: 120, 0x76: 0x4000})
-    pls = pack([Item("a", 100)], fs, margin=0)
+    pls = pack_into_banks([Item("a", 100)], fs, margin=0)
     check("best-fit picks tightest scrap", pls[0].bank == 0x11, f"${pls[0].bank:02x}")
 
     # Decreasing order: the big item is placed first and claims its exact-fit
     # bank, instead of the small item grabbing it and forcing the big to spill.
     fs = FreeSpace({0x10: 250, 0x11: 300, 0x76: 0x4000})
-    pls = {p.item.key: p for p in pack([Item("small", 50), Item("big", 250)], fs, margin=0)}
+    pls = {p.item.key: p for p in pack_into_banks([Item("small", 50), Item("big", 250)], fs, margin=0)}
     check("big claims its exact-fit bank first", pls["big"].bank == 0x10)
     check("small placed elsewhere", pls["small"].bank == 0x11)
 
     # Spill: nothing fits in scraps -> empty high bank, lowest first.
     fs = FreeSpace({0x10: 30, 0x11: 30, 0x76: 0x4000, 0x77: 0x4000})
-    pls = pack([Item("x", 2000)], fs, margin=16)
+    pls = pack_into_banks([Item("x", 2000)], fs, margin=16)
     check("spills to empty high bank", pls[0].bank == 0x76 and pls[0].tier == "empty",
           f"${pls[0].bank:02x}/{pls[0].tier}")
 
     # Margin: 100-byte item must NOT take a 110-byte gap when margin=16.
     fs = FreeSpace({0x10: 110, 0x20: 200})
-    pls = pack([Item("x", 100)], fs, margin=16)
+    pls = pack_into_banks([Item("x", 100)], fs, margin=16)
     check("margin keeps slack (skips 110 gap)", pls[0].bank == 0x20, f"${pls[0].bank:02x}")
 
     # No fit: item bigger than any bank (incl. empty) -> NoFitError.
     fs = FreeSpace({0x10: 30, 0x76: 0x4000})
     try:
-        pack([Item("toobig", 0x5000)], fs, margin=0)
+        pack_into_banks([Item("toobig", 0x5000)], fs, margin=0)
         check("oversize raises NoFitError", False, "no exception")
     except NoFitError as e:
         check("oversize raises NoFitError", True, str(e)[:40])
 
     # Input order preserved in output.
     fs = FreeSpace({0x76: 0x4000})
-    pls = pack([Item("first", 10), Item("second", 5000)], fs, margin=0)
+    pls = pack_into_banks([Item("first", 10), Item("second", 5000)], fs, margin=0)
     check("output preserves input order", [p.item.key for p in pls] == ["first", "second"])
 
 
@@ -96,8 +96,8 @@ def test_strategies() -> None:
     print("\npacking.py strategies (tight vs park/loose)")
     # A 100-byte item: tight best-fits the scrap; park worst-fits the big empty.
     base = {0x30: 700, 0x76: 0x4000}
-    tight = pack([Item("x", 100)], FreeSpace(dict(base)), margin=16, strategy="tight")
-    loose = pack([Item("x", 100)], FreeSpace(dict(base)), margin=16, strategy="loose")
+    tight = pack_into_banks([Item("x", 100)], FreeSpace(dict(base)), margin=16, strategy="tight")
+    loose = pack_into_banks([Item("x", 100)], FreeSpace(dict(base)), margin=16, strategy="loose")
     check("tight -> scrap bank", tight[0].bank == 0x30 and tight[0].tier == "scrap",
           f"${tight[0].bank:02x}")
     check("park -> biggest chunk (empty high bank)",
@@ -105,7 +105,7 @@ def test_strategies() -> None:
 
     # Park spreads a map's blobs across fresh empty banks for max headroom.
     fs = FreeSpace({0x76: 0x4000, 0x77: 0x4000, 0x30: 200})
-    pls = pack([Item("script", 600), Item("blk", 20)], fs, margin=16, strategy="loose")
+    pls = pack_into_banks([Item("script", 600), Item("blk", 20)], fs, margin=16, strategy="loose")
     banks = {p.item.key: p.bank for p in pls}
     check("park spreads blobs across empty banks", banks["script"] != banks["blk"]
           and banks["script"] >= 0x76 and banks["blk"] >= 0x76,
@@ -134,7 +134,7 @@ def test_consolidate_core() -> None:
     fs, _ = freespace._lift_free_space(mp, names, header_growth=0)
     check("parked banks fully credited back", fs.free[0x76] == 0x4000 and fs.free[0x77] == 0x4000)
 
-    placements = pack(items, fs, margin=16, strategy="tight")
+    placements = pack_into_banks(items, fs, margin=16, strategy="tight")
     by = {p.item.key: p for p in placements}
     check("Alpha script best-fits the 700 scrap", by["Map Scripts Alpha"].bank == 0x30)
     check("Beta script best-fits the 500 scrap", by["Map Scripts Beta"].bank == 0x31)

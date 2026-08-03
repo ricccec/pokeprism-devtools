@@ -26,9 +26,15 @@ the same question — "did anything else change?" — expecting different answer
   so the check is that the change is **confined**: the digests that differ must
   be exactly the functions the commit set out to change, plus the new names it
   extracted, and nothing else. A shrink that silently altered a neighbour shows
-  up as an extra changed digest. A rename done right appears as one name leaving
-  and one arriving with an *unchanged* digest; if the digest moved too, the
-  rename was not just a rename.
+  up as an extra changed digest.
+
+**A rename changes digests, and cannot not.** The digest is of the function's
+source, and the source contains the `def` line — so a renamed function always
+arrives with a *different* digest, and so does every caller that names it. What
+the check is worth here is the rest of the list: after `pack` became
+`pack_into_banks`, the only digests that moved were that function and its two
+callers. A rename that reaches something it was not supposed to shows up as a
+fourth.
 
 SURFACE is what `import <package>` exposes. It is *expected* to shrink: an
 `__init__.py` re-exports its own imports by accident, so `map_show` exposes nine

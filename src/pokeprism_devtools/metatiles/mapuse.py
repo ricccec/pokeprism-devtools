@@ -120,7 +120,7 @@ def _read_blocks(root: Path, target: str) -> bytes:
     return path.read_bytes()
 
 
-def collect(root: Path) -> tuple[dict[int, list[MapUse]], list[str]]:
+def group_maps_by_tileset(root: Path) -> tuple[dict[int, list[MapUse]], list[str]]:
     """Group maps by the tileset id they use.
 
     Returns `({tileset_id: [MapUse, ...]}, warnings)`.

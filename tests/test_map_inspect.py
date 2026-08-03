@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Tests for prism-maps: the used/RAW/LZ detection in map_inspect.collect(),
+"""Tests for prism-maps: the used/RAW/LZ detection in map_inspect.collect_map_info(),
 and the exact output of every flag its command line offers.
 Hermetic — temp fixtures, no ROM/build.
 
     python tests/test_map_inspect.py
 
-The CLI half is characterization, added before `main` and `collect` are
+The CLI half is characterization, added before `main` and `collect_map_info` are
 shortened: measured against the whole suite, `main`'s 65 lines ran none and
-`collect`'s 61 ran 46, so nothing pinned what the command actually prints.
+`collect_map_info`'s 61 ran 46, so nothing pinned what the command actually prints.
 Goldens are recorded from the behaviour as it stood, not written by hand.
 
 `main` is driven through `sys.argv` and `SystemExit`, not by passing an argv
@@ -323,9 +323,9 @@ def test_cli_outside_a_repo(tmp: Path) -> None:
 def main() -> int:
     with tempfile.TemporaryDirectory() as d:
         root = _fixture_repo(Path(d))
-        rows = {r.name: r for r in map_inspect.collect(root)}
+        rows = {r.name: r for r in map_inspect.collect_map_info(root)}
 
-        print("\nmap_inspect.collect() — used detection")
+        print("\nmap_inspect.collect_map_info() — used detection")
         check("CAPER_RIDGE (normal) used=True", rows["CAPER_RIDGE"].used)
         check(
             "MT_EMBER_SOUTH used=True despite merged blk filename",

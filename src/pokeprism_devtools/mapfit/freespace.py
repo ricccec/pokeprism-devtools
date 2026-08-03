@@ -12,7 +12,7 @@ from __future__ import annotations
 from ..hacks.prism.blobsizes import PRIMARY_HEADER_GROWTH
 from ..hacks.prism.mapspec import INTO, MapSpec
 from ..shared.mapfile import MapFile
-from .packing import FreeSpace, Item, Placement, pack
+from .packing import FreeSpace, Item, Placement, pack_into_banks
 from .sizes import Sizes
 
 
@@ -118,6 +118,6 @@ def plan_placement(
     they consume space the packer would otherwise offer), then the rest packed
     into what's left."""
     manual = resolve_manual(mp, spec, sizes, fs, margin) if mp is not None else []
-    auto = pack(map_items(spec, sizes), fs, margin=margin, strategy=strategy)
+    auto = pack_into_banks(map_items(spec, sizes), fs, margin=margin, strategy=strategy)
     return manual + auto
 

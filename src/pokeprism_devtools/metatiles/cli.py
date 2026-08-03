@@ -11,10 +11,10 @@ from pathlib import Path
 from ..shared import paths
 from ..shared.devtools import make_devtools_dir
 from ..shared.viewer import is_stale, open_images, parse_tileset_id
-from .mapuse import collect
+from .mapuse import group_maps_by_tileset
 from .report import _as_dict, _compact_ranges, render_report, render_summary
 from .tileset import (
-    _COLLISION_PER_METATILE, TilesetAnalysis, all_tileset_ids, analyze,
+    _COLLISION_PER_METATILE, TilesetAnalysis, all_tileset_ids, analyze_tileset,
     blank_unused_metatiles, load_syms,
 )
 
@@ -102,7 +102,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _print_all_tilesets(root: Path, by_tileset, syms, *, as_json: bool) -> None:
     rows = [
-        analyze(root, tid, by_tileset.get(tid, []), syms)
+        analyze_tileset(root, tid, by_tileset.get(tid, []), syms)
         for tid in all_tileset_ids(root)
     ]
     if as_json:
@@ -137,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"prism-metatiles: {e}", file=sys.stderr)
         return 2
 
-    by_tileset, warnings = collect(root)
+    by_tileset, warnings = group_maps_by_tileset(root)
     for w in warnings:
         print(f"  warning: {w}", file=sys.stderr)
 
@@ -151,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
         _print_all_tilesets(root, by_tileset, syms, as_json=args.json)
         return 0
 
-    a = analyze(root, args.tileset_id, by_tileset.get(args.tileset_id, []), syms)
+    a = analyze_tileset(root, args.tileset_id, by_tileset.get(args.tileset_id, []), syms)
     _print_one_tileset(a, as_json=args.json, top=args.top)
 
     if args.render:
