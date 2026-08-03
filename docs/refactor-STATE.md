@@ -35,12 +35,40 @@ were taken; re-verify the ones your phase leans on, not all of them (plan →
 - The LZ codec fork is legitimate; one duplicated helper, deliberately not scheduled.
 - `rules_geometry.py` was deferred to Phase 5 rather than answered without evidence.
 
-## Phase 0 · split the git history — not started
+## Phase 0 · split the git history — **A carved 2026-08-03**
 
-**Plan:** not written · **Findings:** none yet
+**Plan:** `refactor-phase-0-PLAN.md` · **Findings:** `refactor-phase-0-STATE.md`
 
-Carve product A only; B, C and D wait on Phase 2, which is the phase that breaks the
-`hacks → studio` cycle.
+A is `~/code/ricccec/pokecrystal-asm-lib` — `main`, 88 commits, 34 files, no remote.
+B, C and D still wait on Phase 2, the phase that breaks the `hacks → studio` cycle.
+The command is `scripts/carve-product-a.sh`; re-run it, do not re-derive it.
+
+- **A naive carve loses A's first month** — 73 commits by folder, 88 with every
+  historical spelling; the 15 lost are the birth of the LZ decompressor, the sym
+  reader and both CLIs. **The oldest reasoning is the most renamed.**
+- Three layouts (`_lib/` → flat → subfolders) plus a round trip through `hacks/prism/`:
+  "record every rename" reads forward, but the past needed it first.
+- **`--follow` invents ancestry for empty files** — a ledger built from it unchecked
+  is wrong.
+- **Carve first, rename `wiring/` after** — renaming first is a 31-file, 50-import
+  commit in the phase premised on an untouched tree, and buys nothing since the rename
+  lands inside the carved history anyway.
+- **D's ledger must name eight `wiring/*` files, not the folder** — `connections`,
+  `mapedit`, `objedit`, `props`, `removal`, `scaffold`, `text`, `warps` lived there
+  until `033fbe4`. A history filter reads the *old* spelling forever; renaming inside
+  A cannot reach back. Nothing here concerns imports.
+- **A holds 7 commits that are purely prism's** — the cost of naming the `wiring/`
+  folder. Harmless (absent from A's tip), and the lesson is the asymmetry:
+  over-collecting leaves a dead file, under-collecting loses live reasoning.
+- **Counting commits does not prove a carve** — `--follow` crossing the renames is
+  what says they survived as one story rather than a delete plus an add.
+- `--no-local` + `filter-repo` rewrites **every branch**; the carve arrived with four,
+  all strict ancestors, checked before pruning.
+- SHAs are rewritten, so any SHA quoted in `docs/` never resolves in A.
+- **A is history plus source and nothing else** — packaging, entry points and all 34
+  tests are outside its four folders. Phase 3 owes A a packaging story.
+- Re-verified: A imports nothing from `studio`, `hacks` or `maplint` — 25 grep hits,
+  **every one in a docstring**. The word says entangled; the import says free.
 
 ## Phase 1 · calibration, the six CLI packages — not started
 

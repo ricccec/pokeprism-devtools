@@ -171,7 +171,7 @@ assignment for every surveyed module, a three-way call per CLI, the B-vs-C
 decision, three measurements that each moved an answer, two defects since fixed on
 the untouched tree, and one question handed to Phase 5.
 
-### Phase 0 — Split the git history, while the tree is still untouched
+### Phase 0 — Split the git history · **A carved; B/C/D wait on Phase 2**
 Before any file moves. Clone once per product and `git filter-repo --path <dir>` to
 carve history by folder, so each product keeps the "why" behind its code instead of
 starting at one squashed commit. Two corrections to the naive version:
