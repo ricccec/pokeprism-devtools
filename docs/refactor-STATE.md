@@ -144,7 +144,7 @@ Sizes to work from are in `refactor-phase--1-STATE.md` → "Phase 1's six CLI pa
 - `usage/` has no parse/analyse seam: its analysis is `shared/mapfile.py`'s. The
   four-way template is a hypothesis about seams, not a filing system.
 
-## Phase 1b · pay what Phase 1 could not — **planned 2026-08-03, not started**
+## Phase 1b · pay what Phase 1 could not — **done 2026-08-03**
 
 **Plan:** `refactor-phase-1b-PLAN.md` · **Findings:** `refactor-phase-1b-STATE.md`
 
@@ -163,6 +163,49 @@ numbers** — they are cross-referenced from four documents.
 - Also owed: `mapfit/mapwire.py` (357 LOC, but 95% covered — the cheapest item),
   4 bare-verb names CLAUDE.md rejects, 2 bodies nested four deep, and one
   threshold spelled twice with the second copy unreachable.
+- The debt re-measured on the day it was planned: **all eleven, unchanged**, and
+  the executed column reproduces to the line.
+- **`> 50` is this phase's working number**, recorded as a reading of CLAUDE.md's
+  `~50` rather than a restatement of it — the rule stays soft, the list stays
+  re-runnable.
+- The eight uncovered functions execute **exactly one line — their `def`**; Phase
+  1 counted the same fact as 0. Both harnesses are right.
+- **A characterization test goes where the fixture already is** — four of the five
+  packages own a test that builds one, so this phase adds one file, not five.
+- `map_inspect`: `main` went **1 → 52 executed lines**, and the goldens caught
+  **7 of 7** seeded mutations.
+- **The goldens carry invisible trailing spaces** — the table pads its last column
+  — and a guard now says so before all thirteen fail at once.
+- **A guessed golden was wrong three ways; a recorded one was right.** `mapgroup`
+  is `(H, W)`, not `(W, H)`, so the CLI was right and the guess was wrong.
+- **A mutation run and a suite run cannot share a working tree** — same family as
+  Phase 1's stale `.pyc`.
+- **A fixture is only as good as what it can falsify.** Ten mutations survived a
+  first-draft fixture across three packages, every one because the fixture's
+  *shape* made right and wrong output identical — not because an assertion was
+  missing. Choose a fixture from the mutations it must fail on.
+- **All eleven targets now have an oracle** — the eight that executed nothing now
+  execute 44–101 lines each, so steps 6–11 may start.
+- Two mutations survive honestly: sorting the wizard's group list is provably a
+  no-op, and **`map_new.cli.main`'s `spec.validate` block is unreachable from the
+  wizard**. Recorded, not removed — this phase shortens, it does not drop
+  behaviour.
+- **`map_show` owed this phase nothing** (no over-long function), so its new test
+  is insurance for Phase 3 rather than an oracle for any edit here.
+- **R6's stated signature for a rename was wrong** — a rename always changes the
+  digest, because the digest is of source that contains the `def` line. The PLAN
+  and `scripts/surface-snapshot.py` are corrected; what the check is worth on a
+  rename is that *nothing else* moved.
+- **Step 6's "five argparse trees" was four** — `map_new`'s `main` is a wizard
+  driver with no parser, long for a different reason, and split by phase instead.
+- **A word-boundary rename is not a rename**: it missed a real importer
+  (`mapfit/commands.py` imports `pack`) and rewrote four pieces of prose. Phase 1
+  hit the same trap from the other side. The word is not the call, either way.
+- **Step 9 stayed a pure move by leaving a magic value unnamed** — a commit that
+  both moves and tidies is neither provable as a move nor reviewable as an edit.
+- **The debt is paid in full**: 11 → 0 over-long functions, 1 → 0 oversized files,
+  4 → 0 bare verbs, 2 → 0 depth-4 bodies, 1 → 0 duplicated thresholds. Two items
+  are recorded rather than fixed, both named in the STATE.
 
 ## Phase 2 · the keystone, `Hack` and its vocabulary — not started
 
