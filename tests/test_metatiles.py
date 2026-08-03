@@ -17,15 +17,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from pokeprism_devtools.metatiles import (  # noqa: E402
     MapUse,
     TilesetAnalysis,
-    _blob_sizes,
-    _COLLISION_PER_METATILE,
-    _TILES_PER_METATILE,
     blank_unused_metatiles,
     metatile_usage,
     metatile_users,
     script_block_ids,
     tile_coverage,
     tileset_id_map,
+)
+from pokeprism_devtools.metatiles.tileset import (  # noqa: E402
+    _blob_sizes,
+    _COLLISION_PER_METATILE,
+    _TILES_PER_METATILE,
 )
 from pokeprism_devtools.shared.symfile import SymFile, Symbol  # noqa: E402
 
