@@ -5,6 +5,9 @@ order; this file carries what the package *is*, which is the part an implementer
 needs and the plan has no room for. Findings go to `refactor-phase-2-STATE.md`, one
 line each also in `refactor-STATE.md`.
 
+**Status: done 2026-08-04**, eight commits `c119ca4`..`0589c64`. Findings and
+evidence: `refactor-phase-2-STATE.md`.
+
 **Rewritten 2026-08-04 from measurement**, per this plan's own step 1. Three of the
 claims below replace claims that were wrong; they are marked, and the wrong versions
 are gone rather than annotated. What changed most: **`panels.py` is not the whole
@@ -100,6 +103,7 @@ becomes `contract.` everywhere (no body changes at all).
 | 5 | the residual `studio/panels.py` → `studio/tables.py` | R7 union; the file now holds no noun |
 | 6 | `tests/test_contract.py` | the phase's own oracle — see below |
 | 7 | the prose: every docstring and doc that says `panels.` or `hacks/seam.py` | R6 — only docstrings move |
+| 8 | one definition each for `Rgb`/`Swatch` and the unsaid-field dash | R5's second commit: the duplicates a move may not fix |
 
 Steps 1–5 are moves and renames; nothing is shortened, named or deduplicated on the
 way past. What the phase finds and does not fix goes to the STATE as a list, the
@@ -135,7 +139,7 @@ on it before the commit lands.
 
 ## What must not break
 
-- **34/37.** `test_eventheader`, `test_maplint` (live-prism drift) and `test_lib`
+- **34/37, and 35/38 once step 6 lands.** `test_eventheader`, `test_maplint` (live-prism drift) and `test_lib`
   (needs cwd inside a game repo) are red for reasons that predate this branch.
   A fourth red means an edit was not what it claimed.
 - **R4 holds**: `git diff` on `tests/` touches import lines only — plus, in step 4,

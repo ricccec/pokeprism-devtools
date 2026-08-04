@@ -207,17 +207,46 @@ numbers** — they are cross-referenced from four documents.
   4 → 0 bare verbs, 2 → 0 depth-4 bodies, 1 → 0 duplicated thresholds. Two items
   are recorded rather than fixed, both named in the STATE.
 
-## Phase 2 · the keystone, `Hack` and its vocabulary — in progress
+## Phase 2 · the keystone, `Hack` and its vocabulary — **done 2026-08-04**
 
 **Plan:** `refactor-phase-2-PLAN.md` · **Findings:** `refactor-phase-2-STATE.md`
 
-Carries one decision already made: **B ships separately** (Phase −1). The folder is
-**`contract/`** — decided, not still open.
+The cycle is broken: 28 adapter modules imported the IDE, 4 still do. The folder is
+**`contract/`** — decided, not still open — 15 files, 1122 LOC, importing stdlib and
+three `shared/` modules and nothing else. **B ships separately** (Phase −1) is now
+*possible*; the distribution is Phase 3's. Suite 34/37 → **35/38**.
 
 - **`panels.py` was half the cycle and half of it is not contract** —
   `studio/actions.py` is imported by 20 adapter modules to `panels`'s 11, and 22
   of `panels.py`'s 44 names are the IDE's table builders, which no adapter has
   ever touched.
+- **The PLAN's load-bearing measurement was of the wrong file.** "`panels.py`'s
+  only import is `shared.coords`" is true and answers nothing; what matters is
+  what the *contract* imports. **B depends on A** — `Tile`, `Rgb`/`Swatch`, `Edit`
+  — narrowly, and A cannot import B back without inverting the arrow.
+- **`Diagnostic` had to move, and that was forced.** `Lints` answers
+  `list[Diagnostic]`, so the contract could not state its own linting question
+  without importing a CLI. Phase −1 called it contract vocabulary; this is the
+  phase that could act. The suppression half stayed, as `maplint/suppressions.py`.
+- **R7 — across packages, CONTENT is a union.** One package's list shrinks and
+  another's grows, so the invariant is the sorted concatenation. Held at every
+  step: 146 → 146, 247 → 247, 336 → 336.
+- **The move and the rename are separate commits**: the vocabulary landed under a
+  re-export shim first, so no importer changed; the shim came down next, so no
+  body changed. Phase 1b's step 9, learned again.
+- **A word-boundary rename is still not a rename** — `panels` → `tables` collided
+  with a local variable holding a `MapTables`, and **CONTENT could not tell**: the
+  digest it reported as changed was expected and correct, and wrong. Third phase
+  running to pay for this.
+- **A `TYPE_CHECKING`-only import passes a runtime check and fails a static one**,
+  measured on a seeded mutation — which is why `tests/test_contract.py` has both.
+  A plain top-level one no longer *runs*: the cycle is unbuildable now.
+- **CONTENT cannot see a duplicate alias appear or leave** — collapsing the two
+  spellings of `Rgb`/`Swatch` moved no digest at all.
+- **Two `hacks → studio` edges survive**, both neutral forms over `wiring/`
+  (`mapadd`, `resize`), three of the four call sites function-local imports. Not
+  the IDE, not the contract; Phase 3's to home. The test asserts the list in both
+  directions so a shorter one cannot pass silently.
 
 ## Phase 3 · split the remaining products — not started
 
