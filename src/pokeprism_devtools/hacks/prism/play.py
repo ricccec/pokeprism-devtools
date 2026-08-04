@@ -5,7 +5,7 @@ tree: it runs `make`, patches a save, and opens an emulator. Everything else in
 `studio/` reads and writes `.asm` files; this runs a compiler and a game. It lives
 below the seam because every byte of it is prism's: the `make` targets, the save
 format the patcher writes, the emulator that comes up. The session drives it
-through :class:`Player` and knows none of that — see `hacks/seam.py`.
+through :class:`Player` and knows none of that — see `contract/plays.py`.
 
 The save, the state file and the backups are `prism-dev`'s. The studio does not
 keep a second game — what it overrides is *where you are standing*, and nothing
