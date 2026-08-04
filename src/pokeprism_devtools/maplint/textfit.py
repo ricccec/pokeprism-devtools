@@ -8,7 +8,7 @@ a row against its last row. Those two sums are engine-agnostic; everything that
 feeds them — which tokens a byte is, how wide a control code expands, where a
 macro moves the cursor — is not, and stays in each tree's own reader.
 
-Kept stdlib-only, next to `diagnostics`, so a family linter can reach it without
+Kept stdlib-only, next to `suppressions`, so a family linter can reach it without
 loading the prism rules that would otherwise come with this package.
 """
 

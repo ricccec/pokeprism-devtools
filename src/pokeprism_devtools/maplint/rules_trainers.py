@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 
 from ..hacks.prism import trainerstats
 from .context import LintContext
-from .diagnostics import Diagnostic, Severity
+from ..contract import Diagnostic, Severity
 
 
 def trainer_sprite_drift(ctx: LintContext) -> list[Diagnostic]:

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from ..hacks.prism import flagrefs
 from .context import LintContext
-from .diagnostics import Diagnostic, Severity
+from ..contract import Diagnostic, Severity
 
 #: References that make an object in the world *the* thing a flag records. Two of
 #: these on one flag means two objects share one bit of save state.
