@@ -18,7 +18,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from ...studio import panels
+from ... import contract
 
 #: bg_tiles.pal line order within each time-of-day section.
 CLASSES = ("GRAY", "RED", "GREEN", "WATER", "YELLOW", "BROWN", "ROOF", "TEXT")
@@ -30,14 +30,14 @@ _RGB = re.compile(r"^\s*RGB\s+([\d, ]+)")
 _TILEPAL = re.compile(r"^\s*tilepal\s+\d+\s*,\s*(.+)")
 
 
-def for_tileset(root: Path, tileset_const: str) -> tuple[panels.Swatch, ...]:
+def for_tileset(root: Path, tileset_const: str) -> tuple[contract.Swatch, ...]:
     """One swatch per block of `TILESET_*`'s metatiles. Raises
-    :class:`panels.Unreadable` when the metatiles file is missing — a tileset
+    :class:`contract.Unreadable` when the metatiles file is missing — a tileset
     with no blocks has nothing for the grid to draw."""
     name = tileset_const.removeprefix("TILESET_").lower()
     meta_path = root / f"data/tilesets/{name}_metatiles.bin"
     if not meta_path.exists():
-        raise panels.Unreadable(
+        raise contract.Unreadable(
             f"{meta_path} does not exist — {tileset_const} has no metatiles "
             "to color.")
     meta = meta_path.read_bytes()
@@ -45,7 +45,7 @@ def for_tileset(root: Path, tileset_const: str) -> tuple[panels.Swatch, ...]:
     colors = day_colors(root)
     gray = colors.get("GRAY", (128, 128, 128))
 
-    out: list[panels.Swatch] = []
+    out: list[contract.Swatch] = []
     for b in range(len(meta) // 16):
         tiles = meta[b * 16:(b + 1) * 16]
         quads = []

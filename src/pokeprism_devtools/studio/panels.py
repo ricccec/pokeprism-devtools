@@ -16,19 +16,14 @@ says when the record has nothing to put in it.
 Every coordinate shown is the number **written in the source**, because that is
 the number you would type to change it. Offsets a macro adds while assembling
 belong to the assembled bytes and appear nowhere in this file.
-
-The contract names are re-exported below so that `panels.Npc` keeps working while
-Phase 2 moves callers over; the shim goes with the next commit.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..contract import (ADD, Attributes, Blocks, Link, MapTables, Measured, Npc,
-                        Prop, Ref, Rgb, Roof, Signpost, Sketch, Swatch,
-                        TextPreview, TextRef, Trainer, Trigger, Unreadable,
-                        Warp, WildMon, add_ref)  # noqa: F401
+from ..contract import (Attributes, Link, Npc, Prop, Ref, Roof, Signpost,
+                        Trainer, Trigger, Warp, WildMon)
 from ..shared.coords import Tile
 
 _NONE = "—"

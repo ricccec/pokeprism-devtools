@@ -8,7 +8,7 @@ thread while the UI stays alive.
 
 Nothing in here opens a file either, any more. Every question about the tree
 goes to the mounted hack's read adapter (`hacks/mount`), which answers in the
-seam's records — `panels.MapTables`, `panels.Blocks`, `panels.Attributes` — and
+seam's records — `contract.MapTables`, `contract.Blocks`, `contract.Attributes` — and
 this module only assembles those answers into the :class:`MapData` the view
 draws. Which five files a map's eight header facts are spread across, and what
 each of them calls the map, is exactly the knowledge that made this module
@@ -22,6 +22,7 @@ the person looking for the break is the worst thing this could do.
 
 from __future__ import annotations
 
+from .. import contract
 from . import panels
 from .model import MapData, MapGeometry
 
@@ -35,7 +36,7 @@ def read_map(reads, label: str) -> MapData:
     tables = None
     try:
         tables = reads.tables(label)
-    except panels.Unreadable as exc:
+    except contract.Unreadable as exc:
         error = str(exc)
 
     tabs.append(panels.Tab("Attributes",
@@ -71,7 +72,7 @@ def read_map(reads, label: str) -> MapData:
 
     try:
         bd = reads.geometry(label)
-    except panels.Unreadable as exc:
+    except contract.Unreadable as exc:
         return MapData(label, const, None, str(exc), tabs)
 
     geometry = MapGeometry(

@@ -21,6 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools.hacks import mount as hackmount  # noqa: E402
+from pokeprism_devtools import contract  # noqa: E402
 from pokeprism_devtools.studio import panels  # noqa: E402
 from pokeprism_devtools.studio.session import Session  # noqa: E402
 
@@ -358,7 +359,7 @@ def test_deletion_splices_the_head(root: Path) -> None:
     # unnamed shape — the list and the position, exactly what the read
     # adapter minted for the row.
     preview = s.preview(s.deletion("TownA", "TOWN_A",
-                                   panels.Ref("npc", ("object", 0))))
+                                   contract.Ref("npc", ("object", 0))))
     s.apply(preview)
     after = src.read_text()
     check("the object_event is gone",

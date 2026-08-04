@@ -43,7 +43,8 @@ from ..hacks.mount import mount
 from ..hacks.seam import PlayError, Refused
 from ..shared import caches, world
 from ..shared.edits import StaleEdit, apply_edits
-from . import panels, prefs, reader, undo
+from .. import contract
+from . import prefs, reader, undo
 from .actions import Action
 # The shapes of the answers — see `model.py`. Re-exported, because whatever wants
 # a `MapData` wants it *from the session*: the session is the only thing that can
@@ -309,7 +310,7 @@ class Session:
             return ()
         return self.hack.writes.adders(kind)
 
-    def deletion(self, label: str, const: str, ref: panels.Ref) -> Action:
+    def deletion(self, label: str, const: str, ref: contract.Ref) -> Action:
         """The action `d` would run on this row — the write adapter's answer.
 
         Raises :class:`SessionError` for the things that cannot be deleted, and
@@ -323,7 +324,7 @@ class Session:
             raise SessionError(str(exc)) from exc
 
     def editor(self, label: str, const: str,
-               ref: panels.Ref) -> tuple[type[Action], dict[str, str], dict[str, str]]:
+               ref: contract.Ref) -> tuple[type[Action], dict[str, str], dict[str, str]]:
         """The form `e` would open on this row, filled in with what is there.
 
         The mirror of :meth:`deletion`, and like it, it refuses by *explaining* —

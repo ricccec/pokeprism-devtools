@@ -29,7 +29,7 @@ from typing import Callable
 
 from ...shared import coords
 from ...shared.coords import Tile
-from ...studio import panels
+from ... import contract
 from . import dialogue
 
 _TOP_LABEL = re.compile(r"^(\w+):{1,2}")
@@ -71,7 +71,7 @@ _EVENT_MACROS = ("warp_event", "coord_event", "bg_event", "object_event")
 def parse(path: Path, anchor: str = "_MapEvents",
           expand: dict[str, Callable[[list[str]], list[str]]] | None = None
           ) -> MapSource:
-    """Read one map file whole. Raises :class:`panels.Unreadable` when the
+    """Read one map file whole. Raises :class:`contract.Unreadable` when the
     file is missing or lacks the family anchor — a file this adapter cannot
     honestly call one of its maps. `anchor` is the one structural difference
     inside the family: vanilla's `_MapEvents` tail, polished's
@@ -90,7 +90,7 @@ def parse(path: Path, anchor: str = "_MapEvents",
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except FileNotFoundError as exc:
-        raise panels.Unreadable(f"{path} does not exist.") from exc
+        raise contract.Unreadable(f"{path} does not exist.") from exc
 
     src = MapSource(texts=tuple(dialogue.parse_source(lines)))
     owner = ""
@@ -139,7 +139,7 @@ def parse(path: Path, anchor: str = "_MapEvents",
             src.object_events.append(expand[word](args))
 
     if not seen_anchor:
-        raise panels.Unreadable(
+        raise contract.Unreadable(
             f"{path} has no {anchor} block — the anchor every map file in "
             "this dialect carries.")
     return src
@@ -149,7 +149,7 @@ def parse(path: Path, anchor: str = "_MapEvents",
 # the six lists                                                               #
 # --------------------------------------------------------------------------- #
 
-def tables(path: Path) -> panels.MapTables:
+def tables(path: Path) -> contract.MapTables:
     """One map's events, carved into the six lists the tabs draw — and the
     same objects again as grid glyphs, from the one enumeration."""
     src = parse(path)
@@ -160,7 +160,7 @@ def tables(path: Path) -> panels.MapTables:
     for i, args in enumerate(src.warp_events):
         y, x = yx(args)
         mark(marks, y, x, coords.WARP)
-        warps.append(panels.Warp(
+        warps.append(contract.Warp(
             handle=("warp", i), index=i, y=y, x=x,
             to_map=arg(args, 2), their_warp=arg(args, 3)))
 
@@ -168,12 +168,12 @@ def tables(path: Path) -> panels.MapTables:
     for i, args in enumerate(src.coord_events):
         y, x = yx(args)
         mark(marks, y, x, coords.TRIGGER)
-        triggers.append(panels.Trigger(
+        triggers.append(contract.Trigger(
             handle=("coord", i), index=i, y=y, x=x,
             scene=arg(args, 2), runs=arg(args, 3)))
 
-    signs: list[panels.Signpost] = []
-    props: list[panels.Prop] = []
+    signs: list[contract.Signpost] = []
+    props: list[contract.Prop] = []
     for i, args in enumerate(src.bg_events):
         y, x = yx(args)
         mark(marks, y, x, coords.SIGN)
@@ -183,16 +183,16 @@ def tables(path: Path) -> panels.MapTables:
             # the block it points at. It goes on the Objects tab: it is a
             # thing on the floor, however the engine files it.
             hidden = macro_args(src, target, "hiddenitem")
-            props.append(panels.Prop(
+            props.append(contract.Prop(
                 handle=("bg", i), index=i, y=y, x=x, kind="hidden",
                 what=arg(hidden, 0), qty="", flag=arg(hidden, 1)))
         else:
-            signs.append(panels.Signpost(
+            signs.append(contract.Signpost(
                 handle=("bg", i), index=i, y=y, x=x,
                 kind=kind.removeprefix("BGEVENT_"), points_at=target))
 
-    npcs: list[panels.Npc] = []
-    trainers: list[panels.Trainer] = []
+    npcs: list[contract.Npc] = []
+    trainers: list[contract.Trainer] = []
     says = first_words(src)
     for i, args in enumerate(src.object_events):
         if len(args) < 13:
@@ -208,29 +208,29 @@ def tables(path: Path) -> panels.MapTables:
             # whose own flag says when he is on the map at all.
             t = macro_args(src, script, "trainer")
             mark(marks, y, x, coords.TRAINER)
-            trainers.append(panels.Trainer(
+            trainers.append(contract.Trainer(
                 handle=handle, index=i, y=y, x=x, sprite=sprite,
                 cls=arg(t, 0), party=arg(t, 1), sight=sight,
                 flag=arg(t, 2)))
         elif objtype == "OBJECTTYPE_ITEMBALL":
             ball = macro_args(src, script, "itemball")
             mark(marks, y, x, coords.ITEM)
-            props.append(panels.Prop(
+            props.append(contract.Prop(
                 handle=handle, index=i, y=y, x=x, kind="itemball",
                 what=arg(ball, 0) or script, qty=arg(ball, 1), flag=flag))
         elif tree := macro_args(src, script, "fruittree"):
             mark(marks, y, x, coords.ITEM)
-            props.append(panels.Prop(
+            props.append(contract.Prop(
                 handle=handle, index=i, y=y, x=x, kind="fruittree",
                 what=arg(tree, 0), qty="", flag=flag))
         else:
             mark(marks, y, x, coords.PERSON)
-            npcs.append(panels.Npc(
+            npcs.append(contract.Npc(
                 handle=handle, index=i, y=y, x=x, sprite=sprite,
                 movement=args[3].removeprefix("SPRITEMOVEDATA_"),
                 says=says.get(script, script), flag=flag))
 
-    return panels.MapTables(npcs=npcs, trainers=trainers, props=props,
+    return contract.MapTables(npcs=npcs, trainers=trainers, props=props,
                             signposts=signs, warps=warps, triggers=triggers,
                             marks=marks)
 
@@ -239,13 +239,13 @@ def tables(path: Path) -> panels.MapTables:
 # the words                                                                   #
 # --------------------------------------------------------------------------- #
 
-def texts(path: Path) -> list[panels.TextRef]:
+def texts(path: Path) -> list[contract.TextRef]:
     """Every text block in one map, as prose. Vanilla draws signs and speech
     in the same box, so everything is "speech" here."""
     return refs(parse(path))
 
 
-def refs(src: MapSource) -> list[panels.TextRef]:
+def refs(src: MapSource) -> list[contract.TextRef]:
     """The map's dialogue in the seam's record — shared with polished, which
     parses with its own anchor and then has the identical question to answer.
 
@@ -253,7 +253,7 @@ def refs(src: MapSource) -> list[panels.TextRef]:
     command draws no string, because the writer has to see one to refuse it, and
     there is no point offering to reword a block with no words in it.
     """
-    return [panels.TextRef(label=b.label, owner=b.owner, lineno=b.lineno,
+    return [contract.TextRef(label=b.label, owner=b.owner, lineno=b.lineno,
                            prose=b.prose, box="speech")
             for b in src.texts if b.prose.strip()]
 

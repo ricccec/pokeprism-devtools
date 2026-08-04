@@ -31,9 +31,9 @@ fix the number rather than reading arithmetic about it.
 It draws through the *same* `read_grid` the write goes through, so the two can
 never disagree about what the file holds. What it cannot do alone is colour:
 the grid is bytes anywhere, but a tileset constant means something only to the
-tree that defines it. So this answers with a neutral `panels.Sketch` — grid,
+tree that defines it. So this answers with a neutral `contract.Sketch` — grid,
 size, and the tileset name as typed — and each family reader turns that into
-`panels.Blocks` with its own swatches. Prism has no such split because its
+`contract.Blocks` with its own swatches. Prism has no such split because its
 action and its reader are the same adapter.
 """
 
@@ -41,7 +41,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import panels
+from .. import contract
 from ..wiring import mapnew
 from ..wiring.placement import Placement
 from .actions import (BLOCK_SECTIONS, BLOCKS, GROUPS, SCRIPT_SECTIONS, Action,
@@ -90,7 +90,7 @@ class AddMap(Action):
         return self.text("label") or None
 
     # -- the picture ---------------------------------------------------------- #
-    def sketch(self, root: Path) -> panels.Sketch | None:
+    def sketch(self, root: Path) -> contract.Sketch | None:
         """The map on the grid, before any of it is written down.
 
         Everything it needs is on the form, so it can be wrong in every way the
@@ -113,7 +113,7 @@ class AddMap(Action):
             grid = mapnew.read_grid(Path(blk).expanduser(), height, width)
         except mapnew.EditError as exc:
             raise ActionError(str(exc)) from exc
-        return panels.Sketch(blocks=grid, height=height, width=width,
+        return contract.Sketch(blocks=grid, height=height, width=width,
                              tileset=self.text("tileset"),
                              label=self.text("label"))
 

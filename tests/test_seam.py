@@ -14,8 +14,8 @@ What is checked, and what deliberately is not:
   * **Names and parameters**, against the Protocol, by introspection. A method
     renamed on one side is a mount that succeeds and a pane that explodes.
   * **Record types**, by asking all three trees the nine questions for real and
-    checking what comes back is the seam's records — `panels.MapTables` with
-    its six lists, `panels.Link`, `panels.WildMon`. Not *values*: what Route 29
+    checking what comes back is the seam's records — `contract.MapTables` with
+    its six lists, `contract.Link`, `contract.WildMon`. Not *values*: what Route 29
     contains is `test_vanilla.py`'s business, and duplicating it here would make
     this file fail every time a tree is updated.
   * **Return annotations are not compared.** They are strings under
@@ -50,7 +50,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools.hacks import mount as m  # noqa: E402
 from pokeprism_devtools.hacks import seam  # noqa: E402
-from pokeprism_devtools.studio import panels  # noqa: E402
+from pokeprism_devtools import contract  # noqa: E402
 
 TREES = {"prism": "pokeprism", "vanilla": "pokecrystal",
          "polished": "polishedcrystal"}
@@ -210,10 +210,10 @@ def test_records(hacks: dict[str, seam.Hack]) -> None:
         links = r.connections(const)
         check(f"{who} connections() is [Link]",
               isinstance(links, list)
-              and all(isinstance(x, panels.Link) for x in links))
+              and all(isinstance(x, contract.Link) for x in links))
 
         t = r.tables(label)
-        check(f"{who} tables() is MapTables", isinstance(t, panels.MapTables))
+        check(f"{who} tables() is MapTables", isinstance(t, contract.MapTables))
         check(f"{who} tables() carries all six lists, each a list",
               all(isinstance(getattr(t, f, None), list)
                   for f in ("npcs", "trainers", "props", "warps",
@@ -223,35 +223,35 @@ def test_records(hacks: dict[str, seam.Hack]) -> None:
                    if not isinstance(getattr(t, f, None), list)]))
 
         check(f"{who} attributes() is Attributes",
-              isinstance(r.attributes(label, const), panels.Attributes))
+              isinstance(r.attributes(label, const), contract.Attributes))
 
         g = r.geometry(label)
-        check(f"{who} geometry() is Blocks", isinstance(g, panels.Blocks))
+        check(f"{who} geometry() is Blocks", isinstance(g, contract.Blocks))
         # Guarded on the type check above, not chained to it: a wrong record
         # should be one FAIL and a battery that keeps going, not a traceback
         # that takes the remaining checks down with it.
         check(f"{who} geometry() has a shape its blocks fit",
-              isinstance(g, panels.Blocks) and g.height > 0 and g.width > 0
+              isinstance(g, contract.Blocks) and g.height > 0 and g.width > 0
               and len(g.blocks) >= g.height * g.width,
               f"{g.height}x{g.width} but {len(g.blocks)} blocks"
-              if isinstance(g, panels.Blocks) else "not Blocks at all")
+              if isinstance(g, contract.Blocks) else "not Blocks at all")
 
         w = r.wild(const)
         check(f"{who} wild() is table -> time -> [WildMon]",
               isinstance(w, dict)
               and all(isinstance(times, dict) for times in w.values())
-              and all(isinstance(mon, panels.WildMon)
+              and all(isinstance(mon, contract.WildMon)
                       for times in w.values()
                       for mons in times.values() for mon in mons))
 
         roof = r.roof(const)
         check(f"{who} roof() is Roof or None",
-              roof is None or isinstance(roof, panels.Roof))
+              roof is None or isinstance(roof, contract.Roof))
 
         tx = r.texts(label)
         check(f"{who} texts() is [TextRef]",
               isinstance(tx, list)
-              and all(isinstance(x, panels.TextRef) for x in tx))
+              and all(isinstance(x, contract.TextRef) for x in tx))
 
 
 def test_unreadable(hacks: dict[str, seam.Hack]) -> None:
@@ -269,7 +269,7 @@ def test_unreadable(hacks: dict[str, seam.Hack]) -> None:
         label, _ = broken[0]
         try:
             r.tables(label)
-        except panels.Unreadable as exc:
+        except contract.Unreadable as exc:
             check(f"{name} tables() on {label} raises Unreadable with a reason",
                   bool(str(exc).strip()), "the exception says nothing")
         except Exception as exc:  # noqa: BLE001 — the point is the type

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...studio import panels
+from ... import contract
 from ...studio.actions import (FLAGS, MOVEMENTS, PALETTES, SPRITES, Action,
                                ActionError, Field, Result)
 from ...wiring import regions
@@ -94,7 +94,7 @@ class Entry(Action):
         path, label = self._file(root)
         try:
             return eb.parse_map(path, self.anchor), label
-        except (eb.UnparseableEvents, panels.Unreadable) as exc:
+        except (eb.UnparseableEvents, contract.Unreadable) as exc:
             raise ActionError(str(exc)) from exc
 
     def _written(self, block: eb.EventBlock, root: Path) -> Result:

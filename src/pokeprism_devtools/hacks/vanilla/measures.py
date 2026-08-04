@@ -23,12 +23,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...studio import panels
+from ... import contract
 from . import box
 from .metrics import Metrics
 
 
-def measure_lines(root: Path, metrics: Metrics, text: str) -> panels.TextPreview:
+def measure_lines(root: Path, metrics: Metrics, text: str) -> contract.TextPreview:
     """Prose as the form holds it, measured line by line against the one box.
 
     The `box` key the seam passes is not read, and that is a fact about the family
@@ -37,15 +37,15 @@ def measure_lines(root: Path, metrics: Metrics, text: str) -> panels.TextPreview
     the same eighteen columns.
     """
     bx = box.speech_box(root)
-    return panels.TextPreview(bx.name, bx.cols, [
+    return contract.TextPreview(bx.name, bx.cols, [
         _measured(root, metrics, line, bx.cols)
         for line in text.replace("\r\n", "\n").split("\n")
     ])
 
 
-def _measured(root: Path, metrics: Metrics, line: str, cols: int) -> panels.Measured:
+def _measured(root: Path, metrics: Metrics, line: str, cols: int) -> contract.Measured:
     cost = metrics.tiles(root, line)
-    return panels.Measured(
+    return contract.Measured(
         text=line, tiles=cost.determinate, bounded=cost.bounded,
         unbounded=cost.unbounded, unknown=cost.unknown,
         over=max(0, cost.determinate - cols),

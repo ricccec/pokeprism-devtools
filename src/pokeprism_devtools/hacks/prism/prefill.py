@@ -27,8 +27,8 @@ from pathlib import Path
 from . import eventheader as eh
 from . import mapedit, objedit, props
 from .content import HIDDEN, ITEMBALL, TMHM, TREE
-from ...studio.model import TextRef
-from ...studio.panels import Ref
+from ...contract import TextRef
+from ...contract import Ref
 
 
 def prefill(root: Path, label: str, const: str, ref: Ref,

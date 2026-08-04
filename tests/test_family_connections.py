@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools.hacks import mount as m  # noqa: E402
 from pokeprism_devtools.hacks.vanilla import connections as c  # noqa: E402
-from pokeprism_devtools.studio.panels import Ref  # noqa: E402
+from pokeprism_devtools.contract import Ref  # noqa: E402
 
 TREES = {
     "vanilla": Path.home() / "code/ricccec/pokecrystal",

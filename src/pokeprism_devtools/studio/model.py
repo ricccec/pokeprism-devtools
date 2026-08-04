@@ -17,11 +17,12 @@ from dataclasses import dataclass, field
 
 from ..shared import coords
 from ..shared.edits import Edit
+from .. import contract
 from . import panels
 from .actions import Action, Result
 # Crossing records that live with the rest of the seam's vocabulary in
 # `panels`, re-exported because whoever wants a MapData wants these with it.
-from .panels import Measured, TextPreview, TextRef  # noqa: F401
+from ..contract import Measured, TextPreview, TextRef  # noqa: F401
 
 @dataclass(frozen=True)
 class MapRef:
@@ -40,7 +41,7 @@ class MapGeometry:
     blocks: bytes
     height: int                                    # in blocks
     width: int                                     # in blocks
-    swatches: tuple[panels.Swatch, ...]
+    swatches: tuple[contract.Swatch, ...]
     #: Coordinate tile -> marker glyph. Empty when the event header doesn't parse:
     #: the map still has a shape, and it is still worth looking at.
     marks: dict[coords.Tile, str]
@@ -104,7 +105,7 @@ class MapData:
     # the rows that carry the Refs means the index and the row cannot diverge,
     # because they are the same list.
 
-    def at(self, tile: coords.Tile) -> tuple[panels.Ref, ...]:
+    def at(self, tile: coords.Tile) -> tuple[contract.Ref, ...]:
         """Everything standing on this tile, in tab order.
 
         A tuple, not one Ref: two objects can share a tile — a signpost on the
@@ -115,7 +116,7 @@ class MapData:
         return tuple(row.ref for tab in self.tabs for row in tab.table[1]
                      if row.tile == tile and row.ref is not None)
 
-    def tile_of(self, ref: panels.Ref) -> coords.Tile | None:
+    def tile_of(self, ref: contract.Ref) -> coords.Tile | None:
         """Where this row's object stands, if it stands anywhere. A connection is
         a property of the whole map edge and a wild encounter is not on the map at
         all, so for those the answer is None and the cursor stays where it is."""

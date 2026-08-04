@@ -28,7 +28,7 @@ from pathlib import Path
 
 from ...shared import coords
 from ...shared.coords import Tile
-from ...studio import panels
+from ... import contract
 from ..vanilla.events import (MapSource, arg, first_words, macro_args, mark,
                               parse, refs, yx)
 from .shorthand import SHORTHANDS
@@ -51,7 +51,7 @@ _FLOOR_STD = {"cuttree": "cuttree",
               "smashrock": "rock"}
 
 
-def tables(path: Path) -> panels.MapTables:
+def tables(path: Path) -> contract.MapTables:
     """One map's events, carved into the six lists the tabs draw."""
     src = parse(path, anchor=ANCHOR, expand=SHORTHANDS)
     marks: dict[Tile, str] = {}
@@ -61,7 +61,7 @@ def tables(path: Path) -> panels.MapTables:
     for i, args in enumerate(src.warp_events):
         y, x = yx(args)
         mark(marks, y, x, coords.WARP)
-        warps.append(panels.Warp(
+        warps.append(contract.Warp(
             handle=("warp", i), index=i, y=y, x=x,
             to_map=arg(args, 2), their_warp=arg(args, 3)))
 
@@ -69,28 +69,28 @@ def tables(path: Path) -> panels.MapTables:
     for i, args in enumerate(src.coord_events):
         y, x = yx(args)
         mark(marks, y, x, coords.TRIGGER)
-        triggers.append(panels.Trigger(
+        triggers.append(contract.Trigger(
             handle=("coord", i), index=i, y=y, x=x,
             scene=arg(args, 2), runs=arg(args, 3)))
 
-    signs: list[panels.Signpost] = []
-    props: list[panels.Prop] = []
+    signs: list[contract.Signpost] = []
+    props: list[contract.Prop] = []
     for i, args in enumerate(src.bg_events):
         y, x = yx(args)
         mark(marks, y, x, coords.SIGN)
         kind, target = arg(args, 2), arg(args, 3)
         if kind.startswith("BGEVENT_ITEM"):
             # The item is written into the kind itself: BGEVENT_ITEM + ETHER.
-            props.append(panels.Prop(
+            props.append(contract.Prop(
                 handle=("bg", i), index=i, y=y, x=x, kind="hidden",
                 what=kind.partition("+")[2].strip(), qty="", flag=target))
         else:
-            signs.append(panels.Signpost(
+            signs.append(contract.Signpost(
                 handle=("bg", i), index=i, y=y, x=x,
                 kind=kind.removeprefix("BGEVENT_"), points_at=target))
 
-    npcs: list[panels.Npc] = []
-    trainers: list[panels.Trainer] = []
+    npcs: list[contract.Npc] = []
+    trainers: list[contract.Trainer] = []
     says = first_words(src)
     for i, args in enumerate(src.object_events):
         if len(args) < 12:
@@ -104,7 +104,7 @@ def tables(path: Path) -> panels.MapTables:
         if (battle := _TRAINER_MACROS.get(objtype)) is not None:
             t = macro_args(src, args[10], battle)
             mark(marks, y, x, coords.TRAINER)
-            trainers.append(panels.Trainer(
+            trainers.append(contract.Trainer(
                 handle=handle, index=i, y=y, x=x, sprite=sprite,
                 cls=arg(t, 0), party=arg(t, 1), sight=args[9],
                 flag=arg(t, 2)))
@@ -112,7 +112,7 @@ def tables(path: Path) -> panels.MapTables:
             # PLAYEREVENT_*, item, then a quantity only when there are
             # thirteen args to spend one on — key items never carry a count.
             mark(marks, y, x, coords.ITEM)
-            props.append(panels.Prop(
+            props.append(contract.Prop(
                 handle=handle, index=i, y=y, x=x, kind="itemball",
                 what=args[10], qty=args[11] if len(args) >= 13 else "",
                 flag=flag))
@@ -122,14 +122,14 @@ def tables(path: Path) -> panels.MapTables:
                 # `fruittree TREE, ITEM`: the object is the tree, a thing on the
                 # floor the player harvests — a prop, filed by the tree it is.
                 mark(marks, y, x, coords.ITEM)
-                props.append(panels.Prop(
+                props.append(contract.Prop(
                     handle=handle, index=i, y=y, x=x, kind="fruittree",
                     what=argument, qty="", flag=flag))
             elif (floor := _FLOOR_STD.get(argument)) is not None:
                 # `jumpstd cuttree|strengthboulder|smashrock`: an obstacle the
                 # player clears, on the Objects tab beside the balls and trees.
                 mark(marks, y, x, coords.ITEM)
-                props.append(panels.Prop(
+                props.append(contract.Prop(
                     handle=handle, index=i, y=y, x=x, kind=floor,
                     what="", qty="", flag=flag))
             else:
@@ -137,23 +137,23 @@ def tables(path: Path) -> panels.MapTables:
                 # text label, or a nurse or clerk `jumpstd` — a person either
                 # way, no script block in between to hop through.
                 mark(marks, y, x, coords.PERSON)
-                npcs.append(panels.Npc(
+                npcs.append(contract.Npc(
                     handle=handle, index=i, y=y, x=x, sprite=sprite,
                     movement=movement, says=says.get(argument, argument),
                     flag=flag))
         else:
             script = args[10]
             mark(marks, y, x, coords.PERSON)
-            npcs.append(panels.Npc(
+            npcs.append(contract.Npc(
                 handle=handle, index=i, y=y, x=x, sprite=sprite,
                 movement=movement, says=says.get(script, script), flag=flag))
 
-    return panels.MapTables(npcs=npcs, trainers=trainers, props=props,
+    return contract.MapTables(npcs=npcs, trainers=trainers, props=props,
                             signposts=signs, warps=warps, triggers=triggers,
                             marks=marks)
 
 
-def texts(path: Path) -> list[panels.TextRef]:
+def texts(path: Path) -> list[contract.TextRef]:
     """Every text block in one map, as prose. Like vanilla, one box — and, like
     vanilla, out of the one parse; only the anchor forks."""
     return refs(parse(path, anchor=ANCHOR))

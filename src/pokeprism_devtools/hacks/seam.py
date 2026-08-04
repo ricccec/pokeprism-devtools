@@ -32,7 +32,7 @@ if TYPE_CHECKING:  # annotations are lazy, so a probe pays for no studio import
     from collections.abc import Callable, Mapping
 
     from ..maplint.diagnostics import Diagnostic
-    from ..studio import panels
+    from .. import contract
 
 
 @runtime_checkable
@@ -54,31 +54,31 @@ class Reads(Protocol):
         The catalog is drawn before any map is opened, so this has to be cheap
         and it has to be total — a map that will fail is listed, and marked."""
 
-    def connections(self, const: str) -> list[panels.Link]:
+    def connections(self, const: str) -> list[contract.Link]:
         """The maps this one borders, one Link each."""
 
-    def tables(self, label: str) -> panels.MapTables:
-        """The six event lists. Raises `panels.Unreadable` — with the reason —
+    def tables(self, label: str) -> contract.MapTables:
+        """The six event lists. Raises `contract.Unreadable` — with the reason —
         rather than returning empty ones, because empty tables read as "this map
         has nothing on it", which is a different and much worse claim."""
 
-    def attributes(self, label: str, const: str) -> panels.Attributes:
+    def attributes(self, label: str, const: str) -> contract.Attributes:
         """The header facts. Takes *both* names because in every tree so far
         they live in different files under different keys."""
 
-    def geometry(self, label: str) -> panels.Blocks:
-        """The blocks, for drawing. Raises `panels.Unreadable`. Independent of
+    def geometry(self, label: str) -> contract.Blocks:
+        """The blocks, for drawing. Raises `contract.Unreadable`. Independent of
         `tables` on purpose: a map whose events don't parse still has a shape,
         and hiding it from the person looking for the break helps nobody."""
 
-    def wild(self, const: str) -> dict[str, dict[str, list[panels.WildMon]]]:
+    def wild(self, const: str) -> dict[str, dict[str, list[contract.WildMon]]]:
         """Encounters, by table then by time of day. Empty when the map has
         none — unlike `tables`, absence here is a fact, not a failure."""
 
-    def roof(self, const: str) -> panels.Roof | None:
+    def roof(self, const: str) -> contract.Roof | None:
         """The roof palette, or None where the tree has no such concept."""
 
-    def texts(self, label: str) -> list[panels.TextRef]:
+    def texts(self, label: str) -> list[contract.TextRef]:
         """Every string in the map's file, in source order."""
 
 
@@ -91,7 +91,7 @@ class Measures(Protocol):
     font would need is a per-glyph width, and the trees that have one keep it off
     the dialogue path."""
 
-    def measure(self, text: str, box: str) -> panels.TextPreview: ...
+    def measure(self, text: str, box: str) -> contract.TextPreview: ...
 
 
 @runtime_checkable
@@ -100,7 +100,7 @@ class Sketches(Protocol):
     would create before it exists, which is how a `.blk` of the wrong size stops
     being an arithmetic complaint and becomes a map of the wrong shape."""
 
-    def sketch(self, action) -> panels.Blocks | None: ...
+    def sketch(self, action) -> contract.Blocks | None: ...
 
 
 @runtime_checkable

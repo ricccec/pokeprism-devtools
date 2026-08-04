@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from ...studio import panels
+from ... import contract
 from ...studio.actions import ActionError
 from ..vanilla import measures
 from ..vanilla.read import attrs, dims, label_of, lines
@@ -50,21 +50,21 @@ class Reader:
         label = label_of(self.root).get(const)
         return label is not None and (self.root / f"maps/{label}.asm").exists()
 
-    def connections(self, const: str) -> list[panels.Link]:
+    def connections(self, const: str) -> list[contract.Link]:
         label = label_of(self.root).get(const)
         a = attrs(self.root).get(label or "")
-        return [panels.Link(direction=d, target=target, offset=offset)
+        return [contract.Link(direction=d, target=target, offset=offset)
                 for d, target, offset in (a.connections if a else [])]
 
     # -- one map ------------------------------------------------------------- #
-    def tables(self, label: str) -> panels.MapTables:
+    def tables(self, label: str) -> contract.MapTables:
         return events.tables(self.root / f"maps/{label}.asm")
 
-    def attributes(self, label: str, const: str) -> panels.Attributes:
+    def attributes(self, label: str, const: str) -> contract.Attributes:
         d = dims(self.root).get(const)
         m = _styles(self.root).get(label)
         a = attrs(self.root).get(label)
-        return panels.Attributes(
+        return contract.Attributes(
             label=label, const=const,
             group=d.group if d else 0, map_id=d.map_id if d else 0,
             height=d.height if d else 0, width=d.width if d else 0,
@@ -77,7 +77,7 @@ class Reader:
             phone=m.phone if m else "0",
             border_block=a.border if a else "—")
 
-    def geometry(self, label: str) -> panels.Blocks:
+    def geometry(self, label: str) -> contract.Blocks:
         """The shape. The build INCBINs `maps/X.ablk.lzp`; the tracked,
         editable bytes are the plain `maps/X.ablk` beside it, one byte per
         block like any `.blk` — that sibling is what is read."""
@@ -85,25 +85,25 @@ class Reader:
         d = dims(self.root).get(a.const) if a else None
         rel = _blk(self.root).get(label)
         if d is None or rel is None:
-            raise panels.Unreadable(
+            raise contract.Unreadable(
                 f"{label} is not in constants/map_constants.asm and "
                 "data/maps/blocks.asm both — it has no declared shape.")
         path = self.root / rel.removesuffix(".lzp")
         try:
             blocks = path.read_bytes()
         except FileNotFoundError as exc:
-            raise panels.Unreadable(f"{path} does not exist.") from exc
+            raise contract.Unreadable(f"{path} does not exist.") from exc
         if len(blocks) != d.width * d.height:
-            raise panels.Unreadable(
+            raise contract.Unreadable(
                 f"{path} is {len(blocks)} bytes; map_const says "
                 f"{d.width}×{d.height} = {d.width * d.height}.")
         m = _styles(self.root).get(label)
-        return panels.Blocks(
+        return contract.Blocks(
             blocks=blocks, height=d.height, width=d.width,
             swatches=swatches.for_tileset(self.root, m.tileset) if m else ())
 
     # -- what a form is sketching -------------------------------------------- #
-    def sketch(self, action) -> panels.Blocks | None:
+    def sketch(self, action) -> contract.Blocks | None:
         """The new-map form's grid, in this tree's colours.
 
         The same fork as `geometry` and for the same reason: the shape is
@@ -116,17 +116,17 @@ class Reader:
             return None
         try:
             colors = swatches.for_tileset(self.root, drawn.tileset) if drawn.tileset else ()
-        except panels.Unreadable as exc:
+        except contract.Unreadable as exc:
             raise ActionError(str(exc)) from exc
-        return panels.Blocks(blocks=drawn.blocks, height=drawn.height,
+        return contract.Blocks(blocks=drawn.blocks, height=drawn.height,
                              width=drawn.width, swatches=colors,
                              label=drawn.label)
 
-    def wild(self, const: str) -> dict[str, dict[str, list[panels.WildMon]]]:
+    def wild(self, const: str) -> dict[str, dict[str, list[contract.WildMon]]]:
         """Same shape as the rest of the family — grass 7×3, water 3 — but a
         slot is `wildmon level, SPECIES[, FORM]`: the form crosses when it is
         written, and the column above the seam exists exactly then."""
-        found: dict[str, dict[str, list[panels.WildMon]]] = {}
+        found: dict[str, dict[str, list[contract.WildMon]]] = {}
         for kind, rel in (("grass", "data/wild/johto_grass.asm"),
                           ("grass", "data/wild/kanto_grass.asm"),
                           ("water", "data/wild/johto_water.asm"),
@@ -141,25 +141,25 @@ class Reader:
                 found[kind] = {"any": mons}
         return found
 
-    def roof(self, const: str) -> panels.Roof | None:
+    def roof(self, const: str) -> contract.Roof | None:
         d = dims(self.root).get(const)
         if d is None:
             return None
         names, values = _roof_table(self.root)
         files = _roof_files(self.root)
         if d.group >= len(values):
-            return panels.Roof(group=d.group, past_end=True,
+            return contract.Roof(group=d.group, past_end=True,
                                entries=len(values),
                                colors=_roof_colors(self.root, d.group))
         tiles = names.index(values[d.group]) if values[d.group] in names else None
-        return panels.Roof(
+        return contract.Roof(
             group=d.group, tiles=tiles,
             tile_file=files[tiles] if tiles is not None and tiles < len(files)
             else None,
             colors=_roof_colors(self.root, d.group))
 
     # -- the words ----------------------------------------------------------- #
-    def texts(self, label: str) -> list[panels.TextRef]:
+    def texts(self, label: str) -> list[contract.TextRef]:
         return events.texts(self.root / f"maps/{label}.asm")
 
 
@@ -173,7 +173,7 @@ class MeasuringReader(Reader):
     else entirely and no line measured here goes through it.
     """
 
-    def measure(self, text: str, box: str) -> panels.TextPreview:
+    def measure(self, text: str, box: str) -> contract.TextPreview:
         return measures.measure_lines(self.root, metrics.load(self.root), text)
 
 
@@ -221,16 +221,16 @@ def _blk(root: Path) -> dict[str, str]:
 
 
 @lru_cache(maxsize=None)
-def _wild_file(root: Path, rel: str) -> dict[str, list[panels.WildMon]]:
-    out: dict[str, list[panels.WildMon]] = {}
-    current: list[panels.WildMon] | None = None
+def _wild_file(root: Path, rel: str) -> dict[str, list[contract.WildMon]]:
+    out: dict[str, list[contract.WildMon]] = {}
+    current: list[contract.WildMon] | None = None
     for raw in lines(root / rel):
         s = raw.split(";")[0]
         if "wildmons" in s and s.strip().startswith(("def_", "end_")):
             current = (out.setdefault(s.strip().split()[-1], [])
                        if s.strip().startswith("def_") else None)
         elif current is not None and (m := _WILDMON.match(s)):
-            current.append(panels.WildMon(int(m.group(1)), m.group(2),
+            current.append(contract.WildMon(int(m.group(1)), m.group(2),
                                           m.group(3) or ""))
     return out
 

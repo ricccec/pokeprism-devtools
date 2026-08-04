@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import Any
 
 from ..shared.edits import Edit
-from .panels import Ref
+from ..contract import Ref
 
 #: A field's `choices` names a set of constants the session can enumerate; the
 #: form turns it into autocomplete. Empty means free text.
@@ -232,7 +232,7 @@ class Action:
         Untyped on purpose, and it is the one hole the carve leaves. The only
         caller is the *read* adapter of the same hack that shipped the action
         (`hacks/prism/read.Reader.sketch`), which turns what comes back into a
-        neutral `panels.Blocks` before the studio sees it. So the value is one
+        neutral `contract.Blocks` before the studio sees it. So the value is one
         adapter handing itself its own record, and naming prism's `BlockData`
         here to say so would be the base importing an adapter to describe a
         journey it is not on.

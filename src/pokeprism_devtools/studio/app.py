@@ -66,7 +66,7 @@ from ..shared.coords import Tile
 from .flow import Flow
 from .grid import MapGrid
 from .maplist import MapList
-from .panels import Ref
+from ..contract import Ref
 from .screens import Build, Form, Picker
 from .session import Draft, MapData, Session, SessionError, TextRef
 from .status import Banner, Centre, Diagnostics, Where

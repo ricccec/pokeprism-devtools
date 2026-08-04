@@ -31,6 +31,7 @@ from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
 from pokeprism_devtools.hacks import mount as hackmount # noqa: E402
 from pokeprism_devtools.hacks.prism import eventheader # noqa: E402
 from pokeprism_devtools.shared import coords, world # noqa: E402
+from pokeprism_devtools import contract  # noqa: E402
 from pokeprism_devtools.studio import actions, panels  # noqa: E402
 from pokeprism_devtools.hacks.prism import content, offers  # noqa: E402
 from pokeprism_devtools.studio.session import (Session, SessionError,  # noqa: E402
@@ -419,13 +420,13 @@ def test_a_ref_offers_only_its_affordances() -> None:
     an adapter mints names instead.
     """
     print("\na Ref offers only its affordances")
-    add = panels.add_ref("NPC")
+    add = contract.add_ref("NPC")
     check("an add-row Ref says what it would add", add.adds == "NPC")
     check("and is not deletable — it names nothing yet", not add.deletable)
-    npc = panels.Ref("npc", eventheader.Handle(eventheader.ListKind.OBJECT_EVENTS, 3))
+    npc = contract.Ref("npc", eventheader.Handle(eventheader.ListKind.OBJECT_EVENTS, 3))
     check("a real row adds nothing", npc.adds == "")
     check("and can be deleted", npc.deletable)
-    check("the map's own rows cannot", not panels.Ref("map").deletable)
+    check("the map's own rows cannot", not contract.Ref("map").deletable)
     header = eventheader.parse_text(
         "X_MapEventHeader::\n\tdb 0, 0\n\tdb 1\n\twarp_def 3, 5, 1, TOWN_A\n"
         "\tdb 0\n\tdb 0\n\tdb 0\n", Path("X.asm"))

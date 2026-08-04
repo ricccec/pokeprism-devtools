@@ -55,7 +55,7 @@ def values(root: Path, label: str, dialect) -> dict[str, str]:
     """The header as it stands — what the form opens with.
 
     Read straight from source rather than through the read adapter, because
-    `panels.Attributes` drops polished's `sign` argument and the form needs every
+    `contract.Attributes` drops polished's `sign` argument and the form needs every
     argument the writer will splice. Keyed by the dialect's `header_args`, so the
     prefill names line up with the fields and the splice indices exactly.
     """

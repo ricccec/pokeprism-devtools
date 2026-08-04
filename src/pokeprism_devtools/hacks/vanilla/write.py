@@ -15,7 +15,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...shared.constants import ConstSet, read_set
-from ...studio import actions, panels
+from ... import contract
+from ...studio import actions
 from ...studio.actions import Action, ActionError, Result
 from ...wiring import trainerroster, warpdel
 from ...wiring.warpdel import BlindTable, DeadDoor, WarpGrammar, WarpMacro
@@ -411,7 +412,7 @@ def delete_warp(root: Path, label: str, map_const: str, index: int,
     path = root / f"maps/{label}.asm"
     try:
         block = parse_map(path, anchor)
-    except (UnparseableEvents, panels.Unreadable) as exc:
+    except (UnparseableEvents, contract.Unreadable) as exc:
         raise warpdel.WarpDelError(
             f"{map_const}'s event block can't be read, so its warps can't be "
             f"counted: {exc}") from exc

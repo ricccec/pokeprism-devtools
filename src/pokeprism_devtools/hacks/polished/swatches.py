@@ -12,17 +12,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...studio import panels
+from ... import contract
 from ..vanilla.swatches import CLASSES, QUADS, day_colors
 
 
-def for_tileset(root: Path, tileset_const: str) -> tuple[panels.Swatch, ...]:
-    """One swatch per block. Raises :class:`panels.Unreadable` when the
+def for_tileset(root: Path, tileset_const: str) -> tuple[contract.Swatch, ...]:
+    """One swatch per block. Raises :class:`contract.Unreadable` when the
     metatiles file is missing."""
     name = tileset_const.removeprefix("TILESET_").lower()
     meta_path = root / f"data/tilesets/{name}_metatiles.bin"
     if not meta_path.exists():
-        raise panels.Unreadable(
+        raise contract.Unreadable(
             f"{meta_path} does not exist — {tileset_const} has no metatiles "
             "to color.")
     meta = meta_path.read_bytes()
@@ -31,7 +31,7 @@ def for_tileset(root: Path, tileset_const: str) -> tuple[panels.Swatch, ...]:
     colors = day_colors(root)
     gray = colors.get("GRAY", (128, 128, 128))
 
-    out: list[panels.Swatch] = []
+    out: list[contract.Swatch] = []
     for b in range(len(meta) // 16):
         quads = []
         for quad in QUADS:

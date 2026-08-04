@@ -54,7 +54,7 @@ from .speech import Dialogue
 
 from ..actions import Action, ActionError, Field
 from ..combo import Combo
-from ..panels import Ref
+from ...contract import Ref
 from ..session import Draft, Preview, Session
 
 #: Fields the grid can answer for you. The cursor is *on* the tile; making you

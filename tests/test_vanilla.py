@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools.hacks import mount as hackmount  # noqa: E402
 from pokeprism_devtools.shared.coords import Tile  # noqa: E402
+from pokeprism_devtools import contract  # noqa: E402
 from pokeprism_devtools.studio import panels  # noqa: E402
 from pokeprism_devtools.studio.session import Session, SessionError  # noqa: E402
 
@@ -338,7 +339,7 @@ def test_geometry_and_swatches(root: Path) -> None:
     try:
         hackmount.mount(root).reads.geometry("TownA")
         check("a short blk file is refused loudly", False)
-    except panels.Unreadable as exc:
+    except contract.Unreadable as exc:
         check("a short blk file is refused loudly", "2 bytes" in str(exc), str(exc))
     (root / "maps/TownA.blk").write_bytes(bytes(12))
 
@@ -425,11 +426,11 @@ def test_the_session_degrades_to_absence(root: Path) -> None:
     # Editing an entry crosses, and so does editing the *map* now: the header
     # form opens on the two files the family splits its header over.
     action, values, _ = s.editor("TownA", "TOWN_A",
-                                 panels.Ref("npc", "TOWNA_TEACHER"))
+                                 contract.Ref("npc", "TOWNA_TEACHER"))
     check("editing an npc opens the object editor on what is there",
           action.title == "Edit an object"
           and values["sprite"] == "SPRITE_TEACHER")
-    action, values, _ = s.editor("TownA", "TOWN_A", panels.Ref("map", "TOWN_A"))
+    action, values, _ = s.editor("TownA", "TOWN_A", contract.Ref("map", "TOWN_A"))
     check("editing the map itself opens the header form, prefilled",
           action.name == "editmap" and "fishgroup" in [f.name for f in action.FIELDS]
           and values["const"] == "TOWN_A" and bool(values["tileset"]))
@@ -441,7 +442,7 @@ def test_deletion_crosses_the_seam(root: Path) -> None:
     before = src.read_text()
     s = Session(root)
 
-    act = s.deletion("TownA", "TOWN_A", panels.Ref("trainer", "TOWNA_YOUNGSTER"))
+    act = s.deletion("TownA", "TOWN_A", contract.Ref("trainer", "TOWNA_YOUNGSTER"))
     check("the action names the thing on the confirm screen",
           "TOWNA_YOUNGSTER" in act.describe())
     preview = s.preview(act)
@@ -462,14 +463,14 @@ def test_deletion_crosses_the_seam(root: Path) -> None:
     check("the table agrees", len(trainers.table[1]) == 0)
 
     check("a stale name refuses instead of guessing",
-          _refused(s, "TownA", "TOWN_A", panels.Ref("trainer", "TOWNA_YOUNGSTER"),
+          _refused(s, "TownA", "TOWN_A", contract.Ref("trainer", "TOWNA_YOUNGSTER"),
                    "no longer"))
     # A connection now deletes instead of refusing: the seam hands back a
     # disconnect action, and applying it drops the line. RouteX is a phantom
     # neighbour here (no block of its own), so the far side can't be mirrored —
     # which must be *said*, as a one-way note, not crash the splice.
     before_attrs = (root / "data/maps/attributes.asm").read_text()
-    act = s.deletion("TownA", "TOWN_A", panels.Ref("connection", key="west"))
+    act = s.deletion("TownA", "TOWN_A", contract.Ref("connection", key="west"))
     check("a connection hands back a disconnect action, not a refusal",
           act.name == "disconnect", act.describe())
     preview = s.preview(act)
@@ -634,7 +635,7 @@ def test_warp_deletion_crosses(root: Path) -> None:
 
     # -- end to end, through the seam ------------------------------------------ #
     s = Session(root)
-    act = s.deletion("TownA", "TOWN_A", panels.Ref("warp", ("warp", 1)))
+    act = s.deletion("TownA", "TOWN_A", contract.Ref("warp", ("warp", 1)))
     check("the seam hands back an action, not a refusal",
           "warp #2" in act.describe(), act.describe())
     preview = s.preview(act)

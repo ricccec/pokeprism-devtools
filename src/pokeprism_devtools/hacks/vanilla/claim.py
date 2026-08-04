@@ -48,7 +48,7 @@ def build(root: Path) -> Hack:
     `measures` is read off the tree, not written down here. The reason it was
     hardcoded false — "the dialogue font is fixed-width, so there is no VWF to
     measure against" — had the question backwards: fixed width is what makes the
-    count *exact*, and `panels.Measured` was always denominated in tiles. What
+    count *exact*, and `contract.Measured` was always denominated in tiles. What
     genuinely cannot be measured is a checkout with no charmap and no engine file
     to read them out of, so that is what is asked, and a tree that fails it gets a
     reader with no `measure` on it rather than one that would crash on a

@@ -51,7 +51,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ...shared.edits import Edit
-from ...studio import panels
+from ... import contract
 
 #: The four lists, in the order every map file writes them. The key is the
 #: word the read adapter's handles carry — ``("bg", 3)`` names the fourth
@@ -264,7 +264,7 @@ def parse_map(path: Path, anchor: str = "_MapEvents") -> EventBlock:
     try:
         return parse_text(path.read_text(encoding="utf-8"), path, anchor)
     except FileNotFoundError as exc:
-        raise panels.Unreadable(f"{path} does not exist.") from exc
+        raise contract.Unreadable(f"{path} does not exist.") from exc
 
 
 def parse_text(text: str, path: Path, anchor: str = "_MapEvents") -> EventBlock:

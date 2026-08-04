@@ -40,10 +40,11 @@ from textual.message import Message
 from textual.widgets import DataTable, Static, TabbedContent, TabPane
 
 # ADD is re-exported for callers that assert on it; this file never reads it.
-# The Ref an "Add new…" row carries is minted by `panels.add_ref`, on the port
+# The Ref an "Add new…" row carries is minted by `contract.add_ref`, on the port
 # side of the seam — the view draws the dim row because `Tab.adds` told it to,
 # and hands back a Ref it never assembled itself.
-from .panels import ADD, Ref, Tab, add_ref, prompt_column  # noqa: F401
+from ..contract import ADD, Ref, add_ref  # noqa: F401
+from .panels import Tab, prompt_column
 
 #: Every tab the studio can show, in the order it shows them. A map gets the ones
 #: it has; the rest are hidden. "Unreadable" is the one a map with a broken event
