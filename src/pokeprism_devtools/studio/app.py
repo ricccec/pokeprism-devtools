@@ -60,7 +60,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Footer, Header
 
-from ..hacks import mount as hackmount
+from ..contract import mount as hackmount
 from ..shared import paths
 from ..shared.coords import Tile
 from .flow import Flow

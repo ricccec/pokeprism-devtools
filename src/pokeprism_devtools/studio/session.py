@@ -39,7 +39,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from ..contract import Diagnostic, Severity
-from ..hacks.mount import mount
+from ..contract.mount import mount
 from ..contract import PlayError, Refused
 from ..shared import caches, world
 from ..shared.edits import StaleEdit, apply_edits

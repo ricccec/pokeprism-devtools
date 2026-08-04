@@ -2,8 +2,9 @@
 
 `claims()` is prism's whole answer to the mount: it looks only at prism's own
 layout — no family concept, no shared recogniser, nothing that knows another
-hack exists — and returns the built adapter, or a :class:`~..mount.NearMiss`
-naming the files it needed and did not find. What prism is *made of* is `build`
+hack exists — and returns the built adapter, or a
+:class:`~...contract.mount.NearMiss` naming the files it needed and did not
+find. What prism is *made of* is `build`
 below: the linter's context, the reader and writer that both take it, and the
 two capabilities (a build-and-boot, text measured against prism's own VWF) that
 no other tree in this repo declares. None of that is imported until prism
@@ -15,8 +16,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..mount import NearMiss
 from ...contract import Hack
+from ...contract.mount import NearMiss
 
 #: The two files every prism map parser starts from. Their *presence* is what
 #: makes a tree prism-shaped; every other gen-2 hack keeps these facts elsewhere.

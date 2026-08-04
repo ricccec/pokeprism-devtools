@@ -281,7 +281,7 @@ def test_seam() -> None:
     macro wants a palette.
     """
     print("\n== the seam ==")
-    from pokeprism_devtools.hacks import mount
+    from pokeprism_devtools.contract import mount
     from pokeprism_devtools import contract as actions
 
     forms = {}

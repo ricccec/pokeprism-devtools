@@ -28,7 +28,7 @@ from test_maplint import _fixture as _lint_fixture  # noqa: E402
 
 from pokeprism_devtools import maplint  # noqa: E402
 from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
-from pokeprism_devtools.hacks import mount as hackmount # noqa: E402
+from pokeprism_devtools.contract import mount as hackmount # noqa: E402
 from pokeprism_devtools.hacks.prism import eventheader # noqa: E402
 from pokeprism_devtools.shared import coords, world # noqa: E402
 from pokeprism_devtools import contract  # noqa: E402

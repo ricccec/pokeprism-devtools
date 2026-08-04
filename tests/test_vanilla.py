@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools.hacks import mount as hackmount  # noqa: E402
+from pokeprism_devtools.contract import mount as hackmount  # noqa: E402
 from pokeprism_devtools.shared.coords import Tile  # noqa: E402
 from pokeprism_devtools import contract  # noqa: E402
 from pokeprism_devtools.studio import tables  # noqa: E402

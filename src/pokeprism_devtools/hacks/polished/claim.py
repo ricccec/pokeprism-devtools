@@ -18,8 +18,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...shared.mapindex import first_listed_map
-from ..mount import NearMiss
 from ...contract import Hack
+from ...contract.mount import NearMiss
 
 #: Polished's own structural fact: its map files open with the event block,
 #: where vanilla closes with it. It recognises a tree by this anchor, and here

@@ -19,8 +19,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...shared.mapindex import first_listed_map
-from ..mount import NearMiss
 from ...contract import Hack
+from ...contract.mount import NearMiss
 
 #: Vanilla closes a map file with the event block: `<Label>_MapEvents:` last.
 _ANCHOR = "_MapEvents"

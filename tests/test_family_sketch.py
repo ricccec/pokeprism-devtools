@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools.hacks import mount as m  # noqa: E402
+from pokeprism_devtools.contract import mount as m  # noqa: E402
 from pokeprism_devtools.contract import ActionError  # noqa: E402
 from pokeprism_devtools.wiring import mapnew  # noqa: E402
 
