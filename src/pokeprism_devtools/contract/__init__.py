@@ -24,7 +24,7 @@ without turning the arrow round.
 from __future__ import annotations
 
 from .action import Action, ActionError, Field, Result
-from .attributes import Attributes, Link, Roof
+from .attributes import UNSAID, Attributes, Link, Roof
 from .blocks import Blocks, Rgb, Sketch, Swatch
 from .choices import (BLOCK_SECTIONS, BLOCKS, CLASSES, DIRECTIONS,
                       FACINGS, FISHGROUPS, FLAGS, GROUPS, ITEMS,
@@ -51,5 +51,6 @@ __all__ = ["ADD", "Action", "ActionError", "Attributes", "BLOCKS",
            "Refused", "Result", "Rgb", "Roof", "SCRIPT_SECTIONS", "SIGNS",
            "SPRITES", "Severity", "Signpost", "Sketch", "Sketches", "Swatch",
            "TILESETS", "TIMES", "TMHMS", "TREES", "TextPreview", "TextRef",
+           "UNSAID",
            "Trainer", "Trigger", "Unreadable", "Warp", "WildMon", "Writes",
            "add_ref"]

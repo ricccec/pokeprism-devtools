@@ -11,14 +11,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-Rgb = tuple[int, int, int]
-
-#: A block's four quadrant colors, in reading order. Not an arbitrary carve-up:
-#: a block is 2×2 coordinate tiles, so one swatch quadrant is exactly one place
-#: you can stand, and the grid's cursor lands on a quadrant. How an adapter
-#: arrives at the four colors is its own affair — prism averages real pixels,
-#: an adapter without decoded graphics may answer from palettes alone.
-Swatch = tuple[Rgb, Rgb, Rgb, Rgb]
+# A colour, and a block's four quadrant colours in reading order — re-exported
+# from where the arithmetic that produces them lives. The carve-up into four is
+# not arbitrary: a block is 2×2 coordinate tiles, so one swatch quadrant is
+# exactly one place you can stand, and the grid's cursor lands on a quadrant.
+# How an adapter arrives at the four colours is its own affair; prism averages
+# real pixels, an adapter without decoded graphics may answer from palettes.
+from ..shared.swatches import Rgb, Swatch  # noqa: F401
 
 
 @dataclass(frozen=True)

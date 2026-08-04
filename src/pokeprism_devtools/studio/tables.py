@@ -22,11 +22,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..contract import (Attributes, Link, Npc, Prop, Ref, Roof, Signpost,
-                        Trainer, Trigger, Warp, WildMon)
+from ..contract import (UNSAID, Attributes, Link, Npc, Prop, Ref, Roof,
+                        Signpost, Trainer, Trigger, Warp, WildMon)
 from ..shared.coords import Tile
 
-_NONE = "—"
+#: An empty cell. The same dash the contract fills an unsaid header field with,
+#: imported rather than respelled so the two can never drift apart.
+_NONE = UNSAID
 
 
 # --------------------------------------------------------------------------- #

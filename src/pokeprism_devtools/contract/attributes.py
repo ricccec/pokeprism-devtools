@@ -9,7 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-_NONE = "—"
+#: What a header field says when the source does not say. The reading side
+#: draws it as written, so this is the one placeholder both sides share — two
+#: spellings of it would put a different dash in the Attributes tab from the
+#: one in every other column, and nothing would ever report the difference.
+UNSAID = "—"
 
 
 @dataclass(frozen=True)
@@ -41,15 +45,15 @@ class Attributes:
     map_id: int
     height: int
     width: int
-    tileset: str = _NONE
-    permission: str = _NONE
-    landmark: str = _NONE
-    music: str = _NONE
-    palette: str = _NONE
-    fishgroup: str = _NONE
+    tileset: str = UNSAID
+    permission: str = UNSAID
+    landmark: str = UNSAID
+    music: str = UNSAID
+    palette: str = UNSAID
+    fishgroup: str = UNSAID
     phone: str = "0"
-    border_block: str = _NONE
-    blk: str = _NONE
+    border_block: str = UNSAID
+    blk: str = UNSAID
     #: section name -> the bank it is pinned to in contents/romx.link, or "" for
     #: a section that floats. Three of them: blockdata, script, secondary.
     banks: dict[str, str] = field(default_factory=dict)
