@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from ....contract import Diagnostic
-from ....maplint.suppressions import apply_suppressions
+from ....contract.suppressions import apply_suppressions
 from .. import box
 from ..box import Box
 from ..metrics import Metrics, engine_is_readable

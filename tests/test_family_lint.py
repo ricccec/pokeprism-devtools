@@ -37,7 +37,7 @@ from pokeprism_devtools.hacks.polished import metrics as polished_metrics  # noq
 from pokeprism_devtools.hacks.vanilla import box, lint, metrics  # noqa: E402
 from pokeprism_devtools.hacks.vanilla.lint import dialogue, rules  # noqa: E402
 from pokeprism_devtools.contract import Severity  # noqa: E402
-from pokeprism_devtools.maplint.suppressions import apply_suppressions  # noqa: E402
+from pokeprism_devtools.contract.suppressions import apply_suppressions  # noqa: E402
 
 VANILLA = Path.home() / "code/ricccec/pokecrystal"
 POLISHED = Path.home() / "code/ricccec/polishedcrystal"

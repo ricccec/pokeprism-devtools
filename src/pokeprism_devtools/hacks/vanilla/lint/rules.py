@@ -14,7 +14,7 @@ moment someone types a long name. `text-buffer` is the trap for the buffers the
 text cannot bound at all — `text_ram wStringBuffer3` prints whatever a script
 loaded there — and so it warns only where the certainty is total: a line whose
 fixed text already fills the box has no room for a spliced buffer, short or long.
-The comparisons themselves are `maplint.textfit`, shared with prism's rules
+The comparisons themselves are `shared.textfit`, shared with prism's rules
 verbatim; what feeds them — the box, the widths, the bounds — is the family's own.
 """
 
@@ -22,8 +22,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....maplint import textfit
 from ....contract import Diagnostic, Severity
+from ....shared import textfit
 from .. import charmap
 
 if TYPE_CHECKING:
