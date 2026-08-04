@@ -33,7 +33,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ...contract import Action, ActionError, Field, Result
 from ...shared.edits import Edit
+from ...wiring import mapresize
 from ...wiring.mapresize import MapShape, Standing
 from ...wiring.editvocab import EditError
 from . import read as r
@@ -163,3 +165,68 @@ def polished() -> FamilyResize:
 
 
 VANILLA = FamilyResize("_MapEvents", r._blk)
+
+
+class ResizeMap(Action):
+    """Growing or shrinking a map from an edge — the form half of the above.
+
+    `e` on the Attributes tab changes what a map is *called*, and
+    `hacks/vanilla/mapedit.py` says why its size is not one of the fields there:
+    changing it without resizing the `.blk` behind it corrupts the map. This is
+    the `s` key that does the resize properly, keeping the dimension constant,
+    the block grid and (at the top or left) every object's coordinates all
+    moving together.
+
+    Reached by its own binding, not by pointing at a row: a map's shape is not a
+    thing you select on the grid, it is the grid.
+
+    Prism's copy is `hacks/prism/resize.py`, and the two are deliberate
+    near-duplicates. They shared one class in `studio/` until prism importing it
+    made prism depend on the IDE; the form is four fields and one call, and the
+    plan's rule for adapters holds here — never compare across them.
+    """
+    name = "resize"
+    title = "Resize the map"
+    #: Which tree's answers the geometry runs against. A class attribute and not
+    #: an argument, because a form is built as `action(map_const, **values)` and
+    #: there is no third seat — the same reason `.actions` stamps its dialect
+    #: forks rather than passing them. Stamped by :func:`resize_for`, because
+    #: this one class serves both family trees and they answer differently.
+    dialect = None
+    FIELDS = (
+        Field("edge", "Edge", options=("top", "bottom", "left", "right"),
+              help="which side of the map to change"),
+        Field("mode", "Grow or shrink", options=("grow", "shrink"), default="grow"),
+        Field("blocks", "Blocks", kind="int", default="1",
+              help="how many blocks — a block is 2x2 tiles"),
+        Field("fill", "Fill block", default="",
+              help="block for new rows/columns (grow only); blank = the border block"),
+    )
+
+    def __init__(self, map_const: str, **values: str) -> None:
+        super().__init__(**values)
+        self.map = map_const
+
+    def describe(self) -> str:
+        return (f"{self.text('mode') or 'grow'} {self.map} {self.text('edge')} "
+                f"by {self.integer('blocks', 1)} block(s)")
+
+    def run(self, root: Path) -> Result:
+        if not self.text("edge"):
+            raise ActionError("pick an edge")
+        try:
+            change = mapresize.resize(
+                root, self.map, self.text("edge"), self.text("mode") or "grow",
+                self.integer("blocks", 1), self.text("fill") or None,
+                dialect=self.dialect)
+        except mapresize.EditError as exc:
+            raise ActionError(str(exc)) from exc
+        return Result(change.summary, change.changes, change.notes)
+
+
+def resize_for(dialect, tag: str) -> type[ResizeMap]:
+    """This form, bound to one family tree's answers. The form itself is
+    dialect-free — an edge, a mode and a count mean the same thing in every tree
+    — so what forks is only what it resizes *through*."""
+    return type(f"{tag}ResizeMap", (ResizeMap,),
+                {"dialect": dialect, "__doc__": ResizeMap.__doc__})

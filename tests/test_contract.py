@@ -25,11 +25,14 @@ Four checks, and they are deliberately different in kind:
     a reader has no linter, no writer, no play adapter and does not measure. That
     is the rule an IDE branches on instead of on a hack's name.
 
-**The two survivors are named, not excused.** `studio/mapadd.py` and
-`studio/resize.py` are neutral `Action` subclasses over `wiring/` — not the IDE,
-and not the contract either, since they read the filesystem. Where they land is
-Phase 3's. The test asserts the survivor list *exactly*, so the day one moves
-this file says so rather than quietly passing a weaker claim.
+**The two survivors are named, not excused.** Both are `hacks/vanilla/`
+reaching `studio/mapadd.py`, which is a **C->C** edge and legal: `AddMap` is the
+generic new-map form, two of the three hacks mount it as dialects, and vanilla
+ships with the IDE. Phase 3 retired the other three — `grids` went to `wiring/`
+and the resize form became one copy per adapter — so what this list now says is
+that **no prism module reaches the IDE at all**, asserted separately below.
+The list is asserted *exactly*, so the day one moves this file says so rather
+than quietly passing a weaker claim.
 
 `test_falsified` comes last and matters most: it seeds each check with the
 mutation that check exists to catch, and fails if any of them survives. It was
@@ -79,8 +82,6 @@ FORBIDDEN = ("studio", "hacks", "wiring", "maplint", "mapfit", "mapview",
 #: open files. Asserted exactly — a shorter list is progress, a longer one is a
 #: regression, and both should be somebody's decision rather than a surprise.
 SURVIVORS = {
-    ("hacks/prism/write.py", "studio.resize"),
-    ("hacks/vanilla/write.py", "studio.resize"),
     ("hacks/vanilla/write.py", "studio.mapadd"),
     ("hacks/vanilla/newmap.py", "studio.mapadd"),
 }
@@ -221,15 +222,20 @@ def adapter_edges() -> set[tuple[str, str]]:
 
 
 def test_no_adapter_imports_the_ide() -> None:
-    print("\nthe adapters no longer import the IDE, bar the two named survivors")
+    print("\nno adapter outside the IDE's own product imports it")
     edges = adapter_edges()
     check("every remaining edge is a known survivor", edges <= SURVIVORS,
           f"new: {sorted(edges - SURVIVORS)}")
     check("every known survivor is still there — this list is not a wishlist",
           SURVIVORS <= edges, f"gone: {sorted(SURVIVORS - edges)}")
-    check("both survivors are forms over wiring/, not the IDE proper",
-          {m for _, m in SURVIVORS} == {"studio.resize", "studio.mapadd"},
-          str(sorted({m for _, m in SURVIVORS})))
+    check("every survivor is vanilla reaching the generic new-map form — a\n"
+          "         C->C edge, legal because vanilla ships with the IDE",
+          {m for _, m in SURVIVORS} == {"studio.mapadd"}
+          and {f.split("/")[1] for f, _ in SURVIVORS} == {"vanilla"},
+          str(sorted(SURVIVORS)))
+    check("no prism module reaches the IDE at all",
+          not any(f.startswith("hacks/prism/") for f, _ in edges),
+          str(sorted(f for f, _ in edges if f.startswith("hacks/prism/"))))
 
 
 # --------------------------------------------------------------------------- #
@@ -307,7 +313,7 @@ def test_falsified(mods: list[Path]) -> None:
     check("a new edge is rejected",
           not ({("hacks/prism/read.py", "studio.tables")} | SURVIVORS) <= SURVIVORS)
     check("a vanished survivor is rejected",
-          not SURVIVORS <= (SURVIVORS - {("hacks/prism/write.py", "studio.resize")}))
+          not SURVIVORS <= (SURVIVORS - {("hacks/vanilla/write.py", "studio.mapadd")}))
 
     # 4 · a Hack that declares a capability must not read as absent.
     loud = contract.Hack("stub", _BareReader(), ctx=object(), writes=object(),

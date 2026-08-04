@@ -1,8 +1,10 @@
 """Adding a map to a family tree — the form half of `wiring/mapnew.py`.
 
-The sibling of `studio/resize.py`, and it is instructive that this one could not
-be written the same way. A resize form is dialect-*free*: an edge, a mode and a
-count mean the same thing in every tree, so only what it resizes through forks.
+The sibling of the resize form — now one copy per adapter, in
+`hacks/<hack>/resize.py` — and it is instructive that this one could not be
+written the same way. A resize form is dialect-*free*: an edge, a mode and a
+count mean the same thing in every tree, so only what it resizes through forks,
+which is why copying it per adapter cost forty lines and nothing else.
 A new map is the opposite — the questions themselves differ, because the `map`
 macro does not take the same arguments in the two family trees and the blocks
 are not placed by the same kind of answer.
@@ -71,7 +73,7 @@ class AddMap(Action):
     name = "newmap"
     title = "Add a new map"
     sketches = True
-    #: The tree's answers. A class attribute for the reason `studio/resize.py`
+    #: The tree's answers. A class attribute for the reason every resize form
     #: gives: a form is built as `action(map_const, **values)` and there is no
     #: third seat. Stamped by :func:`newmap_for`.
     dialect = None

@@ -72,8 +72,9 @@ nothing. They are the (b) drain, and they wait.
   `grids` is **defined in `studio/mapadd.py`**, so moving it necessarily edits
   that file. The rule meant is the one above — the module is not relocated into
   an adapter, and `AddMap`, `newmap_for`, `section_choices`, `_BASE` and
-  `_PLACES` all stay exactly where they are. `grids` leaving is the only change
-  this phase makes to it.
+  `_PLACES` all stay exactly where they are. Two commits touch the file and
+  neither moves it: commit 7 takes `grids` out, and commit 8 corrects the two
+  places it points at `studio/resize.py`, a file that commit deletes.
 
   **And moving it into `hacks/vanilla/` would have been actively wrong.** `AddMap`
   is the generic form: it never branches, holds no hack name, reads

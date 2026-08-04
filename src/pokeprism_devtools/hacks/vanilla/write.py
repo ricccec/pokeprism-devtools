@@ -217,8 +217,7 @@ class Writer:
             from .text import EditText
             return EditText
         if name == "resize":
-            from ...studio.resize import resize_for
-            from .resize import VANILLA
+            from .resize import VANILLA, resize_for
             return resize_for(self._resize or VANILLA, "Family")
         if name == "newmap":
             from ...studio.mapadd import newmap_for
