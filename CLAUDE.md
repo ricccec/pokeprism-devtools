@@ -1,7 +1,6 @@
 ## General rules
 
 - Do what has been asked; nothing more, nothing less
-- NEVER create files unless absolutely necessary — prefer editing existing files
 - NEVER create documentation files unless explicitly requested
 - NEVER save working files or tests to root — use `/src`, `/tests`, `/docs`, `/config`, `/scripts`
 - ALWAYS read a file before editing it
@@ -20,7 +19,7 @@
   fine — the object is implied, not missing.
 - Keep each function at **one abstraction level**. Smells: more than 2–3 levels
   of nested blocks, or a body longer than ~30 LOC. The test: every line in a
-  function should answer the same kind of question. No function should be > 50 LOC.
+  function should answer the same kind of question. No function should be > ~50 LOC.
 - Validate input at system boundaries (user input, external APIs, file formats) —
   and **trust internal code and framework guarantees**. No defensive validation
   inside private functions or between layers we control.
