@@ -28,7 +28,7 @@ from ...dev_server.emulator import Emulator
 from ...shared import make
 from ...shared.devtools import make_devtools_dir
 from ...shared.symfile import SymFile
-from ..seam import PlayError
+from ...contract import PlayError
 from ..vanilla.read import dims, label_of, lines
 from . import savefile
 
@@ -45,7 +45,7 @@ _BUILD_ENV = {"RGBDS": ""}
 
 
 class Player:
-    """Polished's :class:`~..seam.Plays`: `make` a polishedcrystal ROM, patch its
+    """Polished's :class:`~...contract.Plays`: `make` a polishedcrystal ROM, patch its
     save to stand on a map, open SameBoy. Holds the emulator across boots so a
     second boot replaces the window rather than opening another."""
 

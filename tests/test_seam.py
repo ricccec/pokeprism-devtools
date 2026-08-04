@@ -49,7 +49,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools.hacks import mount as m  # noqa: E402
-from pokeprism_devtools.hacks import seam  # noqa: E402
+from pokeprism_devtools import contract as seam  # noqa: E402
 from pokeprism_devtools import contract  # noqa: E402
 
 TREES = {"prism": "pokeprism", "vanilla": "pokecrystal",

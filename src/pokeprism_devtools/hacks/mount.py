@@ -6,7 +6,7 @@ What a hack must *answer* once mounted is `seam.py`, which knows no names; how a
 hack recognises its own tree is `hacks/<name>/claim.py`, which knows only its
 own. This module owns the space between: discover the registered adapters, ask
 each whether it claims this tree, and turn the answers into one mounted
-:class:`~.seam.Hack` or one :class:`UnknownTree` that says why none did.
+:class:`~..contract.Hack` or one :class:`UnknownTree` that says why none did.
 
 Recognition is inverted on purpose. An earlier mount recognised every tree
 itself — a prism-layout check, then a family-anchor probe that knew both
@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .seam import Hack
+from ..contract import Hack
 
 _GROUP = "pokeprism_devtools.hacks"
 
@@ -129,9 +129,9 @@ def _load_hack_from_path(path: Path) -> tuple[str, Callable[[], Callable]]:
     """A `--hack-path` adapter, loaded from a file rather than the registry: the
     `claim.py` inside a directory, or the file itself, named for its package so
     an override of `prism` replaces prism. Loaded this way it has no package to
-    hang a relative import on, so the module must reach the seam by its installed
-    name (`pokeprism_devtools.hacks.seam`) — the contract a third-party adapter
-    keeps anyway."""
+    hang a relative import on, so the module must reach the contract by its
+    installed name (`pokeprism_devtools.contract`) — the package a third-party
+    adapter depends on anyway."""
     claim = path / "claim.py" if path.is_dir() else path
     name = claim.parent.name if claim.name == "claim.py" else claim.stem
 

@@ -19,7 +19,7 @@ from pathlib import Path
 
 from ...shared.mapindex import first_listed_map
 from ..mount import NearMiss
-from ..seam import Hack
+from ...contract import Hack
 
 #: Polished's own structural fact: its map files open with the event block,
 #: where vanilla closes with it. It recognises a tree by this anchor, and here
@@ -43,7 +43,7 @@ def claims(root: Path) -> Hack | NearMiss:
 
 
 def build(root: Path) -> Hack:
-    """The polished :class:`~..seam.Hack`: vanilla's `Writer`, six forks over.
+    """The polished :class:`~...contract.Hack`: vanilla's `Writer`, six forks over.
 
     `measures` is asked of the tree exactly as vanilla asks it, over polished's
     own engine files — the n-gram table where vanilla reads `home/text.asm`. The

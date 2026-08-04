@@ -20,7 +20,7 @@ from pathlib import Path
 
 from ...shared.mapindex import first_listed_map
 from ..mount import NearMiss
-from ..seam import Hack
+from ...contract import Hack
 
 #: Vanilla closes a map file with the event block: `<Label>_MapEvents:` last.
 _ANCHOR = "_MapEvents"
@@ -42,7 +42,7 @@ def claims(root: Path) -> Hack | NearMiss:
 
 
 def build(root: Path) -> Hack:
-    """The vanilla :class:`~..seam.Hack`: a reader, a writer, a text linter,
+    """The vanilla :class:`~...contract.Hack`: a reader, a writer, a text linter,
     build-and-boot, and now the tile ruler under the reword box.
 
     `measures` is read off the tree, not written down here. The reason it was

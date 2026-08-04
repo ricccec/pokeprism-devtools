@@ -31,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools.hacks import mount as hackmount  # noqa: E402
-from pokeprism_devtools.hacks import seam  # noqa: E402
+from pokeprism_devtools import contract as seam  # noqa: E402
 from pokeprism_devtools.hacks.polished import lint as polished_lint  # noqa: E402
 from pokeprism_devtools.hacks.polished import metrics as polished_metrics  # noqa: E402
 from pokeprism_devtools.hacks.vanilla import box, lint, metrics  # noqa: E402

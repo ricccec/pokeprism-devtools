@@ -20,7 +20,7 @@ from ...studio import actions
 from ...studio.actions import Action, ActionError, Result
 from ...wiring import trainerroster, warpdel
 from ...wiring.warpdel import BlindTable, DeadDoor, WarpGrammar, WarpMacro
-from ..seam import Refused
+from ...contract import Refused
 from . import newmap
 from .eventblock import EventBlock, UnparseableEvents, parse_map
 
@@ -345,7 +345,7 @@ class Writer:
     # -- what a selected row can do ------------------------------------------- #
     def deletion(self, label: str, const: str, ref):
         """The action `d` would run on this row — or the reason there isn't one."""
-        from ..seam import Refused
+        from ...contract import Refused
         if ref.what == "map":
             raise Refused("deleting a whole map is not something this does.")
         if ref.what == "connection":

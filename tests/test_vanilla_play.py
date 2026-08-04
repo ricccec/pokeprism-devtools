@@ -221,7 +221,7 @@ def test_targets_are_read_from_the_makefile() -> None:
     import tempfile  # noqa: PLC0415
 
     from pokeprism_devtools.hacks.vanilla import play  # noqa: PLC0415
-    from pokeprism_devtools.hacks.seam import PlayError  # noqa: PLC0415
+    from pokeprism_devtools.contract import PlayError  # noqa: PLC0415
 
     print("\nvanilla's targets are the Makefile's `roms :=` list, read not guessed")
     makefile = (

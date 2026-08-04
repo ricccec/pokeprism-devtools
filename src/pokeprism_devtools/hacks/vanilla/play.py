@@ -27,7 +27,7 @@ from ...dev_server.emulator import Emulator
 from ...shared import make
 from ...shared.devtools import make_devtools_dir
 from ...shared.symfile import SymFile
-from ..seam import PlayError
+from ...contract import PlayError
 from . import read, savefile
 
 #: The line in the `Makefile` that opens the list of ROMs `make` knows how to
@@ -45,7 +45,7 @@ _BUILD_ENV = {"RGBDS": ""}
 
 
 class Player:
-    """Vanilla's :class:`~..seam.Plays`: `make` a pokecrystal ROM, patch its save
+    """Vanilla's :class:`~...contract.Plays`: `make` a pokecrystal ROM, patch its save
     to stand on a map, open SameBoy. Holds the emulator across boots so a second
     boot replaces the window rather than opening another."""
 
