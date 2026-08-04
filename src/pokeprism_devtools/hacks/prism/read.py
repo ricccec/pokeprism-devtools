@@ -1,7 +1,7 @@
 """Prism's read adapter: its maps, poured into the seam's records.
 
 The port declares the vocabulary — `studio/panels` owns :class:`~...studio.
-panels.Npc`, :class:`Warp`, :class:`Roof` and the rest — and this module fills
+contract.Npc`, :class:`Warp`, :class:`Roof` and the rest — and this module fills
 it in from prism's grammar. The import runs adapter → port on purpose: a record
 the port declares is a record every adapter can fill without the port learning
 any adapter's macros, which is the same arrangement `Attributes` and `WildMon`
@@ -30,7 +30,7 @@ import re
 from functools import cached_property
 from pathlib import Path
 
-from ...studio import panels
+from ... import contract
 from . import blocksrc, dialogue, eventheader as eh
 from . import maps as maps_mod
 from . import mapsource, roofs, swatches, textbox, wilddata
@@ -60,42 +60,42 @@ class Reader:
     def parses(self, const: str) -> bool:
         return self.ctx.header(const) is not None
 
-    def connections(self, const: str) -> list[panels.Link]:
+    def connections(self, const: str) -> list[contract.Link]:
         """Prism's `connection` macro writes all four numbers down, so every
         computed column crosses filled."""
-        return [panels.Link(direction=c.direction, target=c.target,
+        return [contract.Link(direction=c.direction, target=c.target,
                             offset=c.offset, coord=c.coord, strip=c.strip)
                 for c in self.ctx.connections_by_map.get(const, [])]
 
     # -- one map ------------------------------------------------------------- #
-    def tables(self, label: str) -> panels.MapTables:
-        """Everything standing on one map. Raises :class:`panels.Unreadable`
+    def tables(self, label: str) -> contract.MapTables:
+        """Everything standing on one map. Raises :class:`contract.Unreadable`
         with the parser's own sentence when the event header doesn't fit."""
         try:
             header = eh.parse_map(self.root / f"maps/{label}.asm")
         except (eh.UnparseableHeader, FileNotFoundError) as exc:
-            raise panels.Unreadable(str(exc)) from exc
+            raise contract.Unreadable(str(exc)) from exc
         return tables(header, self._says(label))
 
-    def attributes(self, label: str, const: str) -> panels.Attributes:
+    def attributes(self, label: str, const: str) -> contract.Attributes:
         return _attributes(self.root, label, const)
 
-    def geometry(self, label: str) -> panels.Blocks:
-        """The map's shape. Raises :class:`panels.Unreadable` when the blocks
+    def geometry(self, label: str) -> contract.Blocks:
+        """The map's shape. Raises :class:`contract.Unreadable` when the blocks
         can't be read — a map with no shape at all, unlike one whose header is
         broken, has nothing left to look at."""
         try:
             bd = blocksrc.load(self.root, label)
         except blocksrc.BlockSourceError as exc:
-            raise panels.Unreadable(str(exc)) from exc
-        return panels.Blocks(
+            raise contract.Unreadable(str(exc)) from exc
+        return contract.Blocks(
             blocks=bd.blocks, height=bd.height, width=bd.width,
             swatches=swatches.for_map(self.root, bd.tileset_id, bd.permission))
 
-    def wild(self, const: str) -> dict[str, dict[str, list[panels.WildMon]]]:
+    def wild(self, const: str) -> dict[str, dict[str, list[contract.WildMon]]]:
         return _wild(self.root, const)
 
-    def roof(self, const: str) -> panels.Roof | None:
+    def roof(self, const: str) -> contract.Roof | None:
         """The roof the engine will actually load for this map's group —
         including the two ways prism's source disagrees with itself about it,
         which is :mod:`.roofs`' finding; this is only that finding crossing
@@ -104,12 +104,12 @@ class Reader:
         if d is None:
             return None
         r = roofs.for_group(self.root, d.group)
-        return panels.Roof(group=r.group, tiles=r.tiles, tile_file=r.tile_file,
+        return contract.Roof(group=r.group, tiles=r.tiles, tile_file=r.tile_file,
                            colors=r.colors, mislabelled=r.mislabelled,
                            past_end=r.past_end, entries=r.entries)
 
     # -- the words ----------------------------------------------------------- #
-    def texts(self, label: str) -> list[panels.TextRef]:
+    def texts(self, label: str) -> list[contract.TextRef]:
         """Every text block in one map, as prose you could hand to a person.
 
         The macros are deliberately not here. `dialogue.plain` shows the words;
@@ -119,13 +119,13 @@ class Reader:
         """
         sign = self.boxes["sign"]
         return [
-            panels.TextRef(label=b.label, owner=b.owner, lineno=b.lineno,
+            contract.TextRef(label=b.label, owner=b.owner, lineno=b.lineno,
                            prose=dialogue.plain(b),
                            box="sign" if b.box.name == sign.name else "speech")
             for b in dialogue.parse(self.root, self.root / f"maps/{label}.asm")
         ]
 
-    def measure(self, text: str, box: str) -> panels.TextPreview:
+    def measure(self, text: str, box: str) -> contract.TextPreview:
         """Dialogue-in-progress against the box it lands in.
 
         The same prose model the form submits: one line per screen line, a
@@ -134,14 +134,14 @@ class Reader:
         which scrolls, so a speech can be any length. What it cannot be is wide.
         """
         b = self.boxes[box]
-        return panels.TextPreview(b.name, b.cols, [
+        return contract.TextPreview(b.name, b.cols, [
             self._measured(line, b.cols)
             for line in text.replace("\r\n", "\n").split("\n")
         ])
 
-    def _measured(self, line: str, cols: int) -> panels.Measured:
+    def _measured(self, line: str, cols: int) -> contract.Measured:
         det, bnd, unb, unknown = self.ctx.textbox_metrics.tiles(self.root, line)
-        return panels.Measured(text=line, tiles=det, bounded=bnd, unbounded=unb,
+        return contract.Measured(text=line, tiles=det, bounded=bnd, unbounded=unb,
                                unknown=unknown, over=max(0, det - cols),
                                over_at_worst=max(0, det + bnd - cols))
 
@@ -150,7 +150,7 @@ class Reader:
         return textbox.boxes(self.root)
 
     # -- what a form is sketching -------------------------------------------- #
-    def sketch(self, action) -> panels.Blocks | None:
+    def sketch(self, action) -> contract.Blocks | None:
         """A picture of what an action would put on the grid, before it exists.
 
         Only the new-map action has anything to show — see `Action.sketch`.
@@ -160,7 +160,7 @@ class Reader:
         bd = action.sketch(self.root)
         if bd is None:
             return None
-        return panels.Blocks(
+        return contract.Blocks(
             blocks=bd.blocks, height=bd.height, width=bd.width,
             swatches=swatches.for_map(self.root, bd.tileset_id, bd.permission),
             label=bd.name)
@@ -190,15 +190,15 @@ class Reader:
 # the event tables                                                            #
 # --------------------------------------------------------------------------- #
 
-def tables(header: eh.EventHeader, says: dict[str, str]) -> panels.MapTables:
+def tables(header: eh.EventHeader, says: dict[str, str]) -> contract.MapTables:
     """One map's event header, carved into the six lists the tabs draw.
 
     `says` maps a text label to its first words, so an NPC's row can show what
     he actually says instead of the name of the block that says it.
     """
-    npcs: list[panels.Npc] = []
-    trainers: list[panels.Trainer] = []
-    props: list[panels.Prop] = []
+    npcs: list[contract.Npc] = []
+    trainers: list[contract.Trainer] = []
+    props: list[contract.Prop] = []
 
     for i, e in enumerate(header.object_events):
         if len(e.args) <= 9:
@@ -212,7 +212,7 @@ def tables(header: eh.EventHeader, says: dict[str, str]) -> panels.MapTables:
             # `trainer` macro, not on his person_event — which carries a `-1`
             # where every other object keeps its flag. `trainer_of` walks there.
             t = eh.trainer_of(header, e)
-            trainers.append(panels.Trainer(
+            trainers.append(contract.Trainer(
                 handle=h, index=i, y=y, x=x, sprite=e.sprite,
                 cls=t.cls if t else "", party=t.party if t else "",
                 sight=e.arg(10) if len(e.args) > 10 else "",
@@ -229,19 +229,19 @@ def tables(header: eh.EventHeader, says: dict[str, str]) -> panels.MapTables:
             else:
                 kind = e.persontype.replace("PERSONTYPE_", "").lower()
                 what = e.pointer if e.persontype != "PERSONTYPE_TMHMBALL" else e.arg(10)
-            props.append(panels.Prop(
+            props.append(contract.Prop(
                 handle=h, index=i, y=y, x=x, kind=kind, what=what or "",
                 qty=e.arg(10) if e.persontype == "PERSONTYPE_ITEMBALL" else "",
                 flag=e.event_flag, undeclared=late))
         else:
             pointer = e.pointer or ""
-            npcs.append(panels.Npc(
+            npcs.append(contract.Npc(
                 handle=h, index=i, y=y, x=x, sprite=e.sprite,
                 movement=e.movement.replace("SPRITEMOVEDATA_", ""),
                 says=says.get(pointer, pointer), flag=e.event_flag,
                 undeclared=late))
 
-    signs: list[panels.Signpost] = []
+    signs: list[contract.Signpost] = []
     for i, e in enumerate(header.bg_events):
         h = eh.Handle(eh.ListKind.BG_EVENTS, i)
         late = _late(header, eh.ListKind.BG_EVENTS, i)
@@ -256,16 +256,16 @@ def tables(header: eh.EventHeader, says: dict[str, str]) -> panels.MapTables:
                          if ln.strip().startswith("dw ")), "")
             item = next((ln.split()[-1] for ln in record
                          if ln.strip().startswith("db ")), "")
-            props.append(panels.Prop(
+            props.append(contract.Prop(
                 handle=h, index=i, y=y, x=x, kind="hidden", what=item, qty="",
                 flag=flag, undeclared=late))
         else:
-            signs.append(panels.Signpost(
+            signs.append(contract.Signpost(
                 handle=h, index=i, y=y, x=x,
                 kind=kind.replace("SIGNPOST_", ""), points_at=e.pointer or "",
                 undeclared=late))
 
-    warps = [panels.Warp(
+    warps = [contract.Warp(
                 handle=eh.Handle(eh.ListKind.WARPS, i), index=i,
                 y=e.coords[0], x=e.coords[1],
                 # warp_def y, x, id, map — `id` indexes the destination's list.
@@ -274,14 +274,14 @@ def tables(header: eh.EventHeader, says: dict[str, str]) -> panels.MapTables:
                 undeclared=_late(header, eh.ListKind.WARPS, i))
              for i, e in enumerate(header.warps)]
 
-    triggers = [panels.Trigger(
+    triggers = [contract.Trigger(
                     handle=eh.Handle(eh.ListKind.COORD_EVENTS, i), index=i,
                     y=e.coords[0], x=e.coords[1], scene=e.arg(0),
                     runs=e.pointer or "",
                     undeclared=_late(header, eh.ListKind.COORD_EVENTS, i))
                 for i, e in enumerate(header.coord_events)]
 
-    return panels.MapTables(npcs=npcs, trainers=trainers, props=props,
+    return contract.MapTables(npcs=npcs, trainers=trainers, props=props,
                             signposts=signs, warps=warps, triggers=triggers,
                             marks=eh.markers(header))
 
@@ -317,7 +317,7 @@ def _def(root: Path, const: str) -> maps_mod.MapDef | None:
     return next((d for d in maps_mod.parse_maps(dims) if d.name == const), None)
 
 
-def _attributes(root: Path, label: str, const: str) -> panels.Attributes:
+def _attributes(root: Path, label: str, const: str) -> contract.Attributes:
     """A map's header, reassembled out of the five files that hold a piece of it.
 
     Every lookup here can come back empty, and none of them is fatal: a map
@@ -328,7 +328,7 @@ def _attributes(root: Path, label: str, const: str) -> panels.Attributes:
     p = mapsource.primary_header(root, label)
     s = mapsource.secondary_header(root, label)
 
-    return panels.Attributes(
+    return contract.Attributes(
         label=label, const=const,
         group=d.group if d else 0, map_id=d.map_id if d else 0,
         height=d.height if d else 0, width=d.width if d else 0,
@@ -380,7 +380,7 @@ def _HEADER_2(label: str) -> re.Pattern[str]:
     return re.compile(rf"^\s*map_header_2\s+{re.escape(label)}\s*,")
 
 
-def _wild(root: Path, const: str) -> dict[str, dict[str, list[panels.WildMon]]]:
+def _wild(root: Path, const: str) -> dict[str, dict[str, list[contract.WildMon]]]:
     """The map's encounters, in the seam's words. A map with none is the common
     case, not an error — most maps are indoors.
 
@@ -388,7 +388,7 @@ def _wild(root: Path, const: str) -> dict[str, dict[str, list[panels.WildMon]]]:
     constant, `""` — the form column exists for the hacks whose mon is
     `(species, form)`, and an adapter without forms never has to say so.
     """
-    found: dict[str, dict[str, list[panels.WildMon]]] = {}
+    found: dict[str, dict[str, list[contract.WildMon]]] = {}
     for kind in (wilddata.GRASS, wilddata.WATER):
         try:
             table = wilddata.table_for(root, const, kind)
@@ -396,7 +396,7 @@ def _wild(root: Path, const: str) -> dict[str, dict[str, list[panels.WildMon]]]:
             continue
         for block in table.blocks:
             if block.map_const == const:
-                found[kind] = {time: [panels.WildMon(e.level, e.species)
+                found[kind] = {time: [contract.WildMon(e.level, e.species)
                                       for e in mons]
                                for time, mons in block.mons.items()}
     return found
