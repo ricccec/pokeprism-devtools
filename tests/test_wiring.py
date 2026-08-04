@@ -29,6 +29,7 @@ from pokeprism_devtools.hacks.prism import write as PW  # noqa: E402
 from pokeprism_devtools.shared.edits import apply_edits  # noqa: E402
 from pokeprism_devtools.hacks.prism import connections as C, objedit as O  # noqa: E402
 from pokeprism_devtools.wiring import mapresize as MR  # noqa: E402
+from pokeprism_devtools.contract import ActionError  # noqa: E402
 from pokeprism_devtools.hacks.prism.resize import DIALECT as PRISM_RESIZE  # noqa: E402
 from pokeprism_devtools.hacks.prism import removal as R  # noqa: E402
 from pokeprism_devtools.wiring import warpdel as WD  # noqa: E402
@@ -415,6 +416,95 @@ def test_resize(tmp: Path) -> None:
           (root / "maps/Grove.asm").read_text() == before_map)
     check("so is the dimension line", (root / PRISM_RESIZE.shape.path).read_text() == before_dims)
     check("and the blocks", (root / "maps/blk/Grove.ablk").read_bytes() == before_blk)
+
+
+def test_the_resize_form(tmp: Path) -> None:
+    """The fifteen lines between prism's `s` key and `mapresize.resize`.
+
+    `test_resize` above covers the mechanism; nothing covered the form on top of
+    it, which is the half that turns four strings off a widget into that call.
+    Every check below is one line of it, because each of those lines has a
+    default or a conversion in it and a wrong one is invisible: `blocks` blank
+    means one and not zero, an empty `fill` means *the border block* and not a
+    block named empty string, and a missing edge is a question rather than a
+    guess.
+
+    Reached the way the studio reaches it — `writes.form("resize")` — so what is
+    pinned is the class the adapter *offers*, not a class this test picked.
+    `ctx` is `None` because `form` does not read one; the studio hands it a real
+    `LintContext`, and needing one here would be the finding.
+    """
+    # Its own directory: `test_resize` above already built a `resize_template`
+    # under `tmp`, and `_resize_fixture` mkdirs rather than reusing.
+    base = tmp / "form"
+    base.mkdir()
+    template = _resize_fixture(base)
+    made = [0]
+
+    def fresh() -> Path:
+        made[0] += 1
+        dest = base / f"resizeform_{made[0]}"
+        shutil.copytree(template, dest)
+        return dest
+
+    form = PW.Writer(tmp, None).form("resize")
+    check("the write adapter offers a resize form", form is not None)
+
+    print("\nthe resize form asks the same thing the mechanism does")
+    root = fresh()
+    direct = MR.resize(root, "GROVE", "bottom", "grow", 2, None, dialect=PRISM_RESIZE)
+    result = form("GROVE", edge="bottom", mode="grow", blocks="2", fill="").run(root)
+    check("the same files change",
+          [e.path for e in result.edits] == [e.path for e in direct.changes],
+          str([e.path for e in result.edits]))
+    check("with the same bytes",
+          [e.data for e in result.edits] == [e.data for e in direct.changes])
+    check("and it says what it did", result.summary == direct.summary,
+          f"{result.summary!r} vs {direct.summary!r}")
+
+    print("\nthe blanks mean what the fields promise")
+    root = fresh()
+    # No mode, no count: the field defaults say "grow" and 1, and a form the user
+    # tabbed straight past must land on those rather than on Python's falsy zero.
+    lazy = form("GROVE", edge="bottom").run(root)
+    one = MR.resize(root, "GROVE", "bottom", "grow", 1, None, dialect=PRISM_RESIZE)
+    check("blank mode grows", [e.data for e in lazy.edits] == [e.data for e in one.changes])
+    blk = next(e for e in lazy.edits if e.path.endswith("Grove.ablk"))
+    check("blank count is one block, not none", len(blk.data) == 25, str(len(blk.data)))
+
+    # An empty fill is the *border* block — `or None` in the form. Passing "" to
+    # the mechanism instead would be a block whose name is the empty string.
+    root = fresh()
+    filled = form("GROVE", edge="bottom", blocks="1", fill="").run(root)
+    border = MR.resize(root, "GROVE", "bottom", "grow", 1, None, dialect=PRISM_RESIZE)
+    check("blank fill is the border block",
+          [e.data for e in filled.edits] == [e.data for e in border.changes])
+
+    print("\nand it refuses in the form's own words")
+    # The form's own words, matched exactly — not merely "an error mentioning
+    # the edge". Drop the guard and `mapresize` refuses the empty edge itself
+    # with "edge must be one of ...", which the form dutifully wraps in an
+    # `ActionError`; a check for the *substring* passes on that and says nothing.
+    # Measured, on the seeded mutation.
+    try:
+        form("GROVE", mode="grow", blocks="1").run(fresh())
+        check("a missing edge is refused by the form", False, "it ran anyway")
+    except ActionError as exc:
+        check("a missing edge is refused by the form", str(exc) == "pick an edge",
+              str(exc))
+
+    # The mechanism's refusals have to arrive as the form's kind of error, or the
+    # studio shows a crash where it should show a sentence.
+    try:
+        form("ALIAS_A", edge="top", mode="grow", blocks="1").run(fresh())
+        check("a shared .ablk is refused as a form error", False, "it ran anyway")
+    except ActionError as exc:
+        check("a shared .ablk is refused as a form error", "AliasB" in str(exc), str(exc))
+
+    print("\nit describes the edit before it makes it")
+    said = form("GROVE", edge="top", mode="shrink", blocks="3").describe()
+    check("the description carries mode, map, edge and count",
+          all(w in said for w in ("shrink", "GROVE", "top", "3")), said)
 
 
 # --------------------------------------------------------------------------- #
@@ -820,6 +910,7 @@ def main() -> int:
         test_connect(root)
         test_paired_warp(root)
         test_resize(tmp)
+        test_the_resize_form(tmp)
         test_real_repo(tmp)
 
     print()
