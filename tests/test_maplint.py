@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools import maplint  # noqa: E402
 from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
-from pokeprism_devtools.maplint.diagnostics import Severity  # noqa: E402
+from pokeprism_devtools.contract import Severity  # noqa: E402
 
 _failures = 0
 

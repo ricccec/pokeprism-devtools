@@ -31,7 +31,6 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:  # annotations are lazy, so a probe pays for no studio import
     from collections.abc import Callable, Mapping
 
-    from ..maplint.diagnostics import Diagnostic
     from .. import contract
 
 
@@ -160,11 +159,11 @@ class Lints(Protocol):
     this; a family context that knows only text satisfies it just as well, and
     the session cannot tell them apart."""
 
-    def lint(self) -> list[Diagnostic]:
+    def lint(self) -> list[contract.Diagnostic]:
         """Every finding in the repo, suppressions applied — the whole rule set
         this context carries, run against the tree it describes."""
 
-    def mentions(self, d: Diagnostic, only: str) -> bool:
+    def mentions(self, d: contract.Diagnostic, only: str) -> bool:
         """Whether a finding is 'about' one map: in its file, or naming it from a
         shared file (connections live in one, not in the map)."""
 

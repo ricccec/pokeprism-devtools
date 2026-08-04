@@ -33,9 +33,10 @@ import json
 import sys
 from pathlib import Path
 
+from ..contract import Diagnostic, Severity
 from ..shared.devtools import make_devtools_dir
 from ..shared.paths import RepoNotFound, repo_root
-from .diagnostics import Diagnostic, Severity, apply_suppressions
+from .suppressions import apply_suppressions
 
 BASELINE = ".devtools/maplint-baseline.json"
 
@@ -48,7 +49,7 @@ def all_rules() -> tuple:
     """Every prism rule, gathered on demand.
 
     Imported here rather than at module top so that reaching this package for the
-    *finding channel alone* — `maplint.diagnostics`, `maplint.textfit`, both
+    *finding channel alone* — `maplint.suppressions`, `maplint.textfit`, both
     stdlib-only — does not drag in the rules, and through them all of
     `hacks.prism`. A family linter builds on that channel and must be able to
     import it without loading the tree it is not written against.

@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ....maplint import textfit
-from ....maplint.diagnostics import Diagnostic, Severity
+from ....contract import Diagnostic, Severity
 from .. import charmap
 
 if TYPE_CHECKING:

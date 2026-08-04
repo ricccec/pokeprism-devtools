@@ -25,13 +25,14 @@ from __future__ import annotations
 
 from .attributes import Attributes, Link, Roof
 from .blocks import Blocks, Rgb, Sketch, Swatch
+from .diagnostic import Diagnostic, Severity
 from .dialogue import Measured, TextPreview, TextRef
 from .events import MapTables, Npc, Prop, Signpost, Trainer, Trigger, Warp
 from .reads import Unreadable
 from .ref import ADD, Ref, add_ref
 from .wild import WildMon
 
-__all__ = ["ADD", "Attributes", "Blocks", "Link", "MapTables", "Measured", "Npc",
-           "Prop", "Ref", "Rgb", "Roof", "Signpost", "Sketch", "Swatch",
-           "TextPreview", "TextRef", "Trainer", "Trigger", "Unreadable", "Warp",
-           "WildMon", "add_ref"]
+__all__ = ["ADD", "Attributes", "Blocks", "Diagnostic", "Link", "MapTables",
+           "Measured", "Npc", "Prop", "Ref", "Rgb", "Roof", "Severity",
+           "Signpost", "Sketch", "Swatch", "TextPreview", "TextRef", "Trainer",
+           "Trigger", "Unreadable", "Warp", "WildMon", "add_ref"]

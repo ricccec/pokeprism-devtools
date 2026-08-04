@@ -38,7 +38,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from ..maplint.diagnostics import Diagnostic, Severity
+from ..contract import Diagnostic, Severity
 from ..hacks.mount import mount
 from ..hacks.seam import PlayError, Refused
 from ..shared import caches, world

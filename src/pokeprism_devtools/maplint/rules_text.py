@@ -18,7 +18,7 @@ from __future__ import annotations
 from ..hacks.prism import charmap, dialogue, textbox
 from . import textfit
 from .context import LintContext
-from .diagnostics import Diagnostic, Severity
+from ..contract import Diagnostic, Severity
 
 
 def text_width(ctx: LintContext) -> list[Diagnostic]:

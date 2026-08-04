@@ -10,7 +10,7 @@ import re
 
 from ..hacks.prism import mapsource, trainercite, trainerparty, wilddata
 from .context import LintContext
-from .diagnostics import Diagnostic, Severity
+from ..contract import Diagnostic, Severity
 
 _TRAINER_RE = re.compile(r"^\s*trainer\s+(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,")
 _WILDMAP_RE = re.compile(r"^\s*wildmap\s+(\w+)")

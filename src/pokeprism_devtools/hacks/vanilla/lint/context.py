@@ -20,7 +20,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from ....maplint.diagnostics import Diagnostic, apply_suppressions
+from ....contract import Diagnostic
+from ....maplint.suppressions import apply_suppressions
 from .. import box
 from ..box import Box
 from ..metrics import Metrics, engine_is_readable
