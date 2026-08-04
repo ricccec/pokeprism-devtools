@@ -40,7 +40,7 @@ from . import blocksrc, consts, maps as maps_mod, mapsource
 from ...shared.overworld.blockdata import BlockData
 from ...shared.edits import Edit
 from .mapspec import MapSpec
-from ...studio.actions import (BLOCKS, FISHGROUPS, GROUPS, LANDMARKS, MUSIC, PERMISSIONS,
+from ...contract import (BLOCKS, FISHGROUPS, GROUPS, LANDMARKS, MUSIC, PERMISSIONS,
                       TILESETS, TIMES, Action, ActionError, Field, Result)
 
 #: The `permission` a map_header takes — its third argument, and a bare `const`

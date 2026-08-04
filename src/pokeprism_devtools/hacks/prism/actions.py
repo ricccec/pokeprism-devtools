@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...studio.actions import (DIRECTIONS, MAPS, Action, ActionError, Field,
+from ...contract import (DIRECTIONS, MAPS, Action, ActionError, Field,
                                Result)
 from . import connections, warps
 
