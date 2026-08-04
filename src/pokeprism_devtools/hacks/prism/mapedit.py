@@ -27,7 +27,7 @@ the music dropdown.
 `constants/map_dimension_constants.asm` is where they live, and changing them
 without resizing the `.blk` behind them — and, at the top or left, every
 object's coordinates — corrupts the map. That is a real operation, with its own
-refusals, and it lives in `wiring/mapresize.py` rather than as a field on this
+refusals, and it lives in `asmedit/mapresize.py` rather than as a field on this
 form.
 
 *conn_flags* is read-only because it is not a fact about the map — it is a summary
@@ -41,8 +41,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import mapsource
-from ...wiring.editvocab import Change, EditError, same
-from ...wiring.macroline import splice_macro_args
+from ...asmedit.editvocab import Change, EditError, same
+from ...asmedit.macroline import splice_macro_args
 
 PRIMARY = "maps/map_headers.asm"
 SECONDARY = "maps/second_map_headers.asm"

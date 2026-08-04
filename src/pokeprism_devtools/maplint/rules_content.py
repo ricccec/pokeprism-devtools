@@ -197,7 +197,7 @@ def trainer_orphan(ctx: LintContext) -> list[Diagnostic]:
     Not a defect: the bytes ship and the game is fine. But it is the one party
     that would be *safe* to delete, and it is worth knowing about, because the
     tools deliberately leave it behind (removing a trainer can't delete its party
-    without renumbering every party below it — see wiring/removal.py).
+    without renumbering every party below it — see hacks/prism/removal.py).
 
     Being sure a party is dead means finding every way it could be reached, and
     there are three: the `trainer` macro, the `loadtrainer` script command, and

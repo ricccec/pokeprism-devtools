@@ -3,7 +3,7 @@
 This is the write half of the adapter whose read half is :mod:`.read` — the
 object `hacks.mount` hands `Session` as ``Hack.writes``. The machinery it
 fronts already existed and belongs on the prism side of every argument
-(`wiring/`, and its sibling `.content` / `.edits` / `.offers` / `.prefill` /
+(`asmedit/`, and its sibling `.content` / `.edits` / `.offers` / `.prefill` /
 `.newmap` — each one full of prism macros and prism constants, and moved here
 out of `studio/` where they only ever read as a seam violation); what this
 module adds is the *door*: one
@@ -32,8 +32,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...wiring import warpdel
-from ...wiring.warpdel import DeadDoor, WarpGrammar, WarpMacro
+from ...asmedit import warpdel
+from ...asmedit.warpdel import DeadDoor, WarpGrammar, WarpMacro
 from ...contract import Refused
 from . import eventheader, mapsource, spritepack, trainerstats
 
@@ -46,7 +46,7 @@ from . import eventheader, mapsource, spritepack, trainerstats
 #: "group 0, map 0, nowhere". It is not: `CopyWarpData` (home/map.asm:172) sees
 #: the -1 and takes the warp, the group *and* the map from `wBackupWarpNumber`,
 #: so those two zeroes are never read. A dead door lands on stale state rather
-#: than nowhere — see :class:`~...wiring.warpdel.DeadDoor`. The spelling is kept
+#: than nowhere — see :class:`~...asmedit.warpdel.DeadDoor`. The spelling is kept
 #: because it is what prism ships and what its maps already contain; the
 #: family's `warp_event x, y, NONE, -1` assembles to the very same bytes.
 WARPS = WarpGrammar(
@@ -60,7 +60,7 @@ def delete_warp(root: Path, map_const: str, index: int) -> warpdel.Deletion:
     """Take warp #(index+1) out of `map_const`, and fix the whole repo behind it.
 
     The half that is prism's — find the map file, parse its event header, count
-    its warps, splice the entry out — and then :mod:`..wiring.warpdel` with
+    its warps, splice the entry out — and then :mod:`..asmedit.warpdel` with
     prism's :data:`WARPS` grammar for the half that is every tree's. The family
     adapter has the mirror of this function over its own parser, which is the
     whole point of the grammar being data.

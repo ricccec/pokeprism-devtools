@@ -1,4 +1,4 @@
-"""How prism answers a resize — the tree-specific half of `wiring/mapresize.py`.
+"""How prism answers a resize — the tree-specific half of `asmedit/mapresize.py`.
 
 Nothing here is arithmetic. Every method is one prism fact: where the dimension
 line lives and in which order it writes its two numbers, which file holds the
@@ -12,18 +12,18 @@ from pathlib import Path
 
 from ...shared.edits import Edit
 from ...contract import Action, ActionError, Field, Result
-from ...wiring import mapresize
-from ...wiring.mapresize import MapShape, Standing
+from ...asmedit import mapresize
+from ...asmedit.mapresize import MapShape, Standing
 from .objedit import MapEdit, S_X, S_Y, T_X, T_Y, W_X, W_Y, X, Y
-from ...wiring.editvocab import EditError, spliced
+from ...asmedit.editvocab import EditError, spliced
 from . import blocksrc, eventheader as eh, mapsource
 
-#: `mapgroup NAME, H, W` — height first. See `wiring/mapresize`'s docstring for
+#: `mapgroup NAME, H, W` — height first. See `asmedit/mapresize`'s docstring for
 #: why that one bit is worth a named field.
 SHAPE = MapShape(path="constants/map_dimension_constants.asm",
                  macro="mapgroup", height_first=True)
 
-#: Where y/x sit in each list's entry, per `wiring/objedit.py`'s own constants —
+#: Where y/x sit in each list's entry, per `hacks/prism/objedit.py`'s own constants —
 #: the same ones `edit_npc`/`edit_signpost`/`edit_trigger` already splice.
 _MOVES: dict[eh.ListKind, tuple[int, int]] = {
     eh.ListKind.WARPS: (W_Y, W_X),

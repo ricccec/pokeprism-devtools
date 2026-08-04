@@ -40,7 +40,7 @@ from ...contract import (FISHGROUPS, LANDMARKS, MAPS, MUSIC, PERMISSIONS, TILESE
 from .content import (BOULDER, HIDDEN, ITEMBALL, ROCK, TMHM, TREE, AddNpc,
                       AddProp, AddSignpost, AddTrainer, _Placed)
 
-#: Everything the wiring layer raises when it refuses. All of it already reads
+#: Everything the asm editors raise when they refuse. All of it already reads
 #: like a sentence meant for a person — `removal`, `scaffold` and `objedit` are
 #: careful about that — so the studio's job is to put it on the form, not to
 #: reword it. Named rather than caught as `Exception`, because a TypeError in here

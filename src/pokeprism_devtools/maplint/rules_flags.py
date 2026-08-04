@@ -55,7 +55,7 @@ def flag_unused(ctx: LintContext) -> list[Diagnostic]:
     than not it is the residue of content that was deleted while its flag was
     left behind. `prism-maplint` cannot free it for you: flag values are
     save-file bit positions, so it must be rewritten to `const skip` rather than
-    removed (see wiring/removal.py).
+    removed (see hacks/prism/removal.py).
     """
     out = []
     for flag in ctx.flags.flags:

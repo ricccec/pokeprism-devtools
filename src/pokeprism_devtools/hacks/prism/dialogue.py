@@ -133,7 +133,7 @@ def parse_source(root: Path, source: list[str]) -> list[Block]:
     For a caller who is partway through changing the map and needs to find a
     block in the file as it *will* be — editing an object rewrites its line and
     rewords what it says, and both land in one file, so both have to be spliced
-    into one buffer before any of it is written. See `wiring/objedit.py`.
+    into one buffer before any of it is written. See `hacks/prism/objedit.py`.
     """
     mt = textbox.metrics(root)
     bx = textbox.boxes(root)
