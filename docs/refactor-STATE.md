@@ -207,12 +207,17 @@ numbers** — they are cross-referenced from four documents.
   4 → 0 bare verbs, 2 → 0 depth-4 bodies, 1 → 0 duplicated thresholds. Two items
   are recorded rather than fixed, both named in the STATE.
 
-## Phase 2 · the keystone, `Hack` and its vocabulary — not started
+## Phase 2 · the keystone, `Hack` and its vocabulary — in progress
 
-**Plan:** `refactor-phase-2-PLAN.md` · **Findings:** none yet
+**Plan:** `refactor-phase-2-PLAN.md` · **Findings:** `refactor-phase-2-STATE.md`
 
-Carries one decision already made: **B ships separately** (Phase −1). The naming
-census's Tier 1 is the file list it acts on.
+Carries one decision already made: **B ships separately** (Phase −1). The folder is
+**`contract/`** — decided, not still open.
+
+- **`panels.py` was half the cycle and half of it is not contract** —
+  `studio/actions.py` is imported by 20 adapter modules to `panels`'s 11, and 22
+  of `panels.py`'s 44 names are the IDE's table builders, which no adapter has
+  ever touched.
 
 ## Phase 3 · split the remaining products — not started
 

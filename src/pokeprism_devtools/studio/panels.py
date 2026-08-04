@@ -3,106 +3,40 @@
 Pure functions: each returns `(columns, rows)`, so the contents of every tab can
 be tested without starting a terminal and the widgets stay dumb. Nothing here
 opens a file — and nothing here parses one either. Each tab's input is a
-**declared record** (:class:`Npc`, :class:`Warp`, :class:`WildMon`, …), the
-`Attributes` pattern throughout: this side declares the vocabulary, the reading
-side — an adapter, `hacks/prism/read` today — fills it in from whatever its
-grammar happens to be. Which entry is an NPC and which is an item ball is a
-reading of one hack's macros, so the *classification* lives with the adapter
-too; this side renders six lists it is handed and never learns what a
+**declared record** (:class:`~..contract.Npc`, :class:`~..contract.Warp`,
+:class:`~..contract.WildMon`, …) out of the contract package: that side declares
+the vocabulary, an adapter fills it in from whatever its grammar happens to be,
+and this side renders six lists it is handed and never learns what a
 `person_event` is.
 
-The six lists are still a *person's* carve-up of a map, not any engine's, and
-the carve-up itself is this side's to declare: things that talk (NPCs), things
-that battle (Trainers), things lying about on the floor (Objects — item balls,
-rocks, and the hidden items the engine files under signs), things you read
-(Signposts), places you leave from (Warps), and tiles that fire (Triggers).
-An adapter's job is to pour its own lists into those six, however its engine
-happens to shelve them.
+The carve-up into six is the contract's, not any engine's; what is decided *here*
+is only how each of them is drawn — which columns, in what order, and what a cell
+says when the record has nothing to put in it.
 
 Every coordinate shown is the number **written in the source**, because that is
 the number you would type to change it. Offsets a macro adds while assembling
-belong to the assembled bytes and appear nowhere in this file — and a hack that
-writes (x, y) has already been turned around by its adapter, the way
-`shared.coords.Tile` says.
+belong to the assembled bytes and appear nowhere in this file.
+
+The contract names are re-exported below so that `panels.Npc` keeps working while
+Phase 2 moves callers over; the shim goes with the next commit.
 """
 
 from __future__ import annotations
 
-from collections.abc import Hashable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
+from ..contract import (ADD, Attributes, Blocks, Link, MapTables, Measured, Npc,
+                        Prop, Ref, Rgb, Roof, Signpost, Sketch, Swatch,
+                        TextPreview, TextRef, Trainer, Trigger, Unreadable,
+                        Warp, WildMon, add_ref)  # noqa: F401
 from ..shared.coords import Tile
 
 _NONE = "—"
 
 
-class Unreadable(RuntimeError):
-    """An adapter's answer when a map's source cannot be read into records —
-    the event block doesn't fit its shape, the blocks file is missing. The
-    message is the interesting part: it is what the view shows in place of the
-    tables, so it should name the file and the way it disappointed."""
-
-
 # --------------------------------------------------------------------------- #
 # what a row is                                                               #
 # --------------------------------------------------------------------------- #
-
-#: The `what` of the Ref an "Add new…" row carries. Minted by :func:`add_ref`,
-#: recognised by the session's adders — the view only ever sees it as a truthy
-#: :attr:`Ref.adds`.
-ADD = "add"
-
-
-@dataclass(frozen=True)
-class Ref:
-    """What `e` and `d` act on: enough to name one thing on one map.
-
-    **Opaque to the view.** `tabs.py` reads a Ref off the highlighted row and
-    hands it straight back to the session, which is the only side of the seam
-    allowed to know a `person_event` from a `signpost`. The view's whole share
-    of the knowledge is the three declared affordances — "this row names
-    something" (the Ref exists at all), :attr:`adds`, :attr:`deletable` — plus
-    equality, for finding the row that carries a Ref again. The *fields* are the
-    port's own, and no view code may read them.
-
-    Identity itself is not even the port's: it is the adapter's **handle**,
-    carried whole and resolved by handing it back. Prism's is a list kind and a
-    position, because that is all its source can say about an object; vanilla's
-    carries the `object_const_def` name its scripts address the object by. The
-    port stores whatever it was given and does no arithmetic on it — all it
-    needs of a handle is equality, for finding the row that carries it again.
-    A prop's handle can name either engine list — a hidden item is filed with
-    the signs — which is exactly why the list is in the handle and not implied
-    by `what`.
-    """
-    #: npc | trainer | prop | signpost | warp | trigger | connection | map
-    what: str
-    #: The adapter's name for the entry, when this row is one. None for the rows
-    #: that are not event entries: the map itself, a connection, "Add new…".
-    handle: Hashable | None = None
-    #: A connection's direction, or the kind an "Add new…" row offers.
-    key: str = ""
-
-    # -- the view-facing surface -------------------------------------------- #
-    @property
-    def adds(self) -> str:
-        """The kind of thing this row would add — the word the tab declared in
-        `Tab.adds` — or "" for a row that names something that already exists."""
-        return self.key if self.what == ADD else ""
-
-    @property
-    def deletable(self) -> bool:
-        """Whether `d` exists on this row. The map's own rows say no — deleting
-        a whole map is not something the studio does — and so does an "Add
-        new…" row, which names nothing yet."""
-        return self.what not in (ADD, "map")
-
-
-def add_ref(kind: str) -> Ref:
-    """The Ref an "Add new…" row carries. Minted here, on the port side, so the
-    view never assembles a Ref of its own — it draws the dim row because
-    `Tab.adds` told it to, and hands back what it was given."""
-    return Ref(ADD, key=kind)
 
 
 @dataclass(frozen=True)
@@ -162,181 +96,6 @@ ROOF_IS_READ_ONLY = (
 #: renders — prism's `db N` is the outlier; the `def_*` macros self-count, so a
 #: vanilla or polished row simply never carries it.
 UNDECLARED = "⚠"
-
-
-# --------------------------------------------------------------------------- #
-# what crosses the seam: one record per kind of thing on a map                #
-# --------------------------------------------------------------------------- #
-#
-# Filled by the adapter, rendered here. Shared conventions:
-#
-#   handle       the adapter's name for the entry, carried into the row's Ref
-#   index        the entry's position in the engine list it came from — the
-#                number scripts address it by where scripts do that — not its
-#                position on the tab, which cuts three tabs out of one list
-#   y, x         the numbers written in the source, or None where the source
-#                writes an expression; the row still exists, the grid just
-#                can't point at it
-#   undeclared   in the file but past a count byte the engine trusts — see
-#                :data:`UNDECLARED`
-#
-# Display strings (sprite, movement, kind, …) arrive display-ready: the adapter
-# knows its own prefixes (`SPRITEMOVEDATA_`, `SIGNPOST_`, `BGEVENT_`) and strips
-# them before crossing; "" means "nothing to say" and renders as a dash.
-
-@dataclass(frozen=True)
-class Npc:
-    handle: Hashable
-    index: int
-    y: int | None
-    x: int | None
-    sprite: str
-    movement: str
-    says: str            # what they say, or the label that says it — resolved
-    flag: str
-    undeclared: bool = False
-
-
-@dataclass(frozen=True)
-class Trainer:
-    handle: Hashable
-    index: int
-    y: int | None
-    x: int | None
-    sprite: str
-    cls: str             # trainer class
-    party: str           # prism's 1-based ordinal; a name where hacks name them
-    sight: str
-    flag: str            # the flag that remembers you beat them
-    undeclared: bool = False
-
-
-@dataclass(frozen=True)
-class Prop:
-    """Something lying about: an item ball, a fruit tree, a rock, a hidden item."""
-    handle: Hashable
-    index: int
-    y: int | None
-    x: int | None
-    kind: str            # "itemball", "hidden", "rock", …: the adapter's word
-    what: str            # the item, the tree id, the std script
-    qty: str             # "" for the kinds where a count would be meaningless
-    flag: str
-    undeclared: bool = False
-
-
-@dataclass(frozen=True)
-class Signpost:
-    handle: Hashable
-    index: int
-    y: int | None
-    x: int | None
-    kind: str
-    points_at: str
-    undeclared: bool = False
-
-
-@dataclass(frozen=True)
-class Warp:
-    handle: Hashable
-    index: int
-    y: int | None
-    x: int | None
-    to_map: str
-    their_warp: str      # index into the *destination's* warp list, 1-based
-    undeclared: bool = False
-
-
-@dataclass(frozen=True)
-class Trigger:
-    handle: Hashable
-    index: int
-    y: int | None
-    x: int | None
-    scene: str
-    runs: str
-    undeclared: bool = False
-
-
-@dataclass(frozen=True)
-class MapTables:
-    """Everything standing on one map, already carved into the six lists the
-    tabs draw. The adapter's whole answer about a map's events — plus `marks`,
-    the same objects again as glyphs for the grid, so the two pictures come
-    from one enumeration and cannot disagree."""
-    npcs: list[Npc]
-    trainers: list[Trainer]
-    props: list[Prop]
-    signposts: list[Signpost]
-    warps: list[Warp]
-    triggers: list[Trigger]
-    marks: dict[Tile, str] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class Link:
-    """One edge connection, in the seam's words. Prism writes all four numbers
-    in its `connection` macro; the modern `def_*` dialect declares only the
-    offset and computes the rest at assembly — so the computed columns are
-    None there, and appear only when some row fills them."""
-    direction: str
-    target: str
-    offset: int
-    coord: int | None = None
-    strip: int | None = None
-
-    @property
-    def delta(self) -> int | None:
-        """The alignment between the two maps' coordinate systems. The map on
-        the other side must carry exactly its negation, or the seam tears."""
-        return None if self.coord is None else self.coord - self.offset
-
-
-Rgb = tuple[int, int, int]
-
-#: A block's four quadrant colors, in reading order. Not an arbitrary carve-up:
-#: a block is 2×2 coordinate tiles, so one swatch quadrant is exactly one place
-#: you can stand, and the grid's cursor lands on a quadrant. How an adapter
-#: arrives at the four colors is its own affair — prism averages real pixels,
-#: an adapter without decoded graphics may answer from palettes alone.
-Swatch = tuple[Rgb, Rgb, Rgb, Rgb]
-
-
-@dataclass(frozen=True)
-class Blocks:
-    """A map's shape as the adapter read it: the block bytes, the size in
-    blocks, and one swatch per block id the bytes index into."""
-    blocks: bytes
-    height: int
-    width: int
-    swatches: tuple[Swatch, ...]
-    #: A name for shapes that aren't a wired map yet — a sketch of a map being
-    #: made carries the name typed into the form. "" for an existing map, whose
-    #: caller already knows what it asked for.
-    label: str = ""
-
-
-@dataclass(frozen=True)
-class Sketch:
-    """A grid a form drew, before the tree has put colour on it.
-
-    The counterpart to :class:`Blocks`, and it exists for one reason: the
-    family's new-map form is *neutral studio code* while the colours are not.
-    A grid file is bytes anywhere, but a tileset name means something only to
-    the tree that defines the constant — so the form answers with the grid and
-    the name it was given, and each family reader turns that into `Blocks` with
-    its own swatches. Prism needs no such record: its action and its reader are
-    the same adapter, so it hands itself its own (see `Action.sketch`).
-    """
-    blocks: bytes
-    height: int
-    width: int
-    #: The tileset constant as typed — `TILESET_JOHTO`. Empty when the tree's
-    #: header takes no tileset at all, which is drawn uncoloured rather than
-    #: refused: the shape is the half of the picture that catches a wrong
-    #: height, and it is still worth seeing without the hue.
-    tileset: str = ""
-    label: str = ""
 
 
 def _yx(r) -> tuple[str, str]:
@@ -478,29 +237,6 @@ def connections(links: list[Link]) -> Table:
 # the read-only tabs                                                          #
 # --------------------------------------------------------------------------- #
 
-@dataclass(frozen=True)
-class Attributes:
-    """A map's header, as it is written down. Assembled by the session, which is
-    the side that knows which five files these eight facts are spread across."""
-    label: str
-    const: str
-    group: int
-    map_id: int
-    height: int
-    width: int
-    tileset: str = _NONE
-    permission: str = _NONE
-    landmark: str = _NONE
-    music: str = _NONE
-    palette: str = _NONE
-    fishgroup: str = _NONE
-    phone: str = "0"
-    border_block: str = _NONE
-    blk: str = _NONE
-    #: section name -> the bank it is pinned to in contents/romx.link, or "" for
-    #: a section that floats. Three of them: blockdata, script, secondary.
-    banks: dict[str, str] = field(default_factory=dict)
-
 
 def attributes(attrs: Attributes) -> Table:
     """The map itself, as a field/value table. Every row carries the same Ref, so
@@ -525,30 +261,6 @@ def attributes(attrs: Attributes) -> Table:
               for name, bank in attrs.banks.items()]
     return ["field", "value"], [Row([k, v], ref) for k, v in pairs]
 
-
-@dataclass(frozen=True)
-class Roof:
-    """The roof a map group loads, in the seam's words — including the two ways
-    a source can disagree with itself about it, which are facts about the tree
-    and so cross as data, not as prose only one adapter could write."""
-    group: int
-    #: Index into the roof-tiles table, or None when the group has no roof.
-    tiles: int | None = None
-    #: The tiles file that index names, if it exists. None for an index with no
-    #: file behind it — itself worth knowing: the engine will copy whatever
-    #: bytes follow the last roof.
-    tile_file: str | None = None
-    #: morn/day ×2, then nite ×2, as `#rrggbb`.
-    colors: tuple[str, str, str, str] | None = None
-    #: What the source's comment *says* this byte belongs to, when that is not
-    #: this group. Prism's roofs.asm disagrees with its own engine on every row.
-    mislabelled: int | None = None
-    #: The group is past the end of the roof table — which is not "no roof":
-    #: the engine indexes the table unconditionally and reads whatever
-    #: assembles next as a roof index.
-    past_end: bool = False
-    #: How many entries the table actually has, for saying how far past.
-    entries: int = 0
 
 
 def roof(r: Roof) -> Table:
@@ -588,77 +300,6 @@ def roof(r: Roof) -> Table:
                         f"(LoadMapGroupRoof indexes by wMapGroup, no offset)."]))
     return cols, rows
 
-
-@dataclass(frozen=True)
-class WildMon:
-    """One encounter slot, in the seam's words.
-
-    `form` is the axis polished adds: a mon there is `(species, form)`, with the
-    ninth species bit living in the form byte. The hacks whose mon is a scalar —
-    prism is one — fill it with the constant ``""``, and the column below only
-    exists when some row doesn't. That is the whole negotiation: an adapter that
-    has no forms never says so, it just has nothing to show.
-    """
-    level: int
-    species: str
-    form: str = ""
-
-
-@dataclass(frozen=True)
-class TextRef:
-    """A block of dialogue already in the game, as prose. The adapter parses
-    its own text macros into this; the macros go back positionally on the way
-    home (`wiring/text.reword`), which is what lets the record hold none."""
-    label: str          # what a script jumps to, or `.local` under an owner
-    owner: str          # the top-level label that owns it
-    lineno: int
-    prose: str
-    #: Which box it is drawn in — the key :meth:`Session.measure` takes. Nearly
-    #: everything is "speech"; the full-screen "sign" box is the rarity.
-    box: str
-
-    @property
-    def opening(self) -> str:
-        """Its first words, for a list you are choosing from."""
-        first = next((line for line in self.prose.split("\n") if line.strip()), "")
-        return first[:40]
-
-
-@dataclass(frozen=True)
-class Measured:
-    """One line of dialogue, as the engine will draw it."""
-    text: str
-    #: Tiles it certainly prints. `#` is four of them.
-    tiles: int
-    #: Extra tiles if every bounded buffer (`<PLAYER>`, `<RIVAL>`) is at its
-    #: longest. A line that fits *today* and not when the player is called
-    #: BARTHOLOMEW is a line that overflows in somebody's game and not in yours.
-    bounded: int
-    #: Tokens whose length can't be bounded from the text at all (`<STRBF1>`).
-    unbounded: list[str]
-    #: Tokens with no charmap entry — a typo'd `<PLAYR>` prints as garbage.
-    unknown: list[str]
-    #: How many tiles past the right edge. 0 fits.
-    over: int
-    #: How many it would be over at the buffers' worst.
-    over_at_worst: int
-
-
-@dataclass(frozen=True)
-class TextPreview:
-    """A whole speech, measured against the box it will be drawn in."""
-    box: str                # what to call it: "speech textbox", "signpost"
-    cols: int               # tiles per line
-    lines: list[Measured]
-
-    @property
-    def fits(self) -> bool:
-        return all(m.over == 0 for m in self.lines)
-
-    @property
-    def risky(self) -> bool:
-        """Fits as written, and won't once a name buffer is at its longest."""
-        return self.fits and any(m.over_at_worst for m in self.lines)
 
 
 def wild(blocks: dict[str, dict[str, list[WildMon]]]) -> Table:
