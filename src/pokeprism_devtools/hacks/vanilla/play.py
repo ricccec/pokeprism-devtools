@@ -6,7 +6,7 @@ of its bytes: the targets are pokecrystal's ROMs (not `prism`/`nodebug`), the sa
 is the stock Gen-2 one (`savefile.py`, not prism's RTC-trailer layout), and where a
 map lives is read from vanilla's own `map_constants.asm` through the reader that
 already parses it. The `make` runner and the emulator are the only pieces neither
-tree owns, and both come from neutral modules (`shared.make`, `dev_server.emulator`)
+tree owns, and both come from neutral modules (`shared.make`, `shared.emulator`)
 so nothing here reaches into prism.
 
 The boot rebuilds the whole map, not just the position: standing you on a tile
@@ -23,8 +23,8 @@ import re
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from ...dev_server.emulator import Emulator
 from ...shared import make
+from ...shared.emulator import Emulator
 from ...shared.devtools import make_devtools_dir
 from ...shared.symfile import SymFile
 from ...contract import PlayError

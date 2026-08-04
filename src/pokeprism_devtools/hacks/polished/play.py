@@ -13,7 +13,7 @@ The boot rebuilds the tiles around the spawn — the interior grid plus the conn
 neighbours overlaid at the map edges — and repopulates the object engine with the
 destination map's own NPCs and their sprite VRAM, so teleporting in lands on a map
 that looks like itself (see `savefile.Save.stand_on`). The `make` runner and the
-emulator are neutral (`shared.make`, `dev_server.emulator`).
+emulator are neutral (`shared.make`, `shared.emulator`).
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ import re
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from ...dev_server.emulator import Emulator
 from ...shared import make
+from ...shared.emulator import Emulator
 from ...shared.devtools import make_devtools_dir
 from ...shared.symfile import SymFile
 from ...contract import PlayError
