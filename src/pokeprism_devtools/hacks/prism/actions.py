@@ -1,6 +1,6 @@
 """Prism's two map-to-map actions: connecting a neighbour, warping to one.
 
-These lived in `studio/actions.py` next to the base class until the family
+These lived beside the base class in `studio/actions.py` until the family
 needed to write. They read as neutral — every gen-2 tree has connections and
 warps — but they are not: both go through `wiring/connections` and
 `wiring/warps`, and both of those parse prism's secondary map headers. Sitting
