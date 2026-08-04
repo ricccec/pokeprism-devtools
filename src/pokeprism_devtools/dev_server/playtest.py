@@ -26,9 +26,9 @@ from pokeprism_devtools.shared import symfile
 
 from . import apply
 # The emulator is neutral — a SameBoy process, no map dialect — so it lives in
-# its own module a family adapter can import without pulling prism in through
+# shared/, where a family adapter can import it without pulling prism in through
 # here. Re-exported so `devplay.Emulator` still reads the same to prism.
-from .emulator import Emulator, LaunchReport  # noqa: F401
+from ..shared.emulator import Emulator, LaunchReport  # noqa: F401
 
 
 class PlaytestError(RuntimeError):
