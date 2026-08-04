@@ -277,6 +277,18 @@ products, **3b** carves them.
   form's edge guard deleted, because the mechanism underneath refuses an empty edge
   in words that also contain "edge". **A check has to name the layer it tests.**
   5 of 6 seeded mutations caught; the survivor is provably equivalent.
+- **An edge map is not an importer list, and it is wrong in both directions** — the
+  mount's repoint touched 5 src lines not 2 (three `claim.py` files reach it
+  intra-package, so no cross-product scan could see them), the emulator's touched 3
+  not 4 (prism *uses* `Emulator` through a re-export, never imports it). Re-measure
+  before each commit.
+- **B's bar covers an arrival without being told** — `contract_modules()` globs, so
+  `mount.py` was inside it the day it landed; proved by seeding a violation into the
+  moved file. The mount is reached as `contract.mount` and re-exported nowhere, so
+  SURFACE gains only the one addition R2 permits.
+- Moved without fixing, per R5: `shared/launcher.py` is an architectural name where
+  `sameboy` is the domain one, and `tests/test_studio.py` reaches D for a mock —
+  3b's test split, priced here rather than discovered there.
 
 ## Phase 3b · carve the remaining products — not started
 

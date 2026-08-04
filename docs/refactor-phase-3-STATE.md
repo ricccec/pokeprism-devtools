@@ -8,8 +8,9 @@ The one line this phase carries into the index, and where it is proved:
 > Five cross-product import edges survive Phase 2, so a carve run today produces
 > four repos that import each other. → "The five edges".
 
-**Status: planning done 2026-08-04, no code moved yet.** Baseline re-measured at
-**35/38**, the three known reds unchanged.
+**Status: commits 0–4 landed 2026-08-04.** Edges 1 and 2 of five are closed.
+Baseline re-measured at **35/38** before every commit and after it, the three
+known reds unchanged.
 
 ## Findings — the same list as the index, each linked to its evidence
 
@@ -23,6 +24,10 @@ The one line this phase carries into the index, and where it is proved:
 - **`_collisions` is written twice, same three messages** — [the port's cost](#what-the-third-dialect-would-cost--measured-not-guessed).
 - **A substring check passes for the wrong reason** — the layer underneath answers for it — [commit 0's falsification](#commit-0--what-falsifying-it-found).
 - A owns 3 test files of 38 — [A's test story is authorship](#as-tests-are-3-of-38).
+- **An edge map is not an importer list, and it is wrong in both directions** — [what the repoints actually touched](#an-edge-map-is-not-an-importer-list).
+- **B's bar checks a file the day it arrives, without being told** — [`contract_modules()` globs](#bs-bar-covers-arrivals-by-construction).
+- The mount is reached as `contract.mount`, not re-exported — [why the noun list stays a noun list](#the-mount-is-not-in-the-contracts-__init__).
+- **`shared/launcher.py` carries an architectural name over an available domain one** — [the tidy-up a move may not do](#what-edges-1-and-2-moved-without-fixing).
 - Re-verified: `contract/` still imports only `shared`; the carve path list still matches — [step 1](#re-verification-step-1).
 
 ## Re-verification (step 1)
@@ -223,6 +228,73 @@ seeded into `studio/resize.py` on disk, one at a time, and **two survived**.
   carries it and dropping it is a separate commit or a separate phase.
 
 Final: **5 of 6 caught**, `src/` unmutated afterwards, suite 35/38.
+
+## An edge map is not an importer list
+
+The five-edges table names the modules whose arrows point the wrong way. The
+repoint commits need a different list — **every line that names the moved
+module** — and taking the first for the second was wrong twice, once each way.
+
+| move | edge map says | measured on the day |
+|---|---|---|
+| `mount` | `studio/{app,session}.py` | **5 src lines**: those two, plus `hacks/{prism,polished,vanilla}/claim.py` reaching `..mount` for `NearMiss` |
+| `emulator` | `hacks/{vanilla,polished,prism}/play.py` | **3 src lines**: prism reaches `Emulator` through `playtest`'s re-export, never directly |
+
+The three `claim.py` imports were **intra-package**, so no scan looking for
+cross-product edges could ever have reported them; they are adapter→contract
+now, which is the direction the split wants anyway. The prism `play.py` entry
+was the opposite mistake — a module that *uses* `Emulator` counted as a module
+that *imports* it.
+
+This is Phase −1's grep lesson and Phase 3's own "the name is the unit of
+measurement" arriving together: **the edge map answers "which arrows are
+illegal", the repoint asks "which lines name this module", and they are not the
+same question.** Re-measure immediately before each commit; the answer is cheap
+and the assumption is not.
+
+`dev_server/launcher.py` had exactly one importer, `emulator.py`, which moved
+with it — so that shim came down repointing nothing at all.
+
+## B's bar covers arrivals by construction
+
+`tests/test_contract.py`'s static check builds its list with
+`contract_modules()`, which globs `contract/*.py`. So `mount.py` was inside the
+import bar the moment it landed, with no edit to the test.
+
+**Checked rather than assumed**: `from ..studio import resize` was seeded into
+`contract/mount.py` on disk and two checks went red — the static one and the
+one that says the contract reaches no in-repo package but `shared/`. Removed,
+green again. The bar is 15 files wide now and did not widen.
+
+## The mount is not in the contract's `__init__`
+
+`contract/__init__.py` is the noun list and the question list — that is what its
+own docstring promises and what makes it readable in one sitting. The mount is
+machinery: it is *called*, not *implemented*, and no adapter answers it. So it
+is reached as `contract.mount` and appears in no `__all__`.
+
+The practical consequence is that R2 stays satisfiable. `import contract`
+gained exactly one name, the submodule binding `mount`, which is the single
+addition R2 permits; had the `__init__` re-exported `mount`, `UnknownTree` and
+`NearMiss`, SURFACE would have gained three names it must not.
+
+## What edges 1 and 2 moved without fixing
+
+R5 forbids a tidy-up riding along a move, so both are recorded here rather than
+done. Neither is a defect.
+
+- **`shared/launcher.py` is an architectural name with a domain one available.**
+  It defines `build_cmd`, `focus_after_launch` and `_resolve_bin`, and every one
+  of them is about *SameBoy* — where the binary is, how to start it so `Popen`
+  tracks a real PID. CLAUDE.md says never use an architectural noun where a
+  domain one exists, and `shared/sameboy.py` is that noun. Its docstring also
+  still opens "SameBoy launch helpers for prism-dev", which stopped being true
+  the moment two family adapters started booting through it.
+- **`tests/test_studio.py` imports `dev_server.playtest`** (lines 545, 691) to
+  patch `Emulator.launch`. That is a C test reaching D, and moving the emulator
+  did not touch it, because patching a class attribute reaches the same object
+  whichever module names it. Not a src edge and not this phase's; it is priced
+  here so **3b's test split finds it written down** rather than discovering it.
 
 ## A's tests are 3 of 38
 
