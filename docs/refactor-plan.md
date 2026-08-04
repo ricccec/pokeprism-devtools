@@ -137,12 +137,13 @@ A over time.
 **The inventory is in `refactor-STATE.md`** — which file wears which wrong name, the
 duplicate-class counts, what is already clean. The argument belongs here:
 
-**A bad name costs twice.** `studio/panels.py` is the headline: twenty of the map's
-nouns (`Npc`, `Warp`, `Trainer`, …) filed under a UI location — and that same name is
-why every adapter imports the IDE. Phase 2 fixes both at once, which is what makes it
-the keystone rather than a tidy-up. Two more files are named for an architecture
-instead of their contents (`seam.py` defines `Hack`; `model.py` holds the edit cycle's
-records and belongs with `flow.py`, which runs it), and `content.py` is generic enough
+**A bad name costs twice.** `studio/panels.py` was the headline: the map's nouns
+(`Npc`, `Warp`, `Trainer`, …) filed under a UI location — and that same name is why
+every adapter imported the IDE. Phase 2 fixed both at once, which is what made it the
+keystone rather than a tidy-up; what it found is that the nouns were only half the
+file and `studio/actions.py` was the larger half of the cycle. `model.py` still holds
+the edit cycle's records and belongs with `flow.py`, which runs it, and `content.py`
+is generic enough
 to have hidden a bug: `Connect` sits in `actions.py` while `Disconnect` sits in
 `content.py`, though the split is meant to be map-to-map versus in-map.
 
@@ -211,14 +212,13 @@ below about `DevServer`.
 **Plan: `refactor-phase-2-PLAN.md`** — what the package is, and what is not.
 
 The phase that makes the goal true: the census's tier 1 and the `hacks → studio`
-cycle in one move. `hacks/seam.py` becomes `hack.py` in a package neither the IDE nor
-the adapters own; the entities in `studio/panels.py` and `studio/model.py` and the
-`Action`/`Field` vocabulary in `studio/actions.py` move there, split by domain into
-files named for what they define. The comment walls die here — same three files.
+cycle. `contract/` is a package neither the IDE nor the adapters own; the map
+entities, `Hack` and its six protocols, and the `Action`/`Field` vocabulary all live
+there, split by domain into files named for what they define.
 
-**Acceptance test, falsifiable:** grep `hacks/` for any import of the IDE package;
-empty passes. The check `seam.py`'s docstring already invites, pointed at the file
-where it would have caught something.
+**Acceptance test, falsifiable:** `tests/test_contract.py` — the arrow, statically
+and at runtime, plus the adapter edges named one by one. The check the seam's
+docstring always invited, pointed at the files where it would have caught something.
 
 ### Phase 3 — Split the remaining products
 Mechanical once Phase 2 lands: B is its package, C and D fall out, Phase 0's carve runs again.

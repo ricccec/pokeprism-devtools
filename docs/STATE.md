@@ -29,8 +29,10 @@ that way and what it is allowed to change.
 
 ## The seam, as it exists
 
-`hacks/seam.py` is the contract, provably free of hack names. `hacks/mount.py`
-(146 lines) does discovery and the claim loop and nothing else. Each hack ships
+The `contract/` package is the contract, provably free of hack names — one file
+per capability, and `hack.py` at the root. (It was `hacks/seam.py` until the
+four-product split's Phase 2 moved it out of the folder full of adapters.)
+`hacks/mount.py` (146 lines) does discovery and the claim loop and nothing else. Each hack ships
 a `claim.py` that recognises its own tree and builds its adapter — the same
 entry-point path a third-party adapter would use.
 
@@ -594,12 +596,13 @@ hold, with the same tests passing, after every phase. Where the split needs
 behaviour to change first, that is a normal item and belongs on the pick-up list,
 not inside a move.
 
-**The one place the two stories touch.** The split's goal — *nothing an adapter
-imports may point up at the IDE* — is a restatement of what `hacks/seam.py`
-already claims and does not yet enforce: all three in-tree adapters import
-`studio/` at runtime. That is the same debt this document has been carrying
-implicitly, and the split is where it gets paid, in its Phase 2. Until then it
-stays a known, deliberate exception rather than a surprise.
+**The one place the two stories touch — paid, 2026-08-04.** The split's goal —
+*nothing an adapter imports may point up at the IDE* — was a restatement of what
+the seam claimed and did not enforce: all three in-tree adapters imported
+`studio/` at runtime. The split's Phase 2 paid it. What is left is two neutral
+forms over `wiring/` (`studio/mapadd.py`, `studio/resize.py`) reached from four
+adapter methods, named in `tests/test_contract.py` so they cannot go quiet, and
+homed in Phase 3.
 
 ## Landed — the family header editor, on a shared splicer (2026-07-30)
 

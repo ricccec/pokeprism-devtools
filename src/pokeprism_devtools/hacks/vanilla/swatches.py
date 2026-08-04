@@ -6,7 +6,7 @@ eight names per tile in `gfx/tileset_palette_maps.asm` — and `bg_tiles.pal`
 says what each class looks like. A block is 4×4 tiles and a swatch quadrant
 is its 2×2 corner, so a quadrant's color is the average of its four tiles'
 class colors: honest degradation, exactly what the `Swatch` alias in
-`studio/panels` licenses an adapter without decoded graphics to do.
+`contract/blocks.py` licenses an adapter without decoded graphics to do.
 
 The day palette is the one shown. Morn and nite exist in the file; a picker
 would be a feature, a hardcoded *time* is just a choice of daylight.

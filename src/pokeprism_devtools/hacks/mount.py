@@ -2,7 +2,8 @@
 
 This is the one module allowed to know that hacks exist at all — and it knows
 them only as a registry of names it asks in turn, never by branching on one.
-What a hack must *answer* once mounted is `seam.py`, which knows no names; how a
+What a hack must *answer* once mounted is the `contract/` package, which knows
+no names; how a
 hack recognises its own tree is `hacks/<name>/claim.py`, which knows only its
 own. This module owns the space between: discover the registered adapters, ask
 each whether it claims this tree, and turn the answers into one mounted

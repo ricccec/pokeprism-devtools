@@ -1,11 +1,10 @@
 """Prism's read adapter: its maps, poured into the seam's records.
 
-The port declares the vocabulary — `studio/panels` owns :class:`~...studio.
-contract.Npc`, :class:`Warp`, :class:`Roof` and the rest — and this module fills
-it in from prism's grammar. The import runs adapter → port on purpose: a record
-the port declares is a record every adapter can fill without the port learning
-any adapter's macros, which is the same arrangement `Attributes` and `WildMon`
-already live under.
+The contract declares the vocabulary — `contract/` owns :class:`~...contract.Npc`,
+:class:`~...contract.Warp`, :class:`~...contract.Roof` and the rest — and this
+module fills it in from prism's grammar. The import runs adapter → contract and
+never the other way: a record the contract declares is a record every adapter can
+fill without anything above the seam learning one adapter's macros.
 
 :class:`Reader` is what `hacks.mount` hands the studio for a prism tree. It is
 constructed *with* the linter's context, so the catalog it answers from and the
@@ -13,7 +12,7 @@ linter's view of the repo are one parse — `Session._invalidate` keeps both
 fresh with a single call, and the two can never disagree about which maps
 exist.
 
-The carve-up implemented in :func:`tables` is the seam's (a *person's*: NPCs
+The carve-up implemented in :func:`tables` is the contract's (a *person's*: NPCs
 talk, trainers battle, objects lie on the floor), and prism's engine disagrees
 with it twice — item balls are `person_event`s while hidden items are
 `signpost`s, and both belong on the Objects tab. The one that had to be

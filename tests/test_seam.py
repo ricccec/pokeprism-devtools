@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One battery, every adapter — the conformance test for `hacks/seam.py`.
+"""One battery, every adapter — the conformance test for the `contract/` package.
 
 Until now the seam was a docstring. Three adapters were written against it and
 all three happen to agree, but nothing said so: `test_vanilla.py` and
