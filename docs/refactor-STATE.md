@@ -69,7 +69,7 @@ still wait on Phase 2, the phase that breaks the `hacks → studio` cycle.
 - `--no-local` + `filter-repo` rewrites **every branch**; the carve arrived with four,
   all strict ancestors, checked before pruning.
 - SHAs are rewritten, so any SHA quoted in `docs/` never resolves in A.
-- **A is history plus source and nothing else** — packaging, entry points and all 34
+- **A is history plus source and nothing else** — packaging, entry points and all 38
   tests are outside its four folders. Phase 3 owes A a packaging story.
 - **Carving early bought the rehearsal, not the repo** — the plan's own "not
   now-or-never" holds: this repo's past is immutable and A's four folders are stable
@@ -125,24 +125,6 @@ the tests cannot. Every file is now under 250 LOC, all but four under 150.
   Not fixed here, because a move may not — **this list is Phase 1b**.
 
 Sizes to work from are in `refactor-phase--1-STATE.md` → "Phase 1's six CLI packages".
-
-- The filename test for coverage was wrong both ways — `map_show` is covered by two
-  tests not named for it, `usage` by nothing.
-- **Coverage tracks the split that already happened** — the six `__init__.py` run
-  28–54% of themselves (`usage` 0%), the two files already carved out of `mapfit`
-  run 93–95%. "Is it test-covered?" was never a question these tests could answer
-  for this phase: the uncovered majority is the render/CLI half a split relocates.
-- An `__init__.py` re-exports its own imports by accident — `map_show` exposes 9
-  foreign modules and 7 stdlib names. A split therefore *shrinks* the surface, so
-  the post-move check cannot be "surface identical".
-- Tests reach package-private names (`metatiles._blob_sizes`,
-  `mapfit._lift_free_space`, `map_new._consts`) — 4 names across 3 packages, each
-  now imported from the submodule that owns it. A fifth, `mapfit.compressed_blk_size`,
-  was a false alarm: the grep matched a `print` label, not a call.
-- `tests/test_mapnew.py` does not test `map_new` — it covers `wiring/mapnew.py` and
-  `hacks/vanilla/newmap.py`. One underscore apart, unrelated code.
-- `usage/` has no parse/analyse seam: its analysis is `shared/mapfile.py`'s. The
-  four-way template is a hypothesis about seams, not a filing system.
 
 ## Phase 1b · pay what Phase 1 could not — **done 2026-08-03**
 
@@ -248,9 +230,54 @@ three `shared/` modules and nothing else. **B ships separately** (Phase −1) is
   the IDE, not the contract; Phase 3's to home. The test asserts the list in both
   directions so a shorter one cannot pass silently.
 
-## Phase 3 · split the remaining products — not started
+## Phase 3 · make the products separable — planned 2026-08-04, no code moved
+
+**Plan:** `refactor-phase-3-PLAN.md` · **Findings:** `refactor-phase-3-STATE.md`
+
+**"Mechanical once Phase 2 lands" is false — the products are not folders yet.**
+Five cross-product import edges survive Phase 2, so a carve run today produces four
+repos that import each other. The phase splits: **3** makes the folders equal the
+products, **3b** carves them.
+
+- **`studio → hacks` is a cycle direction nobody ever named** — `studio/app.py:63`
+  and `studio/session.py:42` import `hacks.mount`, and always have. The goal, the
+  plan and Phase 2's acceptance test all read the arrow one way only. The fix is to
+  move the target, not break the edge: the mount is contract machinery.
+- Three of the five edges are the same shape — **a family adapter reaching into a
+  prism CLI** (`dev_server.emulator`, `maplint.textfit`, `maplint.suppressions`) for
+  a module Phase −1 assigned elsewhere on 2026-08-01 and nothing could act on until
+  the cycle broke.
+- **A relative-only import scan reports `dev_server` as a leaf.** It is the one
+  package written with absolute imports and it reaches `hacks.prism` five times.
+  Both spellings, always — third measurement error of this family in this refactor.
+- **The family adapters ship with C** — `mount()` is called from two studio modules
+  and tests, nowhere else; no CLI mounts an adapter. `refactor-plan.md`'s table had
+  four rows and no home for either.
+- **Nothing in `studio/` imports the two survivors, and that is the seam working** —
+  the adapter imports the form and hands the class back up. Not dead code, and it is
+  why these two outlived the cycle.
+- **A owns 3 test files of 38** (`test_flagalloc`, `test_regions`, `test_usage`).
+  A's test story is authorship, not a carve — 3b's largest unpriced item.
+- Re-verified and holding: `contract/` imports only `shared`, the four `hacks →
+  studio` edges, the carve path list, the `wiring/` rename cost (31 files / 50
+  imports), 35/38. Drifted and corrected in place: A is 40 files, the suite is 38.
+- **`studio/mapadd.py` and `studio/resize.py` cease to exist** — user's call
+  2026-08-04 over shipping them as a shared adapter library.
+- **And that "redesign" is 40 lines, not 267** — grepped per *name* rather than per
+  module: `AddMap` and its four companions are family-only (a move into
+  `hacks/vanilla/`), `grids` names no contract type (A), and `ResizeMap` is the one
+  genuinely shared `Action` in the tree, because prism's new-map form is already its
+  own. **The name is the unit of measurement, not the module** — the same error
+  Phase −1 found in import greps, one level down.
+
+## Phase 3b · carve the remaining products — not started
 
 **Plan:** not written · **Findings:** none yet
+
+Four ledgers, four repos, the import rewrite, the test split, and the packaging
+files. Blocked on Phase 3 — a carve cannot be proved correct before the thing it
+carves is. Where the repos go, and whether this repo stays the editable copy
+through Phases 4 and 5, is 3b's to ask (deferred by the user 2026-08-04).
 
 ## Phase 4 · the god objects — not started
 

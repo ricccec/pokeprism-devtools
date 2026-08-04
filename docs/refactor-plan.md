@@ -111,8 +111,13 @@ The dependency graph already permits this split — measured, not assumed:
 |---|---|---|
 | **A · pret/RGBDS library** | `shared` + `wiring` + `usage` + `sym_lookup` | none — zero dependency on any hack or the IDE |
 | **B · adapter contract** | `Hack`, its capability protocols, the domain vocabulary | does not exist; split across `hacks/seam.py` and `studio/` |
-| **C · the IDE** | `studio` | depends on B, which is inside it |
+| **C · the IDE** | `studio` + `hacks/vanilla` + `hacks/polished` | depends on B, which is inside it |
 | **D · prism** | `hacks/prism` + the CLI packages Phase −1 assigned it | fused to C |
+
+**The family adapters ship with C** — decided 2026-08-04 on the measurement that
+settles it: `mount()` is called from two studio modules and tests, nowhere else, so
+vanilla and polished are reached only through it. Prism is D because prism's own
+CLIs import it directly.
 
 **Phase −1 assigned every CLI; the calls are in `refactor-STATE.md`** — as is the
 lesson behind them: an import grep proves an edge exists, not that it is load-bearing,
@@ -220,8 +225,11 @@ there, split by domain into files named for what they define.
 and at runtime, plus the adapter edges named one by one. The check the seam's
 docstring always invited, pointed at the files where it would have caught something.
 
-### Phase 3 — Split the remaining products
-Mechanical once Phase 2 lands: B is its package, C and D fall out, Phase 0's carve runs again.
+### Phase 3 — Make the products separable · **`refactor-phase-3-PLAN.md`**
+Not mechanical: five cross-product edges survive Phase 2, so the folders are not the products yet.
+
+### Phase 3b — Carve them
+Four ledgers, four repos, the import rewrite, the test split — after 3, never before.
 
 ### Phase 4 — The god objects
 Deliberately *after* the keystone, because `Session`'s seams move once the

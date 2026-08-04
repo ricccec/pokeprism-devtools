@@ -200,8 +200,9 @@ check ancestry before pruning rather than after.
 no remote. **The folder name is the finding.** It was `pokecrystal-asm-lib` for an
 afternoon, and that name claimed something untrue.
 
-`filter-repo` **copies** history; it never deletes from the source. So A's 34 files are
-in two places — here, where everything imports them, and there, where nothing does.
+`filter-repo` **copies** history; it never deletes from the source. So A's files are in
+two places — here, where everything imports them, and there, where nothing does. The
+snapshot froze at 34; A is **40** here today, because Phase 1 split `usage/` into seven.
 **This repo is A's only editable copy. The snapshot takes no commits at all**, not even
 a rename, because Phase 3 re-runs the carve and a carve builds a **fresh** history:
 anything committed in the snapshot meanwhile is discarded, not merged.
@@ -216,7 +217,7 @@ by-product. Read "Phase 0 carved A" as *"the carve is known to work and the path
 is known to be right"*, never as *"product A exists"*.
 
 **It is not a library and could not be one.** `pyproject.toml`, the entry points and all
-34 test files live outside A's four folders, so they were not carved; the snapshot does
+38 test files live outside A's four folders, so they were not carved; the snapshot does
 not even contain `src/pokeprism_devtools/__init__.py`, which is shared with every
 product and would have dragged in the whole repo's history. **Phase 3 owes A a packaging
 and test story.** `usage` and `sym_lookup` are CLI packages whose `console_scripts`
