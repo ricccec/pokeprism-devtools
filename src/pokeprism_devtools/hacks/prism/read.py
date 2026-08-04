@@ -112,7 +112,7 @@ class Reader:
         """Every text block in one map, as prose you could hand to a person.
 
         The macros are deliberately not here. `dialogue.plain` shows the words;
-        `wiring/text.reword` puts the macros back from the block itself,
+        `hacks/prism/text.reword` puts the macros back from the block itself,
         positionally — so a `cont` that scrolls the box is still a `cont` after
         you fix a typo in it.
         """

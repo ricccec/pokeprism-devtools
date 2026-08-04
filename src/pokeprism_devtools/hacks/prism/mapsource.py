@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from ...wiring.macroline import find_macro_args
+from ...asmedit.macroline import find_macro_args
 from .mapspec import MapSpec
 
 

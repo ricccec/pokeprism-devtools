@@ -42,7 +42,7 @@ import re
 from pathlib import Path
 
 from . import consts, eventheader as eh
-from ...wiring.editvocab import Change, EditError, palette_of, repainted, spliced
+from ...asmedit.editvocab import Change, EditError, palette_of, repainted, spliced
 from .objedit import FLAG, PALETTE, PARAM, POINTER, S_FACING, MapEdit, X, Y
 from .scaffold import (ALWAYS, INDENT, MapCtx, Object, Scaffold, ScaffoldError,
                        allocate_flag, camel, require)

@@ -7,7 +7,7 @@ two maps, and everything here is about one.
 
 The interesting one is :class:`AddProp`. An item ball, a TM ball, a fruit tree, a
 hidden item, a rock and a boulder are one thing to a person and six things to the
-engine — see `wiring/props.py` — so this is one form whose *shape* follows from
+engine — see `hacks/prism/props.py` — so this is one form whose *shape* follows from
 the kind you pick. That is what `fields_for` is for, and it is the reason a TM ball
 has no quantity box to get wrong and a boulder has no dialogue box at all.
 
@@ -29,7 +29,7 @@ from . import eventmodel, trainerstats
 from .eventflags import FlagError
 from .eventheader import ListKind
 from . import connections, props, removal, scaffold
-from ...wiring import warpdel
+from ...asmedit import warpdel
 # By name, not by module: `Action.text()` is a method, and `text.reword(...)`
 # sitting next to `self.text("label")` in the same three lines is a trap.
 from .text import TextError, reword
@@ -67,7 +67,7 @@ class _Placed(Action):
         `person_event`, defaults and all: the family's `object_event` takes a
         different count of arguments in a different order, and polished's takes
         twelve. Every caller descends from this class, so the move cost nothing
-        and bought the base its freedom from `wiring/`.
+        and bought the base its freedom from `asmedit/`.
         """
         y, x = self.coords()
         return scaffold.Object(
@@ -236,7 +236,7 @@ class AddProp(_Placed):
         if kind in (ROCK, BOULDER):
             # No flag, no script, no dialogue, and no movement. All four are the
             # engine's, and every one of them the form offered was a way to write a
-            # boulder that is not a boulder. See `wiring/props.add_prop`.
+            # boulder that is not a boulder. See `hacks/prism/props.add_prop`.
             return (cls._KIND, *cls._WHERE,
                     Field("palette", "Palette", choices=PALETTES,
                           default=eventmodel.PROPS[kind].palette,

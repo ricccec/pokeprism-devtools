@@ -36,7 +36,7 @@ from . import (
     consts, dialogue, eventheader as eh, mapsource, spritesets, trainercite,
     trainerparty)
 from ...shared.edits import Edit
-from ...wiring.editvocab import Change, EditError, palette_of, repainted, same, spliced
+from ...asmedit.editvocab import Change, EditError, palette_of, repainted, same, spliced
 from .scaffold import INDENT, Object, ScaffoldError, allocate_flag, require
 
 #: Where a `person_event`'s arguments live. The flag is deliberately absent: it is

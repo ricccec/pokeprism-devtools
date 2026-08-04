@@ -19,7 +19,7 @@ from pathlib import Path
 from . import eventheader as eh, mapsource
 from ...shared.edits import Edit
 from .eventheader import ListKind
-from ...wiring.editvocab import Change, same, spliced
+from ...asmedit.editvocab import Change, same, spliced
 from .objedit import W_MAP, W_TO, W_X, W_Y, MapEdit
 
 

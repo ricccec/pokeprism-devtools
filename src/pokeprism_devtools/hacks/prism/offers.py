@@ -9,10 +9,10 @@ Three of these lists are not what you would guess, and each is a bug avoided:
 
 **The TMs are not in the item list.** `TM_HAIL` is pasted together by a macro at
 assembly time and appears nowhere in the source — scan the item constants for
-`TM_` and you find `TM_CASE`, which is the bag. See `wiring/props.tmhms`.
+`TM_` and you find `TM_CASE`, which is the bag. See `hacks/prism/props.tmhms`.
 
 **The event flags do not bound what you may type.** Every other list here is a set
-of names the wiring layer will check you against. That one is a *suggestion*: a
+of names the asm editors will check you against. That one is a *suggestion*: a
 flag you name that doesn't exist is a flag that gets created, and a combo that
 held you to the list would mean the only NPCs you could gate are the gated ones.
 
@@ -66,7 +66,7 @@ def blocks(root: Path) -> list[str]:
     and the directory you started the studio from. Anything else you can still
     type — the list is an offer, and `Combo` never insisted on one.
     """
-    from ...wiring.mapnew import grids
+    from ...asmedit.mapnew import grids
     return grids((root.parent / "polished-map", root / "maps/blk", Path.cwd()),
                  newmap.BLK_SUFFIXES)
 
