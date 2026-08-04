@@ -16,7 +16,7 @@ finds it.
 from __future__ import annotations
 
 from ..hacks.prism import charmap, dialogue, textbox
-from . import textfit
+from ..shared import textfit
 from .context import LintContext
 from ..contract import Diagnostic, Severity
 

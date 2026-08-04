@@ -36,7 +36,7 @@ from pathlib import Path
 from ..contract import Diagnostic, Severity
 from ..shared.devtools import make_devtools_dir
 from ..shared.paths import RepoNotFound, repo_root
-from .suppressions import apply_suppressions
+from ..contract.suppressions import apply_suppressions
 
 BASELINE = ".devtools/maplint-baseline.json"
 
@@ -48,11 +48,15 @@ _DIM = "\033[2m"
 def all_rules() -> tuple:
     """Every prism rule, gathered on demand.
 
-    Imported here rather than at module top so that reaching this package for the
-    *finding channel alone* — `maplint.suppressions`, `maplint.textfit`, both
-    stdlib-only — does not drag in the rules, and through them all of
-    `hacks.prism`. A family linter builds on that channel and must be able to
-    import it without loading the tree it is not written against.
+    Imported here rather than at module top because the rules reach all of
+    `hacks.prism` and a caller that only wants this package's CLI does not:
+    `import maplint` leaves 23 modules behind with the deferral and 55 without
+    it, 18 of them prism's map parsers.
+
+    The reason it was *written* for was narrower and is now gone — a family
+    linter reaching this package for the finding channel alone. That channel is
+    `contract.suppressions` and `shared.textfit` now, and no module outside this
+    package imports `maplint` at all.
     """
     from . import (
         rules_content, rules_flags, rules_geometry, rules_objects, rules_sprites,
