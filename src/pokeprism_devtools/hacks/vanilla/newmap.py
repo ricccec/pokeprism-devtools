@@ -299,7 +299,7 @@ def offers(root: Path, dialect: FamilyNewMap, kind: str) -> list[str] | None:
         n = sum(1 for ln in text.split("\n") if ln.strip().startswith("newgroup"))
         return [str(i) for i in range(1, n + 1)]
     if kind == contract.BLOCKS:
-        from ...studio.mapadd import grids
+        from ...wiring.mapnew import grids
         # `maps/`, not prism's `maps/blk/` — the family keeps its grids beside
         # the map files. The suffix is this tree's own for the same reason
         # `blk_name` uses it: polished draws `.ablk` and INCBINs the

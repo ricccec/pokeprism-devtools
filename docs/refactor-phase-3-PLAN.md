@@ -64,8 +64,16 @@ nothing. They are the (b) drain, and they wait.
 
   `studio/mapadd.py` is a **C→C edge already**: nothing in prism imports `AddMap`,
   `newmap_for` or `section_choices`, and vanilla ships with C. It is separable
-  where it stands, so this phase does not touch it. Its home is a *naming*
+  where it stands, so **this phase does not relocate it**. Its home is a *naming*
   problem — it is not the IDE — and naming is not what Phase 3 is for.
+
+  *Corrected while running commit 7.* An earlier version of this line said the
+  file "must appear in no diff", which contradicts this plan's own commit 7:
+  `grids` is **defined in `studio/mapadd.py`**, so moving it necessarily edits
+  that file. The rule meant is the one above — the module is not relocated into
+  an adapter, and `AddMap`, `newmap_for`, `section_choices`, `_BASE` and
+  `_PLACES` all stay exactly where they are. `grids` leaving is the only change
+  this phase makes to it.
 
   **And moving it into `hacks/vanilla/` would have been actively wrong.** `AddMap`
   is the generic form: it never branches, holds no hack name, reads
@@ -189,10 +197,18 @@ going red before it is believed.
   and `__pycache__` cleared first — a stale `.pyc` faked a result in Phase 1.
 - **The studio's `a` and `s` keys still open working forms on all three trees.**
   This is commit 8's whole risk and commit 0 is what lets it be checked.
-- **`tests/test_contract.py`'s survivor list is edited deliberately, twice** — two
-  rows lose their reason at commit 7 and two more at commit 8, leaving the two
-  `studio.mapadd` rows that are C→C and stay. Five → two, never to zero, and each
-  edit is the point of its commit rather than collateral.
+- **`tests/test_contract.py`'s survivor list is edited deliberately, twice** — five
+  → four at commit 7, four → two at commit 8, leaving the two `studio.mapadd` rows
+  that are C→C and stay. Never to zero, and each edit is the point of its commit
+  rather than collateral.
+
+  *Corrected while running commit 7.* This said "two rows at commit 7 and two more
+  at commit 8", which does not arrive at two from five. **One** row goes at commit
+  7: `hacks/vanilla/newmap.py` imports `studio.mapadd` on two lines — `grids` at
+  :302 and `section_choices` at :293 — and the survivor set is keyed by
+  *(file, module)*, so moving `grids` retires only `hacks/prism/offers.py`'s row.
+  A count of import lines is not a count of edges; the endpoint was right and the
+  arithmetic was not.
 - **The three console entry points that name a moved module** still resolve.
 - B's bar: `contract/` imports stdlib and `shared.coords` / `shared.edits` /
   `shared.swatches`, and nothing else. Commits 1 and 5 add to `contract/` and must

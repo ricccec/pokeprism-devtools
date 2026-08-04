@@ -80,7 +80,6 @@ FORBIDDEN = ("studio", "hacks", "wiring", "maplint", "mapfit", "mapview",
 #: regression, and both should be somebody's decision rather than a surprise.
 SURVIVORS = {
     ("hacks/prism/write.py", "studio.resize"),
-    ("hacks/prism/offers.py", "studio.mapadd"),
     ("hacks/vanilla/write.py", "studio.resize"),
     ("hacks/vanilla/write.py", "studio.mapadd"),
     ("hacks/vanilla/newmap.py", "studio.mapadd"),
