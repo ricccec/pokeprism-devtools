@@ -22,7 +22,7 @@ The protocol (see `hacks/mount.py` for the whole seam):
     sprite_hint(map_const, sprite) -> str
     warm() / forget()                        the constants caches
 
-A refusal is a :class:`~..seam.Refused` carrying the reason — the session
+A refusal is a :class:`~...contract.Refused` carrying the reason — the session
 turns it into its own error, the form shows the sentence. Everything here
 raises that rather than a studio exception, because an adapter that imported
 the session to refuse it would have the dependency pointing the wrong way.
@@ -34,7 +34,7 @@ from pathlib import Path
 
 from ...wiring import warpdel
 from ...wiring.warpdel import DeadDoor, WarpGrammar, WarpMacro
-from ..seam import Refused
+from ...contract import Refused
 from . import eventheader, mapsource, spritepack, trainerstats
 
 #: How prism spells a warp reference. Two macros and no more: nothing else in
@@ -203,7 +203,7 @@ class Writer:
     def deletion(self, label: str, const: str, ref):
         """The action `d` would run on this row.
 
-        Raises :class:`~..seam.Refused` for the things that cannot be deleted,
+        Raises :class:`~...contract.Refused` for the things that cannot be deleted,
         and says *why* — which beats an absent key, because the reason is the
         interesting part.
         """
