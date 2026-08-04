@@ -13,7 +13,7 @@ import re
 
 from ..hacks.prism.eventheader import LIST_ORDER, ListKind
 from .context import LintContext
-from .diagnostics import Diagnostic, Severity
+from ..contract import Diagnostic, Severity
 
 _LIST_NAMES = {
     ListKind.WARPS: "warps",

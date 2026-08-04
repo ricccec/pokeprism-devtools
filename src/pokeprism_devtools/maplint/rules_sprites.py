@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from ..hacks.prism import spritepack
 from .context import LintContext
-from .diagnostics import Diagnostic, Severity
+from ..contract import Diagnostic, Severity
 
 
 def _map_sprite_list(ctx: LintContext, const: str) -> list[str] | None:

@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 
 from .context import OPPOSITE, LintContext
-from .diagnostics import Diagnostic, Severity
+from ..contract import Diagnostic, Severity
 
 _SECOND_HEADERS = "maps/second_map_headers.asm"
 _MAP_DIMENSIONS = "constants/map_dimension_constants.asm"

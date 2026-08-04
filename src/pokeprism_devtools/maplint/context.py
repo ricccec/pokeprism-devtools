@@ -23,7 +23,7 @@ from ..hacks.prism import (
 from ..hacks.prism.maps import MapDef
 
 if TYPE_CHECKING:
-    from .diagnostics import Diagnostic
+    from ..contract import Diagnostic
 
 _SECOND_HEADERS = "maps/second_map_headers.asm"
 _PRIMARY_HEADERS = "maps/map_headers.asm"
