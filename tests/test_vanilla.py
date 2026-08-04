@@ -1115,6 +1115,80 @@ def test_resizing_crosses(root: Path) -> None:
               "would leave nothing" in str(exc), str(exc)[:60])
 
 
+def test_the_resize_form(root: Path) -> None:
+    """The fifteen lines between the studio's `s` key and `mapresize.resize`.
+
+    `test_resizing_crosses` above covers the mechanism, and the session test
+    covers that a form is *offered* carrying the right dialect. Neither runs the
+    form, so nothing here executed the half that turns four strings off a widget
+    into that call — which is the half a copy can silently get wrong, because
+    each of those lines carries a default or a conversion: blank `blocks` means
+    one and not zero, an empty `fill` means *the border block* and not a block
+    named empty string, and a missing edge is a question rather than a guess.
+
+    Reached through `Session`, the way the studio reaches it, so what is pinned
+    is the class this adapter offers rather than one the test picked. The prism
+    twin is `tests/test_wiring.py::test_the_resize_form`; the two are deliberate
+    near-duplicates, because the forms are.
+    """
+    print("\nthe family resize form asks the same thing the mechanism does")
+    from pokeprism_devtools.contract import ActionError
+    from pokeprism_devtools.hacks.vanilla.resize import VANILLA
+    from pokeprism_devtools.wiring import mapresize as MR
+
+    form = Session(root).form("resize")
+    check("the write adapter offers a resize form", form is not None)
+
+    direct = MR.resize(root, "TOWN_A", "bottom", "grow", 2, None, dialect=VANILLA)
+    result = form("TOWN_A", edge="bottom", mode="grow", blocks="2", fill="").run(root)
+    check("the same files change",
+          [e.path for e in result.edits] == [e.path for e in direct.changes],
+          str([e.path for e in result.edits]))
+    check("with the same bytes",
+          [e.data for e in result.edits] == [e.data for e in direct.changes])
+    check("and it says what it did", result.summary == direct.summary,
+          f"{result.summary!r} vs {direct.summary!r}")
+
+    print("\nthe blanks mean what the family form's fields promise")
+    # No mode, no count: the field defaults say "grow" and 1, and a form the user
+    # tabbed straight past must land on those rather than on Python's falsy zero.
+    lazy = form("TOWN_A", edge="bottom").run(root)
+    one = MR.resize(root, "TOWN_A", "bottom", "grow", 1, None, dialect=VANILLA)
+    check("blank mode grows",
+          [e.data for e in lazy.edits] == [e.data for e in one.changes])
+    # TOWN_A is 4 wide and 3 tall; one more row of 4 is 16 bytes, not 12.
+    blk = next(e for e in lazy.edits if e.path == "maps/TownA.blk")
+    check("blank count is one block, not none", len(blk.data) == 16, str(len(blk.data)))
+
+    # An empty fill is the *border* block — `or None` in the form. Passing "" to
+    # the mechanism instead would be a block whose name is the empty string.
+    filled = form("TOWN_A", edge="bottom", blocks="1", fill="").run(root)
+    check("blank fill is the border block",
+          [e.data for e in filled.edits] == [e.data for e in one.changes])
+
+    print("\nand it refuses in the form's own words")
+    # Matched exactly, not as a substring. Drop the guard and `mapresize` refuses
+    # the empty edge itself with "edge must be one of ...", which the form
+    # dutifully wraps in an `ActionError` — so a substring check for "edge"
+    # passes on the mutation and says nothing. Measured, in prism's twin.
+    try:
+        form("TOWN_A", mode="grow", blocks="1").run(root)
+        check("a missing edge is refused by the form", False, "it ran anyway")
+    except ActionError as exc:
+        check("a missing edge is refused by the form", str(exc) == "pick an edge",
+              str(exc))
+
+    # The mechanism's refusals have to arrive as the form's kind of error, or the
+    # studio shows a crash where it should show a sentence.
+    try:
+        form("TOWN_A", edge="top", mode="shrink", blocks="9").run(root)
+        check("an impossible shrink is refused as a form error", False,
+              "it ran anyway")
+    except ActionError as exc:
+        check("an impossible shrink is refused as a form error",
+              "would leave nothing" in str(exc), str(exc)[:60])
+
+
 def test_shared_blocks_refuse(tmp: Path) -> None:
     """The family stacks several labels on one INCBIN constantly — resizing one
     of a pair would corrupt the other, whose dimension constant does not move."""
@@ -1208,6 +1282,7 @@ def main() -> int:
         test_a_line_the_editor_will_not_rewrite(root)
         test_adding_an_entry(root)
         test_resizing_crosses(root)
+        test_the_resize_form(root)
         test_shared_blocks_refuse(Path(d))
         test_deletion_crosses_the_seam(root)
     # Its own tree: this fixture gives HouseA a map file, and the catalog test
