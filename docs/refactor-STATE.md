@@ -230,14 +230,18 @@ three `shared/` modules and nothing else. **B ships separately** (Phase −1) is
   the IDE, not the contract; Phase 3's to home. The test asserts the list in both
   directions so a shorter one cannot pass silently.
 
-## Phase 3 · make the products separable — planned 2026-08-04, no code moved
+## Phase 3 · make the products separable — **done 2026-08-04**
 
 **Plan:** `refactor-phase-3-PLAN.md` · **Findings:** `refactor-phase-3-STATE.md`
 
 **"Mechanical once Phase 2 lands" is false — the products are not folders yet.**
-Five cross-product import edges survive Phase 2, so a carve run today produces four
-repos that import each other. The phase splits: **3** makes the folders equal the
+Five cross-product import edges survived Phase 2, so a carve run then produced four
+repos that import each other. The phase split: **3** makes the folders equal the
 products, **3b** carves them.
+
+**All five edges are now closed and a test says so.** `wiring/` is `asmedit/`, the
+mount is `contract/mount.py`, and `tests/test_products.py` asserts the membership
+map and every cross-product arrow. Suite **35/38 → 36/39**. 3b is unblocked.
 
 - **`studio → hacks` is a cycle direction nobody ever named** — `studio/app.py:63`
   and `studio/session.py:42` import `hacks.mount`, and always have. The goal, the
@@ -289,15 +293,45 @@ products, **3b** carves them.
 - Moved without fixing, per R5: `shared/launcher.py` is an architectural name where
   `sameboy` is the domain one, and `tests/test_studio.py` reaches D for a mock —
   3b's test split, priced here rather than discovered there.
+- **A comment's stated reason can die while the code it defends stays right** —
+  `maplint.all_rules`'s lazy import lost its argument when the finding channel left,
+  and is still worth 32 modules (23 vs 55). Measured before rewriting the sentence;
+  deleting it on the expired reason would have been a regression.
+- **A commit that duplicates a body needs an oracle per copy.** Commit 8 retyped the
+  resize form into two adapters and only prism's had one — the family's closest test
+  proved a form was *offered*, never ran it. Added as commit 7b, 5 of 6 mutations
+  caught. The plan counted the duplication as one thing because it was one commit.
+- **The `wiring/` rename paid for being read hit by hit, three times over** — 13
+  docstrings named files that left for `hacks/prism/` a year ago (a rename would
+  have made them *more* wrong), ~40 hits are the English word, and **3 were live
+  guards spelled as strings** (`FORBIDDEN`, `READERS`, and a `"wiring" in d`) that
+  would have passed forever while guarding nothing. Phase 1b and 2 were bitten by a
+  rename *reaching* too far; this one would have *missed*. Same lesson, both ways.
+- **A falsification needs falsifying.** The first attempt at re-checking those three
+  guards seeded an import above `from __future__`, so three "catches" were
+  `SyntaxError`s, not guards firing.
+- **A imports no third-party module at all** — the packaging draft said "stdlib +
+  Pillow"; Pillow and questionary are D's. Also: `textual` is an optional extra that
+  must become C's hard dependency, `rich` is undeclared anywhere, and the
+  `pokeprism_devtools.hacks` entry-point group spans three distributions, which
+  makes it a published ABI. Tests divide A 3 · B 3 · C 13 · D 19.
 
 ## Phase 3b · carve the remaining products — not started
 
 **Plan:** not written · **Findings:** none yet
 
 Four ledgers, four repos, the import rewrite, the test split, and the packaging
-files. Blocked on Phase 3 — a carve cannot be proved correct before the thing it
-carves is. Where the repos go, and whether this repo stays the editable copy
-through Phases 4 and 5, is 3b's to ask (deferred by the user 2026-08-04).
+files. **Unblocked 2026-08-04** — Phase 3 closed all five edges and
+`tests/test_products.py` asserts the split, so a carve can now be proved correct.
+Where the repos go, and whether this repo stays the editable copy through Phases 4
+and 5, is 3b's to ask (deferred by the user 2026-08-04).
+
+What Phase 3 leaves on 3b's desk, all of it written down rather than waiting to be
+discovered: the packaging decision table (Phase 3's PLAN), three files that moved
+into A from outside it and still owe ledger rows (named in
+`scripts/carve-product-a.sh`, which now carries **both** the `wiring` and `asmedit`
+spellings because a history filter reads the old one forever), and the test split —
+A owns 3 of 39, and `test_studio.py`/`test_studio_tui.py` import all four products.
 
 ## Phase 4 · the god objects — not started
 

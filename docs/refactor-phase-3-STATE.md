@@ -8,9 +8,20 @@ The one line this phase carries into the index, and where it is proved:
 > Five cross-product import edges survive Phase 2, so a carve run today produces
 > four repos that import each other. → "The five edges".
 
-**Status: commits 0–4 landed 2026-08-04.** Edges 1 and 2 of five are closed.
-Baseline re-measured at **35/38** before every commit and after it, the three
-known reds unchanged.
+**Status: the phase is complete — commits 0–11 landed 2026-08-04.** All five
+cross-product edges are closed and `tests/test_products.py` says so. Suite
+**35/38 → 36/39**, the three known reds unchanged throughout, re-run before and
+after every commit.
+
+**The order changed once, deliberately.** Commit 10 (the oracle) was pulled ahead
+of commit 9 (the `wiring/` rename), so the phase's riskiest commit landed against
+a live product check rather than a grep and a suite. It cannot run any earlier
+than that — the five edges are exactly what it fails on. Its only cost was one
+literal in the new test, which commit 9 renamed with everything else.
+
+**One commit was added: 7b**, a characterization test for the *family* resize
+form. Commit 8 retypes that body into two adapters and only prism's had an
+oracle — see [the half that had no test](#the-copy-that-had-no-oracle).
 
 ## Findings — the same list as the index, each linked to its evidence
 
@@ -23,11 +34,16 @@ known reds unchanged.
 - **`AddMap` is the generic new-map form with two of three dialects written** — [prism is the one never written](#addmap-is-the-generic-form-with-two-of-three-dialects-written).
 - **`_collisions` is written twice, same three messages** — [the port's cost](#what-the-third-dialect-would-cost--measured-not-guessed).
 - **A substring check passes for the wrong reason** — the layer underneath answers for it — [commit 0's falsification](#commit-0--what-falsifying-it-found).
-- A owns 3 test files of 38 — [A's test story is authorship](#as-tests-are-3-of-38).
+- A owns 3 test files of 39 — [A's test story is authorship](#as-tests-are-3-of-39).
 - **An edge map is not an importer list, and it is wrong in both directions** — [what the repoints actually touched](#an-edge-map-is-not-an-importer-list).
 - **B's bar checks a file the day it arrives, without being told** — [`contract_modules()` globs](#bs-bar-covers-arrivals-by-construction).
 - The mount is reached as `contract.mount`, not re-exported — [why the noun list stays a noun list](#the-mount-is-not-in-the-contracts-__init__).
 - **`shared/launcher.py` carries an architectural name over an available domain one** — [the tidy-up a move may not do](#what-edges-1-and-2-moved-without-fixing).
+- **A docstring's stated reason can die while the code it defends stays right** — [`all_rules` re-measured](#the-deferred-import-outlived-its-reason).
+- **Commit 8's second copy had no oracle, and the plan did not notice** — [what the family form never ran](#the-copy-that-had-no-oracle).
+- **The rename found thirteen docstrings already a year stale** — [reading every hit paid twice](#the-rename-found-what-a-rename-would-have-preserved).
+- **Three of the rename's hits were live guards spelled as strings** — [they would have gone on passing](#three-string-literals-were-guarding-nothing).
+- **A's dependency list was wrong: it has none** — [the packaging measurement](#packaging-measured-not-restated).
 - Re-verified: `contract/` still imports only `shared`; the carve path list still matches — [step 1](#re-verification-step-1).
 
 ## Re-verification (step 1)
@@ -296,13 +312,135 @@ done. Neither is a defect.
   whichever module names it. Not a src edge and not this phase's; it is priced
   here so **3b's test split finds it written down** rather than discovering it.
 
-## A's tests are 3 of 38
+## The deferred import outlived its reason
+
+`maplint/__init__.all_rules` imports the seven rule modules inside the function,
+and said why: reaching this package *for the finding channel alone* —
+`maplint.suppressions`, `maplint.textfit` — should not drag in the rules and
+through them all of `hacks.prism`.
+
+Commit 5 moved both halves of that channel out, so the reason was gone. **The
+deferral was re-measured before the docstring was rewritten**, and it is still
+worth keeping for a different reason: `import maplint` leaves **23** modules in
+`sys.modules` with it and **55** without, 18 of them prism's map parsers.
+
+Also checked and **false**: that the deferral prevents a circular import.
+Hoisting the rules to module top imports cleanly both ways, because
+`hacks/prism/claim.py` reaches `maplint.context` inside a function.
+
+The general shape is worth having: **a comment's *claim* can stop being true
+while the code it defends stays right.** Deleting the deferral because its stated
+reason had expired would have been a 32-module regression, and keeping the
+sentence would have been a lie. Measuring separated them.
+
+Afterwards, **no module outside `maplint/` imports `maplint` at all.**
+
+## The copy that had no oracle
+
+Commit 0 built a characterization test for prism's `ResizeMap.run` — the fifteen
+lines between the `s` key and `mapresize.resize` — because commit 8 retypes them.
+Commit 8 retypes them **twice**, and the plan's acceptance line for the family
+half was "`test_vanilla`/`test_polished` green".
+
+Measured: the closest thing the family had was
+`s.form("resize").dialect.shape.height_first is False`, which proves a form is
+*offered* carrying the right dialect and never runs it. Every other family resize
+test calls `mapresize.resize` directly. **Those fifteen lines executed nowhere on
+the family side**, and they are exactly the lines a copy gets wrong quietly —
+each carries a default or a conversion whose failure is invisible.
+
+So commit **7b** mirrors commit 0 in `tests/test_vanilla.py`, on the TOWN_A
+fixture already there, reached through `Session` the way the studio reaches it.
+Six mutations seeded into `studio/resize.py`, **5 caught**; the survivor is the
+same provably-equivalent one prism's twin found (`mapresize` opens with
+`raw = (fill or "").strip()`, so `""` and `None` cannot be told apart).
+
+**The lesson is about the plan, not the test.** A commit that duplicates a body
+needs an oracle *per copy*, and "the existing suite is green" counted the
+duplication as one thing because the plan named it as one commit.
+
+Commit 8 then proved the copies the way R8 requires. The CONTENT union over
+`studio` and `hacks` lost exactly `ResizeMap` and `resize_for` and nothing else;
+the arrivals, invisible to that tool, were diffed against the deleted original,
+where `FIELDS`, `__init__`, `describe` and `run` are **byte-identical in both
+copies** and the only differences are the `dialect` stamp and each copy's own
+comment. Prism stamps `dialect = DIALECT` and needs no factory; the family keeps
+`resize_for` because one class serves both its trees.
+
+## The rename found what a rename would have preserved
+
+Commit 9 was read hit by hit rather than done as a word-boundary rename, and the
+reading is what paid. Three separate finds, none of which a `sed` reaches:
+
+**Thirteen docstrings named files that left `wiring/` a year ago.**
+`wiring/objedit.py`, `wiring/props.py`, `wiring/removal.py`, `wiring/warps.py`,
+`wiring/text.py`, `wiring/mapedit.py`, `wiring/connections.py` — all eight moved
+to `hacks/prism/` at `033fbe4` (2026-07-25), and eleven files still pointed at
+the old home. **A rename would have rewritten them to `asmedit/objedit.py` and
+made them more wrong**, in a commit whose whole claim is that references are now
+correct. They name `hacks/prism/` now.
+
+**About forty hits are the English word and must not change.**
+"build-and-boot wiring", "Wiring two maps together", "the wiring is a provable
+no-op", "wiring a map", `_resolve_wiring`. A word-boundary rename destroys every
+one.
+
+**The three `WiringError`s are not renamed.** The phase plan cites them as the
+evidence that a meaningless folder name attaches to anything, which is true and
+is not the same as saying they are the debt: two of them name a *different sense*
+of the word — wiring two maps together — and the third is `mapfit`'s own. The
+evidence for a rename is not automatically its target.
+
+## Three string literals were guarding nothing
+
+The sharpest of commit 9's hits. Three places name the package **as a string**,
+and each is a live guard:
+
+| where | what it guards |
+|---|---|
+| `test_contract.py` `FORBIDDEN` | no contract module reaches the asm editors |
+| `test_vanilla.py:695` | `contract/action.py` imports no adapter and no editor |
+| `test_studio_tui.py` `READERS` | no studio *view* module reads the repo itself |
+
+Left spelled `"wiring"`, all three keep passing forever while guarding a package
+that no longer exists. This is the mirror image of Phase 1b's `pack` and Phase
+2's `panels`: those renames **reached** something they should not have, and this
+one would have **missed** three things it must. The word is not the call, in
+either direction.
+
+All three re-falsified after renaming, with an import seeded into a real module,
+and all three caught it. The first attempt at that falsification was itself
+wrong — the seed was prepended *above* `from __future__ import annotations`, so
+three "catches" were `SyntaxError`s rather than guards firing. **A falsification
+needs falsifying too**; the second attempt inserted after the `__future__` line
+and produced three real failures naming `asmedit`.
+
+## Packaging, measured not restated
+
+The draft table said **A depends on "stdlib + Pillow"**. Measured by AST over
+every module, **A imports no third-party module at all** — `Pillow` belongs to
+`gfx_view`/`mapview` and `questionary` to `map_new`'s wizard, both D. A is stdlib
+only, which is what "a pret/RGBDS library" ought to mean and is a stronger
+selling point than the draft claimed.
+
+Three more, in the PLAN's table: `textual` is an *optional* extra today and must
+become a hard dependency of C once C is its own distribution; `rich` is imported
+eleven times by C and declared in no `pyproject.toml` at all; and the
+`pokeprism_devtools.hacks` entry-point group **spans three distributions** — C
+registers two adapters, D registers one, B's mount reads the group — which makes
+that string a published ABI four `pyproject.toml` files must agree on.
+
+## A's tests are 3 of 39
 
 Phase 0 handed forward "A has no test file" as part of its packaging debt, which
 reads as a carve that was not run. Measured over what each test file imports, A can
 claim **three**: `test_flagalloc`, `test_regions`, `test_usage`. Two more are
 mostly A's and reach prism or vanilla for a fixture (`test_macroline`,
 `test_placement`).
+
+Re-measured across all 39 at the end of the phase, assigning each test to the
+highest product it reaches: **A 3, B 3, C 13, D 19**, plus `test_products` which
+imports nothing at all — it reads the tree by path.
 
 Everything else that exercises A does so through a hack's tree. **A's test story is
 authorship, not a carve** — the largest unpriced item in Phase 3b, and it is priced

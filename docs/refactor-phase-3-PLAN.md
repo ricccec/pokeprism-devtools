@@ -220,17 +220,42 @@ going red before it is believed.
 Phase 0 recorded A as "history plus source and nothing else". The story owed is a
 distribution per product, and the part Phase 3 can settle is what each one *is*:
 
-| product | dist depends on | entry points | tests it owns today |
-|---|---|---|---|
-| **A** | stdlib + Pillow | `prism-sym`, `prism-usage` | 3 of 38 |
-| **B** | A | none | `test_contract`, `test_products` |
-| **C** | A, B, `textual` | `prism-studio` | the family and studio tests |
-| **D** | A, B | the nine remaining `prism-*` | the prism tests |
+Measured 2026-08-04 by AST over every module, not restated from the draft — which
+had A's dependencies wrong. Third-party counts are import sites.
 
-**A owns three test files of thirty-eight** — `test_flagalloc`, `test_regions`,
-`test_usage`. Everything else that exercises A does so through a prism or family
-fixture. So A's test story is **authorship, not a carve**, and it is 3b's largest
-unpriced item. Recorded here rather than discovered there.
+| product | third-party | entry points | tests it owns |
+|---|---|---|---|
+| **A** | **none — stdlib only** | `prism-sym`, `prism-usage` | 3 of 39 |
+| **B** | none (imports A) | none | 3, plus `test_products` |
+| **C** | `textual` (61), `rich` (11) | `prism-studio` | 13 |
+| **D** | `questionary` (26), `Pillow` (2) | the nine remaining `prism-*` | 19 |
+
+Four things this measurement corrects or adds, each a decision 3b would
+otherwise have to make blind:
+
+- **A depends on nothing.** The draft said "stdlib + Pillow"; A imports no
+  third-party module at all. `Pillow` is `gfx_view`/`mapview`'s and `questionary`
+  is `map_new`'s wizard — both D. A's `pyproject.toml` has an empty
+  `dependencies` list, which is what "a pret/RGBDS library" ought to mean.
+- **`textual` is an optional extra today and must stop being one.** The
+  `[studio]` extra exists so someone wanting the command-line tools need not
+  install a widget library. Once C is its own distribution that argument is
+  served by *not installing C*, and a TUI whose toolkit is optional is a
+  distribution that can be installed broken. It becomes a hard dependency of C,
+  pin included — and `rich` becomes explicit, since C imports it eleven times
+  and no `pyproject.toml` has ever declared it.
+- **The `pokeprism_devtools.hacks` entry-point group spans three distributions
+  and is the seam's real ABI.** C registers `vanilla` and `polished`, D registers
+  `prism`, and B's `contract/mount.py` reads the group. Nothing imports anything
+  across that gap — which is the plugin seam working — but it means the group
+  name is a published contract, and the four `pyproject.toml` files have to agree
+  on the string. It is spelled once today, in `contract/mount._GROUP`.
+- **The tests do not divide the way the source does.** A owns 3 of 39
+  (`test_flagalloc`, `test_regions`, `test_usage`); everything else that
+  exercises A reaches it through a prism or family fixture. So **A's test story
+  is authorship, not a carve** — 3b's largest unpriced item. And two of C's
+  largest (`test_studio.py`, `test_studio_tui.py`) import all four products,
+  prism included, so they cannot go into C's repo unchanged.
 
 ## Handed on, but not to 3b — the third new-map dialect
 

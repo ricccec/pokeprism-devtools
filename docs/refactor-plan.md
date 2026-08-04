@@ -153,12 +153,11 @@ to have hidden a bug: `Connect` sits in `actions.py` while `Disconnect` sits in
 `content.py`, though the split is meant to be map-to-map versus in-map.
 
 **`wiring/` was not exempt**, though earlier drafts said so — neither a GBC/pret term
-nor an architecture noun, and the cost showed: `WiringError` is defined three times in
-three unrelated files, because a meaningless folder name attaches to anything. Its
-contents are one thing, **editing pret assembly source**, and it is `asmedit/` since
-Phase 3's commit 9. The three `WiringError`s are *not* renamed with it: two of them
-name a different sense of the word — wiring two maps together — and one is `mapfit`'s
-own. Their being three was the evidence, not the debt.
+nor an architecture noun, and a meaningless folder name attaches to anything:
+`WiringError` ended up defined three times in three unrelated files. Its contents are
+one thing, **editing pret assembly source**, and it is `asmedit/` since Phase 3. The
+three `WiringError`s stayed — two name a different sense of the word and one is
+`mapfit`'s own, so their being three was the evidence, not the target.
 
 **Enforce it in two layers, and neither is by name.** A "no duplicate class names"
 rule cannot tell the three duplicate kinds apart — one-per-adapter implementations,
