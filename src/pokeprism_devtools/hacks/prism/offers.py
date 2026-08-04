@@ -66,7 +66,7 @@ def blocks(root: Path) -> list[str]:
     and the directory you started the studio from. Anything else you can still
     type — the list is an offer, and `Combo` never insisted on one.
     """
-    from ...studio.mapadd import grids
+    from ...wiring.mapnew import grids
     return grids((root.parent / "polished-map", root / "maps/blk", Path.cwd()),
                  newmap.BLK_SUFFIXES)
 

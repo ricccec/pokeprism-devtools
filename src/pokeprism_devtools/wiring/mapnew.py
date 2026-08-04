@@ -209,6 +209,35 @@ def _notes(sections: dict[str, Section]) -> list[str]:
     return out
 
 
+def grids(folders, suffixes: tuple[str, ...]) -> list[str]:
+    """Every grid file within reach, **newest first**.
+
+    Deliberately uncached and deliberately not sorted by name: the file you are
+    looking for is the one you drew in polished-map ninety seconds ago, so it is
+    the newest thing here by definition, and a list cached at startup would be a
+    list with exactly that file missing from it.
+
+    Both `folders` and `suffixes` are the caller's because both fork. Prism
+    keeps its grids in `maps/blk/`; the family keeps them in `maps/`, and
+    polished's are `.ablk` beside a `.ablk.lzp` the build makes. A folder that
+    is not there is not an error — most of these are somebody's habit rather
+    than part of the tree.
+    """
+    seen: dict[Path, float] = {}
+    for folder in folders:
+        try:
+            entries = list(Path(folder).iterdir())
+        except OSError:
+            continue
+        for f in entries:
+            # The same suffixes the action will *check* the answer against — a
+            # list that offered a file the action then refused would be worse
+            # than no list at all.
+            if f.suffix.lower() in suffixes and f.is_file():
+                seen.setdefault(f.resolve(), f.stat().st_mtime)
+    return [str(p) for p in sorted(seen, key=lambda p: -seen[p])]
+
+
 def read_grid(blk: Path, height: int, width: int) -> bytes:
     """The grid, at exactly the size the constant is about to declare.
 
