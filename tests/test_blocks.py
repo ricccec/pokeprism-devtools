@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for `wiring/blocks.py` and vanilla's item-ball adder.
+"""Tests for `asmedit/blocks.py` and vanilla's item-ball adder.
 
 Three names have to agree for an item ball to work — the label the entry line
 points at, the const that gives the object its ordinal, and the event flag that
@@ -32,7 +32,7 @@ from pokeprism_devtools.hacks.vanilla import actions as fa  # noqa: E402
 from pokeprism_devtools.hacks.vanilla import eventblock as eb  # noqa: E402
 from pokeprism_devtools.hacks.vanilla.read import label_of  # noqa: E402
 from pokeprism_devtools.contract import ActionError  # noqa: E402
-from pokeprism_devtools.wiring import blocks as B  # noqa: E402
+from pokeprism_devtools.asmedit import blocks as B  # noqa: E402
 
 VANILLA = Path.home() / "code/ricccec/pokecrystal"
 POLISHED = Path.home() / "code/ricccec/polishedcrystal"
@@ -246,7 +246,7 @@ def test_falsified() -> None:
     if not (VANILLA / "maps").exists():
         check("vanilla tree is present", False, str(VANILLA))
         return
-    from pokeprism_devtools.wiring import regions
+    from pokeprism_devtools.asmedit import regions
 
     wrong = type("Wrong", (fa.VANILLA_ADDERS["object"][0],),
                  {"layout": regions.POLISHED})

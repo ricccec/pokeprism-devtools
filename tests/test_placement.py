@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for `wiring/placement.py` and the family's declared placements.
+"""Tests for `asmedit/placement.py` and the family's declared placements.
 
 Two halves, and the first exists to earn the second. The hermetic half tries to
 *break* the two readers before any measurement made with them is believed: a
@@ -27,8 +27,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools.hacks.vanilla import newmap as NM  # noqa: E402
-from pokeprism_devtools.wiring import placement as P  # noqa: E402
-from pokeprism_devtools.wiring.editvocab import EditError  # noqa: E402
+from pokeprism_devtools.asmedit import placement as P  # noqa: E402
+from pokeprism_devtools.asmedit.editvocab import EditError  # noqa: E402
 
 VANILLA = Path.home() / "code/ricccec/pokecrystal"
 POLISHED = Path.home() / "code/ricccec/polishedcrystal"

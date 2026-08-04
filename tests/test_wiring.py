@@ -28,11 +28,11 @@ from pokeprism_devtools.hacks.prism import eventheader as eh # noqa: E402
 from pokeprism_devtools.hacks.prism import write as PW  # noqa: E402
 from pokeprism_devtools.shared.edits import apply_edits  # noqa: E402
 from pokeprism_devtools.hacks.prism import connections as C, objedit as O  # noqa: E402
-from pokeprism_devtools.wiring import mapresize as MR  # noqa: E402
+from pokeprism_devtools.asmedit import mapresize as MR  # noqa: E402
 from pokeprism_devtools.contract import ActionError  # noqa: E402
 from pokeprism_devtools.hacks.prism.resize import DIALECT as PRISM_RESIZE  # noqa: E402
 from pokeprism_devtools.hacks.prism import removal as R  # noqa: E402
-from pokeprism_devtools.wiring import warpdel as WD  # noqa: E402
+from pokeprism_devtools.asmedit import warpdel as WD  # noqa: E402
 from pokeprism_devtools.hacks.prism import warps as W  # noqa: E402
 from pokeprism_devtools.hacks.prism.scaffold import Object  # noqa: E402
 
@@ -796,7 +796,7 @@ def _refusals(root: Path) -> None:
 
 
 def test_editing(root: Path, before: Counter) -> None:
-    """Changing things that are already there — `wiring/objedit.py`.
+    """Changing things that are already there — `hacks/prism/objedit.py`.
 
     The companion to `test_studio.py`'s round-trip, which proves an edit that
     changes nothing writes nothing. This proves the other half: that an edit which

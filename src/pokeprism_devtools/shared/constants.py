@@ -49,7 +49,7 @@ def as_int(s: str) -> int | None:
 
     Shared rather than prism's, because it is rgbasm's syntax and not any one
     dialect's: every gen-2 tree writes its numbers this way, so every adapter and
-    every piece of `wiring/` may read them without importing a hack to do it.
+    every piece of `asmedit/` may read them without importing a hack to do it.
     """
     s = s.strip()
     try:
@@ -79,7 +79,7 @@ class ConstSet:
 
     Declared by each write adapter, read by :func:`read_set`, so that "which
     file, which prefix, which spelling" crosses the seam as data — the same
-    shape `wiring/warpdel.WarpGrammar` takes, and for the same reason.
+    shape `asmedit/warpdel.WarpGrammar` takes, and for the same reason.
 
     `macro` is the part a survey had to find rather than assume. Most trees
     write a set as plain `const PAL_OW_RED` lines. Polished writes its

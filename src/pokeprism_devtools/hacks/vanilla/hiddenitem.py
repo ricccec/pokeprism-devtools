@@ -13,7 +13,7 @@ It is also vanilla's alone. Polished bakes the item into the `bg_event` itself
 it to reuse — which is why this lands in :data:`.actions.VANILLA_ONLY` beside
 the item ball rather than as a branch.
 
-The two irregularities the tree was measured for, both in `wiring/blocks.py`:
+The two irregularities the tree was measured for, both in `asmedit/blocks.py`:
 the label casing (`PP_UP` is `PpUp` here, not the ball's `PPUp`) and the
 argument order (`hiddenitem ITEM, FLAG`, though the macro emits them reversed).
 """
@@ -23,7 +23,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...contract import FLAGS, ITEMS, ActionError, Field, Result
-from ...wiring import blocks, flagalloc, regions
+from ...asmedit import blocks, flagalloc, regions
 from . import eventblock as eb
 from .entry import Entry
 

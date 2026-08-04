@@ -2,8 +2,8 @@
 
 These lived beside the base class in `studio/actions.py` until the family
 needed to write. They read as neutral — every gen-2 tree has connections and
-warps — but they are not: both go through `wiring/connections` and
-`wiring/warps`, and both of those parse prism's secondary map headers. Sitting
+warps — but they are not: both go through `hacks/prism/connections` and
+`hacks/prism/warps`, and both of those parse prism's secondary map headers. Sitting
 in the base module they meant that `hacks/vanilla/write.py` importing `Action`
 imported prism, which is the dependency the seam exists to prevent.
 

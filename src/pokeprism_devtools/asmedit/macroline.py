@@ -21,7 +21,7 @@ a differently-shaped question (every `connection` line in a file, a
 `sprite_header`'s four typed fields) keep their own regex, because a flag-driven
 parser serving all of them would be harder to read than any of them.
 
-Kept in `wiring/` and free of any `hacks.*` import on purpose, the same reason
+Kept in `asmedit/` and free of any `hacks.*` import on purpose, the same reason
 `editvocab` is: this is rgbds macro syntax, not any one hack's layout, so both
 prism's `mapedit` and the family's own header editor reach it without either
 dragging the other across the seam.

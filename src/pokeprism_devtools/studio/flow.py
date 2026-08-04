@@ -175,7 +175,7 @@ class Flow:
 
         The one thing `edits.EditMap` refuses on the Attributes tab, because
         doing it right means moving the block grid — and, at the top or left,
-        every object's coordinates — with it. See `wiring/mapresize.py`.
+        every object's coordinates — with it. See `asmedit/mapresize.py`.
         """
         form = self.session.form("resize")
         if (form is None or self._const is None or self._wanted is None

@@ -8,7 +8,7 @@ points at it. Unlike the item ball, the id that block names — `FRUITTREE_ROUTE
 away, and adding a tree means extending that const list and that table in step.
 So this action returns three edits — the map, `constants/script_constants.asm`,
 and `data/items/fruit_trees.asm` — and the coupling between the last two is
-`wiring/fruittrees.py`'s to keep, not this module's.
+`asmedit/fruittrees.py`'s to keep, not this module's.
 
 It is vanilla's alone. Polished has no `fruit_trees.asm` and calls `fruittree`
 nowhere; it bakes the dropped item into three `fruittree_event` object arguments
@@ -28,7 +28,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...contract import ITEMS, ActionError, Field, Result
-from ...wiring import blocks, fruittrees, regions
+from ...asmedit import blocks, fruittrees, regions
 from . import eventblock as eb
 from .entry import Entry
 
@@ -41,7 +41,7 @@ class AddFruittree(Entry):
     line of its own: a new `FRUITTREE_` constant and the `db <item>` that sits at
     its ordinal in `FruitTreeItems`. Get those two out of step and the tree drops
     the next tree's berry, so the table math lives in one place —
-    `wiring/fruittrees.py` — and this class only asks it for the id and hands it
+    `asmedit/fruittrees.py` — and this class only asks it for the id and hands it
     the item.
     """
 

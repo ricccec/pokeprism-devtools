@@ -558,7 +558,7 @@ def test_warp_deletion_crosses(root: Path) -> None:
     """
     print("\ndeleting a warp: the renumber crosses, the door goes nowhere, two refuse")
     from pokeprism_devtools.hacks.vanilla import write as VW
-    from pokeprism_devtools.wiring import warpdel
+    from pokeprism_devtools.asmedit import warpdel
 
     house = root / "maps/HouseA.asm"
     town = root / "maps/TownA.asm"
@@ -692,8 +692,8 @@ def test_the_base_imports_no_adapter() -> None:
             deps.append("." * n.level + (n.module or ""))
         elif isinstance(n, ast.Import):
             deps += [a.name for a in n.names]
-    bad = [d for d in deps if "hacks" in d or "wiring" in d]
-    check("contract/action.py imports no adapter and no wiring", not bad, str(bad))
+    bad = [d for d in deps if "hacks" in d or "asmedit" in d]
+    check("contract/action.py imports no adapter and no asm editor", not bad, str(bad))
     check("it still exports what a family action needs",
           all(hasattr(__import__(
               "pokeprism_devtools.contract", fromlist=["x"]), n)
@@ -854,7 +854,7 @@ def test_real_warp_deletion(root: Path, name: str, anchor: str, grammar,
     from pokeprism_devtools.hacks.vanilla import eventblock as EB
     from pokeprism_devtools.hacks.vanilla import write as VW
     from pokeprism_devtools.shared.edits import apply_edits
-    from pokeprism_devtools.wiring import warpdel
+    from pokeprism_devtools.asmedit import warpdel
 
     with tempfile.TemporaryDirectory() as d:
         scratch = Path(d) / name
@@ -1055,7 +1055,7 @@ def test_resizing_crosses(root: Path) -> None:
     """TOWN_A is `map_const TOWN_A,  4, 3` — width 4, height 3, twelve blocks."""
     print("\nresizing crosses the seam")
     from pokeprism_devtools.hacks.vanilla.resize import VANILLA
-    from pokeprism_devtools.wiring import mapresize as MR
+    from pokeprism_devtools.asmedit import mapresize as MR
 
     DIMS = "constants/map_constants.asm"
     before = (root / DIMS).read_text()
@@ -1134,7 +1134,7 @@ def test_the_resize_form(root: Path) -> None:
     print("\nthe family resize form asks the same thing the mechanism does")
     from pokeprism_devtools.contract import ActionError
     from pokeprism_devtools.hacks.vanilla.resize import VANILLA
-    from pokeprism_devtools.wiring import mapresize as MR
+    from pokeprism_devtools.asmedit import mapresize as MR
 
     form = Session(root).form("resize")
     check("the write adapter offers a resize form", form is not None)
@@ -1194,7 +1194,7 @@ def test_shared_blocks_refuse(tmp: Path) -> None:
     of a pair would corrupt the other, whose dimension constant does not move."""
     print("\ntwo maps sharing one grid refuse to be resized")
     from pokeprism_devtools.hacks.vanilla.resize import VANILLA
-    from pokeprism_devtools.wiring import mapresize as MR
+    from pokeprism_devtools.asmedit import mapresize as MR
 
     root = _fixture(tmp / "shared")
     (root / "data/maps/blocks.asm").write_text(
@@ -1224,7 +1224,7 @@ def test_real_resize(name: str, dialect) -> None:
         return
     print(f"\nevery {name} map, against both readings of its dimension line")
     from pokeprism_devtools.hacks.vanilla import read as r
-    from pokeprism_devtools.wiring.mapresize import MapShape
+    from pokeprism_devtools.asmedit.mapresize import MapShape
 
     flipped = MapShape(dialect.shape.path, dialect.shape.macro, height_first=True)
     fits = flips = maps = 0

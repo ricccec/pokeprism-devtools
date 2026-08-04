@@ -12,7 +12,7 @@ there is nothing here for it to reuse — which is why this lands in
 :data:`.actions.VANILLA_ONLY` as declared data rather than as a branch.
 
 The names, the measurements behind them, and the two bugs that reading a
-generated diff caught are all written down in `wiring/blocks.py`.
+generated diff caught are all written down in `asmedit/blocks.py`.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...contract import FLAGS, ITEMS, ActionError, Field, Result
-from ...wiring import blocks, flagalloc, regions
+from ...asmedit import blocks, flagalloc, regions
 from . import eventblock as eb
 from .entry import Entry
 
@@ -107,7 +107,7 @@ class AddItemball(Entry):
 
         # `label`, not `self.map`: the consts are prefixed with the map file's
         # stem and the map constant is spelled differently for every map whose
-        # name ends in a number. See `wiring/blocks.object_const`.
+        # name ends in a number. See `asmedit/blocks.object_const`.
         const = blocks.object_const([n for n, _ in block.names], label,
                                     "POKE_BALL")
         if block.const_lineno is None:
@@ -154,7 +154,7 @@ class AddItemball(Entry):
         defaulted to is not — it collides only when the map already holds a
         ball of the same item, and sharing there would make the second ball
         uncollectable. So the default gets a suffix and the typed name does
-        not. See `wiring/blocks.flag_name`.
+        not. See `asmedit/blocks.flag_name`.
         """
         try:
             flags = flagalloc.load(root)

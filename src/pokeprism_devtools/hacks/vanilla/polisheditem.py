@@ -19,7 +19,7 @@ red item ball rather than as a thing visibly not one of the tree.
 
 Both reuse nothing: a fresh event flag remembers the pickup, allocated in
 polished's single flag run — its ``; Johto itemballs`` captions are comments, not
-``const_next`` boundaries, so :mod:`...wiring.flagalloc` sees one bucket and a
+``const_next`` boundaries, so :mod:`...asmedit.flagalloc` sees one bucket and a
 preferred one would be a fiction. The item ball appends **unnamed**: item balls
 carry no ``object_const`` even where a map names its people, so it never disturbs
 the positional const list.
@@ -30,7 +30,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...contract import FLAGS, ITEMS, ActionError, Field, Result
-from ...wiring import blocks, flagalloc
+from ...asmedit import blocks, flagalloc
 from . import eventblock as eb
 from .entry import Entry
 

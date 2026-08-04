@@ -209,7 +209,7 @@ def fruittree(label: str, tree_id: str) -> list[str]:
     the names. The one difference is where the hard part lives: an item ball's
     three names are all in the map file, but a fruit tree's `tree_id` is a
     `FRUITTREE_` constant that indexes a table in a *different* file, so this
-    formatter only spells the reference and `wiring/fruittrees.py` owns making
+    formatter only spells the reference and `asmedit/fruittrees.py` owns making
     the reference resolve.
     """
     return [f"{label}:", f"{INDENT}fruittree {tree_id}"]

@@ -1,4 +1,4 @@
-"""Adding a map to a family tree — the form half of `wiring/mapnew.py`.
+"""Adding a map to a family tree — the form half of `asmedit/mapnew.py`.
 
 The sibling of the resize form — now one copy per adapter, in
 `hacks/<hack>/resize.py` — and it is instructive that this one could not be
@@ -25,7 +25,7 @@ implies a decision that was never available.
 **This form sketches**, the way `hacks/prism/newmap.py` does: the grid you
 pointed at, at the height and width you typed, drawn on the studio's grid while
 the form is still open. The mistake worth seeing is the one that otherwise
-builds — a grid that is not `height x width` — and `wiring/mapnew.read_grid`
+builds — a grid that is not `height x width` — and `asmedit/mapnew.read_grid`
 already refused it in words. Now it refuses in a picture, which is the same
 check told better: a wrong `height` looks like a map cut off or skewed, and you
 fix the number rather than reading arithmetic about it.
@@ -44,8 +44,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from .. import contract
-from ..wiring import mapnew
-from ..wiring.placement import Placement
+from ..asmedit import mapnew
+from ..asmedit.placement import Placement
 from ..contract import (BLOCK_SECTIONS, BLOCKS, GROUPS, SCRIPT_SECTIONS,
                         Action, ActionError, Field, Result)
 

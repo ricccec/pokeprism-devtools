@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for `wiring/regions.py` — the three regions of a family map file.
+"""Tests for `asmedit/regions.py` — the three regions of a family map file.
 
 The hermetic half tries to break the boundary probe in the three ways the
 survey actually got it wrong before the module existed:
@@ -30,7 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools.wiring import regions as R  # noqa: E402
+from pokeprism_devtools.asmedit import regions as R  # noqa: E402
 
 VANILLA = Path.home() / "code/ricccec/pokecrystal"
 POLISHED = Path.home() / "code/ricccec/polishedcrystal"

@@ -11,7 +11,19 @@
 # drops A's whole first month — the birth of the LZ decompressor, the sym reader
 # and both CLIs. See docs/refactor-phase-0-STATE.md, "The ledger".
 #
-# Rebuild the ledger before reusing this; phases 1 and 2 move files, and every
+# `asmedit` and `wiring` are the same folder, before and after Phase 3 renamed
+# it, and BOTH are named on purpose: a history filter reads the old spelling
+# forever, so dropping `wiring` would lose everything the folder did up to that
+# rename, and dropping `asmedit` would lose everything after it.
+#
+# Phase 3 moved three more files INTO A from outside it, and their history is
+# under the path they came from — these need ledger rows and do not have them:
+#
+#   shared/emulator.py  <- dev_server/emulator.py
+#   shared/launcher.py  <- dev_server/launcher.py
+#   shared/textfit.py   <- maplint/textfit.py
+#
+# Rebuild the ledger before reusing this; phases 1, 2 and 3 move files, and every
 # move adds a row. Read the rows off the renames git recorded, walking the chains
 # backward from today's paths:
 #
@@ -24,6 +36,7 @@ set -e
 
 git filter-repo \
   --path src/pokeprism_devtools/shared \
+  --path src/pokeprism_devtools/asmedit \
   --path src/pokeprism_devtools/wiring \
   --path src/pokeprism_devtools/usage \
   --path src/pokeprism_devtools/sym_lookup \

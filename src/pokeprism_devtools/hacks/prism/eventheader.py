@@ -41,7 +41,7 @@ from ...shared.edits import Edit
 # What an entry *means* is :mod:`.eventmodel`; this module is about the file it
 # lives in. Re-exported, because every caller wants both and the split is ours,
 # not theirs.
-from ...wiring.macroline import read_macro_line
+from ...asmedit.macroline import read_macro_line
 from .eventmodel import (LIST_MACROS, LIST_ORDER, PROPS, Entry, EventList,
                          Handle, ListKind, Prop, Trainer, UnparseableHeader,
                          as_int, format_entry, markers, script_block,
@@ -53,7 +53,7 @@ __all__ = ["LIST_MACROS", "LIST_ORDER", "PROPS", "Entry", "EventHeader",
            "parse_map", "parse_text", "script_block", "trainer_of"]
 
 #: Finding the block in a file, which is this module's whole job. Reading *one
-#: line of it* is `wiring.macroline.read_macro_line` — a different question.
+#: line of it* is `asmedit.macroline.read_macro_line` — a different question.
 _HEADER_RE = re.compile(r"^(\w+)_MapEventHeader::?(.*)$")
 _DB_RE = re.compile(r"^(?P<prefix>.*?\bdb\s+)(?P<args>.+?)\s*(?P<comment>;.*)?$")
 
@@ -128,7 +128,7 @@ class EventHeader:
         """Delete an entry and decrement the count byte.
 
         Renumbers nothing: callers that remove a warp must fix up every
-        ``warp_to`` in other maps that pointed past it (see wiring/warps.py).
+        ``warp_to`` in other maps that pointed past it (see hacks/prism/warps.py).
         """
         lst = self.lists[kind]
         entry = lst.entries[index]
@@ -233,7 +233,7 @@ def parse_text(text: str, path: Path) -> EventHeader:
     """The same, over text already in hand rather than text on disk — for a caller
     partway through changing the file. Rewording what an object says grows the
     block above the event header, and every line number below it slides, so the
-    header must be read from what the file is *becoming*. See `wiring/objedit.py`.
+    header must be read from what the file is *becoming*. See `hacks/prism/objedit.py`.
     """
     # split("\n") is exactly invertible by "\n".join — splitlines() is not,
     # and the round-trip contract depends on that.

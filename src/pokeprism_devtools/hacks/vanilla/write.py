@@ -17,12 +17,12 @@ from pathlib import Path
 from ... import contract
 from ...contract import Action, ActionError, Refused, Result
 from ...shared.constants import ConstSet, read_set
-from ...wiring import trainerroster, warpdel
-from ...wiring.warpdel import BlindTable, DeadDoor, WarpGrammar, WarpMacro
+from ...asmedit import trainerroster, warpdel
+from ...asmedit.warpdel import BlindTable, DeadDoor, WarpGrammar, WarpMacro
 from . import newmap
 from .eventblock import EventBlock, UnparseableEvents, parse_map
 
-#: How the family spells a warp reference, for :mod:`...wiring.warpdel`. The
+#: How the family spells a warp reference, for :mod:`...asmedit.warpdel`. The
 #: survey that produced this record is the reason Phase 5 was a port and not a
 #: copy: prism's two macros are three here, and neither tree has prism's
 #: `dummy_warp`.
@@ -40,7 +40,7 @@ from .eventblock import EventBlock, UnparseableEvents, parse_map
 #: ``map_id NONE`` emits ``db 0, 0``, so ``warp_event x, y, NONE, -1`` assembles
 #: to the very five bytes prism's ``dummy_warp y, x`` does. It is the same door
 #: to nowhere, spelled in the family's own declared constants rather than in a
-#: macro prism invented — and, as :class:`~...wiring.warpdel.DeadDoor` records,
+#: macro prism invented — and, as :class:`~...asmedit.warpdel.DeadDoor` records,
 #: "nowhere" is a weaker promise than either dialect's comments claim.
 WARPS = WarpGrammar(
     macros=(WarpMacro("warp_event", at=3, at_map=2, door=True),
@@ -125,7 +125,7 @@ class Writer:
     handle resolved by handing it back, the const list kept in step — and for
     everything but a warp its blast radius is a single file. A warp's is the
     repo, and it crosses through :data:`WARPS`: the rule and the scan live in
-    `wiring/warpdel`, this dialect's spelling of them is a record, and the one
+    `asmedit/warpdel`, this dialect's spelling of them is a record, and the one
     thing the dialect cannot do (spell a door to nowhere) is a refusal that
     names the doors rather than a silence.
 
@@ -401,7 +401,7 @@ def delete_warp(root: Path, label: str, map_const: str, index: int,
 
     The mirror of prism's :func:`..prism.write.delete_warp` over the family's
     own parser: this half is the dialect's — find the map file, splice the entry
-    out of its ``def_warp_events`` list — and :mod:`...wiring.warpdel` does the
+    out of its ``def_warp_events`` list — and :mod:`...asmedit.warpdel` does the
     half that is every tree's, from the grammar handed to it. Neither function
     is a copy of the other; the rule they share lives in one place and each
     tree's spelling of it is a record.

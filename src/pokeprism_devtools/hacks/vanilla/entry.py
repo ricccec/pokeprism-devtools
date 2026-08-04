@@ -16,7 +16,7 @@ from pathlib import Path
 from ... import contract
 from ...contract import (FLAGS, MOVEMENTS, PALETTES, SPRITES, Action,
                                ActionError, Field, Result)
-from ...wiring import regions
+from ...asmedit import regions
 from . import eventblock as eb
 from .shapes import VANILLA_OBJECT
 
@@ -68,7 +68,7 @@ class Entry(Action):
     #: third fork, and the one with no visible symptom when it is wrong: the
     #: two trees put their scripts on opposite sides of the event header, and a
     #: block appended on the wrong side lands inside the warp list, which
-    #: assembles and gives the map the wrong doors. See `wiring/regions.py`.
+    #: assembles and gives the map the wrong doors. See `asmedit/regions.py`.
     layout = regions.VANILLA
     #: Which of the four lists this action's line lives in.
     list_kind = "object"

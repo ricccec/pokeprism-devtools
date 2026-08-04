@@ -238,7 +238,7 @@ def append(root: Path, rel: str, region: str, block: list[str], *,
     """Add `block` at the end of one region, returning a whole-file Edit.
 
     Appending rather than inserting is deliberate and is the same reasoning
-    `wiring/mapnew` uses for the parallel arrays: the event lists are counted by
+    `asmedit/mapnew` uses for the parallel arrays: the event lists are counted by
     position, so anything that shifts an existing entry renumbers it. Texts and
     scripts are addressed by label and do not care where they sit — but they
     share a file with the lists that do, so a splice that is merely "somewhere

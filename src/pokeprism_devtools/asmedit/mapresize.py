@@ -86,7 +86,7 @@ class MapShape:
     def line(self, const: str, height: int, width: int) -> str:
         """The dimension line for a map that does not have one yet.
 
-        Here rather than in `wiring/mapnew.py` for the reason the class exists:
+        Here rather than in `asmedit/mapnew.py` for the reason the class exists:
         a *new* map is the one place a transposed height and width would not
         even contradict the grid it was measured from, since both are being
         written at once from the same two numbers. Three callers, one order.

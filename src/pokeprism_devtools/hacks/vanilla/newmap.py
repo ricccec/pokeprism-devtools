@@ -1,7 +1,7 @@
 """How the pokecrystal family adds a map: where it goes, and how it is spelled.
 
 The mirror of `hacks/{prism,vanilla}/resize.py` — no mechanism, only this
-family's answers to what `wiring/mapnew.py` and `wiring/placement.py` ask. And
+family's answers to what `asmedit/mapnew.py` and `asmedit/placement.py` ask. And
 here, unusually, the two trees in the family disagree with *each other*: the
 fork is not vanilla against prism but **blocks against scripts**, drawn
 differently in each tree.
@@ -60,9 +60,9 @@ from pathlib import Path
 from ... import contract
 from ...contract import Field
 from ...shared.constants import ConstSet
-from ...wiring.mapnew import NewMap
-from ...wiring.mapresize import MapShape
-from ...wiring.placement import JOIN, MINT, Placement, banks, sections
+from ...asmedit.mapnew import NewMap
+from ...asmedit.mapresize import MapShape
+from ...asmedit.placement import JOIN, MINT, Placement, banks, sections
 from .resize import SHAPE
 
 #: Where each blob's entry is written, in both trees.
@@ -299,7 +299,7 @@ def offers(root: Path, dialect: FamilyNewMap, kind: str) -> list[str] | None:
         n = sum(1 for ln in text.split("\n") if ln.strip().startswith("newgroup"))
         return [str(i) for i in range(1, n + 1)]
     if kind == contract.BLOCKS:
-        from ...wiring.mapnew import grids
+        from ...asmedit.mapnew import grids
         # `maps/`, not prism's `maps/blk/` — the family keeps its grids beside
         # the map files. The suffix is this tree's own for the same reason
         # `blk_name` uses it: polished draws `.ablk` and INCBINs the

@@ -15,7 +15,7 @@ contains it — "TM" should offer `TM_HAIL` before `HM_CUT`'s neighbours.
 `Select` insists its value be one of its options; but the event-flag field must
 accept `EVENT_CASTRO_FOREST_SAGE`, a name that does not exist yet and will be
 created *because* you typed it. The list is an offer, never a constraint. Every
-field that refuses an unknown value refuses it in the wiring layer, where the
+field that refuses an unknown value refuses it in the asm editors, where the
 refusal can explain itself — not here, by making it untypable.
 
 The dropdown is mounted on the **screen**, not inside the form, and that is not a

@@ -137,7 +137,7 @@ class Form(ModalScreen["Preview | Draft | None"]):
     Submitting writes nothing. It builds the action and *previews* it, which is
     where an action that cannot be built at all — a sprite that doesn't exist, a
     party index past the end of the group — refuses. It refuses here, having
-    touched not one byte of the repo, and the message the wiring layer wrote for
+    touched not one byte of the repo, and the message the asm editor wrote for
     a human is shown under the form with everything you typed still in it.
 
     Three things the form does without knowing what any of them mean:

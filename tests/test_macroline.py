@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for `wiring/macroline` — the dialect-free rule for reading and
+"""Tests for `asmedit/macroline` — the dialect-free rule for reading and
 rewriting one `macro Label, …` line, argument by argument.
 
 The rule this guards is the one the whole header-edit path rests on: *an argument
@@ -33,8 +33,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools.wiring.editvocab import EditError  # noqa: E402
-from pokeprism_devtools.wiring.macroline import splice_macro_args  # noqa: E402
+from pokeprism_devtools.asmedit.editvocab import EditError  # noqa: E402
+from pokeprism_devtools.asmedit.macroline import splice_macro_args  # noqa: E402
 
 PRISM = Path.home() / "code/ricccec/pokeprism"
 
@@ -152,7 +152,7 @@ def test_readers_agree_about_comments() -> None:
     This used to pin a divergence: prism's reader folded a trailing `; comment`
     into the last argument, the family's dropped it, the writer preserved it, so
     prism's read path and prism's *own* write path disagreed about what the
-    arguments of one line were. The reader was lifted to `wiring/macroline`
+    arguments of one line were. The reader was lifted to `asmedit/macroline`
     beside the writer (`docs/refactor-STATE.md`, Phase −1), so the assertion
     is now that **all three agree**, and it is made through the two adapters'
     real read paths rather than against a copy of their regexes — a site that
@@ -166,7 +166,7 @@ def test_readers_agree_about_comments() -> None:
 
     from pokeprism_devtools.hacks.prism import mapsource
     from pokeprism_devtools.hacks.vanilla import mapedit as family_mapedit
-    from pokeprism_devtools.wiring.macroline import read_macro_line
+    from pokeprism_devtools.asmedit.macroline import read_macro_line
 
     args = ("TILESET_CAVE, CAVE, LM_MT_EMBER, MUSIC_CAVE, 0, PALETTE_NITE, "
             "FISHGROUP_SHORE")

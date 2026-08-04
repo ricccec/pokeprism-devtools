@@ -5,7 +5,7 @@ is the test that makes the carve safe: if a later commit re-fuses two products,
 it fails **here**, in the repo where that is one revert, rather than in four
 repos that turn out to import each other.
 
-    A · pret/RGBDS library   shared, wiring, usage, sym_lookup
+    A · pret/RGBDS library   shared, asmedit, usage, sym_lookup
     B · adapter contract     contract                          -> A
     C · the IDE              studio, hacks/vanilla, hacks/polished -> A, B
     D · prism                hacks/prism and its nine CLIs      -> A, B
@@ -52,7 +52,7 @@ PKG = SRC / "pokeprism_devtools"
 #: tree is consistent with itself, and what is wanted is whether it matches the
 #: split somebody decided on.
 PRODUCTS = {
-    "A": ("shared", "wiring", "usage", "sym_lookup"),
+    "A": ("shared", "asmedit", "usage", "sym_lookup"),
     "B": ("contract",),
     "C": ("studio", "hacks/vanilla", "hacks/polished"),
     "D": ("hacks/prism", "dev_server", "gfx_view", "map_inspect", "map_new",

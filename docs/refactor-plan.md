@@ -109,7 +109,7 @@ The dependency graph already permits this split — measured, not assumed:
 
 | product | contents | today's blocker |
 |---|---|---|
-| **A · pret/RGBDS library** | `shared` + `wiring` + `usage` + `sym_lookup` | none — zero dependency on any hack or the IDE |
+| **A · pret/RGBDS library** | `shared` + `asmedit` + `usage` + `sym_lookup` | none — zero dependency on any hack or the IDE |
 | **B · adapter contract** | `Hack`, its capability protocols, the domain vocabulary | does not exist; split across `hacks/seam.py` and `studio/` |
 | **C · the IDE** | `studio` + `hacks/vanilla` + `hacks/polished` | depends on B, which is inside it |
 | **D · prism** | `hacks/prism` + the CLI packages Phase −1 assigned it | fused to C |
@@ -152,10 +152,13 @@ is generic enough
 to have hidden a bug: `Connect` sits in `actions.py` while `Disconnect` sits in
 `content.py`, though the split is meant to be map-to-map versus in-map.
 
-**`wiring/` is not exempt**, though earlier drafts said so — neither a GBC/pret term
-nor an architecture noun, and the cost shows: `WiringError` is defined three times in
+**`wiring/` was not exempt**, though earlier drafts said so — neither a GBC/pret term
+nor an architecture noun, and the cost showed: `WiringError` is defined three times in
 three unrelated files, because a meaningless folder name attaches to anything. Its
-contents are one thing, **editing pret assembly source**. Rename on the way into A.
+contents are one thing, **editing pret assembly source**, and it is `asmedit/` since
+Phase 3's commit 9. The three `WiringError`s are *not* renamed with it: two of them
+name a different sense of the word — wiring two maps together — and one is `mapfit`'s
+own. Their being three was the evidence, not the debt.
 
 **Enforce it in two layers, and neither is by name.** A "no duplicate class names"
 rule cannot tell the three duplicate kinds apart — one-per-adapter implementations,

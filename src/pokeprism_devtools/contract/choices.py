@@ -56,6 +56,6 @@ SIGNS = "signs"
 #: The only kinds whose answers are neither constants nor paths but *places* —
 #: and, unlike every other kind here, the ones where an empty list means the
 #: tree mints rather than chooses, so the form drops the field. See
-#: `wiring/placement.py`.
+#: `asmedit/placement.py`.
 SCRIPT_SECTIONS = "script-sections"
 BLOCK_SECTIONS = "block-sections"

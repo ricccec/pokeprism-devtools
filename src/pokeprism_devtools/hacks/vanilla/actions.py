@@ -51,7 +51,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...contract import FACINGS, MAPS, ActionError, Field, Result
-from ...wiring import regions
+from ...asmedit import regions
 from . import eventblock as eb
 from .entry import OBJECT_FIELDS
 from .entry import Entry as _Entry

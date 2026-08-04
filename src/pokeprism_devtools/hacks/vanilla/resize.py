@@ -1,13 +1,13 @@
 """How the pokecrystal family answers a resize.
 
 The mirror of `hacks/prism/resize.py`, and the same shape: no arithmetic, only
-this family's answers to the questions `wiring/mapresize.py` asks. Two of those
+this family's answers to the questions `asmedit/mapresize.py` asks. Two of those
 answers are transpositions of prism's, and both are the kind that assembles
 perfectly while being wrong:
 
 * the **dimension macro** is `map_const NAME, W, H` — width first, where prism's
   `mapgroup` is height first. `MapShape` carries that bit; see the argument in
-  `wiring/mapresize.py`.
+  `asmedit/mapresize.py`.
 * the **coordinate args** are `x, y` — x first, where prism's entries lead with
   y. Every family list agrees on it (`shapes.VANILLA_OBJECT.slots` opens
   `("x", "y", …)` and warp/coord/bg all read `_at(a, 0), _at(a, 1)` the same
@@ -35,9 +35,9 @@ from pathlib import Path
 
 from ...contract import Action, ActionError, Field, Result
 from ...shared.edits import Edit
-from ...wiring import mapresize
-from ...wiring.mapresize import MapShape, Standing
-from ...wiring.editvocab import EditError
+from ...asmedit import mapresize
+from ...asmedit.mapresize import MapShape, Standing
+from ...asmedit.editvocab import EditError
 from . import read as r
 from . import eventblock as eb
 

@@ -1,6 +1,6 @@
 """Adding a map to a pokecrystal-family tree: six files, one order to keep.
 
-`wiring/placement.py` answers *where the blobs go*; this answers *what gets
+`asmedit/placement.py` answers *where the blobs go*; this answers *what gets
 written*. The two are separate because placement is the entire fork between the
 trees and this is very nearly shared — the same six files in the same order,
 differing only in how a handful of lines are spelled, which is what the
@@ -33,7 +33,7 @@ map-for-map after the write rather than checking that the lines look right.
 The transposition, for the third time
 -------------------------------------
 The dimension line is written by :meth:`MapShape.line` and not by anything
-here, for the reason `wiring/mapresize.py` gives at length: `mapgroup NAME, H,
+here, for the reason `asmedit/mapresize.py` gives at length: `mapgroup NAME, H,
 W` against `map_const NAME, W, H`. A new map is the *worst* case for it — a
 resize can at least be checked against the grid that already exists, but here
 the grid and the constant are written in the same breath from the same two
@@ -202,7 +202,7 @@ def _notes(sections: dict[str, Section]) -> list[str]:
            for blob, section in sorted(sections.items())]
     pinned = [s for s in sections.values() if s.pinned]
     if pinned:
-        # Honest about what is not checked: see `wiring/placement.py`.
+        # Honest about what is not checked: see `asmedit/placement.py`.
         out.append("joining a pinned section means the map shares that bank — "
                    "if the build overflows it, they no longer fit together")
     out.append("the map has no connections or events yet")

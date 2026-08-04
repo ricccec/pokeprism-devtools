@@ -19,12 +19,12 @@ because it is the same on both.
 
 **Reuse-only, mirroring prism's own form.** You place an existing party; making
 one is a change to the shared roster file and a different job (see
-`wiring/trainerroster`). The flag defaults to `EVENT_<MAP>_TRAINER`, prism's
+`asmedit/trainerroster`). The flag defaults to `EVENT_<MAP>_TRAINER`, prism's
 map-named convention, allocated fresh — never the tree's `EVENT_BEAT_<CLASS>_
 <PARTY>`, which two placements of one party would have to share.
 
 The block shapes, and the sweeps of all 333 vanilla and 593 polished trainers
-behind them, are in `wiring/blocks.py`.
+behind them, are in `asmedit/blocks.py`.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from pathlib import Path
 
 from ...contract import (CLASSES, FLAGS, MOVEMENTS, PALETTES, PARTIES,
                                SPRITES, ActionError, Field, Result)
-from ...wiring import blocks, flagalloc, regions, trainerroster
+from ...asmedit import blocks, flagalloc, regions, trainerroster
 from . import eventblock as eb
 from .entry import Entry
 

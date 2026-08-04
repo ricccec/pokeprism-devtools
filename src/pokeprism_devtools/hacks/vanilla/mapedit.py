@@ -3,7 +3,7 @@
 Prism keeps a map's header in one `map_header`/`map_header_2` pair; the family
 **splits it across two files**, and this module writes both, argument by
 argument, under the same rule prism's does — *an argument you did not change
-comes back exactly as it was written* (`wiring/macroline`, which both trees now
+comes back exactly as it was written* (`asmedit/macroline`, which both trees now
 reach). The two lines:
 
     data/maps/maps.asm        map            Label, <the tree's own arguments>
@@ -23,7 +23,7 @@ module serves both trees; only the dialect it is called with differs.
   a rename touches every reference and a renumber drops every `.sav` onto the
   wrong map. The const rides along as a `kind="fixed"` row, shown and never written.
 * *the group, the height and the width* are not in these two lines at all — they
-  live in `constants/map_constants.asm`, and the size is `wiring/mapresize.py`'s
+  live in `constants/map_constants.asm`, and the size is `asmedit/mapresize.py`'s
   own operation with its own refusals.
 * *the connections* need no refusal here, unlike prism's conn_flags: the family's
   `MAP_CONNECTIONS_*` is computed by the `map_attributes` macro from the
@@ -40,8 +40,8 @@ from pathlib import Path
 
 from ...shared.constants import read_set
 from ...contract import Action, ActionError, Field, Result
-from ...wiring.editvocab import Change, EditError, same
-from ...wiring.macroline import find_macro_args, splice_macro_args
+from ...asmedit.editvocab import Change, EditError, same
+from ...asmedit.macroline import find_macro_args, splice_macro_args
 
 #: The two files the header is split across — the same in both family trees.
 MAPS = "data/maps/maps.asm"
@@ -141,7 +141,7 @@ def _unknown(root: Path, dialect, set_of, was: dict[str, str],
 def _args_of(root: Path, rel: str, macro: str, label: str) -> list[str] | None:
     """This map's `macro` arguments in `rel`, or None if the file has no such line.
 
-    The read half of `wiring/macroline`, so the index a field is read at is the
+    The read half of `asmedit/macroline`, so the index a field is read at is the
     index :func:`edit_map` splices it back at.
     """
     path = root / rel

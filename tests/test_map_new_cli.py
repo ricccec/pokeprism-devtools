@@ -10,7 +10,7 @@ and under the whole suite it executed exactly one of them — its `def`. `main`
 is 68 and executed one. Nothing pinned what the wizard asks, in what order, or
 what it refuses.
 
-`tests/test_map_new.py` does not cover this: it tests `wiring/mapnew.py` and
+`tests/test_map_new.py` does not cover this: it tests `asmedit/mapnew.py` and
 `hacks/vanilla/newmap.py`, one underscore away and unrelated code.
 
 **The order of the questions is part of the golden.** A wizard is a sequence,

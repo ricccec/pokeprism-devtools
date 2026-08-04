@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for `wiring/mapnew.py` — adding a map to a pokecrystal-family tree.
+"""Tests for `asmedit/mapnew.py` — adding a map to a pokecrystal-family tree.
 
 The check that matters is not that the written lines look right. It is that
 `constants/map_constants.asm` and `data/maps/maps.asm` stay **parallel arrays**:
@@ -29,8 +29,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools.hacks.vanilla import newmap as NM  # noqa: E402
 from pokeprism_devtools.shared.edits import apply_edits  # noqa: E402
-from pokeprism_devtools.wiring import mapnew as MN  # noqa: E402
-from pokeprism_devtools.wiring.editvocab import EditError  # noqa: E402
+from pokeprism_devtools.asmedit import mapnew as MN  # noqa: E402
+from pokeprism_devtools.asmedit.editvocab import EditError  # noqa: E402
 
 VANILLA = Path.home() / "code/ricccec/pokecrystal"
 POLISHED = Path.home() / "code/ricccec/polishedcrystal"

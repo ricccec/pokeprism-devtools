@@ -4,7 +4,7 @@ Split from :mod:`.eventheader`, which is about the *file* — how those lists ar
 found in a map's asm, and how they are written back without disturbing a byte
 around them. This half is about their meaning, and it reads nothing.
 
-The line between the two is the one every caller already draws. `wiring/objedit.py`
+The line between the two is the one every caller already draws. `hacks/prism/objedit.py`
 asks "which argument of a `person_event` is the palette"; `maplint` asks "what does
 this entry point at". Neither is a question about parsing, and both were answered
 here before this module had a name.
@@ -384,7 +384,7 @@ def format_entry(macro: str, args: list[str]) -> str:
 
 
 #: Reading an rgbasm number is not a prism fact — it is rgbasm's — so it lives in
-#: `shared` where every adapter and all of `wiring/` can reach it without
+#: `shared` where every adapter and all of `asmedit/` can reach it without
 #: importing a hack. Re-exported here because prism's callers have always spelled
 #: it `eventmodel.as_int`, and that name is part of this module's surface.
 as_int = _as_int

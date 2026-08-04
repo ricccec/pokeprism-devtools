@@ -6,12 +6,12 @@ very text they were computed from. There is no second code path that could
 disagree with it.
 
 The **notes** above the diff matter as much as the diff, and are the reason this
-screen exists rather than a yes/no toast. They are what the wiring layer decided
+screen exists rather than a yes/no toast. They are what the asm editors decided
 a person has to be told before agreeing: that deleting this trainer leaves his
 party behind as an orphan, because deleting the party would renumber every party
 below it and re-team every trainer citing them. That is not something to discover
 afterwards from a linter, and it is not something a tool should decide for you.
-So it is on the screen, in the wiring layer's own words, above the button.
+So it is on the screen, in the asm editors' own words, above the button.
 """
 
 from __future__ import annotations

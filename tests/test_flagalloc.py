@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for `wiring/flagalloc.py` — allocating a flag in a bucketed enum.
+"""Tests for `asmedit/flagalloc.py` — allocating a flag in a bucketed enum.
 
 The hermetic half breaks the allocator the ways the survey actually broke:
 
@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools.wiring import flagalloc as F  # noqa: E402
+from pokeprism_devtools.asmedit import flagalloc as F  # noqa: E402
 
 VANILLA = Path.home() / "code/ricccec/pokecrystal"
 POLISHED = Path.home() / "code/ricccec/polishedcrystal"

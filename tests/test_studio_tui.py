@@ -1338,7 +1338,7 @@ class TestEditing(_Driven):
 
     def test_e_on_the_attributes_tab_opens_the_map_header(self) -> None:
         """With the label, the map id and — deliberately — the group left out. See
-        `wiring/mapedit.py`: moving a map between groups renumbers the ids in both,
+        `hacks/prism/mapedit.py`: moving a map between groups renumbers the ids in both,
         and a .sav stores the numeric pair, so every save file would drop the player
         onto the wrong map."""
         async def go():
@@ -2607,7 +2607,7 @@ class TestTheSeam(unittest.TestCase):
     #: of the source first — `prefill.prefill` opens the map — and a view that could
     #: do that could fill a form from a file the session has not agreed to trust.
     READERS = ("blocksrc", "eventheader", "wilddata", "mapsource", "blockdata",
-               "metatiles", "render", "dialogue", "trainerparty", "wiring",
+               "metatiles", "render", "dialogue", "trainerparty", "asmedit",
                "roofs", "reader", "world", "edits", "prefill", "objedit",
                "mapedit", "warpdel", "removal", "connections", "prefs")
 

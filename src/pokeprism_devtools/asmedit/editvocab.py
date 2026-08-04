@@ -10,7 +10,7 @@ arguments sit in, and none of that lives here.
 The prism-bound editor that *uses* this vocabulary — `MapEdit`, the field-index
 constants (`PALETTE`, `S_X`, `W_Y`), the `edit_*` functions — is in
 `hacks/prism/objedit`, because those encode prism's layout and no other tree's.
-This module is kept in `wiring/` and free of any `hacks.prism` import on purpose:
+This module is kept in `asmedit/` and free of any `hacks.prism` import on purpose:
 a family editor may one day reuse the discipline, and it must be able to without
 dragging the prism parser stack across the seam.
 """
@@ -47,7 +47,7 @@ _PAL_RE = re.compile(r"\bPAL_OW_\w+")
 
 class EditError(RuntimeError):
     """This thing cannot be changed the way you asked. Carries a message meant
-    for a human, as the rest of the wiring layer's errors do."""
+    for a human, as the rest of this package's errors do."""
 
 
 @dataclass

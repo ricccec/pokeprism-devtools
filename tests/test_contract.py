@@ -28,7 +28,7 @@ Four checks, and they are deliberately different in kind:
 **The two survivors are named, not excused.** Both are `hacks/vanilla/`
 reaching `studio/mapadd.py`, which is a **C->C** edge and legal: `AddMap` is the
 generic new-map form, two of the three hacks mount it as dialects, and vanilla
-ships with the IDE. Phase 3 retired the other three — `grids` went to `wiring/`
+ships with the IDE. Phase 3 retired the other three — `grids` went to `asmedit/`
 and the resize form became one copy per adapter — so what this list now says is
 that **no prism module reaches the IDE at all**, asserted separately below.
 The list is asserted *exactly*, so the day one moves this file says so rather
@@ -72,12 +72,12 @@ CONTRACT = PKG / "contract"
 #: the contract back without turning the arrow round. Everything else in this repo
 #: is either the IDE, an adapter, or a tool, and none of them may be named here.
 ALLOWED = {"shared"}
-FORBIDDEN = ("studio", "hacks", "wiring", "maplint", "mapfit", "mapview",
+FORBIDDEN = ("studio", "hacks", "asmedit", "maplint", "mapfit", "mapview",
              "map_show", "map_new", "map_inspect", "metatiles", "usage",
              "gfx_view", "dev_server", "sym_lookup")
 
 #: The `hacks -> studio` edges Phase 2 leaves standing, and what each is for.
-#: Both are neutral Action subclasses over `wiring/`; they are shared adapter
+#: Both are neutral Action subclasses over `asmedit/`; they are shared adapter
 #: machinery filed under the IDE, and they fail the contract's bar because they
 #: open files. Asserted exactly — a shorter list is progress, a longer one is a
 #: regression, and both should be somebody's decision rather than a surprise.

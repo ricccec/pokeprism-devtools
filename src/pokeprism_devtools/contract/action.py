@@ -30,7 +30,7 @@ from .ref import Ref
 
 class ActionError(RuntimeError):
     """The action can't be built from what the form was given. Carries a message
-    meant for a human — the wiring layer's errors already read that way."""
+    meant for a human — the asm editors' errors already read that way."""
 
 
 @dataclass(frozen=True)
@@ -67,7 +67,7 @@ class Field:
 
 @dataclass
 class Result:
-    """What an action did once it ran. `notes` are things the wiring layer
+    """What an action did once it ran. `notes` are things the asm editor
     decided the human must know — an orphaned party, a flag left allocated."""
     summary: str
     edits: list[Edit] = field(default_factory=list)
