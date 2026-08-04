@@ -41,7 +41,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...shared.edits import Edit
-from ...studio.actions import Action, ActionError, Field, Result
+from ...contract import Action, ActionError, Field, Result
 from . import box, dialogue
 from .box import Box
 from .dialogue import TERMINATOR, Block

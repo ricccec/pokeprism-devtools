@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...studio.actions import FLAGS, ITEMS, ActionError, Field, Result
+from ...contract import FLAGS, ITEMS, ActionError, Field, Result
 from ...wiring import blocks, flagalloc
 from . import eventblock as eb
 from .entry import Entry

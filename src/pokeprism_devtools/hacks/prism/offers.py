@@ -26,12 +26,12 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from ... import contract
+from ...contract import Action
 from . import (
     consts, eventflags, maps as maps_mod, spritesets, trainerparty, trainerstats)
 from . import connections, props, scaffold
 from . import newmap
-from ...studio import actions
-from ...studio.actions import Action
 
 
 def for_kind(root: Path, kind: str, maps: tuple[str, ...],
@@ -41,12 +41,12 @@ def for_kind(root: Path, kind: str, maps: tuple[str, ...],
     An unknown kind is empty — i.e. free text, not an error. A new action with a
     new kind should degrade to a plain box, not crash the form.
     """
-    if kind == actions.PARTIES:
+    if kind == contract.PARTIES:
         cls = (values or {}).get("cls", "").strip()
         return trainerstats.rosters(root, cls) if cls else []
-    if kind == actions.MAPS:
+    if kind == contract.MAPS:
         return list(maps)
-    if kind == actions.BLOCKS:
+    if kind == contract.BLOCKS:
         return blocks(root)
     return list(_index(root).get(kind, ()))
 
@@ -109,29 +109,29 @@ def _index(root: Path) -> dict[str, tuple[str, ...]]:
         # The groups that exist. Making a new one is not this tool's job (it
         # renumbers every map id in the file), so the list is exhaustive: a number
         # that isn't in it is a group the game does not have.
-        actions.GROUPS: tuple(str(g) for g in sorted({m.group for m in dims})),
-        actions.SPRITES: tuple(sorted(spritesets.sprite_ids(root))),
-        actions.MOVEMENTS: tuple(sorted(spritesets.movedata_ids(root))),
-        actions.PALETTES: tuple(sorted(
+        contract.GROUPS: tuple(str(g) for g in sorted({m.group for m in dims})),
+        contract.SPRITES: tuple(sorted(spritesets.sprite_ids(root))),
+        contract.MOVEMENTS: tuple(sorted(spritesets.movedata_ids(root))),
+        contract.PALETTES: tuple(sorted(
             consts.with_prefix(root, consts.SPRITES, "PAL_OW_"))),
-        actions.ITEMS: tuple(sorted(consts.names(root, consts.ITEMS))),
-        actions.TMHMS: tuple(sorted(props.tmhms(root))),
-        actions.TREES: tuple(sorted(props.trees(root))),
-        actions.FLAGS: tuple(eventflags.load(root).by_name),
-        actions.CLASSES: tuple(sorted(backed)),
-        actions.DIRECTIONS: tuple(sorted(connections.OPPOSITE)),
-        actions.FACINGS: tuple(f.removeprefix("SIGNPOST_").lower()
+        contract.ITEMS: tuple(sorted(consts.names(root, consts.ITEMS))),
+        contract.TMHMS: tuple(sorted(props.tmhms(root))),
+        contract.TREES: tuple(sorted(props.trees(root))),
+        contract.FLAGS: tuple(eventflags.load(root).by_name),
+        contract.CLASSES: tuple(sorted(backed)),
+        contract.DIRECTIONS: tuple(sorted(connections.OPPOSITE)),
+        contract.FACINGS: tuple(f.removeprefix("SIGNPOST_").lower()
                                for f in scaffold.FACINGS),
         # The map header's enums, from the same table the new-map action checks
         # them against — so the form cannot suggest a constant that the action
         # would then refuse.
-        actions.PERMISSIONS: newmap.PERMS,
+        contract.PERMISSIONS: newmap.PERMS,
         **{kind: tuple(sorted(consts.with_prefix(root, rel, prefix)))
            for kind, (rel, prefix) in (
-               (actions.TILESETS, newmap.ENUMS["tileset"]),
-               (actions.LANDMARKS, newmap.ENUMS["landmark"]),
-               (actions.MUSIC, newmap.ENUMS["music"]),
-               (actions.TIMES, newmap.ENUMS["palette"]),
-               (actions.FISHGROUPS, newmap.ENUMS["fishgroup"]),
+               (contract.TILESETS, newmap.ENUMS["tileset"]),
+               (contract.LANDMARKS, newmap.ENUMS["landmark"]),
+               (contract.MUSIC, newmap.ENUMS["music"]),
+               (contract.TIMES, newmap.ENUMS["palette"]),
+               (contract.FISHGROUPS, newmap.ENUMS["fishgroup"]),
            )},
     }

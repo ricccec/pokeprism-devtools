@@ -50,7 +50,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...studio.actions import FACINGS, MAPS, ActionError, Field, Result
+from ...contract import FACINGS, MAPS, ActionError, Field, Result
 from ...wiring import regions
 from . import eventblock as eb
 from .entry import OBJECT_FIELDS

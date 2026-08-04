@@ -57,9 +57,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ... import contract
+from ...contract import Field
 from ...shared.constants import ConstSet
-from ...studio import actions
-from ...studio.actions import Field
 from ...wiring.mapnew import NewMap
 from ...wiring.mapresize import MapShape
 from ...wiring.placement import JOIN, MINT, Placement, banks, sections
@@ -86,32 +86,32 @@ POLISHED_ENVIRONMENTS = ("TOWN", "ROUTE", "INDOOR", "CAVE", "ISOLATED",
 #: order is load-bearing twice over: it is what `header_line` joins, and a
 #: missing argument shifts every argument after it by one and still assembles.
 VANILLA_FIELDS = (
-    Field("tileset", "Tileset", choices=actions.TILESETS),
+    Field("tileset", "Tileset", choices=contract.TILESETS),
     Field("environment", "Environment", options=VANILLA_ENVIRONMENTS,
           default="INDOOR",
           help="which collision and encounter rules the map lives under"),
-    Field("landmark", "Landmark", choices=actions.LANDMARKS,
+    Field("landmark", "Landmark", choices=contract.LANDMARKS,
           help="its own, usually — or the town it sits inside"),
-    Field("music", "Music", choices=actions.MUSIC),
+    Field("music", "Music", choices=contract.MUSIC),
     Field("phone", "Phone service", options=("FALSE", "TRUE"), default="FALSE",
           help="TRUE prevents phone calls here"),
-    Field("palette", "Palette", choices=actions.TIMES, default="PALETTE_AUTO",
+    Field("palette", "Palette", choices=contract.TIMES, default="PALETTE_AUTO",
           help="PALETTE_AUTO follows the clock; PALETTE_DARK is a cave"),
-    Field("fishgroup", "Fish group", choices=actions.FISHGROUPS,
+    Field("fishgroup", "Fish group", choices=contract.FISHGROUPS,
           default="FISHGROUP_NONE"),
 )
 POLISHED_FIELDS = (
-    Field("tileset", "Tileset", choices=actions.TILESETS),
+    Field("tileset", "Tileset", choices=contract.TILESETS),
     Field("environment", "Environment", options=POLISHED_ENVIRONMENTS,
           default="INDOOR"),
-    Field("sign", "Location sign", choices=actions.SIGNS,
+    Field("sign", "Location sign", choices=contract.SIGNS,
           default="SIGN_BUILDING",
           help="the plaque that slides in when you walk on — vanilla has none"),
-    Field("landmark", "Landmark", choices=actions.LANDMARKS,
+    Field("landmark", "Landmark", choices=contract.LANDMARKS,
           help="no LANDMARK_ prefix in this tree — just OLIVINE_CITY"),
-    Field("music", "Music", choices=actions.MUSIC),
+    Field("music", "Music", choices=contract.MUSIC),
     Field("phone", "Phone service", options=("0", "1"), default="0"),
-    Field("palette", "Palette", choices=actions.TIMES, default="PALETTE_AUTO"),
+    Field("palette", "Palette", choices=contract.TIMES, default="PALETTE_AUTO"),
 )
 
 #: Where the `map` macro's named arguments get their constants — merged into
@@ -124,12 +124,12 @@ POLISHED_FIELDS = (
 #: returns *nothing at all* rather than failing, which a form renders as a
 #: plain text box. The same shape of miss as the `PAL_NPC_` macro fork.
 HEADER_SETS = {
-    actions.TILESETS: ConstSet("constants/tileset_constants.asm", "TILESET_"),
-    actions.MUSIC: ConstSet("constants/music_constants.asm", "MUSIC_"),
-    actions.TIMES: ConstSet("constants/map_data_constants.asm", "PALETTE_"),
-    actions.FISHGROUPS: ConstSet("constants/map_data_constants.asm",
+    contract.TILESETS: ConstSet("constants/tileset_constants.asm", "TILESET_"),
+    contract.MUSIC: ConstSet("constants/music_constants.asm", "MUSIC_"),
+    contract.TIMES: ConstSet("constants/map_data_constants.asm", "PALETTE_"),
+    contract.FISHGROUPS: ConstSet("constants/map_data_constants.asm",
                                  "FISHGROUP_"),
-    actions.LANDMARKS: ConstSet("constants/landmark_constants.asm",
+    contract.LANDMARKS: ConstSet("constants/landmark_constants.asm",
                                 "LANDMARK_"),
 }
 
@@ -137,8 +137,8 @@ HEADER_SETS = {
 #: `map` macro does not take at all.
 POLISHED_HEADER_SETS = {
     **HEADER_SETS,
-    actions.LANDMARKS: ConstSet("constants/landmark_constants.asm"),
-    actions.SIGNS: ConstSet("constants/map_data_constants.asm", "SIGN_"),
+    contract.LANDMARKS: ConstSet("constants/landmark_constants.asm"),
+    contract.SIGNS: ConstSet("constants/map_data_constants.asm", "SIGN_"),
 }
 
 _VANILLA_TEMPLATE = """\
@@ -289,16 +289,16 @@ def offers(root: Path, dialect: FamilyNewMap, kind: str) -> list[str] | None:
     *adding a map*: which sections exist, how many groups there are, and where
     this tree's author keeps the grids they draw.
     """
-    if kind in (actions.SCRIPT_SECTIONS, actions.BLOCK_SECTIONS):
+    if kind in (contract.SCRIPT_SECTIONS, contract.BLOCK_SECTIONS):
         from ...studio.mapadd import section_choices
         return section_choices(dialect.placements(root), kind)
-    if kind == actions.GROUPS:
+    if kind == contract.GROUPS:
         # A number, not a name — the only reason to offer a list of numbers is
         # that nothing else on the form says how many there are.
         text = (root / "constants/map_constants.asm").read_text()
         n = sum(1 for ln in text.split("\n") if ln.strip().startswith("newgroup"))
         return [str(i) for i in range(1, n + 1)]
-    if kind == actions.BLOCKS:
+    if kind == contract.BLOCKS:
         from ...studio.mapadd import grids
         # `maps/`, not prism's `maps/blk/` — the family keeps its grids beside
         # the map files. The suffix is this tree's own for the same reason

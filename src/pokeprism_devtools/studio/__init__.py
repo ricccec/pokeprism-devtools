@@ -9,7 +9,7 @@ assembles.
 The studio is the place where it's one thing again. Its model lives in
 :mod:`.session`; the TUI is a view over it, and the view reads no files —
 everything it draws comes through :meth:`.session.Session.load`, and everything
-it changes goes out as an :class:`.actions.Action` whose fields it renders
+it changes goes out as an :class:`~..contract.Action` whose fields it renders
 without knowing what they mean.
 """
 

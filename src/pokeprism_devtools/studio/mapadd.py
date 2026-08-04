@@ -44,8 +44,8 @@ from pathlib import Path
 from .. import contract
 from ..wiring import mapnew
 from ..wiring.placement import Placement
-from .actions import (BLOCK_SECTIONS, BLOCKS, GROUPS, SCRIPT_SECTIONS, Action,
-                      ActionError, Field, Result)
+from ..contract import (BLOCK_SECTIONS, BLOCKS, GROUPS, SCRIPT_SECTIONS,
+                        Action, ActionError, Field, Result)
 
 #: The blobs a family map places, and the field and choice-kind each one gets.
 _PLACES = {"script": ("script_section", "Script section", SCRIPT_SECTIONS),

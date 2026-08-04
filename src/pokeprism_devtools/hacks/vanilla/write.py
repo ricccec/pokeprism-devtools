@@ -14,13 +14,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...shared.constants import ConstSet, read_set
 from ... import contract
-from ...studio import actions
-from ...studio.actions import Action, ActionError, Result
+from ...contract import Action, ActionError, Refused, Result
+from ...shared.constants import ConstSet, read_set
 from ...wiring import trainerroster, warpdel
 from ...wiring.warpdel import BlindTable, DeadDoor, WarpGrammar, WarpMacro
-from ...contract import Refused
 from . import newmap
 from .eventblock import EventBlock, UnparseableEvents, parse_map
 
@@ -64,7 +62,7 @@ POLISHED_WARPS = WarpGrammar(
         "named after, and a naming convention is not a reference"),),
 )
 
-#: What a family form may offer, by the field vocabulary `studio/actions.py`
+#: What a family form may offer, by the field vocabulary `studio/contract.py`
 #: names. The keys are field *kinds*, not answers: naming one here says this
 #: dialect can enumerate that sort of thing, and a kind absent from this map
 #: answers `[]`, which the form renders as a plain text box.
@@ -75,21 +73,21 @@ POLISHED_WARPS = WarpGrammar(
 #: bound: see `studio/offers.py` on why holding you to the list would mean the
 #: only NPCs you could gate are the gated ones.
 CHOICES = {
-    actions.SPRITES: ConstSet("constants/sprite_constants.asm", "SPRITE_"),
-    actions.MOVEMENTS: ConstSet("constants/map_object_constants.asm",
+    contract.SPRITES: ConstSet("constants/sprite_constants.asm", "SPRITE_"),
+    contract.MOVEMENTS: ConstSet("constants/map_object_constants.asm",
                                 "SPRITEMOVEDATA_"),
     #: `PAL_NPC_*`, and the prefix is the whole finding. Prism's objects wear
     #: `PAL_OW_RED`; both family trees define a `PAL_OW_*` set *and never put
     #: one on an object_event* — all 1,466 vanilla and 2,161 polished object
     #: lines name a `PAL_NPC_*`. Offering the `PAL_OW_` set would have been a
     #: palette field that suggested only constants the maps never use.
-    actions.PALETTES: ConstSet("constants/sprite_data_constants.asm", "PAL_NPC_"),
-    actions.ITEMS: ConstSet("constants/item_constants.asm"),
-    actions.FLAGS: ConstSet("constants/event_flags.asm", "EVENT_"),
+    contract.PALETTES: ConstSet("constants/sprite_data_constants.asm", "PAL_NPC_"),
+    contract.ITEMS: ConstSet("constants/item_constants.asm"),
+    contract.FLAGS: ConstSet("constants/event_flags.asm", "EVENT_"),
     #: The family's signpost kinds. Prism calls these `SIGNPOST_*` and the
     #: studio's field is still named `facings` after them; the family says
     #: `BGEVENT_*` and neither tree has ever heard of the other's spelling.
-    actions.FACINGS: ConstSet("constants/script_constants.asm", "BGEVENT_"),
+    contract.FACINGS: ConstSet("constants/script_constants.asm", "BGEVENT_"),
     #: The map header's own vocabulary — tileset, landmark, music, palette,
     #: fishing group — lives next door in `.newmap`, which is the thing that
     #: asks for it.
@@ -107,7 +105,7 @@ CHOICES = {
 #: exactly one tree out of three. Measured, not assumed.
 POLISHED_CHOICES = {
     **CHOICES,
-    actions.PALETTES: ConstSet("constants/sprite_data_constants.asm", "PAL_NPC_",
+    contract.PALETTES: ConstSet("constants/sprite_data_constants.asm", "PAL_NPC_",
                                macro="ow_npc_pal_const"),
     **newmap.POLISHED_HEADER_SETS,
 }
@@ -254,11 +252,11 @@ class Writer:
         reaches, since it drops the field for a minted blob, but answering it
         the same way here keeps the two statements of it from disagreeing.
         """
-        if kind == actions.MAPS:
+        if kind == contract.MAPS:
             return list(map_consts)
-        if kind == actions.CLASSES:
+        if kind == contract.CLASSES:
             return trainerroster.classes(self.root)
-        if kind == actions.PARTIES:
+        if kind == contract.PARTIES:
             cls = (values or {}).get("cls", "").strip()
             return trainerroster.parties(self.root, cls) if cls else []
         if (offered := newmap.offers(

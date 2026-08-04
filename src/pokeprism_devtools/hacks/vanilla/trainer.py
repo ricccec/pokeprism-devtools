@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...studio.actions import (CLASSES, FLAGS, MOVEMENTS, PALETTES, PARTIES,
+from ...contract import (CLASSES, FLAGS, MOVEMENTS, PALETTES, PARTIES,
                                SPRITES, ActionError, Field, Result)
 from ...wiring import blocks, flagalloc, regions, trainerroster
 from . import eventblock as eb

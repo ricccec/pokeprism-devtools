@@ -675,17 +675,17 @@ def test_the_base_imports_no_adapter() -> None:
     """The rule Phase 6 was carved for: adapters import the base, the base
     imports no adapter.
 
-    Asserted statically, over the module's own import lines, because the
-    runtime version of this question cannot be asked — importing
-    `studio.actions` runs `studio/__init__`, which imports `session`, which
-    imports `maplint`, which is written against prism. That chain is real and
-    predates this phase; what the carve fixed is the *direct* one, and a static
-    check is what distinguishes them.
+    Asserted statically, over the module's own import lines. When the base
+    lived in `studio/` the runtime version of this question could not be asked
+    at all — importing it ran `studio/__init__` -> `session` -> `maplint`,
+    which is written against prism. Moving it to the contract dissolved that
+    chain, and `tests/test_contract.py` now asks it at runtime for the whole
+    package; this check stays as the static half.
     """
     import ast
     print("\nthe neutral base stays neutral")
     src = Path(__file__).resolve().parent.parent / "src/pokeprism_devtools"
-    tree = ast.parse((src / "studio/actions.py").read_text())
+    tree = ast.parse((src / "contract/action.py").read_text())
     deps = []
     for n in ast.walk(tree):
         if isinstance(n, ast.ImportFrom):
@@ -693,10 +693,10 @@ def test_the_base_imports_no_adapter() -> None:
         elif isinstance(n, ast.Import):
             deps += [a.name for a in n.names]
     bad = [d for d in deps if "hacks" in d or "wiring" in d]
-    check("studio/actions.py imports no adapter and no wiring", not bad, str(bad))
+    check("contract/action.py imports no adapter and no wiring", not bad, str(bad))
     check("it still exports what a family action needs",
           all(hasattr(__import__(
-              "pokeprism_devtools.studio.actions", fromlist=["x"]), n)
+              "pokeprism_devtools.contract", fromlist=["x"]), n)
               for n in ("Action", "ActionError", "Field", "Result", "ITEMS")))
 
 
@@ -755,7 +755,7 @@ def test_real_choices(root: Path, name: str) -> None:
         print(f"\n(no {name} checkout next door — skipping its choices)")
         return
     print(f"\n{name}: every constant its maps use is a constant it offers")
-    from pokeprism_devtools.studio import actions
+    from pokeprism_devtools import contract as actions
 
     hack = hackmount.mount(root)
     consts = tuple(hack.reads.maps().values())
@@ -986,7 +986,7 @@ def test_a_line_the_editor_will_not_rewrite(root: Path) -> None:
     the flag into the quantity, so it refuses and names the line — the same
     choice `read_set` makes about a constant `PURGE` took away."""
     from pokeprism_devtools.hacks.vanilla import actions as fa
-    from pokeprism_devtools.studio.actions import ActionError
+    from pokeprism_devtools.contract import ActionError
     print("\nan object_event whose trailing args mean something else refuses")
     src = root / "maps/TownA.asm"
     text = src.read_text()
@@ -1015,7 +1015,7 @@ def test_adding_an_entry(root: Path) -> None:
     assembling: a name on a partially-named const list would take an ordinal
     that belongs to somebody else."""
     from pokeprism_devtools.hacks.vanilla import actions as fa
-    from pokeprism_devtools.studio.actions import ActionError
+    from pokeprism_devtools.contract import ActionError
     print("\nadding an entry: three lists cross, and the fourth says why not")
 
     warp = fa.VANILLA_ADDERS["warp"][0]("TOWN_A", y="3", x="4",

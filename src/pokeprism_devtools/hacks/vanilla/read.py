@@ -22,7 +22,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from ... import contract
-from ...studio.actions import ActionError
+from ...contract import ActionError
 from . import events, measures, metrics, swatches
 
 _ATTR = re.compile(r"^\s*map_attributes\s+(\w+)\s*,\s*(\w+)\s*,\s*(\$\w+|\d+)")

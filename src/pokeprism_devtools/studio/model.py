@@ -19,7 +19,7 @@ from ..shared import coords
 from ..shared.edits import Edit
 from .. import contract
 from . import panels
-from .actions import Action, Result
+from ..contract import Action, Result
 # Crossing records that live with the rest of the seam's vocabulary in
 # `panels`, re-exported because whoever wants a MapData wants these with it.
 from ..contract import Measured, TextPreview, TextRef  # noqa: F401

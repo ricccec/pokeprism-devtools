@@ -32,7 +32,8 @@ from pokeprism_devtools.hacks import mount as hackmount # noqa: E402
 from pokeprism_devtools.hacks.prism import eventheader # noqa: E402
 from pokeprism_devtools.shared import coords, world # noqa: E402
 from pokeprism_devtools import contract  # noqa: E402
-from pokeprism_devtools.studio import actions, panels  # noqa: E402
+from pokeprism_devtools import contract as actions  # noqa: E402
+from pokeprism_devtools.studio import panels  # noqa: E402
 from pokeprism_devtools.hacks.prism import content, offers  # noqa: E402
 from pokeprism_devtools.studio.session import (Session, SessionError,  # noqa: E402
                                                StaleWorld)

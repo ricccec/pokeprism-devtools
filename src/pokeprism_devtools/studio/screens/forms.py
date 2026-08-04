@@ -52,7 +52,7 @@ from textual.widgets import Button, Input, Label, OptionList, Static, TextArea
 
 from .speech import Dialogue
 
-from ..actions import Action, ActionError, Field
+from ...contract import Action, ActionError, Field
 from ..combo import Combo
 from ...contract import Ref
 from ..session import Draft, Preview, Session

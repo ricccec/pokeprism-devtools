@@ -18,7 +18,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from ... import contract
-from ...studio.actions import ActionError
+from ...contract import ActionError
 from ..vanilla import measures
 from ..vanilla.read import attrs, dims, label_of, lines
 from . import events, metrics, swatches

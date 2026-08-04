@@ -39,7 +39,7 @@ import difflib
 from pathlib import Path
 
 from ...shared.constants import read_set
-from ...studio.actions import Action, ActionError, Field, Result
+from ...contract import Action, ActionError, Field, Result
 from ...wiring.editvocab import Change, EditError, same
 from ...wiring.macroline import find_macro_args, splice_macro_args
 

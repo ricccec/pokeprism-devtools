@@ -32,7 +32,7 @@ from pokeprism_devtools.hacks.prism import (blocksrc, eventheader,
                                             read as prism_read, swatches)
 from pokeprism_devtools.shared import coords, paths
 from pokeprism_devtools.studio import Session, panels, prefs
-from pokeprism_devtools.studio.actions import ITEMS, ActionError
+from pokeprism_devtools.contract import ITEMS, ActionError
 from pokeprism_devtools.hacks.prism.content import (BOULDER, HIDDEN, ITEMBALL,
                                                PROP_KINDS, TMHM, TREE, AddNpc,
                                                AddProp, AddSignpost, AddTrainer)

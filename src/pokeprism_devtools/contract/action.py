@@ -1,43 +1,21 @@
-"""What the studio stages: *actions*, not edits.
+"""One staged change, and the three records a form is built from.
 
-This is the one place the studio deliberately departs from the obvious design,
-and the reason is written down in `shared/edits.py`: an :class:`Edit` carries the
-**whole** file text plus the text it was derived from. Two edits built against
-the same starting file and then applied one after the other do not merge — the
-second overwrites the first, and the first silently never happened. Add two NPCs
-before saving and the flag allocator hands both the same `const skip` slot,
-because when the second one looked, the first hadn't been written yet.
+The studio stages *actions*, not edits, and `shared/edits.py` says why: an
+:class:`~..shared.edits.Edit` carries the whole file text plus the text it was
+derived from, so two edits built against the same starting file and applied in
+turn do not merge — the second overwrites the first, and the first silently
+never happened. Add two NPCs before saving and the flag allocator hands both
+the same slot, because when the second one looked, the first was not written.
 
-So a queue of pending Edits — stage them all, flush on save — is precisely the
-bug that module exists to prevent, and `apply_edits` raises `StaleEdit` rather
-than let it happen.
+An *intent* can be replayed, and replaying it is what makes a stack of changes
+safe: each action is built against the tree as the previous ones left it. It
+also means the diff you approve comes out of the identical code path that will
+run for real — the preview is a rehearsal, not a model of one.
 
-What the studio stages instead is the *intent*: "put a Sage at (5, 7) in
-CastroForest". An intent can be replayed, and replaying it is what makes a stack
-of changes safe — each action is built against the tree as the previous ones left
-it, which is the "build an edit, apply it, then build the next" rule holding by
-construction rather than by hope. It also means the diff you approve comes out of
-the identical code path that will run for real: the preview is a rehearsal, not a
-model of one.
-
-Each action declares its fields, so the TUI builds its own form and its own
+Each action declares its fields, so an IDE builds its own form and its own
 autocomplete from that declaration and knows nothing about NPCs or connections.
-
-Here: **the base, and nothing but the base.** The rule, stated once because
-every adapter depends on it — *adapters import this module; this module imports
-no adapter.* It held loosely until the family needed to write: a family action
-importing `Action` used to drag prism in through the side door, because the two
-map-to-map actions living here reached into `wiring/`, which is prism's. They
-have moved home to :mod:`..hacks.prism.actions`; the actions that put something
-inside one prism map are in :mod:`.content`, and adding a whole prism map is in
-:mod:`.newmap`.
-
-What stays is what every hack can say: the field vocabulary, the three records a
-form is built from, and the base class. The vocabulary in particular is *names*,
-not answers — `choices=ITEMS` says which sort of thing a box wants, and whether
-this tree can enumerate that sort is the write adapter's `choices()` to answer.
-A hack with no fruit trees answers `[]` for :data:`TREES` and the field degrades
-to free text, which is why naming a kind here commits nobody to having one.
+Here is the base and nothing but the base; every action that does something to
+a particular tree lives in that tree's adapter.
 """
 
 from __future__ import annotations
@@ -47,58 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from ..shared.edits import Edit
-from ..contract import Ref
-
-#: A field's `choices` names a set of constants the session can enumerate; the
-#: form turns it into autocomplete. Empty means free text.
-MAPS = "maps"
-SPRITES = "sprites"
-MOVEMENTS = "movements"
-PALETTES = "palettes"
-ITEMS = "items"
-CLASSES = "classes"
-DIRECTIONS = "directions"
-FACINGS = "facings"
-TILESETS = "tilesets"
-PERMISSIONS = "permissions"
-LANDMARKS = "landmarks"
-MUSIC = "music"
-#: The map header's palette — `PALETTE_DAY`, `PALETTE_NITE`. Not :data:`PALETTES`,
-#: which is a *sprite's* `PAL_OW_RED`. Two different words spelled the same, and
-#: putting one where the other goes assembles perfectly.
-TIMES = "times"
-FISHGROUPS = "fishgroups"
-#: Event flags, which are the one kind where the list is *only* a suggestion: a
-#: name that isn't in it is a name that will be created. See `Combo`.
-FLAGS = "flags"
-#: The TMs and HMs, which are the only items a TM ball may hold, and the fruit
-#: trees, which are ids rather than items. Both are subsets of a bigger enum, and
-#: offering the bigger enum would offer the mistake.
-TMHMS = "tmhms"
-TREES = "trees"
-#: The parties of a trainer class — the one kind whose answers depend on another
-#: field. See :meth:`Field.depends`.
-PARTIES = "parties"
-#: The map groups that exist. A bare number, and the only reason to offer a list of
-#: numbers is that nothing else on the form tells you how many there are.
-GROUPS = "groups"
-#: The `.blk` and `.ablk` files lying about — in `../polished-map`, in `maps/blk/`,
-#: in the directory you started from. The only field whose answers are *paths* and
-#: not constants, and the only one whose list is read fresh every time it is asked:
-#: the file you want is nearly always the one you drew a minute ago.
-BLOCKS = "blocks"
-#: The location sign a map shows on entry — polished's `SIGN_BUILDING`. An
-#: argument of its `map` macro that vanilla's does not have at all, which is why
-#: the header's arguments are a declared list per tree and not one signature.
-SIGNS = "signs"
-#: The `SECTION`s a new map's script and blocks may go into, one kind each
-#: because the two blobs are placed independently and out of different files.
-#: The only kinds whose answers are neither constants nor paths but *places* —
-#: and, unlike every other kind here, the ones where an empty list means the
-#: tree mints rather than chooses, so the form drops the field. See
-#: `wiring/placement.py`.
-SCRIPT_SECTIONS = "script-sections"
-BLOCK_SECTIONS = "block-sections"
+from .ref import Ref
 
 
 class ActionError(RuntimeError):
@@ -232,7 +159,7 @@ class Action:
         Untyped on purpose, and it is the one hole the carve leaves. The only
         caller is the *read* adapter of the same hack that shipped the action
         (`hacks/prism/read.Reader.sketch`), which turns what comes back into a
-        neutral `contract.Blocks` before the studio sees it. So the value is one
+        neutral `Blocks` before the studio sees it. So the value is one
         adapter handing itself its own record, and naming prism's `BlockData`
         here to say so would be the base importing an adapter to describe a
         journey it is not on.

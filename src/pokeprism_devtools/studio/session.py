@@ -45,7 +45,7 @@ from ..shared import caches, world
 from ..shared.edits import StaleEdit, apply_edits
 from .. import contract
 from . import prefs, reader, undo
-from .actions import Action
+from ..contract import Action
 # The shapes of the answers — see `model.py`. Re-exported, because whatever wants
 # a `MapData` wants it *from the session*: the session is the only thing that can
 # hand it one, and the split between the two files is a size, not a boundary.

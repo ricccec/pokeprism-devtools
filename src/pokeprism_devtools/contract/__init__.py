@@ -23,8 +23,14 @@ without turning the arrow round.
 
 from __future__ import annotations
 
+from .action import Action, ActionError, Field, Result
 from .attributes import Attributes, Link, Roof
 from .blocks import Blocks, Rgb, Sketch, Swatch
+from .choices import (BLOCK_SECTIONS, BLOCKS, CLASSES, DIRECTIONS,
+                      FACINGS, FISHGROUPS, FLAGS, GROUPS, ITEMS,
+                      LANDMARKS, MAPS, MOVEMENTS, MUSIC, PALETTES,
+                      PARTIES, PERMISSIONS, SCRIPT_SECTIONS, SIGNS,
+                      SPRITES, TILESETS, TIMES, TMHMS, TREES)
 from .diagnostic import Diagnostic, Severity
 from .dialogue import Measured, TextPreview, TextRef
 from .events import MapTables, Npc, Prop, Signpost, Trainer, Trigger, Warp
@@ -36,9 +42,14 @@ from .ref import ADD, Ref, add_ref
 from .wild import WildMon
 from .writes import Refused, Writes
 
-__all__ = ["ADD", "Attributes", "Blocks", "Diagnostic", "Hack", "Link", "Lints",
-           "MapTables", "Measured", "Measures", "Npc", "PlayError", "Plays",
-           "Prop", "Reads", "Ref", "Refused", "Rgb", "Roof", "Severity",
-           "Signpost", "Sketch", "Sketches", "Swatch", "TextPreview", "TextRef",
+__all__ = ["ADD", "Action", "ActionError", "Attributes", "BLOCKS",
+           "BLOCK_SECTIONS", "Blocks", "CLASSES", "DIRECTIONS", "Diagnostic",
+           "FACINGS", "FISHGROUPS", "FLAGS", "Field", "GROUPS", "Hack", "ITEMS",
+           "LANDMARKS", "Link", "Lints", "MAPS", "MOVEMENTS", "MUSIC",
+           "MapTables", "Measured", "Measures", "Npc", "PALETTES", "PARTIES",
+           "PERMISSIONS", "PlayError", "Plays", "Prop", "Reads", "Ref",
+           "Refused", "Result", "Rgb", "Roof", "SCRIPT_SECTIONS", "SIGNS",
+           "SPRITES", "Severity", "Signpost", "Sketch", "Sketches", "Swatch",
+           "TILESETS", "TIMES", "TMHMS", "TREES", "TextPreview", "TextRef",
            "Trainer", "Trigger", "Unreadable", "Warp", "WildMon", "Writes",
            "add_ref"]

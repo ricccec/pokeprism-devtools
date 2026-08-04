@@ -282,7 +282,7 @@ def test_seam() -> None:
     """
     print("\n== the seam ==")
     from pokeprism_devtools.hacks import mount
-    from pokeprism_devtools.studio import actions
+    from pokeprism_devtools import contract as actions
 
     forms = {}
     for name, root in (("vanilla", VANILLA), ("polished", POLISHED)):

@@ -1,6 +1,6 @@
 """The actions that put something *in* a map: people, props, signs, words.
 
-Split from the base class in :mod:`...studio.actions`; the two actions that wire
+Split from the base class in :mod:`...contract.action`; the two actions that wire
 maps to each other live in the sibling :mod:`.actions` beside this. The line
 between them is the one the tabs already draw: a connection or a warp is about
 two maps, and everything here is about one.
@@ -33,7 +33,7 @@ from ...wiring import warpdel
 # By name, not by module: `Action.text()` is a method, and `text.reword(...)`
 # sitting next to `self.text("label")` in the same three lines is a trap.
 from .text import TextError, reword
-from ...studio.actions import (CLASSES, FACINGS, FLAGS, ITEMS, MOVEMENTS, PALETTES,
+from ...contract import (CLASSES, FACINGS, FLAGS, ITEMS, MOVEMENTS, PALETTES,
                       PARTIES, SPRITES, TMHMS, TREES, Action, ActionError,
                       Field, Result)
 

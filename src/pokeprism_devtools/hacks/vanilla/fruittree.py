@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ...studio.actions import ITEMS, ActionError, Field, Result
+from ...contract import ITEMS, ActionError, Field, Result
 from ...wiring import blocks, fruittrees, regions
 from . import eventblock as eb
 from .entry import Entry

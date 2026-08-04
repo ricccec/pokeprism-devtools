@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..wiring import mapresize
-from .actions import Action, ActionError, Field, Result
+from ..contract import Action, ActionError, Field, Result
 
 
 class ResizeMap(Action):

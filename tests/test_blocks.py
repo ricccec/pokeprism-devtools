@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from pokeprism_devtools.hacks.vanilla import actions as fa  # noqa: E402
 from pokeprism_devtools.hacks.vanilla import eventblock as eb  # noqa: E402
 from pokeprism_devtools.hacks.vanilla.read import label_of  # noqa: E402
-from pokeprism_devtools.studio.actions import ActionError  # noqa: E402
+from pokeprism_devtools.contract import ActionError  # noqa: E402
 from pokeprism_devtools.wiring import blocks as B  # noqa: E402
 
 VANILLA = Path.home() / "code/ricccec/pokecrystal"

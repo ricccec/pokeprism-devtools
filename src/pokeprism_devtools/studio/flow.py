@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from rich.text import Text
 
-from .actions import Action
+from ..contract import Action
 from .grid import MapGrid
 from .maplist import MapList
 from .screens import Confirm, Findings, Form, History, Picker
