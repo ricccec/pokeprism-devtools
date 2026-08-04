@@ -261,14 +261,22 @@ products, **3b** carves them.
 - Re-verified and holding: `contract/` imports only `shared`, the four `hacks →
   studio` edges, the carve path list, the `wiring/` rename cost (31 files / 50
   imports), 35/38. Drifted and corrected in place: A is 40 files, the suite is 38.
-- **`studio/mapadd.py` and `studio/resize.py` cease to exist** — user's call
-  2026-08-04 over shipping them as a shared adapter library.
-- **And that "redesign" is 40 lines, not 267** — grepped per *name* rather than per
-  module: `AddMap` and its four companions are family-only (a move into
-  `hacks/vanilla/`), `grids` names no contract type (A), and `ResizeMap` is the one
-  genuinely shared `Action` in the tree, because prism's new-map form is already its
-  own. **The name is the unit of measurement, not the module** — the same error
-  Phase −1 found in import greps, one level down.
+- **The survivors are two names, not two modules.** Only `grids` (→ A) and
+  `resize_for` (one copy per adapter) are reached from prism; `studio/mapadd.py` is
+  a **C→C edge already** and this phase does not touch it. **The name is the unit of
+  measurement, not the module** — Phase −1's import-grep lesson one level down.
+- **`AddMap` is the generic new-map form and two of three hacks already mount it**
+  as dialects; prism is the one never written. So the plan's first draft, which
+  called it family-only and moved it into `hacks/vanilla/`, would have buried the
+  generic form inside one hack. Caught by the user reading the plan.
+- **The third dialect, costed and deliberately not scheduled** — of prism's ~235
+  code lines, **~118 duplicate what the family already has generically** (`_collisions`
+  is written twice with the same three messages) and **~68 are one thing, bank
+  placement**. A redesign, not a move; recorded so nobody answers it by reflex.
+- **A substring check passes for the wrong reason** — commit 0 went green with the
+  form's edge guard deleted, because the mechanism underneath refuses an empty edge
+  in words that also contain "edge". **A check has to name the layer it tests.**
+  5 of 6 seeded mutations caught; the survivor is provably equivalent.
 
 ## Phase 3b · carve the remaining products — not started
 

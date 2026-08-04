@@ -18,7 +18,10 @@ The one line this phase carries into the index, and where it is proved:
 - **A relative-only import scan is blind to a whole package** — [the measurement that was wrong once](#the-scan-that-missed-dev_server).
 - The family adapters are reached only through the studio — [what settled C's row](#the-family-adapters-belong-to-c).
 - **The two survivors are not dead code; nothing importing them is the seam working** — [the trace](#nothing-in-studio-imports-the-survivors-and-that-is-the-design).
-- **The survivors' "redesign" is 40 lines; the rest is a move** — [name by name](#one-shared-action-not-four).
+- **The survivors are two names, not two modules; `mapadd.py` is already legal where it is** — [name by name](#two-names-not-two-modules--and-the-module-was-never-the-problem).
+- **`AddMap` is the generic new-map form with two of three dialects written** — [prism is the one never written](#addmap-is-the-generic-form-with-two-of-three-dialects-written).
+- **`_collisions` is written twice, same three messages** — [the port's cost](#what-the-third-dialect-would-cost--measured-not-guessed).
+- **A substring check passes for the wrong reason** — the layer underneath answers for it — [commit 0's falsification](#commit-0--what-falsifying-it-found).
 - A owns 3 test files of 38 — [A's test story is authorship](#as-tests-are-3-of-38).
 - Re-verified: `contract/` still imports only `shared`; the carve path list still matches — [step 1](#re-verification-step-1).
 
@@ -126,33 +129,100 @@ what imports the module. So "nothing imports it" is not evidence the feature is
 dead — it is why these two were the last survivors of the cycle: the module sits in
 `studio/`, and every arrow into it points up from below.
 
-## One shared `Action`, not four
+## Two names, not two modules — and the module was never the problem
 
-Phase 2 handed the survivors on as one item — *"neutral `Action` subclasses over
-`wiring/`, reached from four adapter methods"* — and it was priced as a redesign of
-both files. Grepping each **name** rather than each module says otherwise:
+Phase 2 handed the survivors on as one item: *"neutral `Action` subclasses over
+`wiring/`, reached from four adapter methods"*. True, and it priced the work at
+four times its size, because the adapter *method* is not the unit. The **name** is:
 
-| name | prism | family | what it is |
+| name | prism reaches it | family reaches it | verdict |
 |---|---|---|---|
-| `AddMap`, `newmap_for`, `_BASE`, `_PLACES`, `section_choices` | — | yes | **family-only** — a move into `hacks/vanilla/`, no edit at all |
-| `grids` | yes | yes | names no contract type — **A** |
-| `ResizeMap`, `resize_for` | yes | yes | the one genuinely shared `Action` in the tree |
+| `grids` | `prism/offers.py:69` | `vanilla/newmap.py:302` | → **A**, names no contract type |
+| `resize_for` | `prism/write.py:124` | `vanilla/write.py:220` | one copy per adapter |
+| `AddMap`, `newmap_for`, `section_choices`, `_BASE`, `_PLACES` | — | yes | **stays** |
 
-**Prism's new-map form is already its own** (`hacks/prism/newmap.NewMap`, chosen in
-`write.py:126`); prism reaches `mapadd.py` for `grids` and nothing else. So of the
-267 LOC in the two files, the part that has to be *written* rather than moved is
-`ResizeMap` — about 40 lines, duplicated once into prism and once into vanilla.
+**`studio/mapadd.py` is a C→C edge already.** Nothing in prism imports `AddMap`,
+`newmap_for` or `section_choices`, and vanilla ships with C — so the module is
+separable where it stands and Phase 3 has no business moving it. Its home is a
+*naming* problem, not a separability one.
 
-And that duplication is sanctioned rather than tolerated: `refactor-plan.md` already
-says of the duplicate-name hook *"never compare across adapters, since the three
-`Reader`s are near-identical on purpose and would rank first."* A dialect-free form
-per adapter is that same shape.
+Which matters, because the first draft of this phase's plan called it "family-only"
+and scheduled a move into `hacks/vanilla/`. **That would have been a defect**, and
+the reason is the section below.
 
-**The lesson is the unit of measurement.** Phase −1 found an import grep wrong in
-both directions and concluded a *path literal* measures hack-specificity better.
-This is the same error one level down: a module-level grep said "four adapter
-methods reach two modules", which is true and priced the work at four times its
-size. The name is the unit, not the module.
+This is Phase −1's lesson one level down. It found an import grep wrong in both
+directions and concluded a path literal measures hack-specificity better; here a
+module-level grep answered a question only a name-level one could answer.
+
+## `AddMap` is the generic form, with two of three dialects written
+
+It never branches. It holds no hack name. It reads `dialect.header_args`
+(`mapadd.py:130`) and passes the dialect down to `wiring/mapnew.add_map`
+(`:135`), and `newmap_for` builds `FIELDS` from what the dialect declares
+(`:150-156`). The writer underneath is the same — `add_map` calls
+`dialect.placements`, `.blk_name`, `.header_line`, `.attributes_line`,
+`.blocks_entry`, `.script_entry`, `.template`, and the five mentions of a hack
+name in `wiring/mapnew.py` are all prose in docstrings.
+
+**Two of the three hacks already mount it**: `newmap.VANILLA` and
+`newmap.POLISHED` are its dialects (`vanilla/write.py:223-226`,
+`polished/claim.py:57`), pure declared data plus a placement callable. That is the
+"hack differences cross the seam as declared data" rule working exactly as written.
+
+So "prism's new-map form is already its own" — the phrasing this plan first used —
+described the anomaly and called it the design. Prism is the dialect that was never
+written, and burying the generic form inside one hack would have inverted the
+relationship whether or not prism is ever ported.
+
+### What the third dialect would cost — measured, not guessed
+
+`hacks/prism/newmap.py` is 279 lines, ~235 of code. Classified against what the
+dialect mechanism already provides:
+
+| | lines | |
+|---|---|---|
+| duplicates something the family already has generically | **~118** | `_collisions`, `_unknown_names`, `blk_source`, `__init__`/`describe`/`selects`, 7 of its fields, the enum tables |
+| prism only, and all of it one thing: **bank placement** | **~68** | `_bank`, `spec()` → `MapSpec`, `run()`'s `mapwire`/`pin_sections`/`.toml` half |
+| older rather than different | ~16 | `sketch` returns a coloured `BlockData`; the family returns a neutral `contract.Sketch` each reader colours |
+
+**The sharpest of these:** `hacks/prism/newmap.py:235-260` and
+`wiring/mapnew.py:237-254` are the same three collision checks producing the same
+three messages — *"X is already a map id"*, *"X is already a map"*, *"maps/X.asm
+already exists — it belongs to something"* — and their docstrings make the same
+argument about the half-collision and rgbds failing at link time minutes later.
+Written twice, against different parsers.
+
+And bank placement sits on an axis the design already has: `_PLACES`/`asks` is
+*"which blobs have a placement question"* — polished mints, vanilla joins, prism
+would pin.
+
+**Not scheduled.** It is a redesign, it reaches `MapSpec` and `mapfit.mapwire`
+(a (c) CLI), and this refactor proves moves. Phase −1's **(c)** call is about the
+CLI `map_new`, not this form; the shared name is why nobody asked until now.
+
+## Commit 0 — what falsifying it found
+
+The characterization test for prism's resize form (`tests/test_wiring.py`,
+`test_the_resize_form`) went green on the first run. Six mutations were then
+seeded into `studio/resize.py` on disk, one at a time, and **two survived**.
+
+- **A substring check passes for the wrong reason.** Deleting the form's
+  `if not self.text("edge")` guard left the test green: `mapresize.resize` refuses
+  the empty edge itself with *"edge must be one of …"*, the form wraps that in an
+  `ActionError` exactly as it should, and a check for `"edge" in str(exc)` cannot
+  tell the form's refusal from the mechanism's. Now matched exactly against the
+  form's own words, `"pick an edge"`, and the mutation goes red. **The check has
+  to name the layer it is testing**, or the layer underneath answers for it.
+- **The other survivor is honest.** Passing `""` where the form passes `None` is
+  invisible because `wiring/mapresize.py:278` opens with `raw = (fill or "").strip()`
+  — the two are identical by construction, so no fixture can separate them.
+  Recorded, not chased (Phase 1b: two mutations survived honestly there too).
+- **And it found dead code.** That equivalence means `self.text("fill") or None`
+  at `resize.py:55` converts a value the callee already converts. **Not fixed** —
+  R5 forbids a tidy-up riding along, and commit 8 copies this body, so the copy
+  carries it and dropping it is a separate commit or a separate phase.
+
+Final: **5 of 6 caught**, `src/` unmutated afterwards, suite 35/38.
 
 ## A's tests are 3 of 38
 

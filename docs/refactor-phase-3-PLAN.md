@@ -9,7 +9,7 @@ four ledgers, the import rewrite and the test split are **Phase 3b**.
 
 `refactor-plan.md` called Phase 3 *"mechanical once Phase 2 lands: B is its
 package, C and D fall out"*. Measured 2026-08-04, that is false, and the reason is
-one sentence: **the products are not folders yet.** Four cross-product import
+one sentence: **the products are not folders yet.** Five cross-product import
 edges survive Phase 2, and a carve run today produces four repos that import each
 other. Evidence in the STATE; the edges themselves are the work below.
 
@@ -37,35 +37,55 @@ nothing. They are the (b) drain, and they wait.
   `contract.Hack` and otherwise only stdlib, so B's bar — *stdlib and three
   `shared/` modules and nothing else* — survives the move intact. It also leaves
   `hacks/` holding only adapters, which is what the folder name claims.
-- **`maplint/suppressions.py` goes to B.** It imports `contract.Diagnostic`, so it
-  cannot go lower; a family adapter imports it today out of a prism CLI. Phase 2
-  left it in `maplint/` as "one linter's mechanism" — that reading is wrong now
-  that two linters and two products use it. The `; maplint: ignore[…]` channel
-  becomes contract vocabulary, which is what it has been behaving as.
+- **`maplint/suppressions.py` goes to B, by elimination rather than by taste.**
+  It reads `; maplint: ignore[code]` out of the source a finding points at, and
+  every other home is closed: `apply_suppressions` takes `list[Diagnostic]`
+  (`suppressions.py:44`) and `Diagnostic` is B, so **A would invert the arrow**;
+  `hacks/vanilla/lint/context.py:24` imports it, so **staying in `maplint/` is
+  edge 4 itself**; and `maplint/__init__.py:39` imports it too, so **`hacks/vanilla/`
+  would point prism's linter at a family adapter**. Two linters in two products
+  use it and it depends on B. That leaves one place.
+
+  The consequence, stated because it is a real change and not a filing detail:
+  **the `; maplint: ignore[…]` syntax becomes contract vocabulary** — the channel
+  any linter reads in any tree. Phase 2 called it "one linter's mechanism", which
+  held while only prism's linter read it and stopped holding when vanilla's did.
 - **`maplint/textfit.py` and `dev_server/{emulator,launcher}.py` go to A**, into
   `shared/`, as Phase −1 assigned them. All three are stdlib-only. `shared/` rather
   than a new folder so A's carve stays at four paths and 3b's ledger gains no row.
-- **`studio/mapadd.py` and `studio/resize.py` cease to exist** — the user's call,
-  2026-08-04, over shipping them as a shared adapter library. Measured name by name,
-  this is **almost entirely a move**, not the redesign it was priced as:
+- **Only the two names prism reaches leave `studio/`.** Measured per *name* rather
+  than per module, which is what an earlier draft of this plan got wrong:
 
-  | name | prism | family | lands |
+  | name | prism reaches it | family reaches it | lands |
   |---|---|---|---|
-  | `AddMap`, `newmap_for`, `_BASE`, `_PLACES`, `section_choices` | — | yes | `hacks/vanilla/`, a pure move |
-  | `grids` | yes | yes | A — it names no contract type |
-  | `ResizeMap`, `resize_for` | yes | yes | one copy per adapter |
+  | `grids` | `prism/offers.py:69` | `vanilla/newmap.py:302` | **A** — it names no contract type |
+  | `resize_for` | `prism/write.py:124` | `vanilla/write.py:220` | **one copy per adapter** |
+  | `AddMap`, `newmap_for`, `section_choices`, `_BASE`, `_PLACES` | — | yes | **stay put** |
 
-  **Prism's new-map form is already its own** (`hacks/prism/newmap.NewMap`); it
-  reaches `mapadd.py` for `grids` alone. So `ResizeMap` is the only genuinely
-  shared `Action` in the tree, and duplicating it per adapter is not a lapse but
-  the pattern `refactor-plan.md` already blesses — *"never compare across adapters,
-  since the three `Reader`s are near-identical on purpose"*. ~40 LOC, twice.
+  `studio/mapadd.py` is a **C→C edge already**: nothing in prism imports `AddMap`,
+  `newmap_for` or `section_choices`, and vanilla ships with C. It is separable
+  where it stands, so this phase does not touch it. Its home is a *naming*
+  problem — it is not the IDE — and naming is not what Phase 3 is for.
+
+  **And moving it into `hacks/vanilla/` would have been actively wrong.** `AddMap`
+  is the generic form: it never branches, holds no hack name, reads
+  `dialect.header_args` and passes the dialect down (`mapadd.py:130`, `:135`), and
+  **two of the three hacks already mount it** — `newmap.VANILLA` and
+  `newmap.POLISHED` are its dialects (`vanilla/write.py:223-226`,
+  `polished/claim.py:57`). Burying the generic thing inside one hack inverts the
+  relationship whether or not prism is ever ported. See the STATE for the third
+  dialect that was never written, and what it would cost.
+
+  `ResizeMap` is the one genuinely shared `Action` that prism *does* reach, and
+  duplicating it per adapter is the pattern `refactor-plan.md` already blesses —
+  *"never compare across adapters, since the three `Reader`s are near-identical on
+  purpose"*. ~40 LOC, twice.
 - **`wiring/` is renamed to `asmedit/`** — deferred here from Phases 0 and 2 on
   purpose, and the last chance before the rename would have to happen in four
   repos at once. Its contents are one thing, editing pret assembly source, and the
   cost of the meaningless name is that `WiringError` is defined three times in
-  three unrelated files. **Confirm the spelling before commit 9** — `asmedit/` is a
-  proposal, `asmsource/` the runner-up; every other decision above is settled.
+  three unrelated files. Spelling confirmed by the user 2026-08-04 over the
+  runner-up `asmsource/`.
 
 ## The rules
 
@@ -76,23 +96,22 @@ forced by this being the first phase that deletes something on purpose:
 ### R8 · A deliberate deletion is named before it happens
 
 R7 says the CONTENT union across affected packages must not change. Commit 8
-removes `AddMap`, `ResizeMap`, `newmap_for` and `resize_for` and grows per-adapter
-replacements, so the union *does* change — and an unnamed change to it is exactly
-what R7 exists to catch. So the list of names leaving is written into this file
-before the commit, and **the union diff must equal that list, name for name**.
-Anything else in it is a defect, not a consequence.
+deletes two names and grows a per-adapter replacement for each, so the union *does*
+change — and an unnamed change to it is exactly what R7 exists to catch. So the
+names leaving are written into this file before the commit, and **the union diff
+must equal that list, name for name**. Anything else in it is a defect, not a
+consequence.
 
 `scripts/surface-snapshot.py` walks a package's top-level modules only, so the
 *arrivals* under `hacks/prism/` and `hacks/vanilla/` are invisible to it. Those are
 proved Phase 2's way instead: normalise the intended change out of `git diff` and
 assert the leftovers are empty.
 
-**Leaving `studio/` for A at commit 7:** `grids`. **Leaving for `hacks/vanilla/` at
-commit 8:** `AddMap`, `newmap_for`, `_BASE`, `_PLACES`, `section_choices` — a move,
-so the union is unchanged and R7 applies unaltered. **Genuinely deleted, at commit
-8b:** `ResizeMap` and `resize_for`, replaced by one copy inside each of
-`hacks/prism/` and `hacks/vanilla/`. That pair is R8's whole list; anything else in
-the union diff is a defect.
+**Moving to A at commit 7:** `grids` — a move, so the union is unchanged and R7
+applies unaltered. **Genuinely deleted, at commit 8:** `ResizeMap` and
+`resize_for`, replaced by one copy inside each of `hacks/prism/` and
+`hacks/vanilla/`, and `studio/resize.py` goes with them. That pair is R8's whole
+list. `studio/mapadd.py` is not touched by this phase and must appear in no diff.
 
 ## Order of work
 
@@ -110,23 +129,21 @@ whole method; a commit that does both is reviewable as neither.
 | 5 | `maplint/textfit.py` → `shared/`, `maplint/suppressions.py` → `contract/`, shims | R7 union over three packages |
 | 6 | importers repointed, shims down | word-diff |
 | 7 | `grids` → `wiring/mapnew.py` | R7 union; `test_studio`'s newest-first test unchanged |
-| 8 | the rest of `mapadd.py` → `hacks/vanilla/`; `studio/mapadd.py` deleted | a move — R7 union unchanged; `test_family_sketch` unchanged and green |
-| 8b | `ResizeMap` copied into prism and vanilla; `studio/resize.py` deleted | R8's list is exactly two names; test 0 and `test_vanilla`/`test_polished` green |
+| 8 | `ResizeMap` copied into prism and vanilla; `studio/resize.py` deleted | R8's list is exactly two names; test 0 and `test_vanilla`/`test_polished` green |
 | 9 | rename `wiring/` → `asmedit/` | a whole-tree grep read hit by hit, **not** a word-boundary sed; R6 confinement |
 | 10 | `tests/test_products.py` — the phase's oracle | four checks, each falsified first |
 | 11 | each product's packaging metadata | recorded as a decision table; 3b writes the files |
 
-**Commit 0 is not optional and it is first.** 8b is the phase's only commit that
+**Commit 0 is not optional and it is first.** Commit 8 is the phase's only one that
 writes a body rather than moving one, and Phase 1b's lesson is that a body is not
-edited before something executes it. The family side has oracles already —
-`test_family_sketch.py` covers `AddMap.sketch`, `test_vanilla.py` and
-`test_polished.py` mount and drive `writes`, and `test_studio.py`'s newest-first
-test already covers `grids` through `hacks/prism/offers.blocks`. **Prism's resize
-form has none.** `test_wiring.py::test_resize` covers `wiring/mapresize.resize`, the
-mechanism underneath, and nothing covers the fifteen lines of `ResizeMap.run` that
-turn four form strings into that call — which is precisely the code 8b retypes.
-It goes in `tests/test_studio.py`, where the prism fixture and a live `Session`
-already are (Phase 1b: a characterization test goes where the fixture is).
+edited before something executes it. `test_studio.py`'s newest-first test already
+covers `grids` through `hacks/prism/offers.blocks`, so commit 7 has its oracle.
+**Prism's resize form has none.** `test_wiring.py::test_resize` covers
+`wiring/mapresize.resize`, the mechanism underneath, and nothing covers the fifteen
+lines of `ResizeMap.run` that turn four form strings into that call — which is
+precisely the code commit 8 retypes. It goes in **`tests/test_wiring.py`**, which
+already owns `_resize_fixture`, the prism dialect and `hacks.prism.write` (Phase
+1b: a characterization test goes where the fixture is).
 
 **Commit 9 is the trap this refactor has paid for three phases running.** A
 word-boundary rename is not a rename: Phase 1b's `pack` missed a real importer and
@@ -150,8 +167,12 @@ in a carved repo.
    By AST, over both spellings: relative *and* absolute `pokeprism_devtools.…`.
    The absolute form is not hypothetical — `dev_server` uses it exclusively, and a
    relative-only scan reports it as importing nothing at all.
-3. **The survivor list is empty**, replacing `test_contract.py`'s named pair. It
-   asserts emptiness in both directions, so a re-introduced edge cannot pass.
+3. **No adapter outside C imports the IDE.** `test_contract.py`'s survivor list
+   goes from five rows to **two**, not to zero, and the two that remain are
+   `vanilla/write.py` and `vanilla/newmap.py` reaching `studio.mapadd` — a C→C
+   edge, legal because vanilla ships with C. Asserting emptiness here would be
+   asserting something false; what the check owes is that no *prism* row survives,
+   still named in both directions so a re-introduced edge cannot pass quietly.
 4. **The runtime check, per product** — importing B leaves C and D absent from
    `sys.modules`; importing C leaves D absent. Phase 2 measured that a
    `TYPE_CHECKING`-only import passes a runtime check and fails a static one, which
@@ -168,8 +189,10 @@ going red before it is believed.
   and `__pycache__` cleared first — a stale `.pyc` faked a result in Phase 1.
 - **The studio's `a` and `s` keys still open working forms on all three trees.**
   This is commit 8's whole risk and commit 0 is what lets it be checked.
-- **`tests/test_contract.py`'s survivor assertion is updated deliberately**, at
-  commit 8, and its removal is the point of the commit rather than collateral.
+- **`tests/test_contract.py`'s survivor list is edited deliberately, twice** — two
+  rows lose their reason at commit 7 and two more at commit 8, leaving the two
+  `studio.mapadd` rows that are C→C and stay. Five → two, never to zero, and each
+  edit is the point of its commit rather than collateral.
 - **The three console entry points that name a moved module** still resolve.
 - B's bar: `contract/` imports stdlib and `shared.coords` / `shared.edits` /
   `shared.swatches`, and nothing else. Commits 1 and 5 add to `contract/` and must
@@ -191,6 +214,33 @@ distribution per product, and the part Phase 3 can settle is what each one *is*:
 `test_usage`. Everything else that exercises A does so through a prism or family
 fixture. So A's test story is **authorship, not a carve**, and it is 3b's largest
 unpriced item. Recorded here rather than discovered there.
+
+## Handed on, but not to 3b — the third new-map dialect
+
+**Not a Phase 3 item and not a blocker for any carve**, recorded because it was
+measured here and because the measurement is what stops the next agent from
+answering it by reflex, in either direction.
+
+`AddMap` is the generic new-map form and two of three hacks mount it as dialects.
+Prism does not: `hacks/prism/newmap.NewMap` is 279 lines that re-implement it.
+Classified against what the dialect mechanism already provides, of ~235 code lines
+**~118 duplicate something the family has generically** — `_collisions`
+(`newmap.py:235-260`) and `wiring/mapnew.py:237-254` are the same three checks
+producing the same three messages, `_unknown_names` is `ConstSet`/`HEADER_SETS`
+rewritten, seven of its fields *are* `mapadd._BASE` — and **~68 are one thing,
+bank placement** (`_bank`, `spec()` → `MapSpec`, `run()`'s `mapwire`/`pin_sections`
+half). The remainder is a `sketch` that returns a coloured `BlockData` where the
+family returns a neutral `contract.Sketch` for each reader to colour, which is
+prism being *older* rather than different.
+
+So the port is plausible on the evidence, and bank placement even sits on an axis
+the design already has: `_PLACES`/`asks` is *"which blobs have a placement
+question"*, polished mints, vanilla joins, prism would pin. **It is still a
+redesign, not a move**, it reaches `MapSpec` and `mapfit.mapwire` — a (c) CLI —
+and this refactor proves moves. Whoever takes it owes it a phase and an oracle.
+
+Phase −1's **(c)** call covers the CLI `map_new`, *not* this form; that the two
+share a name is why the question went unasked until 2026-08-04.
 
 ## Handed to Phase 3b
 
