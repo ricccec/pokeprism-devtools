@@ -7,8 +7,8 @@ were already looking at. Now the selection *is* the verb's object: `e` edits wha
 is highlighted, `d` deletes it, and the footer only offers the keys that mean
 something for the row you are on.
 
-The widget knows none of that. It is handed a list of :class:`~.panels.Tab`, it
-draws them, and it announces what is highlighted as an opaque :class:`~.panels.
+The widget knows none of that. It is handed a list of :class:`~.tables.Tab`, it
+draws them, and it announces what is highlighted as an opaque :class:`~.tables.
 Ref` — which it hands back to the session without ever looking inside. That is
 the seam holding: `tabs.py` cannot tell a `person_event` from a `signpost`, and
 does not need to, because the thing that can is on the other side of the message.
@@ -44,7 +44,7 @@ from textual.widgets import DataTable, Static, TabbedContent, TabPane
 # side of the seam — the view draws the dim row because `Tab.adds` told it to,
 # and hands back a Ref it never assembled itself.
 from ..contract import ADD, Ref, add_ref  # noqa: F401
-from .panels import Tab, prompt_column
+from .tables import Tab, prompt_column
 
 #: Every tab the studio can show, in the order it shows them. A map gets the ones
 #: it has; the rest are hidden. "Unreadable" is the one a map with a broken event
@@ -174,7 +174,7 @@ class MapTabs(Vertical):
             #
             # The caret at the left and the words further along, because a cell is
             # what makes its column wide and `#` is a column of single digits. See
-            # `panels.prompt_column`.
+            # `tables.prompt_column`.
             cells = [""] * len(cols)
             cells[0] = Text("▸", style="italic dim")
             cells[prompt_column(cols)] = Text(f"Add new {tab.adds}…",

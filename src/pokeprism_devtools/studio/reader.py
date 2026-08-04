@@ -23,52 +23,52 @@ the person looking for the break is the worst thing this could do.
 from __future__ import annotations
 
 from .. import contract
-from . import panels
+from . import tables
 from .model import MapData, MapGeometry
 
 
 def read_map(reads, label: str) -> MapData:
     """One map, whole, from the mounted adapter. No state."""
     const = reads.maps().get(label, label)
-    tabs: list[panels.Tab] = []
+    tabs: list[tables.Tab] = []
     error = None
 
-    tables = None
+    events = None
     try:
-        tables = reads.tables(label)
+        events = reads.tables(label)
     except contract.Unreadable as exc:
         error = str(exc)
 
-    tabs.append(panels.Tab("Attributes",
-                           panels.attributes(reads.attributes(label, const))))
+    tabs.append(tables.Tab("Attributes",
+                           tables.attributes(reads.attributes(label, const))))
 
-    if tables is not None:
+    if events is not None:
         tabs += [
-            panels.Tab("NPCs", panels.npcs(tables.npcs), adds="NPC"),
-            panels.Tab("Trainers", panels.trainers(tables.trainers), adds="trainer"),
-            panels.Tab("Objects", panels.objects(tables.props), adds="object"),
-            panels.Tab("Warps", panels.warps(tables.warps), adds="warp"),
-            panels.Tab("Signposts", panels.signposts(tables.signposts), adds="signpost"),
-            panels.Tab("Triggers", panels.triggers(tables.triggers), adds="trigger"),
+            tables.Tab("NPCs", tables.npcs(events.npcs), adds="NPC"),
+            tables.Tab("Trainers", tables.trainers(events.trainers), adds="trainer"),
+            tables.Tab("Objects", tables.objects(events.props), adds="object"),
+            tables.Tab("Warps", tables.warps(events.warps), adds="warp"),
+            tables.Tab("Signposts", tables.signposts(events.signposts), adds="signpost"),
+            tables.Tab("Triggers", tables.triggers(events.triggers), adds="trigger"),
         ]
     else:
         # The map has a shape but its tables can't be read. Say so where the
         # objects would have been, rather than showing empty tables that read as
         # "this map has nothing on it".
-        tabs.append(panels.Tab(
-            "Unreadable", (["why"], [panels.Row([error or ""])]),
+        tabs.append(tables.Tab(
+            "Unreadable", (["why"], [tables.Row([error or ""])]),
             note="this map's events do not parse, so nothing on it can be "
                  "listed or edited. Its shape is still real."))
 
-    tabs.append(panels.Tab("Connections",
-                           panels.connections(reads.connections(const)),
+    tabs.append(tables.Tab("Connections",
+                           tables.connections(reads.connections(const)),
                            adds="connection"))
 
     if (r := reads.roof(const)) is not None:
-        tabs.append(panels.Tab("Roof", panels.roof(r),
-                               note=panels.ROOF_IS_READ_ONLY))
-    tabs.append(panels.Tab("Wild", panels.wild(reads.wild(const)),
-                           note=panels.WILD_IS_READ_ONLY))
+        tabs.append(tables.Tab("Roof", tables.roof(r),
+                               note=tables.ROOF_IS_READ_ONLY))
+    tabs.append(tables.Tab("Wild", tables.wild(reads.wild(const)),
+                           note=tables.WILD_IS_READ_ONLY))
 
     try:
         bd = reads.geometry(label)
@@ -78,7 +78,7 @@ def read_map(reads, label: str) -> MapData:
     geometry = MapGeometry(
         label=label, blocks=bd.blocks, height=bd.height, width=bd.width,
         swatches=bd.swatches,
-        marks=tables.marks if tables is not None else {},
+        marks=events.marks if events is not None else {},
     )
     return MapData(label, const, geometry, error, tabs)
 

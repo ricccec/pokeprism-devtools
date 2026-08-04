@@ -31,7 +31,7 @@ from textual.widgets import (DataTable, Input, OptionList, Static, TabbedContent
 from pokeprism_devtools.hacks.prism import (blocksrc, eventheader,
                                             read as prism_read, swatches)
 from pokeprism_devtools.shared import coords, paths
-from pokeprism_devtools.studio import Session, panels, prefs
+from pokeprism_devtools.studio import Session, prefs, tables
 from pokeprism_devtools.contract import ITEMS, ActionError
 from pokeprism_devtools.hacks.prism.content import (BOULDER, HIDDEN, ITEMBALL,
                                                PROP_KINDS, TMHM, TREE, AddNpc,
@@ -70,7 +70,7 @@ class TestPanels(unittest.TestCase):
         cls.tables = prism_read.tables(cls.header, {})
 
     def test_objects_are_source_coordinates(self) -> None:
-        cols, rows = panels.npcs(self.tables.npcs)
+        cols, rows = tables.npcs(self.tables.npcs)
         self.assertEqual(cols[:3], ["#", "y", "x"])
 
         # The +4 the person_event macro adds at assembly must not appear here:
@@ -87,9 +87,9 @@ class TestPanels(unittest.TestCase):
         two of them could be deleted twice; one that fell into none would be
         invisible, and an invisible NPC is the worst kind.
         """
-        tabs = [panels.npcs(self.tables.npcs)[1],
-                panels.trainers(self.tables.trainers)[1],
-                panels.objects(self.tables.props)[1]]
+        tabs = [tables.npcs(self.tables.npcs)[1],
+                tables.trainers(self.tables.trainers)[1],
+                tables.objects(self.tables.props)[1]]
         found: list[int] = []
         for rows in tabs:
             found += [r.ref.handle.index for r in rows
@@ -102,7 +102,7 @@ class TestPanels(unittest.TestCase):
         """The one that would silently corrupt a map. An NPC third on the NPC tab
         may be seventh in the object_events list; editing it by row number would
         rewrite whoever is really seventh."""
-        rows = panels.npcs(self.tables.npcs)[1]
+        rows = tables.npcs(self.tables.npcs)[1]
         for row in rows:
             entry = self.header.object_events[row.ref.handle.index]
             self.assertNotIn(entry.persontype, prism_read.TRAINER_TYPES)
@@ -113,14 +113,14 @@ class TestPanels(unittest.TestCase):
         are the same thing to a person, so they share a tab — and each row has to
         remember which of the engine's two lists it really came from."""
         header = eventheader.parse_map(ROOT / "maps/BotanCity.asm")
-        rows = panels.objects(prism_read.tables(header, {}).props)[1]
+        rows = tables.objects(prism_read.tables(header, {}).props)[1]
         kinds = {r.ref.handle.kind for r in rows}
         self.assertIn(eventheader.ListKind.BG_EVENTS, kinds,
                       "BotanCity has a hidden item; it isn't on the Pickups tab")
 
     def test_a_signpost_tab_never_shows_a_hidden_item(self) -> None:
         header = eventheader.parse_map(ROOT / "maps/BotanCity.asm")
-        for row in panels.signposts(prism_read.tables(header, {}).signposts)[1]:
+        for row in tables.signposts(prism_read.tables(header, {}).signposts)[1]:
             entry = header.bg_events[row.ref.handle.index]
             self.assertNotEqual(entry.arg(2), prism_read.HIDDEN_ITEM)
 
@@ -129,7 +129,7 @@ class TestPanels(unittest.TestCase):
         event flag, because his real flag is the first argument of the `trainer`
         macro in his script. Showing the -1 would be showing a column that is
         always the same lie."""
-        rows = panels.trainers(self.tables.trainers)[1]
+        rows = tables.trainers(self.tables.trainers)[1]
         self.assertTrue(rows, f"{MAP} has no trainers?")
         for row in rows:
             self.assertNotEqual(row.cells[-1], "-1")
@@ -137,7 +137,7 @@ class TestPanels(unittest.TestCase):
             self.assertNotEqual(row.cells[4], "—", "no class found")
 
     def test_warps_name_the_destination(self) -> None:
-        cols, rows = panels.warps(self.tables.warps)
+        cols, rows = tables.warps(self.tables.warps)
         self.assertIn("to map", cols)
         for row, entry in zip(rows, self.header.warps):
             if entry.macro == "warp_def":
@@ -146,7 +146,7 @@ class TestPanels(unittest.TestCase):
     def test_wild_rows_carry_no_ref_so_the_keys_vanish(self) -> None:
         """This is how `e` and `d` disappear on the Wild tab: not a special case
         in the app, just a row that names nothing."""
-        _, rows = panels.wild({})
+        _, rows = tables.wild({})
         self.assertTrue(all(r.ref is None for r in rows))
 
     def test_the_add_prompt_keeps_out_of_the_number_columns(self) -> None:
@@ -157,16 +157,16 @@ class TestPanels(unittest.TestCase):
         cells wide on every tab of every map, which is what the eye actually sees:
         a great empty gutter down the left of the table.
         """
-        for table in (panels.npcs(self.tables.npcs),
-                      panels.trainers(self.tables.trainers),
-                      panels.objects(self.tables.props),
-                      panels.warps(self.tables.warps),
-                      panels.triggers(self.tables.triggers),
-                      panels.signposts(self.tables.signposts)):
+        for table in (tables.npcs(self.tables.npcs),
+                      tables.trainers(self.tables.trainers),
+                      tables.objects(self.tables.props),
+                      tables.warps(self.tables.warps),
+                      tables.triggers(self.tables.triggers),
+                      tables.signposts(self.tables.signposts)):
             cols = table[0]
-            at = panels.prompt_column(cols)
+            at = tables.prompt_column(cols)
             self.assertGreater(at, 0, f"{cols}: the prompt is back in the # column")
-            self.assertNotIn(cols[at], panels.NUMERIC,
+            self.assertNotIn(cols[at], tables.NUMERIC,
                              f"{cols[at]} holds numbers — a sentence would stretch it")
 
 
@@ -243,7 +243,7 @@ class TestShell(_Driven):
     def test_the_number_column_is_as_wide_as_a_number(self) -> None:
         """The table as it is really drawn, which is the only place this shows up.
 
-        `panels` can say where the prompt goes; only the widget can say what that
+        `tables` can say where the prompt goes; only the widget can say what that
         cost. A DataTable sizes each column to its widest cell, so the check is on
         the rendered width — the number the eye is complaining about.
         """

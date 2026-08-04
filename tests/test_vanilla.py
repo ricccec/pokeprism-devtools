@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from pokeprism_devtools.hacks import mount as hackmount  # noqa: E402
 from pokeprism_devtools.shared.coords import Tile  # noqa: E402
 from pokeprism_devtools import contract  # noqa: E402
-from pokeprism_devtools.studio import panels  # noqa: E402
+from pokeprism_devtools.studio import tables  # noqa: E402
 from pokeprism_devtools.studio.session import Session, SessionError  # noqa: E402
 
 FAILED = 0
@@ -307,7 +307,7 @@ def test_the_catalog(root: Path) -> None:
           len(links) == 1 and (links[0].direction, links[0].target,
                                links[0].offset) == ("west", "ROUTE_X", 2)
           and links[0].coord is None)
-    cols, _rows = panels.connections(links)
+    cols, _rows = tables.connections(links)
     check("so the table narrows to the three written columns",
           cols == ["direction", "to map", "offset"], str(cols))
 

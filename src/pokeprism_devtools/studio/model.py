@@ -18,10 +18,10 @@ from dataclasses import dataclass, field
 from ..shared import coords
 from ..shared.edits import Edit
 from .. import contract
-from . import panels
+from . import tables
 from ..contract import Action, Result
 # Crossing records that live with the rest of the seam's vocabulary in
-# `panels`, re-exported because whoever wants a MapData wants these with it.
+# `tables`, re-exported because whoever wants a MapData wants these with it.
 from ..contract import Measured, TextPreview, TextRef  # noqa: F401
 
 @dataclass(frozen=True)
@@ -89,9 +89,9 @@ class MapData:
     #: In tab order. A tab knows its own name, its table, whether it can be
     #: added to, and why it is read-only if it is — so the view iterates rather
     #: than consulting a list of tab names it would have to keep in step.
-    tabs: list[panels.Tab]
+    tabs: list[tables.Tab]
 
-    def tab(self, name: str) -> panels.Tab | None:
+    def tab(self, name: str) -> tables.Tab | None:
         return next((t for t in self.tabs if t.name == name), None)
 
     # -- the grid and the tables are one selection ----------------------------- #

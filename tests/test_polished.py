@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from pokeprism_devtools.hacks import mount as hackmount  # noqa: E402
 from pokeprism_devtools import contract  # noqa: E402
-from pokeprism_devtools.studio import panels  # noqa: E402
+from pokeprism_devtools.studio import tables  # noqa: E402
 from pokeprism_devtools.studio.session import Session  # noqa: E402
 
 FAILED = 0
@@ -317,7 +317,7 @@ def test_wild_forms_and_roof(root: Path) -> None:
     check("a formed mon carries its form",
           w["grass"]["nite"][0].form == "ALOLAN_FORM")
     check("an unformed one carries nothing", w["grass"]["morn"][0].form == "")
-    cols, _rows = panels.wild(w)
+    cols, _rows = tables.wild(w)
     check("so the form column appears", cols[-1] == "form", str(cols))
     check("water is three slots, no times", len(w["water"]["any"]) == 3)
 

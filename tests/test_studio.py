@@ -33,7 +33,7 @@ from pokeprism_devtools.hacks.prism import eventheader # noqa: E402
 from pokeprism_devtools.shared import coords, world # noqa: E402
 from pokeprism_devtools import contract  # noqa: E402
 from pokeprism_devtools import contract as actions  # noqa: E402
-from pokeprism_devtools.studio import panels  # noqa: E402
+from pokeprism_devtools.studio import tables  # noqa: E402
 from pokeprism_devtools.hacks.prism import content, offers  # noqa: E402
 from pokeprism_devtools.studio.session import (Session, SessionError,  # noqa: E402
                                                StaleWorld)
@@ -512,8 +512,8 @@ def test_an_object_past_the_count_is_still_shown(root: Path) -> None:
     check("every object still gets a row, count byte or no count byte",
           len(rows) == n, f"{len(rows)} rows for {n} people, one of them past the count")
     check("and the row says so, because the byte does not",
-          rows[-1].cells[0].endswith(panels.UNDECLARED)
-          and not rows[-2].cells[0].endswith(panels.UNDECLARED),
+          rows[-1].cells[0].endswith(tables.UNDECLARED)
+          and not rows[-2].cells[0].endswith(tables.UNDECLARED),
           str([r.cells[0] for r in rows]))
     check("the linter says why",
           any(f.code == "obj-count" for f in s.findings_for("TOWN_A")),
@@ -770,7 +770,7 @@ def _check_every_tile_points_at_its_own_row(s: Session) -> None:
 
     A map's objects are laid out twice: once as glyphs on the grid, once as rows in
     the tables. The grid's marks come from `eventheader.markers` walking the event
-    header; the rows come from `panels` walking it again. If those two ever disagree
+    header; the rows come from `tables` walking it again. If those two ever disagree
     — about the order, about the `+4` the `person_event` macro adds, about which
     list a hidden item lives in — then clicking the third NPC highlights the fourth,
     and it does so *quietly*, and you edit the wrong one.
