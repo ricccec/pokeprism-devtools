@@ -1,4 +1,4 @@
-"""Building the ROM, and standing in it — prism's :class:`~..seam.Plays`.
+"""Building the ROM, and standing in it — prism's :class:`~...contract.Plays`.
 
 The other half of the loop, and the only part of the studio that leaves the source
 tree: it runs `make`, patches a save, and opens an emulator. Everything else in
@@ -22,7 +22,7 @@ from ...dev_server import apply as devapply
 from ...dev_server import inventory, playtest as devplay
 from ...shared import make, paths
 from ...shared.devtools import make_devtools_dir
-from ..seam import PlayError
+from ...contract import PlayError
 
 #: The two ROMs this repo builds, and whether each one is the *debug* build — which
 #: is the word `shared/paths.py` uses for the same distinction, so this table is
@@ -110,7 +110,7 @@ def boot(root: Path, emulator: devplay.Emulator, const: str, y: int, x: int, *,
 
 
 class Player:
-    """Prism's :class:`~..seam.Plays`: `make`, patch prism's save, open SameBoy.
+    """Prism's :class:`~...contract.Plays`: `make`, patch prism's save, open SameBoy.
 
     Thin over the module functions — they carry the argument, the reasons and
     the tests. What the class adds is the two things the seam wants an object

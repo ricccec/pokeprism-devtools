@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..mount import NearMiss
-from ..seam import Hack
+from ...contract import Hack
 
 #: The two files every prism map parser starts from. Their *presence* is what
 #: makes a tree prism-shaped; every other gen-2 hack keeps these facts elsewhere.
@@ -38,7 +38,7 @@ def claims(root: Path) -> Hack | NearMiss:
 
 
 def build(root: Path) -> Hack:
-    """The prism :class:`~..seam.Hack`: reader and writer over one linter."""
+    """The prism :class:`~...contract.Hack`: reader and writer over one linter."""
     from ...maplint.context import LintContext
     from .play import Player
     from .read import Reader
