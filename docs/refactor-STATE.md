@@ -350,6 +350,18 @@ closed and reported the products separable.
   its first run saw `POLISHED` and not the `VANILLA` on the line above.
 - Still unscanned, and said out loud rather than implied: bank numbers, engine
   addresses and struct sizes that carry no hack's name. **A scan clears an axis.**
+- **The naming debt is 542 functions, not 7.** The same file's FIXME about
+  bare-noun names turned out to be a tree-wide convention gap (A 107 · B 3 ·
+  C 135 · D 297), measured by the new `scripts/naming-survey.py`. Paid **on
+  touch** by decision of the user 2026-08-05 — each phase renames what it opens
+  and reports the number — because a 542-name commit is the word-boundary-rename
+  trap at a scale nobody can review. The survey over-reports deliberately.
+- **The user's four FIXMEs are removed, each into a stronger home**: two into
+  `KNOWN_LEAKS` (a check that fails), one into the survey above, and one — "the
+  Makefile+main.asm heuristic is weak, state it explicitly" — answered in
+  `paths.py`'s own docstring, which now also describes the leak instead of
+  embodying it. That rewrite shrank `KNOWN_LEAKS` by a row, and the list's
+  "still there" direction caught the stale row before it could rot.
 
 ## Phase 4 · the god objects — not started
 

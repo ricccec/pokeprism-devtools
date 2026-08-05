@@ -97,6 +97,17 @@ is fixed on the tree as it stands, with its own test, before the file moves —
 otherwise no one can ever say again whether the move was behaviour-neutral, and every
 phase's "nothing changed" claim is worth less.
 
+**The naming debt is paid on touch, not in a phase.** `scripts/naming-survey.py`
+counts the functions whose name does not say what they do to what — **542
+tree-wide on 2026-08-05** (A 107 · B 3 · C 135 · D 297). Every phase renames the
+ones in files it already had a reason to open, and reports the survey's number
+before and after. Never a mass-rename commit: a word-boundary rename is not a
+rename, this refactor has paid for that three times, and at 542 names nobody can
+read every hit. The survey over-reports on purpose (`main`, `cmd_*`, past
+participles, plural collections) — a name it flags may be a reading rather than a
+rename, and that reading goes in the phase's STATE, never into the script's word
+list, or the survey starts measuring its own allowlist.
+
 **Write down what your oracle proves *and* what your phase claims — as two
 sentences.** Where they differ is the phase's real risk, and it is invisible from
 inside the phase. Phase 3 built a test proving the *import graph* is layered and

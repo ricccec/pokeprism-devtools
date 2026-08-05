@@ -145,11 +145,17 @@ PRET_PATHS = {
 #: Both scheduled into Phase 5's survey — the phase that asks, per module, "Gen-2
 #: fact or hack fact?" — rather than fixed here, because moving them is a design
 #: decision and this list exists to stop the *next* one arriving unnoticed.
+#:
+#: One row has already left: `paths.py`'s old one-line module docstring said
+#: "Locate pokeprism build artifacts". Rewriting it to describe the leak instead
+#: of embodying it shrank the list, and the "still there" check caught the row
+#: going stale before it could rot — which is the whole reason it is asserted in
+#: both directions. Long docstrings are not scanned (see `literals_in`), so prose
+#: that *names* the debt honestly cannot itself trip the check.
 KNOWN_LEAKS = {
     ("shared/paths.py", "pokeprism.gbc"),
     ("shared/paths.py", "pokeprism_nodebug.gbc"),
     ("shared/paths.py", "prism"),
-    ("shared/paths.py", "Locate pokeprism build artifacts relative to the repo root."),
     ("shared/paths.py", "Could not find pokeprism repo root from"),
     ("shared/paths.py", ". Run `make nodebug` or `make prism` first."),
     ("sym_lookup/__init__.py", "Query the pokeprism .sym file by label or address."),

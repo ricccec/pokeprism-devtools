@@ -1,17 +1,24 @@
-"""Locate pokeprism build artifacts relative to the repo root."""
+"""Locate a pret repo's build artifacts, relative to its root.
 
-# FIXME these function names all violòates our verb+noum rule
-# FIXME multiple mentions of pokeprism. Is this supposed to be in A or C?!?
-# FIXME the path matching heuristics (makefile+main.asm) is weak. I'm fine with
-#       it but this should be state explicitly
-# FIXME rom_path hard-codes the ROM names, but these depends on the specific
-#       hack and the targets defined in the makefile. How the is this supposed
-#       to live in A?
-#
-# Verbatim, and answered in docs/refactor-STATE.md → Phase 5. Kept as comments
-# rather than string literals because four of those in a row displaced the module
-# docstring and pushed `from __future__` off the first statement, which made this
-# file — imported by 19 modules across all four products — a SyntaxError.
+**How a repo root is recognised, stated because it is a heuristic and not a
+fact:** walk up from the starting directory until a `Makefile` and a `main.asm`
+sit in the same folder. Neither alone is enough — a `Makefile` is in half the
+directories on a developer's machine, and `main.asm` alone would match an
+extracted source dump that cannot build. Together they are the pret signature,
+and all three trees this repo reads carry both (measured 2026-08-05: pokecrystal,
+polishedcrystal, pokeprism). It will still accept any other pret-shaped
+checkout, which is the intent — this module knows about *pret*, not about a hack.
+
+**Except that it does not, yet.** :func:`rom_path` hardcodes prism's two ROM
+filenames and prism's two make targets, so every function below that reaches
+through it — :func:`sym_path`, :func:`map_path`, :func:`sav_path` — resolves
+nothing on a pokecrystal tree. That makes `prism-sym`, an entry point of the
+library this file belongs to, prism-only in practice. Named in
+`tests/test_products.py::KNOWN_LEAKS` so it cannot spread quietly, and scheduled
+into Phase 5; the neutral answer already exists at
+`hacks/vanilla/play.py::_roms`, which reads the `Makefile`'s `roms :=` list
+instead of guessing.
+"""
 
 from __future__ import annotations
 
