@@ -15,18 +15,11 @@ class PlayerMenu:
 
     def _edit_player(self) -> None:
         import questionary
-        from questionary import Choice
 
         while True:
             player = self.state.setdefault("player", {})
             choice = questionary.select(
-                "Edit player",
-                choices=[
-                    Choice(f"Name    : {player.get('name', '(unset)')}",   value="name"),
-                    Choice(f"Money   : {player.get('money', '(unset)')}", value="money"),
-                    Choice(f"Badges  : {player.get('badges', '(unset)')}", value="badges"),
-                    Choice("← Back", value="back"),
-                ],
+                "Edit player", choices=_player_rows(player)
             ).ask()
             if choice is None or choice == "back":
                 return
@@ -50,17 +43,38 @@ class PlayerMenu:
                     player["money"] = int(val)
                     self._save_state()
             elif choice == "badges":
-                cur = player.get("badges") or [0, 0, 0]
-                parts = []
-                for i, label in enumerate(("Naljo", "Rijon", "Other")):
-                    v = questionary.text(
-                        f"{label} badges (0–255 bitmask):",
-                        default=str(cur[i]),
-                        validate=_int_in(0, 255),
-                    ).ask()
-                    if v is None:
-                        break
-                    parts.append(int(v))
-                if len(parts) == 3:
-                    player["badges"] = parts
-                    self._save_state()
+                self._ask_badges(player)
+
+    def _ask_badges(self, player: dict) -> None:
+        """One field asked for as three prompts, because the game keeps a
+        bitmask per region. Cancelling any of the three leaves all three as
+        they were: a partial set of badges is nobody's intention."""
+        import questionary
+
+        cur = player.get("badges") or [0, 0, 0]
+        parts = []
+        for i, label in enumerate(("Naljo", "Rijon", "Other")):
+            v = questionary.text(
+                f"{label} badges (0–255 bitmask):",
+                default=str(cur[i]),
+                validate=_int_in(0, 255),
+            ).ask()
+            if v is None:
+                break
+            parts.append(int(v))
+        if len(parts) == 3:
+            player["badges"] = parts
+            self._save_state()
+
+
+def _player_rows(player: dict) -> list:
+    """The three fields the save carries about the trainer, each labelled with
+    what is set — `(unset)` meaning the template's value is kept, not zero."""
+    from questionary import Choice
+
+    return [
+        Choice(f"Name    : {player.get('name', '(unset)')}",   value="name"),
+        Choice(f"Money   : {player.get('money', '(unset)')}",  value="money"),
+        Choice(f"Badges  : {player.get('badges', '(unset)')}", value="badges"),
+        Choice("← Back", value="back"),
+    ]

@@ -402,10 +402,13 @@ is the result, not a deferral.
 - **`dev_server` carries 13 functions over 50 LOC and only 6 are this phase's** —
   `inventory.build` 161 and `cli.main` 154 are the two longest in the tree.
   Recorded, not scheduled: it is Phase 1b's shape one product over.
-- **Baseline reproduces at 36/39; `test_studio_tui` is intermittent.** It went
-  red on the first full run and green on the second, alone (167s) and after
-  `test_studio`. The failing run's output was discarded, so the cause is a guess
-  — re-run it alone before believing it; a red anywhere else is a real one.
+- **Baseline reproduces at 36/39 (37/40 with this phase's file); `test_studio_tui`
+  is intermittent, and the cause is measured.** One test of its 88 fails inside a
+  Textual **worker** — `NoMatches("No nodes match 'Diagnostics'")`, the linter
+  thread writing to a pane not yet on screen. A scheduling race under load, not
+  the timeout the first guess named, and it mentions `dev_server` nowhere. **Re-run
+  it alone before believing it; a red anywhere else is a real one.** Phase 5 will
+  meet this too.
 - **The oracle exists: `tui.py` goes 0 → 673 of 914 lines and all 48 seeded
   mutations were caught.** `tests/test_dev_server.py` is new — this is the one
   package with no test file to add to, so Phase 1b's "the test goes where the

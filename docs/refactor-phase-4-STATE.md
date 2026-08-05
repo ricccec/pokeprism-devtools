@@ -359,6 +359,51 @@ which is the whole reason R7 is a union.
   named them. R4 is satisfied trivially, which is itself evidence: a split that
   needed the test edited would not have been a move.
 
+## Step 4 · the shortenings
+
+**6 over-50 functions → 0**, across `dev_server/tui.py` and all of
+`dev_server/state/`. Cheap, exactly as Phase 1b predicted once an oracle exists:
+
+| function | was | now |
+|---|---:|---:|
+| `_edit_pocket` | 109 | 41 |
+| `_edit_tmhms` | 88 | 48 |
+| `_edit_party_slot` | 79 | 35 |
+| `run` | 64 | 38 |
+| `_edit_flag_group` | 55 | 27 |
+| `_edit_player` | 51 | 31 |
+
+Every one had the same shape and it split the same way: **build the rows, then
+dispatch on the answer.** The row-builders came out as module-level functions
+(`_menu_rows`, `_pocket_rows`, `_flag_rows`, `_tmhm_rows`, `_slot_rows`,
+`_player_rows`) because a menu's list depends on the state it is shown, not on
+the server; the branches came out as methods, because they write.
+
+`_normalized` stopped being a closure over `has_qty` and took it as an argument —
+the one signature change in the step, and the reason it is listed as arriving in
+CONTENT rather than moving.
+
+**R6 confinement, against `HEAD` rather than against an older snapshot**: the
+METHODS union reports exactly six changed digests, and they are exactly the six
+above. `PositionMenu` and `PresetMenu` are untouched, in both sections.
+
+*The first confinement run looked wrong and was not.* It reported `PositionMenu`,
+`PresetMenu` and `_int_in` as changed too, because the baseline snapshot predated
+the reformatting commit in between. **A confinement check is only as good as the
+commit its baseline was taken at** — the fix is `git stash`, snapshot, pop.
+
+**Falsified again, against the shortened code: 41 mutations, 41 caught.** Re-seeding
+the same defects after the edits is the only thing that says a shortening did not
+quietly drop a branch, and it is why they were written first.
+
+**One survived, and it was a real gap.** *"Autosave writes to the preset it was
+loaded from"* passed, because `test_an_edit_never_writes_over_a_preset` used a
+fixture that **had** a `state.json` — and when it does, the state file and the
+state *source* are the same path, so writing to the wrong one is invisible. The
+case that matters is a server opened with no `state.json`, which falls back to
+`presets/default.json`; that is when autosave must not write back. Phase 1b's
+fixture-shape lesson, for the fourth time in this phase.
+
 ## The defect the oracle found
 
 **Abandoning a party slot past the end of the party leaves gaps.** Open slot 5
@@ -453,22 +498,31 @@ wrong before a line was edited. Four runs later:
 
 | run | result |
 |---|---|
-| full suite, first time | `test_studio_tui` **red** — output discarded, so the reason is unrecorded |
+| full suite, first time | `test_studio_tui` **red** — output discarded, so the reason was unrecorded |
 | `test_studio_tui` alone | 88 tests, **OK**, 167s |
 | `test_studio` then `test_studio_tui` | both **OK**, 194s |
-| full suite, second time, every log kept | **36/39**, and the three known reds |
+| full suite ×3 after that, every log kept | **36/39 → 37/40**, three known reds |
+| full suite after step 4 | red again — **and this time the log was kept** |
+| `test_studio_tui` alone, immediately after | 88 tests, **OK**, 162s |
 
-**The baseline is 36/39** and it reproduces. `test_studio_tui` is **intermittent**
-— it is the slowest test in the suite by an order of magnitude and drives
-Textual's `Pilot` against real timeouts, which is a plausible cause and is *not*
-what was measured, because the one run that failed is the one whose output was
-thrown away. What is established is the baseline and the intermittency; the cause
-is a guess and is labelled as one.
+**The baseline is 36/39** (37/40 with this phase's new file) and it reproduces.
+`test_studio_tui` is **intermittent**, and the cause is now measured rather than
+guessed:
+
+    ERROR: test_e_on_an_npc_now_reaches_the_npc_and_not_only_its_words
+    textual.worker.WorkerFailed: Worker raised exception:
+        NoMatches("No nodes match 'Diagnostics' on Screen(id='_default')")
+
+One test of 88, failing inside a Textual **worker** — the linter runs in a thread
+and the pane it writes to is not on screen yet. A scheduling race under a loaded
+machine, not a timeout, which is what the first guess said. It mentions
+`dev_server` nowhere and cannot be reached from anything this phase touched.
 
 **The working rule for the rest of the phase:** a red in `test_studio_tui` is
 re-run alone before it is believed. A red in anything else is an edit that was
-not what it claimed.
+not what it claimed. Recorded for Phase 5, which will meet it too.
 
 Two habits paid for this and both are Phase 1b's: discarding a failing run's
-output cost a whole re-run, and *"the suite's answer is about the conditions it
-ran under, not only about the code"* — the same family as the stale `.pyc`.
+output cost a whole re-run *and* left a wrong guess standing in this file for
+half a phase, and *"the suite's answer is about the conditions it ran under, not
+only about the code"* — the same family as the stale `.pyc`.
