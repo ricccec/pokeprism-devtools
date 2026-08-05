@@ -390,6 +390,7 @@ class DevServer:
         from questionary import Choice
 
         party = self.state.setdefault("party", [])
+        existing = len(party)
         while idx >= len(party):
             # Lazily allocate an empty slot. Species required before save.
             party.append({})
@@ -417,7 +418,7 @@ class DevServer:
             if choice is None or choice == "back":
                 # Drop the slot entirely if species was never set.
                 if not mon.get("species"):
-                    party.pop(idx)
+                    _drop_slot_and_its_gaps(party, idx, existing)
                     self._save_state()
                 return
 
@@ -458,7 +459,7 @@ class DevServer:
             elif choice == "moves":
                 self._edit_party_moves(mon, move_names)
             elif choice == "remove":
-                party.pop(idx)
+                _drop_slot_and_its_gaps(party, idx, existing)
                 self._save_state()
                 return
 
@@ -900,6 +901,21 @@ class DevServer:
             return str(path.relative_to(self.root))
         except ValueError:
             return str(path)
+
+
+def _drop_slot_and_its_gaps(party: list[dict], idx: int, existing: int) -> None:
+    """Remove one party slot, and the empty ones opening it created.
+
+    Opening slot N allocates every slot up to N, so removing only the slot that
+    was asked for leaves `{}` entries in the party — which `apply._apply_party`
+    refuses, taking the next launch with it.
+
+    `existing` is how many slots there were before the editor opened, which is
+    what tells our gaps from a `{}` somebody wrote into state.json by hand.
+    Dropping one of those would silently renumber every slot after it.
+    """
+    party.pop(idx)
+    del party[existing:]
 
 
 def _int_in(lo: int, hi: int):
