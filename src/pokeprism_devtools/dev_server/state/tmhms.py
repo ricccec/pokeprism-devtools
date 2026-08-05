@@ -13,7 +13,6 @@ class TmhmMenu:
     def _edit_tmhms(self) -> None:
         """Add/remove editor for TM/HM ownership, mirroring _edit_flag_group."""
         import questionary
-        from questionary import Choice, Separator
 
         tmhms = self.inv.get("tmhms")
         if not tmhms:
@@ -32,25 +31,10 @@ class TmhmMenu:
                 self.state.get("tmhms") or [], key=lambda n: bit_of.get(n, 0)
             )
 
-            choices: list = []
-            for name in owned:
-                choices.append(
-                    Choice(f"  [-] {label_of.get(name, name)}", value=("remove_one", name))
-                )
-            if owned:
-                choices.append(Separator())
-            choices.append(Choice("Own TM/HM...", value=("add", None)))
-            if owned:
-                choices.append(Choice(f"Own all ({len(tmhms)})", value=("own_all", None)))
-                choices.append(Choice("Clear all  (launch writes none owned)", value=("clear", None)))
-            else:
-                choices.append(Choice(f"Own all ({len(tmhms)})", value=("own_all", None)))
-            if in_state:
-                choices.append(Choice("Use template's TM/HMs  (remove from state)", value=("template", None)))
-            choices.append(Choice("← Back", value=("back", None)))
-
             action = questionary.select(
-                f"TM/HMs — {len(owned)}/{len(tmhms)} owned", choices=choices
+                f"TM/HMs — {len(owned)}/{len(tmhms)} owned",
+                choices=_tmhm_rows(owned, label_of, total=len(tmhms),
+                                   in_state=in_state),
             ).ask()
             if action is None or action[0] == "back":
                 return
@@ -59,42 +43,88 @@ class TmhmMenu:
             # actually changed something — an empty "tmhms": [] created just
             # by browsing this menu would mean "own nothing" on next launch.
             if action[0] == "add":
-                present = set(owned)
-                addable = [lbl for lbl in all_labels if name_of_label[lbl] not in present]
-                val = questionary.autocomplete(
-                    "TM/HM (tab to autocomplete):",
-                    choices=addable,
-                    validate=lambda s: s in addable
-                    or (f"already owned: {s}" if s in all_labels else f"unknown TM/HM: {s}"),
-                ).ask()
-                if not val:
-                    continue
-                name = name_of_label[val]
-                if name not in owned:
-                    new_owned = owned + [name]
-                    new_owned.sort(key=lambda n: bit_of.get(n, 0))
-                    self.state["tmhms"] = new_owned
-                    self._save_state()
+                self._own_another(owned, all_labels, name_of_label, bit_of)
             elif action[0] == "remove_one":
                 name = action[1]
                 if name in owned:
-                    new_owned = [n for n in owned if n != name]
-                    self.state["tmhms"] = new_owned
+                    self.state["tmhms"] = [n for n in owned if n != name]
                     self._save_state()
             elif action[0] == "own_all":
-                if questionary.confirm(
-                    f"Own all {len(tmhms)} TM/HMs?", default=False
-                ).ask():
-                    self.state["tmhms"] = [e["name"] for e in entries_by_bit]
-                    self._save_state()
+                self._set_owned_if_confirmed(
+                    f"Own all {len(tmhms)} TM/HMs?",
+                    [e["name"] for e in entries_by_bit])
             elif action[0] == "clear":
-                if questionary.confirm("Clear all TM/HMs?", default=False).ask():
-                    self.state["tmhms"] = []
-                    self._save_state()
+                self._set_owned_if_confirmed("Clear all TM/HMs?", [])
             elif action[0] == "template":
-                if questionary.confirm(
-                    "Stop overriding TM/HMs (use the template's)?", default=False
-                ).ask():
-                    self.state.pop("tmhms", None)
-                    self._save_state()
+                if self._give_the_tmhms_back():
                     return
+
+    def _set_owned_if_confirmed(self, question: str, owned: list[str]) -> None:
+        """Replace the owned list wholesale, having asked. An empty list is a
+        real answer here — it means *launch owning none*, which is not the same
+        as `_give_the_tmhms_back`."""
+        import questionary
+
+        if questionary.confirm(question, default=False).ask():
+            self.state["tmhms"] = owned
+            self._save_state()
+
+    def _give_the_tmhms_back(self) -> bool:
+        """Stop overriding TM/HMs, so the template's are used. True if it
+        happened, which is the caller's cue to close the menu."""
+        import questionary
+
+        if not questionary.confirm(
+            "Stop overriding TM/HMs (use the template's)?", default=False
+        ).ask():
+            return False
+        self.state.pop("tmhms", None)
+        self._save_state()
+        return True
+
+    def _own_another(self, owned: list[str], all_labels: list[str],
+                     name_of_label: dict[str, str],
+                     bit_of: dict[str, int]) -> None:
+        """Ask for one more TM/HM, offered by its `TM01 HEADBUTT` label and
+        stored by its `TM_HEADBUTT` name. The owned list is kept in bit order,
+        which is neither of those two orderings."""
+        import questionary
+
+        present = set(owned)
+        addable = [lbl for lbl in all_labels if name_of_label[lbl] not in present]
+        val = questionary.autocomplete(
+            "TM/HM (tab to autocomplete):",
+            choices=addable,
+            validate=lambda s: s in addable
+            or (f"already owned: {s}" if s in all_labels else f"unknown TM/HM: {s}"),
+        ).ask()
+        if not val:
+            return
+        name = name_of_label[val]
+        if name in owned:
+            return
+        new_owned = owned + [name]
+        new_owned.sort(key=lambda n: bit_of.get(n, 0))
+        self.state["tmhms"] = new_owned
+        self._save_state()
+
+
+def _tmhm_rows(owned: list[str], label_of: dict[str, str], *, total: int,
+               in_state: bool) -> list:
+    """The rows the TM/HM menu offers: what is owned, then what can be done."""
+    from questionary import Choice, Separator
+
+    rows: list = [
+        Choice(f"  [-] {label_of.get(name, name)}", value=("remove_one", name))
+        for name in owned
+    ]
+    if owned:
+        rows.append(Separator())
+    rows.append(Choice("Own TM/HM...", value=("add", None)))
+    rows.append(Choice(f"Own all ({total})", value=("own_all", None)))
+    if owned:
+        rows.append(Choice("Clear all  (launch writes none owned)", value=("clear", None)))
+    if in_state:
+        rows.append(Choice("Use template's TM/HMs  (remove from state)", value=("template", None)))
+    rows.append(Choice("← Back", value=("back", None)))
+    return rows

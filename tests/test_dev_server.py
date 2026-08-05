@@ -1329,16 +1329,35 @@ def test_no_presets_at_all(tmp: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 def test_an_edit_never_writes_over_a_preset(tmp: Path) -> None:
-    """`--state` can point anywhere, including at a preset. Autosave must still
-    go to the state file the server was opened with, and the presets on disk
-    must come out byte-identical — they are the thing you reset *to*."""
+    """Autosave goes to the state file the server was opened with, and the
+    presets come out byte-identical — they are the thing you reset *to*.
+
+    **The case that matters is a server with no state.json**, which opens on
+    `presets/default.json`. With one on disk the state file and the state
+    *source* are the same path, so writing to the wrong one is invisible: that
+    is the shape the first version of this test had, and a seeded mutation
+    walked straight through it.
+    """
     print("\nDevServer — autosave never touches presets/")
     root = _fixture(tmp / "autosave")
+    (root / ".devtools" / "state.json").unlink()
     presets = root / ".devtools" / "presets"
     before = {p.name: p.read_text() for p in presets.glob("*.json")}
     _drive(_server(root), "_edit_player", ["name", "PIKA", "back"])
     check("every preset is byte-identical",
           {p.name: p.read_text() for p in presets.glob("*.json")} == before,
+          "a preset was rewritten")
+    check("and the edit went to state.json, which did not exist before",
+          _written(root)["player"]["name"] == "PIKA", str(_written(root)["player"]))
+
+    # And with a state.json present, the same edit still lands there.
+    root = _fixture(tmp / "autosave2")
+    before = {p.name: p.read_text() for p in
+              (root / ".devtools" / "presets").glob("*.json")}
+    _drive(_server(root), "_edit_player", ["name", "PIKA", "back"])
+    check("the presets are untouched with a state file too",
+          {p.name: p.read_text() for p in
+           (root / ".devtools" / "presets").glob("*.json")} == before,
           "a preset was rewritten")
     check("and the state file has the edit",
           _written(root)["player"]["name"] == "PIKA", str(_written(root)["player"]))
