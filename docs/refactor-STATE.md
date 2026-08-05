@@ -429,8 +429,29 @@ is the result, not a deferral.
 - **R6 cannot see inside a class.** `scripts/surface-snapshot.py` digests
   `DevServer` as one CONTENT entry, so it cannot tell a commit that touched one
   method from one that touched all 23 — every commit in this phase moves that one
-  line and says no more. **Step 3 needs a per-method digest** to prove the split
-  is a move, and that is this phase's one departure from the four before it.
+  line and says no more. So the tool gained **`--methods`**, digesting each method
+  by its own name with no mention of which class holds it; opt-in, so earlier
+  phases' recorded counts stay comparable. This phase's one departure from the
+  method of the four before it.
+- **`tui.py` 914 → 300, and the METHODS union proves it was a move** — all 29
+  bodies byte-identical across the split, seven mixin classes arriving and one
+  digest changing (`DevServer`, which lost twelve methods). Nothing else, either
+  direction. `DevServer` inherits the seven, which is `studio/flow.py`'s own
+  pattern — *"the split is a size, not a boundary"* — and is what let every body
+  keep `self.state` and move untouched. The grouping is not invented: `apply.py`
+  already splits the same state the same way.
+- **The new check's first run failed in the way Phase 3 wrote down** — R8 records
+  that `surface-snapshot.py` walks a package's *top-level modules only*, so the
+  new `dev_server/state/` subpackage was invisible and twelve methods read as
+  deleted. Written down, then walked into anyway; the fix is R7's union.
+- **The split did not make `tui.py` small, and that is said out loud**: 300 lines,
+  261 of code, still past CLAUDE.md's 250 smell — the server is still the menu
+  loop *plus* the status block *plus* the `.sym` watcher *plus* launching. The
+  over-50 count is unchanged at 6, which is what a move should do to it.
+- **`tests/test_dev_server.py` needed no edit at all across the split** — not one
+  import, because the mixins are reached through `DevServer` and the test never
+  named them. R4 satisfied trivially, which is itself the evidence: a split that
+  needed its test edited would not have been a move.
 - **Recorded, not endorsed**: a failed `patch_save` still spawns the emulator, so
   the game comes up on the old save with nothing on screen to say so.
 - **`_watch` and `_refresh_inventory_if_stale` are the same seven lines** — found

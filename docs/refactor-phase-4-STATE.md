@@ -51,6 +51,17 @@ that proves it.
   that touched all 23. **Step 3 needs a per-method digest**, and that is this
   phase's one departure from the method of the four before it. → *What R6 cannot
   see inside a class*
+- **`tui.py` 914 → 300, and the METHODS union proves it was a move** — all 29
+  bodies byte-identical, seven mixin classes arriving and one digest changing.
+  `DevServer` inherits them, which is `studio/flow.py`'s pattern and is what let
+  a class split be provable at all. → *Step 3 · the split*
+- **The new check's first run was wrong in the way Phase 3 wrote down** —
+  `surface-snapshot.py` walks top-level modules only, so `dev_server/state/` was
+  invisible and twelve methods looked deleted. R8 says this in writing. → *Proving
+  a class split is a move*
+- **The split did not make `tui.py` small**: 300 lines, 261 of code, still past
+  the 250 smell, and the over-50 count is unchanged at 6 — which is what a move
+  should do to it. → *What the split did not fix*
 - **A second thing recorded, not endorsed**: a failed save-patch still spawns the
   emulator, so the game comes up on the old save. → *The defect the oracle found*
 - **`_watch` and `_refresh_inventory_if_stale` are the same logic written
@@ -282,6 +293,71 @@ A fourth thing came out of this and is behaviour rather than a mutation:
 `_edit_pocket` normalises to dict form **per pocket, as that pocket is opened**,
 so a pocket nobody edited keeps whatever shorthand was hand-written in
 state.json. Recorded in the assertion that noticed it.
+
+## Step 3 · the split
+
+`dev_server/tui.py` **914 → 300**, and seven files under `dev_server/state/`, none
+over 175:
+
+| file | total | code | holds |
+|---|---:|---:|---|
+| `tui.py` | 300 | 261 | the server: the menu loop, the status block, the `.sym` watcher, patch-and-launch |
+| `state/party.py` | 174 | 136 | the six slots, and what is in one |
+| `state/bag.py` | 160 | 133 | the three pockets |
+| `state/tmhms.py` | 100 | 79 | which TM/HMs are owned |
+| `state/flags.py` | 90 | 71 | the event and engine lists |
+| `state/position.py` | 66 | 46 | which map, and which tile |
+| `state/player.py` | 65 | 51 | name, money, badges |
+| `state/presets.py` | 42 | 25 | replacing the state whole |
+| `state/prompts.py` | 20 | 10 | the bounded-integer validator four editors share |
+| `state/__init__.py` | 19 | 8 | re-exports, and nothing else (R1) |
+
+**Each file is one mixin class and `DevServer` inherits all seven** — the pattern
+`studio/flow.py` already uses on `Studio`, whose own docstring says it best: *"the
+split is a size, not a boundary."* That is what let the split be a move: every
+body keeps `self.state`, `self.inv` and `self._save_state()` untouched.
+
+The grouping is not invented here. `dev_server/apply.py` already splits the same
+state the same way — `_apply_player`, `_apply_map`, `_apply_party`, `_apply_items`,
+`_apply_flags`, `_apply_tmhms` — and these are the read-and-edit half of it.
+
+### Proving a class split is a move
+
+**The METHODS union is byte-identical: all 29 method bodies, unchanged.**
+
+Getting there needed a new instrument and the reason is above — CONTENT digests a
+class as one entry, so it cannot see inside `DevServer` at all.
+`scripts/surface-snapshot.py` gained `--methods`, which digests each method by its
+own name, with no mention of which class holds it, exactly as CONTENT declines to
+say which file holds a function. A body that moved to another class unchanged
+therefore produces an **unchanged line**. It is opt-in, so the CONTENT counts the
+earlier phases recorded stay comparable.
+
+**And the first run of it reported twelve methods deleted and none arriving** —
+because the tool *"walks a package's top-level modules only"*, which is Phase 3's
+R8 note, written down and then walked into anyway. `dev_server/state/` is a
+subpackage and was invisible. The check that works is R7's: the union across
+`dev_server` and `dev_server.state`.
+
+**The CONTENT union changes by exactly the list R8 asks for in advance**: seven
+classes arrive (`PlayerMenu`, `PositionMenu`, `PartyMenu`, `BagMenu`, `FlagMenu`,
+`TmhmMenu`, `PresetMenu`) and one digest changes (`DevServer`, which lost twelve
+methods). Nothing else, in either direction. `_int_in` and
+`_drop_slot_and_its_gaps` cross between the two packages and the union keeps them,
+which is the whole reason R7 is a union.
+
+### What the split did not fix, said out loud
+
+- **`tui.py` is 300 lines, 261 of code — still past CLAUDE.md's 250 smell.** The
+  server is the menu loop, the status rendering, the `.sym` watcher and
+  patch-and-launch, which is more than two responsibilities. Not addressed here:
+  this commit is a move, and the editors were the phase's stated target.
+- **The over-50 count is unchanged at 6**, which is what a move should do to it.
+  Step 4 is what pays that.
+- `tests/test_dev_server.py` is unchanged across the split — not one import
+  rewritten, because the mixins are reached through `DevServer` and the test never
+  named them. R4 is satisfied trivially, which is itself evidence: a split that
+  needed the test edited would not have been a move.
 
 ## The defect the oracle found
 
