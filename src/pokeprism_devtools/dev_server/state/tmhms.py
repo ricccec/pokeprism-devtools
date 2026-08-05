@@ -33,7 +33,7 @@ class TmhmMenu:
 
             action = questionary.select(
                 f"TM/HMs — {len(owned)}/{len(tmhms)} owned",
-                choices=_tmhm_rows(owned, label_of, total=len(tmhms),
+                choices=_build_tmhm_rows(owned, label_of, total=len(tmhms),
                                    in_state=in_state),
             ).ask()
             if action is None or action[0] == "back":
@@ -109,7 +109,7 @@ class TmhmMenu:
         self._save_state()
 
 
-def _tmhm_rows(owned: list[str], label_of: dict[str, str], *, total: int,
+def _build_tmhm_rows(owned: list[str], label_of: dict[str, str], *, total: int,
                in_state: bool) -> list:
     """The rows the TM/HM menu offers: what is owned, then what can be done."""
     from questionary import Choice, Separator

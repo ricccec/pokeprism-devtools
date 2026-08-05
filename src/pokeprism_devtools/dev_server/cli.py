@@ -182,8 +182,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if report.backup is not None:
-        print(f"Backed up {target_sav.name} → {_pretty_path(report.backup, root)}")
-    print(f"Wrote {_pretty_path(report.target, root)} "
+        print(f"Backed up {target_sav.name} → "
+              f"{_format_path_under_root(report.backup, root)}")
+    print(f"Wrote {_format_path_under_root(report.target, root)} "
           f"({len(report.changes)} fields changed)")
     for c in report.changes:
         print(f"  {c}")
@@ -195,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     return _launch(rom_path)
 
 
-def _pretty_path(path: Path, root: Path) -> str:
+def _format_path_under_root(path: Path, root: Path) -> str:
     """Show path as relative to repo root if possible; otherwise absolute."""
     try:
         return str(path.relative_to(root))
