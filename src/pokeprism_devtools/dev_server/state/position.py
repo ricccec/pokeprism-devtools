@@ -9,7 +9,7 @@ what a tile coord is.
 
 from __future__ import annotations
 
-from .prompts import _int_in
+from .prompts import make_int_range_validator
 
 
 class PositionMenu:
@@ -49,7 +49,7 @@ class PositionMenu:
                 val = questionary.text(
                     f"{choice.upper()} coord (0–{bound}):",
                     default=str(map_.get(choice, 0)),
-                    validate=_int_in(0, bound),
+                    validate=make_int_range_validator(0, bound),
                 ).ask()
                 if val is not None:
                     map_[choice] = int(val)

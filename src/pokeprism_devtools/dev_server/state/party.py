@@ -8,7 +8,7 @@ gap left behind is a launch that fails rather than a slot that looks empty.
 
 from __future__ import annotations
 
-from .prompts import _int_in
+from .prompts import make_int_range_validator
 
 
 class PartyMenu:
@@ -65,7 +65,7 @@ class PartyMenu:
 
         while True:
             choice = questionary.select(
-                f"Edit slot {idx + 1}", choices=_slot_rows(mon)
+                f"Edit slot {idx + 1}", choices=_build_slot_rows(mon)
             ).ask()
             if choice is None or choice == "back":
                 # Drop the slot entirely if species was never set.
@@ -110,7 +110,7 @@ class PartyMenu:
         val = questionary.text(
             "Level (1–100):",
             default=str(mon.get("level", 5)),
-            validate=_int_in(1, 100),
+            validate=make_int_range_validator(1, 100),
         ).ask()
         if val is not None:
             mon["level"] = int(val)
@@ -181,7 +181,7 @@ def _drop_slot_and_its_gaps(party: list[dict], idx: int, existing: int) -> None:
     del party[existing:]
 
 
-def _slot_rows(mon: dict) -> list:
+def _build_slot_rows(mon: dict) -> list:
     """The four fields of one party slot, each labelled with what it holds now
     — or with where its value comes from when it holds nothing, since "(from
     learnset)" and "(default)" are answers rather than blanks."""

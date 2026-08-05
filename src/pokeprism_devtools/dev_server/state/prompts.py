@@ -8,7 +8,10 @@ message they all give back.
 from __future__ import annotations
 
 
-def _int_in(lo: int, hi: int):
+def make_int_range_validator(lo: int, hi: int):
+    """A `validate=` for a questionary prompt that will take `lo..hi` and
+    nothing else. It builds the check rather than being one, which is what the
+    old name (`_int_in`) read as and was not."""
 
     def _validate(s: str):
         try:

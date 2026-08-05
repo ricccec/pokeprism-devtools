@@ -8,7 +8,7 @@ them at once.
 
 from __future__ import annotations
 
-from .prompts import _int_in
+from .prompts import make_int_range_validator
 
 
 class PlayerMenu:
@@ -19,7 +19,7 @@ class PlayerMenu:
         while True:
             player = self.state.setdefault("player", {})
             choice = questionary.select(
-                "Edit player", choices=_player_rows(player)
+                "Edit player", choices=_build_player_rows(player)
             ).ask()
             if choice is None or choice == "back":
                 return
@@ -37,7 +37,7 @@ class PlayerMenu:
                 val = questionary.text(
                     "Money (0–999999):",
                     default=str(player.get("money", 0)),
-                    validate=_int_in(0, 999_999),
+                    validate=make_int_range_validator(0, 999_999),
                 ).ask()
                 if val is not None:
                     player["money"] = int(val)
@@ -57,7 +57,7 @@ class PlayerMenu:
             v = questionary.text(
                 f"{label} badges (0–255 bitmask):",
                 default=str(cur[i]),
-                validate=_int_in(0, 255),
+                validate=make_int_range_validator(0, 255),
             ).ask()
             if v is None:
                 break
@@ -67,7 +67,7 @@ class PlayerMenu:
             self._save_state()
 
 
-def _player_rows(player: dict) -> list:
+def _build_player_rows(player: dict) -> list:
     """The three fields the save carries about the trainer, each labelled with
     what is set — `(unset)` meaning the template's value is kept, not zero."""
     from questionary import Choice
