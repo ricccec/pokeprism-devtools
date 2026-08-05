@@ -319,8 +319,7 @@ def _server(root: Path, **kw) -> tui.DevServer:
             sav_backups_dir=dev / "sav-backups",
             keep_people=False,
             rebuild_inventory=False,
-            auto_relaunch=False,
-            **kw,
+            **{"auto_relaunch": False, **kw},
         )
     server.emulator = _StubEmulator()
     return server
@@ -1430,6 +1429,54 @@ def test_a_newer_sym_refreshes_the_inventory(tmp: Path) -> None:
         inventory.build = saved
 
 
+def test_the_watcher_thread_picks_up_a_rebuild(tmp: Path) -> None:
+    """The background watcher is the only path that runs *while you are
+    building*, and until this it was the one body no test reached. It must
+    rebuild without printing — a questionary prompt owns the terminal — and it
+    must re-launch only when asked to.
+    """
+    print("\nDevServer — the rebuild watcher")
+    import time
+
+    for auto in (False, True):
+        root = _fixture(tmp / f"watch_{auto}")
+        server = _server(root, auto_relaunch=auto)
+        rebuilt: list = []
+
+        def _fake_build(r, s):
+            rebuilt.append(s)
+            return {"schema": _inventory_schema(), "maps": [], "rebuilt": True}
+
+        from pokeprism_devtools.dev_server import inventory
+        saved_build, saved_poll = inventory.build, tui.SYM_POLL_SECONDS
+        inventory.build = _fake_build
+        tui.SYM_POLL_SECONDS = 0.01
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out):
+                server._start_rebuild_watcher()
+                os.utime(root / "pokeprism.sym", (SYM_MTIME + 60, SYM_MTIME + 60))
+                deadline = time.time() + 5.0
+                while not rebuilt and time.time() < deadline:
+                    time.sleep(0.02)
+        finally:
+            server._watcher_stop.set()
+            server._watcher_thread.join(timeout=3.0)
+            inventory.build, tui.SYM_POLL_SECONDS = saved_build, saved_poll
+
+        check(f"auto_relaunch={auto}: it rebuilt on its own", len(rebuilt) == 1,
+              str(rebuilt))
+        check(f"auto_relaunch={auto}: silently — a prompt owns the terminal",
+              out.getvalue() == "", repr(out.getvalue()))
+        wrote = json.loads(
+            (root / ".devtools" / "inventory.json").read_text()).get("rebuilt")
+        check(f"auto_relaunch={auto}: it wrote the new inventory out",
+              wrote is True, "" if wrote else "not written")
+        check(f"auto_relaunch={auto}: and re-launched only if asked",
+              bool(server.emulator.launched) is auto,
+              str(server.emulator.launched))
+
+
 def test_a_missing_sym_is_not_a_rebuild(tmp: Path) -> None:
     """`make clean` removes the .sym. That is not a new build, and treating it
     as one would rebuild the inventory from a file that is not there."""
@@ -1580,6 +1627,7 @@ def main() -> int:
         test_the_status_line_follows_the_state_source(tmp)
 
         test_a_newer_sym_refreshes_the_inventory(tmp)
+        test_the_watcher_thread_picks_up_a_rebuild(tmp)
         test_a_missing_sym_is_not_a_rebuild(tmp)
 
         test_launching_patches_the_save_then_spawns_the_emulator(tmp)

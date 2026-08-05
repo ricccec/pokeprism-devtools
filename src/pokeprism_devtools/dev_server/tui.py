@@ -25,6 +25,12 @@ from . import apply, inventory, playtest
 from .state import (BagMenu, FlagMenu, PartyMenu, PlayerMenu, PositionMenu,
                     PresetMenu, TmhmMenu)
 
+#: How often the background watcher asks whether the ROM was rebuilt. A `stat`
+#: of one file, so the cost is nil; the thing it is watching for is a `make` in
+#: another window, which you want reflected before your next keystroke rather
+#: than at the next menu cycle.
+SYM_POLL_SECONDS = 2.0
+
 
 def run(
     *,
@@ -127,7 +133,7 @@ class DevServer(
 
                 action = questionary.select(
                     "What now?",
-                    choices=_menu_rows(running=self.emulator.running),
+                    choices=_build_menu_rows(running=self.emulator.running),
                 ).ask()
                 if action is None or action == "quit":
                     break
@@ -151,7 +157,7 @@ class DevServer(
         return 0
 
     def _handlers(self) -> dict:
-        """What each menu entry runs. Keyed by the value `_menu_rows` offers, so
+        """What each menu entry runs. Keyed by the value `_build_menu_rows` offers, so
         an entry that stops being reachable is a `KeyError` here rather than a
         row that quietly does nothing."""
         return {
@@ -216,7 +222,14 @@ class DevServer(
         print(f"  SameBoy: {sb}")
         print()
 
-    def _refresh_inventory_if_stale(self) -> bool | None:
+    def _refresh_inventory_if_stale(self, *, announce: bool = True) -> bool | None:
+        """Rebuild `inventory.json` if the ROM has been rebuilt since we read it.
+        True if it was, None if there was nothing to do.
+
+        `announce=False` for the watcher thread, which runs while a questionary
+        prompt owns the terminal and would print across it. A missing `.sym` is
+        `make clean`, not a new build.
+        """
         try:
             mtime = self.sym_path.stat().st_mtime
         except FileNotFoundError:
@@ -224,7 +237,8 @@ class DevServer(
         with self._lock:
             if mtime <= self.sym_mtime:
                 return
-            print("(detected new build — refreshing inventory from .sym)")
+            if announce:
+                print("(detected new build — refreshing inventory from .sym)")
             self.inv = inventory.build(self.root, self.sym_path)
             self.inventory_path.write_text(json.dumps(self.inv, indent=2))
             self.sym_mtime = mtime
@@ -272,20 +286,14 @@ class DevServer(
             print(f"Launching {report.command}...")
 
     def _start_rebuild_watcher(self) -> None:
+        """Watch the `.sym` in the background, so a rebuild is picked up while
+        you are sitting in a menu rather than at the next menu cycle."""
         def _watch() -> None:
-            while not self._watcher_stop.wait(2.0):
-                try:
-                    mtime = self.sym_path.stat().st_mtime
-                except FileNotFoundError:
-                    continue
-                with self._lock:
-                    if mtime <= self.sym_mtime:
-                        continue
-                    self.inv = inventory.build(self.root, self.sym_path)
-                    self.inventory_path.write_text(json.dumps(self.inv, indent=2))
-                    self.sym_mtime = mtime
-                if self.auto_relaunch:
-                    self._launch_or_relaunch(paths.rom_path(self.root, debug=self.debug), silent=True)
+            while not self._watcher_stop.wait(SYM_POLL_SECONDS):
+                if self._refresh_inventory_if_stale(announce=False) \
+                        and self.auto_relaunch:
+                    self._launch_or_relaunch(
+                        paths.rom_path(self.root, debug=self.debug), silent=True)
 
         self._watcher_thread = threading.Thread(
             target=_watch, daemon=True, name="rebuild-watcher"
@@ -299,7 +307,7 @@ class DevServer(
             return str(path)
 
 
-def _menu_rows(*, running: bool) -> list:
+def _build_menu_rows(*, running: bool) -> list:
     """The top menu. Grouped by how often you reach for a thing rather than by
     what it does — launching and the two you retune between launches first, the
     four bulk editors below the rule.
