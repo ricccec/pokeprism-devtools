@@ -2,6 +2,22 @@
 
 Plan: `refactor-phase-4-PLAN.md`. Index entry: `refactor-STATE.md` → Phase 4.
 
+**Done 2026-08-05.** One of three targets split; the other two were measured and
+left, which is the result. `dev_server/tui.py` **914 → 333**, seven files under
+`dev_server/state/`, **6 over-50 functions → 0**, suite **36/39 → 37/40**, naming
+survey **542 → 541**.
+
+**What the oracle proves and what the phase claims**, as two sentences, because
+the gap is the risk. *Proved:* the seven editors ask the same questions in the
+same order, refuse the same answers and leave the same `state.json`, before and
+after — 165 checks, and 48 seeded defects caught before the edits and 41 after.
+*Claimed:* `tui.py` held a server and ten editors, and now holds a server, with
+the editors in a folder named for what they edit. **The gap is that behaviour
+preserved is not structure improved** — this test would be just as green over a
+split into `part1.py` and `part2.py`, and nothing here measures whether the seven
+files are the seven a reader would have drawn. That judgement is in this file,
+made in the open.
+
 The same one line per finding is in the index; each links to the section below
 that proves it.
 
@@ -203,6 +219,35 @@ here rather than in its word list:
 the two the rule was written for: a name that reads as an attribute rather than
 an action. The word list is not touched.
 
+### What the phase actually renamed, and the number
+
+`_int_in` → **`make_int_range_validator`** (11 sites, five modules). It does not
+validate anything; it *returns* the validator a prompt installs, which the old
+name did not say. The underscore went with it — four modules import it now.
+
+`_pretty_path` → **`_format_path_under_root`** (3 sites). Still private: only
+`cli.py` uses it.
+
+**The survey went 542 → 548 → 541.** The middle number is the interesting one.
+Paying the two renames took it to 540; **this phase's own new helpers put eight
+back** — six `_*_rows` builders and `_normalized` and `_drop_slot_and_its_gaps` —
+because a function extracted during a shortening is a new name, and new names owe
+the standard from the day they are written. Six of the eight were bare nouns and
+are now `_build_*_rows`; `_normalized` is `_normalize_entry`.
+
+Two are left and both are readings. `_drop_slot_and_its_gaps` is verb + object
+and "drop" is simply not in a finite word list. `main` is R3, twice.
+
+**A phase can make the number worse without doing anything wrong**, and only a
+before/after pair shows it. Reporting "2 renamed" would have been true and would
+have hidden six new violations shipped in the same phase.
+
+**And a word-boundary rename touched prose — correctly, this time.**
+`_handlers`'s docstring names `_menu_rows`, so the rename had to reach it. Phase
+1b was bitten by a rename mangling prose and Phase 3 by one that failed to reach
+a string; the rule that survives both is the one that costs a minute: read every
+hit. Fourteen here, all read, one of them prose and right.
+
 ## One fact, two homes
 
 **The bag's pockets.** `tui.DevServer._BAG_POCKETS` and `apply._POCKETS` both
@@ -211,6 +256,19 @@ a quantity, and which `pocket` attribute an item must have to belong to it. The
 TUI's copy carries the comment `# … — mirrors apply._POCKETS`, so the duplication
 is known and was written down instead of removed.
 
+**Both are now `dev_server/pockets.py`**, a `Pocket` record and the three of them,
+imported by the writer and the editor. The WRAM symbols stayed in `apply.py`:
+where a pocket lives in the save is the format, which is the writer's business
+and nobody else's. `cap_key` turned out to equal `key` in all three rows and is
+gone.
+
+**The shape of that fix was decided by what has an oracle.** `apply._apply_items`
+executes **1 line — its `def`** (traced across the three tests that reach
+`dev_server`), so this phase's own rule forbids editing it. `apply._POCKETS`
+therefore still exists and still holds the same six-tuple `_apply_items` reads —
+it is now *built* from `POCKETS` rather than restated. Ugly in one place, and the
+alternative was editing an 86-line body nothing runs.
+
 **The rebuild check.** Found while measuring coverage, not while reading:
 `_refresh_inventory_if_stale` (called from the menu loop) and the `_watch` closure
 inside `_start_rebuild_watcher` (the background thread) are the same seven lines
@@ -218,15 +276,33 @@ inside `_start_rebuild_watcher` (the background thread) are the same seven lines
 `self.sym_mtime`, rebuild, write `inventory.json`, restamp. They differ only in
 what surrounds them: one prints, the other may re-launch.
 
-It shows up in the coverage table as the one body the tests barely reach —
-`_watch` runs 1 of its 14 lines, because a test that drives a menu never starts
-the thread. The logic *is* covered, in the other copy. **That is the cost of the
-duplication stated precisely: the covered copy is not the one that runs while
+It showed up in the coverage table as the one body the tests barely reached —
+`_watch` ran 1 of its 14 lines, because a test that drives a menu never starts
+the thread. The logic *was* covered, in the other copy. **That is the cost of the
+duplication stated precisely: the covered copy was not the one that runs while
 you are building.**
 
-Both are Phase 1b's step 11 shape — a fact that decides behaviour, spelled twice,
-where changing one copy cannot fail a test. Paid as their own commits, after the
+**Collapsed into the covered one.** `_refresh_inventory_if_stale` gained
+`announce=True`, the watcher passes `announce=False`, and `_watch` is four lines
+that call it. The parameter is not decoration: the watcher runs while a
+questionary prompt owns the terminal, and printing across it is what the two
+copies existed to avoid. The poll interval, `2.0`, is `SYM_POLL_SECONDS` now —
+a magic value in a body already being edited, named on the way past.
+
+**And the watcher finally has a test.** `test_the_watcher_thread_picks_up_a_rebuild`
+starts the real thread with the interval turned down, touches the `.sym`, and
+checks it rebuilds, writes the inventory out, stays silent, and re-launches only
+when `auto_relaunch` is set — both ways. **10 of 10 mutations caught** across
+step 5, including making the watcher announce itself.
+
+Both were Phase 1b's step 11 shape — a fact that decides behaviour, spelled twice,
+where changing one copy cannot fail a test. Paid as their own commit, after the
 split, because a split may not also tidy.
+
+**A third copy is recorded, not fixed:** `cli._format_path_under_root` and
+`DevServer._pretty` are the same four lines. `cli.main` and everything under it
+executes nothing, so the same rule that shaped the pocket fix applies here and
+the copies stay.
 
 ## Steps 1–2 · the characterization test
 
@@ -461,6 +537,26 @@ when `_patch_save` failed, so the game comes up on the *old* save with nothing o
 screen to say the patch did not happen. Pinned rather than changed — this phase
 moves code, and deciding what should happen after a failed patch is not a
 question a refactor gets to answer quietly.
+
+## Where the phase leaves `dev_server`
+
+Re-measured after the last commit:
+
+| | at the start | now |
+|---|---|---|
+| `tui.py` | 914 lines / 793 code | **333 / 252** |
+| functions over 50 LOC, `tui.py` + `state/` | 6 | **0** |
+| files over 250 LOC in that set | 1 | **0** |
+| facts spelled twice | 2 | **0** (a third recorded) |
+| naming survey, tree-wide | 542 | **541** |
+| suite | 36/39 | **37/40** |
+
+**And what it does not touch.** `apply.py` (490), `inventory.py` (460) and
+`cli.py` (227) are unchanged except for the pocket table and one rename;
+`test_maps.py` is a source module wearing a test file's name. Their seven
+over-50 functions and the `_pretty`/`_format_path_under_root` duplication are all
+below, unscheduled, and the reason is the same one that shaped the pocket fix:
+nothing executes them.
 
 ## What `dev_server` still owes CLAUDE.md
 

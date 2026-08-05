@@ -363,14 +363,24 @@ closed and reported the products separable.
   embodying it. That rewrite shrank `KNOWN_LEAKS` by a row, and the list's
   "still there" direction caught the stale row before it could rot.
 
-## Phase 4 · the god objects — **planned 2026-08-05; the oracle is next**
+## Phase 4 · the god objects — **done 2026-08-05**
 
 **Plan:** `refactor-phase-4-PLAN.md` · **Findings:** `refactor-phase-4-STATE.md`
 
 Sizes and the `DevServer` breakdown are in `refactor-phase--1-STATE.md` → "Phase 4's
 god objects". Its characterization test is a mandatory prerequisite, not a step.
 **One target of three**: `DevServer`. The other two were measured and left, which
-is the result, not a deferral.
+is the result, not a deferral. `tui.py` **914 → 333**, seven files under
+`dev_server/state/`, **6 over-50 functions → 0**, suite **36/39 → 37/40**, survey
+**542 → 541**.
+
+**Oracle vs claim, the two sentences.** *Proved:* the seven editors ask the same
+questions in the same order, refuse the same answers and leave the same
+`state.json` — 165 checks, 48 seeded defects caught before the edits and 41
+after. *Claimed:* the file held a server plus ten editors and now holds a server,
+with the editors in a folder named for what they edit. **The gap: behaviour
+preserved is not structure improved** — the same test would be green over a split
+into `part1.py`/`part2.py`.
 
 - **The plan's characterization harness was wrong and is corrected in place** —
   `DevServer` drives `questionary` and reads no stdin at all, so a scripted-stdin
@@ -455,6 +465,36 @@ is the result, not a deferral.
   import, because the mixins are reached through `DevServer` and the test never
   named them. R4 satisfied trivially, which is itself the evidence: a split that
   needed its test edited would not have been a move.
+- **6 over-50 functions → 0**, all the same shape: build the rows, then dispatch
+  on the answer. Row-builders came out as module functions (a menu's list depends
+  on the state, not the server), branches as methods (they write). Confinement
+  named exactly the six.
+- **A confinement check is only as good as the commit its baseline was taken at.**
+  Step 4's first run reported two untouched classes as changed, because the
+  baseline predated a formatting commit in between. `git stash`, snapshot, pop.
+- **Re-seeding the mutations *after* the shortenings is the check that matters**,
+  and one survived honestly: the "autosave never writes over a preset" fixture
+  *had* a `state.json`, and when it does, the state file and the state source are
+  the same path — so writing to the wrong one is invisible. **Fourth time this
+  phase that a survivor was the fixture's shape, never an assertion.**
+- **The de-duplications were shaped by what has an oracle.** `apply._apply_items`
+  executes 1 line — its `def` — so `apply._POCKETS` is *built* from the shared
+  table rather than restated, and an 86-line body nothing runs was not touched.
+  A third duplicate pair (`cli._format_path_under_root` / `DevServer._pretty`) is
+  recorded unfixed for the same reason.
+- **The watcher and the menu loop ran the same seven lines, and the covered copy
+  was not the one that runs while you build.** Collapsed into the covered one
+  behind `announce=`, which is not decoration — the watcher prints across a live
+  questionary prompt otherwise. It has its own test now, driving the real thread.
+- **A phase can make the naming number worse without doing anything wrong.**
+  542 → **548** → 541: paying the two owed renames took it to 540, and this
+  phase's own extracted helpers put eight back, six of them bare nouns. New names
+  owe the standard the day they are written. **Reporting "2 renamed" would have
+  been true and would have hidden six new violations shipped in the same phase.**
+- **A word-boundary rename touched prose and was right to** — `_handlers`'s
+  docstring names `_menu_rows`. Phase 1b was bitten by a rename mangling prose,
+  Phase 3 by one that failed to reach a string. The rule that survives both is
+  the cheap one: read every hit. Fourteen here, all read.
 - **Recorded, not endorsed**: a failed `patch_save` still spawns the emulator, so
   the game comes up on the old save with nothing on screen to say so.
 - **`_watch` and `_refresh_inventory_if_stale` are the same seven lines** — found
