@@ -11,7 +11,13 @@ move is proved textually instead.
     python scripts/surface-snapshot.py map_inspect > /tmp/after.txt
     diff /tmp/before.txt /tmp/after.txt
 
-Two sections, because a split changes one and must not change the other.
+Two sections, because a split changes one and must not change the other — and a
+third, `--methods`, for splitting a class rather than a package. **CONTENT
+digests a class as a single entry**, so a package whose subject is one big class
+reports one line for all of it, and a commit that touched one method is
+indistinguishable from a commit that touched every method. `--methods` digests
+each method by its own name; it is off by default so the counts recorded by
+earlier phases stay comparable.
 
 CONTENT is every function, class and constant the package defines, anywhere in
 it, with a digest of its source and no mention of which file holds it. Moving a
@@ -134,6 +140,33 @@ def package_modules(package) -> list:
     return modules
 
 
+def method_lines(package) -> list[str]:
+    """Every method the package's classes define, without saying which class.
+
+    CONTENT digests a class as one entry, so a package whose subject *is* a class
+    gets one line for the whole of it — and a commit that touched one method
+    looks exactly like a commit that touched twenty. `dev_server`'s `DevServer`
+    is 23 methods; Phase 4 splits it across a folder of mixins, and the claim
+    that the split moved bodies without editing them lives entirely at this
+    level.
+
+    Keyed by the method's own name, deliberately, for the same reason CONTENT
+    does not say which file holds a function: a body that moved to another class
+    unchanged must produce an unchanged line.
+    """
+    seen = set()
+    for module in package_modules(package):
+        for name, obj in vars(module).items():
+            if name.startswith("__") or not inspect.isclass(obj):
+                continue
+            if not is_defined_here(obj, module.__name__):
+                continue
+            for attr, member in vars(obj).items():
+                if inspect.isfunction(member):
+                    seen.add(f"{'method':<8}{attr:<34}{body_digest(member)}")
+    return sorted(seen)
+
+
 def content_lines(package) -> list[str]:
     """Everything the package defines, without saying which file holds it."""
     seen = set()
@@ -165,6 +198,8 @@ def surface_lines(package) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
+    methods = "--methods" in args
+    args = [a for a in args if a != "--methods"]
     if len(args) != 1:
         print(__doc__, file=sys.stderr)
         return 2
@@ -172,6 +207,10 @@ def main(argv: list[str] | None = None) -> int:
     print("=== CONTENT (must not change) ===")
     for line in content_lines(package):
         print(line)
+    if methods:
+        print("\n=== METHODS (must not change) ===")
+        for line in method_lines(package):
+            print(line)
     print("\n=== SURFACE (may only shrink) ===")
     for line in surface_lines(package):
         print(line)
