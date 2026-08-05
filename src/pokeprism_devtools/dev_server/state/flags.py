@@ -1,15 +1,15 @@
 """The event flags and the engine flags.
 
-    Two lists with one editor between them: the group's label, which inventory
-    key holds its names, and which key of `state["flags"]` it writes are the
-    three arguments that tell them apart.
-    """
+Two lists with one editor between them: the group's label, which inventory
+key holds its names, and which key of `state["flags"]` it writes are the
+three arguments that tell them apart.
+"""
 
 from __future__ import annotations
 
 
-
 class FlagMenu:
+
     def _edit_flags(self) -> None:
         import questionary
         from questionary import Choice
@@ -33,6 +33,7 @@ class FlagMenu:
                 self._edit_flag_group("Event flags", "event_flags", "event")
             else:
                 self._edit_flag_group("Engine flags", "engine_flags", "engine")
+
     def _edit_flag_group(self, label: str, inv_key: str, state_key: str) -> None:
         """Generic add/remove editor for a named flag group (event or engine)."""
         import questionary

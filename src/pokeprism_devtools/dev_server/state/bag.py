@@ -1,11 +1,11 @@
 """The three bag pockets, and the items in one.
 
-    Items and balls carry a quantity; key items do not, and `apply` refuses one
-    that does. The distinction the whole editor turns on is the other one: an
-    empty list means *launch with an empty pocket*, an absent key means *leave
-    the template's alone*, and browsing a pocket must never turn the second into
-    the first.
-    """
+Items and balls carry a quantity; key items do not, and `apply` refuses one
+that does. The distinction the whole editor turns on is the other one: an
+empty list means *launch with an empty pocket*, an absent key means *leave
+the template's alone*, and browsing a pocket must never turn the second into
+the first.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ class BagMenu:
         ("Balls",     "balls",     True,  "BALL"),
         ("Key items", "key_items", False, "KEY_ITEM"),
     ]
+
     def _edit_items(self) -> None:
         import questionary
         from questionary import Choice
@@ -49,6 +50,7 @@ class BagMenu:
             self._edit_pocket(
                 label, key, has_qty=has_qty, cap=caps[key], want_pocket=want_pocket
             )
+
     def _edit_pocket(
         self, label: str, key: str, *, has_qty: bool, cap: int, want_pocket: str
     ) -> None:

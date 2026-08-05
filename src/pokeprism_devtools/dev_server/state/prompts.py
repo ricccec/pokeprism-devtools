@@ -9,6 +9,7 @@ from __future__ import annotations
 
 
 def _int_in(lo: int, hi: int):
+
     def _validate(s: str):
         try:
             v = int(s)
