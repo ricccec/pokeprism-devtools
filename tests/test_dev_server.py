@@ -738,28 +738,46 @@ def test_a_slot_abandoned_before_a_species_is_dropped(tmp: Path) -> None:
           str(_written(root)["party"]))
 
 
-def test_abandoning_a_slot_past_the_end_leaves_gaps(tmp: Path) -> None:
-    """**A recorded defect, pinned before it is fixed**, so the fix has a diff.
-
-    Opening slot 5 with two mons in the party appends *three* empty dicts to
-    reach it, and backing out pops only the one that was asked for. The two
-    gap-fillers are autosaved, and `apply._apply_party` refuses an entry with
-    no species — so the next launch dies with `invalid party entry: {}` and the
+def test_abandoning_a_slot_past_the_end_leaves_no_gaps(tmp: Path) -> None:
+    """Opening slot 5 with two mons in the party appends *three* empty dicts to
+    reach it. Backing out has to drop all three, not just the one that was
+    asked for: `apply._apply_party` refuses an entry with no species, so a gap
+    left behind kills the *next* launch with `invalid party entry: {}` and the
     only way out is editing state.json by hand.
 
-    The intent is not in doubt: the code's own comment says *"Drop the slot
-    entirely if species was never set."*
+    Filling a slot past the end and then removing it is the same story with an
+    extra step, so both ways out of the slot editor are driven here.
     """
     print("\n_edit_party — abandoning a slot past the end of the party")
-    root = _fixture(tmp / "party_gaps")
-    _drive(_server(root), "_edit_party", [("slot", 4), "back", ("back", None)])
-    party = _written(root)["party"]
-    check("today: the gap-fillers are left behind, and saved",
-          party == [{"species": "CYNDAQUIL", "level": 12, "nickname": "Cyn"},
-                    {"species": "SENTRET", "level": 3}, {}, {}], str(party))
-    refuses = _apply_party_refuses(party)
-    check("and that is what the patcher refuses", refuses,
-          "" if refuses else "it accepted a party with a {} in it")
+    for label, script in [
+        ("backing out of it", [("slot", 4), "back", ("back", None)]),
+        ("filling it and then removing it",
+         [("slot", 4), "species", "TOTODILE", "remove", ("back", None)]),
+    ]:
+        root = _fixture(tmp / f"party_gaps_{label.split()[0]}")
+        _drive(_server(root), "_edit_party", script)
+        party = _written(root)["party"]
+        check(f"{label}: the party is as it was",
+              party == [{"species": "CYNDAQUIL", "level": 12, "nickname": "Cyn"},
+                        {"species": "SENTRET", "level": 3}], str(party))
+        refuses = _apply_party_refuses(party)
+        check(f"{label}: and the patcher takes it",
+              not refuses, "the patcher still refuses it")
+
+
+def test_a_hand_written_gap_is_left_alone(tmp: Path) -> None:
+    """Only *trailing* empties are dropped. A `{}` someone put in the middle of
+    state.json by hand is not ours to guess about — removing it would silently
+    renumber every slot after it."""
+    print("\n_edit_party — a gap that was not ours")
+    root = _fixture(tmp / "party_handgap")
+    (root / ".devtools" / "state.json").write_text(json.dumps({
+        **_STATE, "party": [{"species": "CYNDAQUIL", "level": 12}, {},
+                            {"species": "SENTRET", "level": 3}]}))
+    _drive(_server(root), "_edit_party", [("slot", 2), "remove", ("back", None)])
+    check("the slot asked for went, the hand-written gap stayed",
+          _written(root)["party"] == [{"species": "CYNDAQUIL", "level": 12}, {}],
+          str(_written(root)["party"]))
 
 
 def _apply_party_refuses(party: list[dict]) -> bool:
@@ -1503,7 +1521,8 @@ def main() -> int:
         test_edit_a_party_slot(tmp)
         test_removing_a_slot_removes_that_slot(tmp)
         test_a_slot_abandoned_before_a_species_is_dropped(tmp)
-        test_abandoning_a_slot_past_the_end_leaves_gaps(tmp)
+        test_abandoning_a_slot_past_the_end_leaves_no_gaps(tmp)
+        test_a_hand_written_gap_is_left_alone(tmp)
         test_a_nickname_is_cleared_by_blanking_it(tmp)
         test_moves_are_four_prompts_and_a_way_out(tmp)
         test_clearing_the_party_asks_first(tmp)
