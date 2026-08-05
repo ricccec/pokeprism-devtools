@@ -255,8 +255,8 @@ vocabulary leaves `studio/`. Three targets, sized in `refactor-STATE.md`.
 - **`DevServer`** — ten editors welded onto a server, ~3/4 of the file. CLAUDE.md's
   "cluster of related responsibilities → a folder that names the domain", almost
   verbatim. **Mandatory prerequisite:** a characterization test driving the editors
-  through scripted stdin, priced as its own step — without it this is a rewrite with
-  no oracle.
+  through a fake `questionary` — they read no stdin — priced as its own step;
+  without it this is a rewrite with no oracle.
 - **`Studio`** — mostly not a target; Textual concentrates handlers by design. Only
   the `action_*` mixin, and only if Phase 1 leaves it obviously wanting.
 

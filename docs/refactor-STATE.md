@@ -363,12 +363,70 @@ closed and reported the products separable.
   embodying it. That rewrite shrank `KNOWN_LEAKS` by a row, and the list's
   "still there" direction caught the stale row before it could rot.
 
-## Phase 4 · the god objects — not started
+## Phase 4 · the god objects — **planned 2026-08-05; the oracle is next**
 
-**Plan:** not written · **Findings:** none yet
+**Plan:** `refactor-phase-4-PLAN.md` · **Findings:** `refactor-phase-4-STATE.md`
 
 Sizes and the `DevServer` breakdown are in `refactor-phase--1-STATE.md` → "Phase 4's
 god objects". Its characterization test is a mandatory prerequisite, not a step.
+**One target of three**: `DevServer`. The other two were measured and left, which
+is the result, not a deferral.
+
+- **The plan's characterization harness was wrong and is corrected in place** —
+  `DevServer` drives `questionary` and reads no stdin at all, so a scripted-stdin
+  harness would have driven nothing. `tests/test_map_new_cli.py`'s fake is the
+  pattern, plus `Separator`.
+- **`tui.py` executes zero lines under the suite, and is never even imported** —
+  `cli.py` imports it lazily on the TTY branch. Phase 1b's eight uncovered
+  functions at least ran their `def`; these do not.
+- **`studio/session.py` does not need this phase, and the sketch's premise is half
+  right** — the methods *do* group onto the capabilities (writes 9, reads 7, plays
+  6, lints 4, measures 1), but the largest group is the **14 that touch none**: the
+  edit cycle, which is the class's one job. 597 lines are **204 of code** across 45
+  methods, none over 50.
+- **`studio/app.py` is not obviously wanting** — 268 code lines, 29 methods,
+  longest 36, and `Studio(Flow, App)` already moved the edit cycle to `flow.py`.
+  The plan's own condition was not met.
+- **Total LOC over-reports responsibility in this repo's seam files.** By code
+  lines the three targets are 793 / 204 / 268, not 914 / 597 / 523: `session.py` is
+  42% docstring and `app.py` 24%, against `tui.py`'s **2%**. The prose is
+  deliberate — Phases 2 and 3 lean on those module docstrings. **This clears the
+  line-count axis only**; nothing here measured coupling or fan-out.
+- **7 names owed, 2 renames and 5 readings** — `_int_in` and `_pretty_path` are
+  the rule's own shape; `looks_like_real_save`, `recompute_checksums`,
+  `needs_rebuild` and two `main`s are the survey over-reporting as designed. The
+  word list is not touched.
+- **The bag's pocket table is spelled twice** — `apply._POCKETS` and
+  `tui.DevServer._BAG_POCKETS`, and the copy says so in a comment. Phase 1b's step
+  11 shape.
+- **`dev_server` carries 13 functions over 50 LOC and only 6 are this phase's** —
+  `inventory.build` 161 and `cli.main` 154 are the two longest in the tree.
+  Recorded, not scheduled: it is Phase 1b's shape one product over.
+- **Baseline reproduces at 36/39; `test_studio_tui` is intermittent.** It went
+  red on the first full run and green on the second, alone (167s) and after
+  `test_studio`. The failing run's output was discarded, so the cause is a guess
+  — re-run it alone before believing it; a red anywhere else is a real one.
+- **The oracle exists: `tui.py` goes 0 → 673 of 914 lines and all 48 seeded
+  mutations were caught.** `tests/test_dev_server.py` is new — this is the one
+  package with no test file to add to, so Phase 1b's "the test goes where the
+  fixture already is" had nowhere to go. Every editor was at 1 executed line
+  (its `def`) and is now at 48–87.
+- **Three mutations survived the first fixture and not one was an assertion
+  gap** — all three were its *shape*: a key item written in dict form so the
+  quantity it must never carry was invisible, an unset pocket whose stray `[]`
+  only reaches disk on the *next* edit, and a flag set twice, which the prompt
+  accepts and the fixture never typed.
+- **A defect, found by the test and pinned before it is fixed** — abandoning a
+  party slot past the end of the party appends empty dicts to reach it and pops
+  only one, so `state.json` keeps `{}` gaps and `apply._apply_party` refuses them:
+  the **next launch** dies and the file must be hand-edited. The code's own
+  comment says it means to drop them.
+- **Recorded, not endorsed**: a failed `patch_save` still spawns the emulator, so
+  the game comes up on the old save with nothing on screen to say so.
+- **`_watch` and `_refresh_inventory_if_stale` are the same seven lines** — found
+  by coverage, not by reading: `_watch` runs 1 of 14 lines because no test starts
+  the thread, so **the covered copy is not the one that runs while you build.**
+  A third fact with two homes, beside the bag's pocket table.
 
 ## Phase 5 · the maplint survey, then the family port — not started
 
