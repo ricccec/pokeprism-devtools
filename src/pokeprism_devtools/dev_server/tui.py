@@ -22,6 +22,8 @@ from pathlib import Path
 from pokeprism_devtools.shared import paths
 
 from . import apply, inventory, playtest
+from .state import (BagMenu, FlagMenu, PartyMenu, PlayerMenu, PositionMenu,
+                    PresetMenu, TmhmMenu)
 
 
 def run(
@@ -64,7 +66,10 @@ def run(
     return server.run()
 
 
-class DevServer:
+class DevServer(
+    PlayerMenu, PositionMenu, PartyMenu, BagMenu, FlagMenu, TmhmMenu,
+    PresetMenu,
+):
     def __init__(
         self,
         *,
@@ -104,7 +109,6 @@ class DevServer:
         self._lock = threading.RLock()
         self._watcher_stop = threading.Event()
         self._watcher_thread: threading.Thread | None = None
-
     def run(self) -> int:
         import questionary
         from questionary import Choice, Separator
@@ -169,7 +173,6 @@ class DevServer:
         if self.emulator.running:
             print("\nSameBoy is still running — leaving it alone. Close it manually when done.")
         return 0
-
     def _print_status_block(self) -> None:
         player = self.state.get("player") or {}
         map_ = self.state.get("map") or {}
@@ -220,7 +223,6 @@ class DevServer:
         print(f"           tmhms:  {tmhms_desc}")
         print(f"  SameBoy: {sb}")
         print()
-
     def _refresh_inventory_if_stale(self) -> bool | None:
         try:
             mtime = self.sym_path.stat().st_mtime
@@ -234,617 +236,15 @@ class DevServer:
             self.inventory_path.write_text(json.dumps(self.inv, indent=2))
             self.sym_mtime = mtime
         return True
-
     def _save_state(self) -> None:
         # Always autosave to the user's state.json, NEVER over presets/.
         self.state_path.write_text(json.dumps(self.state, indent=2) + "\n")
         self.state_source = self.state_path
-
-    def _edit_player(self) -> None:
-        import questionary
-        from questionary import Choice
-
-        while True:
-            player = self.state.setdefault("player", {})
-            choice = questionary.select(
-                "Edit player",
-                choices=[
-                    Choice(f"Name    : {player.get('name', '(unset)')}",   value="name"),
-                    Choice(f"Money   : {player.get('money', '(unset)')}", value="money"),
-                    Choice(f"Badges  : {player.get('badges', '(unset)')}", value="badges"),
-                    Choice("← Back", value="back"),
-                ],
-            ).ask()
-            if choice is None or choice == "back":
-                return
-
-            if choice == "name":
-                val = questionary.text(
-                    "Player name (1–7 chars, GB charset):",
-                    default=str(player.get("name", "")),
-                    validate=lambda s: 1 <= len(s) <= 7 or "1–7 chars",
-                ).ask()
-                if val is not None:
-                    player["name"] = val
-                    self._save_state()
-            elif choice == "money":
-                val = questionary.text(
-                    "Money (0–999999):",
-                    default=str(player.get("money", 0)),
-                    validate=_int_in(0, 999_999),
-                ).ask()
-                if val is not None:
-                    player["money"] = int(val)
-                    self._save_state()
-            elif choice == "badges":
-                cur = player.get("badges") or [0, 0, 0]
-                parts = []
-                for i, label in enumerate(("Naljo", "Rijon", "Other")):
-                    v = questionary.text(
-                        f"{label} badges (0–255 bitmask):",
-                        default=str(cur[i]),
-                        validate=_int_in(0, 255),
-                    ).ask()
-                    if v is None:
-                        break
-                    parts.append(int(v))
-                if len(parts) == 3:
-                    player["badges"] = parts
-                    self._save_state()
-
-    def _edit_map(self) -> None:
-        import questionary
-        from questionary import Choice
-
-        map_names = sorted(m["name"] for m in self.inv["maps"])
-
-        while True:
-            map_ = self.state.setdefault("map", {})
-            choice = questionary.select(
-                "Edit map / position",
-                choices=[
-                    Choice(f"Map name : {map_.get('name', '(unset)')}", value="name"),
-                    Choice(f"X coord  : {map_.get('x', '(unset)')}",    value="x"),
-                    Choice(f"Y coord  : {map_.get('y', '(unset)')}",    value="y"),
-                    Choice("← Back", value="back"),
-                ],
-            ).ask()
-            if choice is None or choice == "back":
-                return
-
-            if choice == "name":
-                val = questionary.autocomplete(
-                    "Map name (tab to autocomplete):",
-                    choices=map_names,
-                    default=str(map_.get("name", "")),
-                    validate=lambda s: s in map_names or f"unknown map: {s}",
-                ).ask()
-                if val is not None:
-                    map_["name"] = val
-                    self._save_state()
-            elif choice in ("x", "y"):
-                bound = self._coord_bound(map_, choice)
-                val = questionary.text(
-                    f"{choice.upper()} coord (0–{bound}):",
-                    default=str(map_.get(choice, 0)),
-                    validate=_int_in(0, bound),
-                ).ask()
-                if val is not None:
-                    map_[choice] = int(val)
-                    self._save_state()
-
-    def _coord_bound(self, map_: dict, axis: str) -> int:
-        """Upper bound for a coord. The map's block grid is `width × height`
-        blocks; each block is 2 tiles per axis, so walkable coords run
-        0..(blocks*2 - 1). When the map name is unset or unknown, fall back
-        to 0..255 (a tile coord is one byte)."""
-        mdef = next(
-            (m for m in self.inv["maps"] if m["name"] == map_.get("name")), None
-        )
-        if mdef is None:
-            return 255
-        return (mdef["width"] if axis == "x" else mdef["height"]) * 2 - 1
-
-    def _edit_party(self) -> None:
-        import questionary
-        from questionary import Choice
-
-        species_names = sorted(self.inv["species_data"].keys())
-        move_names = sorted(m["name"] for m in self.inv["moves"])
-
-        while True:
-            party = self.state.setdefault("party", [])
-            choices: list = []
-            for i in range(6):
-                if i < len(party):
-                    mon = party[i]
-                    label = (
-                        f"Slot {i+1}: {mon.get('species', '?')} "
-                        f"L{mon.get('level', '?')}"
-                    )
-                    if mon.get("nickname"):
-                        label += f"  '{mon['nickname']}'"
-                else:
-                    label = f"Slot {i+1}: (empty)"
-                choices.append(Choice(label, value=("slot", i)))
-            if party:
-                choices.append(Choice("Clear party", value=("clear", None)))
-            choices.append(Choice("← Back", value=("back", None)))
-
-            action = questionary.select("Edit party", choices=choices).ask()
-            if action is None or action[0] == "back":
-                return
-            if action[0] == "clear":
-                if questionary.confirm(
-                    "Clear all party slots?", default=False
-                ).ask():
-                    self.state["party"] = []
-                    self._save_state()
-                continue
-            self._edit_party_slot(action[1], species_names, move_names)
-
-    def _edit_party_slot(
-        self, idx: int, species_names: list[str], move_names: list[str]
-    ) -> None:
-        import questionary
-        from questionary import Choice
-
-        party = self.state.setdefault("party", [])
-        existing = len(party)
-        while idx >= len(party):
-            # Lazily allocate an empty slot. Species required before save.
-            party.append({})
-        mon = party[idx]
-
-        while True:
-            label_species = mon.get("species", "(unset)")
-            label_level = mon.get("level", "(unset)")
-            label_nick = mon.get("nickname") or "(default)"
-            label_moves = (
-                ", ".join(mon["moves"]) if mon.get("moves") else "(from learnset)"
-            )
-
-            choice = questionary.select(
-                f"Edit slot {idx + 1}",
-                choices=[
-                    Choice(f"Species  : {label_species}",   value="species"),
-                    Choice(f"Level    : {label_level}",     value="level"),
-                    Choice(f"Nickname : {label_nick}",      value="nickname"),
-                    Choice(f"Moves    : {label_moves}",     value="moves"),
-                    Choice("Remove slot",                   value="remove"),
-                    Choice("← Back",                        value="back"),
-                ],
-            ).ask()
-            if choice is None or choice == "back":
-                # Drop the slot entirely if species was never set.
-                if not mon.get("species"):
-                    _drop_slot_and_its_gaps(party, idx, existing)
-                    self._save_state()
-                return
-
-            if choice == "species":
-                val = questionary.autocomplete(
-                    "Species (tab to autocomplete):",
-                    choices=species_names,
-                    default=str(mon.get("species", "")),
-                    validate=lambda s: s in species_names or f"unknown species: {s}",
-                ).ask()
-                if val is not None:
-                    mon["species"] = val
-                    # Stamp a sane default level if unset.
-                    mon.setdefault("level", 5)
-                    self._save_state()
-            elif choice == "level":
-                val = questionary.text(
-                    "Level (1–100):",
-                    default=str(mon.get("level", 5)),
-                    validate=_int_in(1, 100),
-                ).ask()
-                if val is not None:
-                    mon["level"] = int(val)
-                    self._save_state()
-            elif choice == "nickname":
-                val = questionary.text(
-                    "Nickname (blank = species name, max 10 chars):",
-                    default=str(mon.get("nickname") or ""),
-                    validate=lambda s: (len(s) <= 10) or "max 10 chars",
-                ).ask()
-                if val is None:
-                    continue
-                if val == "":
-                    mon.pop("nickname", None)
-                else:
-                    mon["nickname"] = val
-                self._save_state()
-            elif choice == "moves":
-                self._edit_party_moves(mon, move_names)
-            elif choice == "remove":
-                _drop_slot_and_its_gaps(party, idx, existing)
-                self._save_state()
-                return
-
-    def _edit_party_moves(self, mon: dict, move_names: list[str]) -> None:
-        import questionary
-
-        current = mon.get("moves") or []
-        # Pad to 4 slots so the user can replace one at a time.
-        current = (current + [""] * 4)[:4]
-        out: list[str] = []
-        for i in range(4):
-            val = questionary.autocomplete(
-                f"Move {i + 1} (blank = empty, '-' = revert to learnset):",
-                choices=move_names,
-                default=current[i],
-                validate=lambda s: (
-                    s == "" or s == "-" or s in move_names
-                ) or f"unknown move: {s}",
-            ).ask()
-            if val is None:
-                return
-            if val == "-":
-                mon.pop("moves", None)
-                self._save_state()
-                return
-            if val:
-                out.append(val)
-        if out:
-            mon["moves"] = out
-        else:
-            mon.pop("moves", None)
-        self._save_state()
-
-    # (label, state_key, has_qty, pocket_attr) — mirrors apply._POCKETS.
-    _BAG_POCKETS = [
-        ("Items",     "items",     True,  "ITEM"),
-        ("Balls",     "balls",     True,  "BALL"),
-        ("Key items", "key_items", False, "KEY_ITEM"),
-    ]
-
-    def _edit_items(self) -> None:
-        import questionary
-        from questionary import Choice
-
-        caps = self.inv.get("bag_caps")
-        if not caps:
-            print("(inventory has no bag_caps — rebuild it: --rebuild-inventory)")
-            return
-
-        while True:
-            items_state = self.state.get("items") or {}
-            choices: list = []
-            for label, key, has_qty, want_pocket in self._BAG_POCKETS:
-                if key in items_state:
-                    status = f"{len(items_state[key])}/{caps[key]}"
-                else:
-                    status = "(template)"
-                choices.append(
-                    Choice(f"{label + ' pocket':18s} {status}", value=key)
-                )
-            choices.append(Choice("← Back", value="back"))
-
-            choice = questionary.select("Edit items", choices=choices).ask()
-            if choice is None or choice == "back":
-                return
-            label, key, has_qty, want_pocket = next(
-                p for p in self._BAG_POCKETS if p[1] == choice
-            )
-            self._edit_pocket(
-                label, key, has_qty=has_qty, cap=caps[key], want_pocket=want_pocket
-            )
-
-    def _edit_pocket(
-        self, label: str, key: str, *, has_qty: bool, cap: int, want_pocket: str
-    ) -> None:
-        """Add/remove editor for one bag pocket, mirroring _edit_flag_group."""
-        import questionary
-        from questionary import Choice, Separator
-
-        pocket_names = sorted(
-            i["name"] for i in self.inv["items"] if i.get("pocket") == want_pocket
-        )
-
-        def _normalized(raw) -> dict:
-            # state.json allows a bare-string shorthand for qty 1. Key items
-            # never carry a qty (apply rejects one).
-            if isinstance(raw, str):
-                return {"name": raw, "qty": 1} if has_qty else {"name": raw}
-            return raw
-
-        while True:
-            items_state = self.state.setdefault("items", {})
-            in_state = key in items_state
-            entries = [_normalized(e) for e in items_state.get(key, [])]
-            items_state[key] = entries  # write back dict-form entries
-            present = {e["name"] for e in entries}
-
-            choices: list = []
-            for i, e in enumerate(entries):
-                if has_qty:
-                    choices.append(
-                        Choice(f"  {e['name']} x{e.get('qty', 1)}", value=("entry", i))
-                    )
-                else:
-                    choices.append(Choice(f"  [-] {e['name']}", value=("remove_one", i)))
-            if entries:
-                choices.append(Separator())
-            if len(entries) >= cap:
-                choices.append(Choice("Add item...", value=None, disabled="pocket full"))
-            else:
-                choices.append(Choice("Add item...", value=("add", None)))
-            if entries:
-                choices.append(Choice("Clear pocket  (launch writes an empty pocket)", value=("clear", None)))
-            if in_state:
-                choices.append(Choice("Use template's pocket  (remove from state)", value=("template", None)))
-            choices.append(Choice("← Back", value=("back", None)))
-
-            action = questionary.select(
-                f"{label} pocket — {len(entries)}/{cap}", choices=choices
-            ).ask()
-            if action is None or action[0] == "back":
-                # Don't leave an empty dict behind if nothing was ever set.
-                if not in_state and not items_state.get(key):
-                    items_state.pop(key, None)
-                if not items_state:
-                    self.state.pop("items", None)
-                return
-
-            if action[0] == "add":
-                addable = [n for n in pocket_names if n not in present]
-                val = questionary.autocomplete(
-                    "Item name (tab to autocomplete):",
-                    choices=addable,
-                    validate=lambda s: s in addable
-                    or (f"already in pocket: {s}" if s in present else f"unknown {label.lower()} item: {s}"),
-                ).ask()
-                if not val:
-                    continue
-                qty = 1
-                if has_qty:
-                    raw = questionary.text(
-                        "Quantity (1–99):", default="1", validate=_int_in(1, 99)
-                    ).ask()
-                    if raw is None:
-                        continue
-                    qty = int(raw)
-                entries.append({"name": val, "qty": qty} if has_qty else {"name": val})
-                self._save_state()
-            elif action[0] == "entry":
-                i = action[1]
-                raw = questionary.text(
-                    f"{entries[i]['name']} quantity (1–99, 0 removes):",
-                    default=str(entries[i].get("qty", 1)),
-                    validate=_int_in(0, 99),
-                ).ask()
-                if raw is None:
-                    continue
-                if int(raw) == 0:
-                    entries.pop(i)
-                else:
-                    entries[i]["qty"] = int(raw)
-                self._save_state()
-            elif action[0] == "remove_one":
-                entries.pop(action[1])
-                self._save_state()
-            elif action[0] == "clear":
-                if questionary.confirm(
-                    f"Clear the {label.lower()} pocket?", default=False
-                ).ask():
-                    items_state[key] = []
-                    self._save_state()
-            elif action[0] == "template":
-                if questionary.confirm(
-                    f"Stop overriding the {label.lower()} pocket (use the template's)?",
-                    default=False,
-                ).ask():
-                    items_state.pop(key, None)
-                    if not items_state:
-                        self.state.pop("items", None)
-                    self._save_state()
-                    return
-
-    def _edit_flags(self) -> None:
-        import questionary
-        from questionary import Choice
-
-        while True:
-            # Flags menu
-            flags_state = self.state.setdefault("flags", {})
-            n_ev = len(flags_state.get("event", []))
-            n_en = len(flags_state.get("engine", []))
-            choice = questionary.select(
-                "Edit flags",
-                choices=[
-                    Choice(f"Event flags   ({n_ev} set)", value="event"),
-                    Choice(f"Engine flags  ({n_en} set)", value="engine"),
-                    Choice("← Back", value="back"),
-                ],
-            ).ask()
-            if choice is None or choice == "back":
-                return
-            if choice == "event":
-                self._edit_flag_group("Event flags", "event_flags", "event")
-            else:
-                self._edit_flag_group("Engine flags", "engine_flags", "engine")
-
-    def _edit_flag_group(self, label: str, inv_key: str, state_key: str) -> None:
-        """Generic add/remove editor for a named flag group (event or engine)."""
-        import questionary
-        from questionary import Choice, Separator
-
-        flag_names = sorted(f["name"] for f in self.inv.get(inv_key, []))
-
-        while True:
-            flags_state = self.state.setdefault("flags", {})
-            set_flags: list[str] = flags_state.setdefault(state_key, [])
-
-            choices: list = []
-            for name in sorted(set_flags):
-                choices.append(Choice(f"  [-] {name}", value=("remove_one", name)))
-            if set_flags:
-                choices.append(Separator())
-            choices.append(Choice("Set flag...", value=("add", None)))
-            if set_flags:
-                choices.append(Choice(f"Unset flag...  ({len(set_flags)} set)", value=("remove", None)))
-                choices.append(Choice(f"Clear all {label.lower()}", value=("clear", None)))
-            choices.append(Choice("← Back", value=("back", None)))
-
-            action = questionary.select(
-                f"{label} — {len(set_flags)} set", choices=choices
-            ).ask()
-            if action is None or action[0] == "back":
-                return
-
-            if action[0] == "add":
-                val = questionary.autocomplete(
-                    "Flag name (tab to autocomplete):",
-                    choices=flag_names,
-                    validate=lambda s: s in flag_names or f"unknown flag: {s}",
-                ).ask()
-                if val and val not in set_flags:
-                    set_flags.append(val)
-                    self._save_state()
-            elif action[0] == "remove_one":
-                name = action[1]
-                if name in set_flags:
-                    set_flags.remove(name)
-                    self._save_state()
-            elif action[0] == "remove":
-                val = questionary.select(
-                    "Unset which flag?",
-                    choices=[Choice(n, value=n) for n in sorted(set_flags)]
-                    + [Choice("← Cancel", value=None)],
-                ).ask()
-                if val and val in set_flags:
-                    set_flags.remove(val)
-                    self._save_state()
-            elif action[0] == "clear":
-                if questionary.confirm(f"Clear all {label.lower()}?", default=False).ask():
-                    flags_state[state_key] = []
-                    self._save_state()
-
-    def _edit_tmhms(self) -> None:
-        """Add/remove editor for TM/HM ownership, mirroring _edit_flag_group."""
-        import questionary
-        from questionary import Choice, Separator
-
-        tmhms = self.inv.get("tmhms")
-        if not tmhms:
-            print("(inventory has no tmhms — rebuild it: --rebuild-inventory)")
-            return
-
-        entries_by_bit = sorted(tmhms, key=lambda e: e["bit"])
-        label_of = {e["name"]: f"{e['kind']}{e['num']:02d} {e['move']}" for e in tmhms}
-        bit_of = {e["name"]: e["bit"] for e in tmhms}
-        all_labels = [label_of[e["name"]] for e in entries_by_bit]
-        name_of_label = {label_of[e["name"]]: e["name"] for e in tmhms}
-
-        while True:
-            in_state = "tmhms" in self.state
-            owned: list[str] = sorted(
-                self.state.get("tmhms") or [], key=lambda n: bit_of.get(n, 0)
-            )
-
-            choices: list = []
-            for name in owned:
-                choices.append(
-                    Choice(f"  [-] {label_of.get(name, name)}", value=("remove_one", name))
-                )
-            if owned:
-                choices.append(Separator())
-            choices.append(Choice("Own TM/HM...", value=("add", None)))
-            if owned:
-                choices.append(Choice(f"Own all ({len(tmhms)})", value=("own_all", None)))
-                choices.append(Choice("Clear all  (launch writes none owned)", value=("clear", None)))
-            else:
-                choices.append(Choice(f"Own all ({len(tmhms)})", value=("own_all", None)))
-            if in_state:
-                choices.append(Choice("Use template's TM/HMs  (remove from state)", value=("template", None)))
-            choices.append(Choice("← Back", value=("back", None)))
-
-            action = questionary.select(
-                f"TM/HMs — {len(owned)}/{len(tmhms)} owned", choices=choices
-            ).ask()
-            if action is None or action[0] == "back":
-                return
-
-            # Never write to self.state here except inside a branch that
-            # actually changed something — an empty "tmhms": [] created just
-            # by browsing this menu would mean "own nothing" on next launch.
-            if action[0] == "add":
-                present = set(owned)
-                addable = [lbl for lbl in all_labels if name_of_label[lbl] not in present]
-                val = questionary.autocomplete(
-                    "TM/HM (tab to autocomplete):",
-                    choices=addable,
-                    validate=lambda s: s in addable
-                    or (f"already owned: {s}" if s in all_labels else f"unknown TM/HM: {s}"),
-                ).ask()
-                if not val:
-                    continue
-                name = name_of_label[val]
-                if name not in owned:
-                    new_owned = owned + [name]
-                    new_owned.sort(key=lambda n: bit_of.get(n, 0))
-                    self.state["tmhms"] = new_owned
-                    self._save_state()
-            elif action[0] == "remove_one":
-                name = action[1]
-                if name in owned:
-                    new_owned = [n for n in owned if n != name]
-                    self.state["tmhms"] = new_owned
-                    self._save_state()
-            elif action[0] == "own_all":
-                if questionary.confirm(
-                    f"Own all {len(tmhms)} TM/HMs?", default=False
-                ).ask():
-                    self.state["tmhms"] = [e["name"] for e in entries_by_bit]
-                    self._save_state()
-            elif action[0] == "clear":
-                if questionary.confirm("Clear all TM/HMs?", default=False).ask():
-                    self.state["tmhms"] = []
-                    self._save_state()
-            elif action[0] == "template":
-                if questionary.confirm(
-                    "Stop overriding TM/HMs (use the template's)?", default=False
-                ).ask():
-                    self.state.pop("tmhms", None)
-                    self._save_state()
-                    return
-
-    def _reset_preset(self) -> None:
-        import questionary
-        from questionary import Choice
-
-        presets = sorted(self.presets_dir.glob("*.json"))
-        if not presets:
-            print("(no presets in presets/)")
-            return
-
-        choice = questionary.select(
-            "Reset state from preset",
-            choices=[Choice(p.name, value=p) for p in presets]
-            + [Choice("← Cancel", value=None)],
-        ).ask()
-        if choice is None:
-            return
-
-        ok = questionary.confirm(
-            f"Overwrite {self._pretty(self.state_path)} with {choice.name}?",
-            default=False,
-        ).ask()
-        if not ok:
-            return
-
-        self.state = json.loads(choice.read_text())
-        self._save_state()
-        print(f"Reset state from {choice.name}")
-
     def _patch_and_launch(self) -> None:
         rom_path = paths.rom_path(self.root, debug=self.debug)
         self._patch_save(rom_path)
         # Run (or re-run) SameBoy
         self._launch_or_relaunch(rom_path)
-
     def _patch_save(self, rom_path: Path) -> None:
         try:
             report = playtest.patch_save(
@@ -865,7 +265,6 @@ class DevServer:
               f"({len(report.changes)} fields changed)")
         for c in report.changes:
             print(f"  {c}")
-
     def _launch_or_relaunch(self, rom_path: Path, *, silent: bool = False) -> None:
         report = self.emulator.launch(rom_path)
         if report.replaced and not silent:
@@ -874,7 +273,6 @@ class DevServer:
             print(f"warning: {w}", file=sys.stderr)
         if report.launched and not silent:
             print(f"Launching {report.command}...")
-
     def _start_rebuild_watcher(self) -> None:
         def _watch() -> None:
             while not self._watcher_stop.wait(2.0):
@@ -895,36 +293,8 @@ class DevServer:
             target=_watch, daemon=True, name="rebuild-watcher"
         )
         self._watcher_thread.start()
-
     def _pretty(self, path: Path) -> str:
         try:
             return str(path.relative_to(self.root))
         except ValueError:
             return str(path)
-
-
-def _drop_slot_and_its_gaps(party: list[dict], idx: int, existing: int) -> None:
-    """Remove one party slot, and the empty ones opening it created.
-
-    Opening slot N allocates every slot up to N, so removing only the slot that
-    was asked for leaves `{}` entries in the party — which `apply._apply_party`
-    refuses, taking the next launch with it.
-
-    `existing` is how many slots there were before the editor opened, which is
-    what tells our gaps from a `{}` somebody wrote into state.json by hand.
-    Dropping one of those would silently renumber every slot after it.
-    """
-    party.pop(idx)
-    del party[existing:]
-
-
-def _int_in(lo: int, hi: int):
-    def _validate(s: str):
-        try:
-            v = int(s)
-        except ValueError:
-            return "not an integer"
-        if not (lo <= v <= hi):
-            return f"must be {lo}..{hi}"
-        return True
-    return _validate
