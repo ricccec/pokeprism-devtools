@@ -317,6 +317,40 @@ map and every cross-product arrow. Suite **35/38 → 36/39**. 3b is unblocked.
   `pokeprism_devtools.hacks` entry-point group spans three distributions, which
   makes it a published ABI. Tests divide A 3 · B 3 · C 13 · D 19.
 
+## Phase 3 · postscript — what the oracle did not prove — **2026-08-05**
+
+Found by the user opening `shared/paths.py` at random, one day after Phase 3
+closed and reported the products separable.
+
+- **The oracle proved the import graph, and was reported as product readiness.**
+  `"pokeprism.gbc"` hardcoded in product A passes every one of Phase 3's four
+  checks — A imports nothing, the arrow points nowhere, green — and is exactly
+  what the split exists to remove. The gap is now a ground rule in
+  `refactor-plan.md`: state what the oracle proves and what the phase claims as
+  two sentences.
+- **Phase −1 had already named the right instrument and Phase 3 did not use it**
+  — *"a path literal measures hack-specificity better [than an import grep]"* is
+  the first line of this file's Phase −1 entry.
+- **Measured, on three axes, so the size is known rather than feared:** hack-name
+  literals, repo-relative path literals, and numeric constants across all 60
+  modules of A and B. **Two files are contaminated, not the codebase.**
+  `shared/paths.py` (prism's ROM names and make targets — so `prism-sym`, one of
+  A's own entry points, cannot resolve a `.sym` on a pokecrystal tree) and
+  `asmedit/regions.py` (`VANILLA`/`POLISHED` constants in the library, breaking
+  *only the mount knows hack names*). Both are now named in
+  `tests/test_products.py`'s `KNOWN_LEAKS`, asserted exactly, and handed to Phase 5.
+- **The numeric axis came back clean, and can show its work.** 86 named constants
+  in A+B, 72 in `shared/overworld/`, which is driven by all three hacks and
+  covered by one green test per engine. The two likeliest to be prism's were
+  checked against the real macros: prism's `map_header` and pokecrystal's `map`
+  are both **9** bytes, `map_header_2` and `map_attributes` both **12**.
+- **The new check found four errors in itself before it found any in the code** —
+  two leak rows attributed to the wrong file, a regex matching `main.asm` inside a
+  prose sentence, and `vanilla` missing from the hack-name pattern, which is why
+  its first run saw `POLISHED` and not the `VANILLA` on the line above.
+- Still unscanned, and said out loud rather than implied: bank numbers, engine
+  addresses and struct sizes that carry no hack's name. **A scan clears an axis.**
+
 ## Phase 4 · the god objects — not started
 
 **Plan:** not written · **Findings:** none yet
@@ -331,6 +365,19 @@ god objects". Its characterization test is a mandatory prerequisite, not a step.
 Inherits one unanswered question from Phase −1: whether `rules_geometry.py`'s rules
 are Gen-2 facts or prism facts. The seven prism-importing rule modules are listed in
 `refactor-phase--1-STATE.md`.
+
+**Also inherits the two contaminated library modules**, found 2026-08-05 and named
+in `tests/test_products.py`'s `KNOWN_LEAKS` — same question, one layer down:
+
+- `shared/paths.py` — `rom_path` hardcodes prism's ROM filenames and make targets.
+  The neutral answer already exists in this repo and was never back-ported:
+  `hacks/vanilla/play.py:_roms` reads the `Makefile`'s `roms :=` list. Note the
+  debug/nodebug preference **is** a prism fact and has to cross the seam as
+  declared data rather than be assumed away, and polished has no `roms :=` line at
+  all — so there are already three answers in the tree and a neutral one must
+  subsume them, not become a fourth. Its seven bare-noun function names go too.
+- `asmedit/regions.py` — `Layout` is neutral and stays; `VANILLA` and `POLISHED`
+  belong in `hacks/vanilla/`, which is their only caller.
 
 ## Phase 3b · carve the remaining products — **last, after 4 and 5**
 

@@ -97,6 +97,17 @@ is fixed on the tree as it stands, with its own test, before the file moves —
 otherwise no one can ever say again whether the move was behaviour-neutral, and every
 phase's "nothing changed" claim is worth less.
 
+**Write down what your oracle proves *and* what your phase claims — as two
+sentences.** Where they differ is the phase's real risk, and it is invisible from
+inside the phase. Phase 3 built a test proving the *import graph* is layered and
+reported it as *the products are separable*; a hardcoded `"pokeprism.gbc"` in
+product A satisfies the first and destroys the second, and it survived the whole
+phase until a human opened one file at random (2026-08-05). Two rules follow.
+**A scan clears an axis, not a codebase** — say which axis. And when a finding
+names a better instrument, use it: Phase −1 measured that *a path literal measures
+hack-specificity better than an import grep*, and Phase 3 read that finding and
+built the weaker check anyway.
+
 Two rules carry more weight in this refactor than anywhere else, and are worth
 re-reading before each phase rather than re-typing: **naming files and folders**
 (the whole exercise is deciding what a file is for and calling it that) and

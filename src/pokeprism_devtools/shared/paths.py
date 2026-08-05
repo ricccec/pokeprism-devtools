@@ -1,5 +1,18 @@
 """Locate pokeprism build artifacts relative to the repo root."""
 
+# FIXME these function names all violòates our verb+noum rule
+# FIXME multiple mentions of pokeprism. Is this supposed to be in A or C?!?
+# FIXME the path matching heuristics (makefile+main.asm) is weak. I'm fine with
+#       it but this should be state explicitly
+# FIXME rom_path hard-codes the ROM names, but these depends on the specific
+#       hack and the targets defined in the makefile. How the is this supposed
+#       to live in A?
+#
+# Verbatim, and answered in docs/refactor-STATE.md → Phase 5. Kept as comments
+# rather than string literals because four of those in a row displaced the module
+# docstring and pushed `from __future__` off the first statement, which made this
+# file — imported by 19 modules across all four products — a SyntaxError.
+
 from __future__ import annotations
 
 from pathlib import Path

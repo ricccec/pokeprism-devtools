@@ -10,7 +10,7 @@ repos that turn out to import each other.
     C · the IDE              studio, hacks/vanilla, hacks/polished -> A, B
     D · prism                hacks/prism and its nine CLIs      -> A, B
 
-Four checks, and each exists because something real got past a weaker one:
+Five checks, and each exists because something real got past a weaker one:
 
   * **Membership is declared, not derived.** Every module under
     `src/pokeprism_devtools/` is named in exactly one product below. A module in
@@ -30,6 +30,16 @@ Four checks, and each exists because something real got past a weaker one:
     importing C leaves D out. Kept alongside the static check because Phase 2
     measured that a `TYPE_CHECKING`-only import passes a runtime check and fails
     a static one — neither subsumes the other.
+  * **A and B name no hack** — the check the other four cannot make, added
+    2026-08-05 and the reason this file was not enough. The first four prove the
+    *import graph* is layered, and a hardcoded `"pokeprism.gbc"` inside product A
+    satisfies every one of them: A imports nothing, the arrow points nowhere,
+    green. It sat there through all of Phase 3 and was found by a human opening
+    one file at random. Phase −1 had already measured the right instrument —
+    *"import greps were wrong three ways; a path literal measures
+    hack-specificity better"* — and Phase 3 built its oracle on imports anyway.
+    **What an oracle proves and what a phase claims are two sentences, and this
+    file only ever wrote the second.**
 
 `test_falsified` comes last and matters most: it seeds each check with the
 mutation that check exists to catch, and fails if any survives.
@@ -40,6 +50,7 @@ mutation that check exists to catch, and fails if any survives.
 from __future__ import annotations
 
 import ast
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -77,6 +88,73 @@ SCAFFOLD = ("__init__.py", "hacks/__init__.py")
 WITHIN_C = {
     ("hacks/vanilla/write.py", "studio/mapadd"),
     ("hacks/vanilla/newmap.py", "studio/mapadd"),
+}
+
+#: Any hack's name, in any spelling a literal might carry it.
+#: `vanilla` belongs here: it is the name of an adapter (`hacks/vanilla/`),
+#: and leaving it out is why the first run of this check saw `POLISHED` in
+#: `asmedit/regions.py` and not the `VANILLA` sitting on the line above it.
+HACK_NAMES = re.compile(
+    r"pokeprism|prism|pokecrystal|polished|crystal|vanilla", re.I)
+
+#: Matches on `HACK_NAMES` that are not hack facts. The distribution is named
+#: `pokeprism_devtools` and its commands are `prism-*` for historical reasons —
+#: an unfortunate name for a product that serves three trees, but a *label*, not
+#: knowledge of a tree. Renaming them is a decision, not a bug fix.
+BENIGN_NAMES = ("pokeprism_devtools", "prism-usage", "prism-sym")
+
+#: A repo-relative path into a game tree. Phase −1: "import greps were wrong
+#: three ways; a path literal measures hack-specificity better." That finding is
+#: why this section exists — `test_products` proved the import graph and nothing
+#: else, so `pokeprism.gbc` sat in product A through the whole of Phase 3.
+#: Anchored, and no spaces: a *sentence* that mentions `main.asm` is prose, and
+#: only a literal that **is** a path is a path. Caught by this check failing on
+#: `paths.py`'s error message the first time it ran.
+REPO_PATH = re.compile(
+    r"^[\w./-]+\.(asm|blk|ablk|gbc|sym|map|pal|inc|lzp)$|^(maps|constants|data|gfx|engine)/")
+
+#: The pret-family paths A is allowed to know, because they are the layout every
+#: pret tree shares. Declared, so a new one is somebody's decision. Two of these
+#: are family-only — prism has no `data/maps/maps.asm` — which is legal for a
+#: library that implements the pret standard, and is the reason prism ships its
+#: own new-map form rather than a dialect. See Phase 3's STATE.
+PRET_PATHS = {
+    "data/maps/maps.asm", "data/maps/attributes.asm", "constants/map_constants.asm",
+    "constants/event_flags.asm", "constants/script_constants.asm",
+    "constants/trainer_constants.asm", "data/items/fruit_trees.asm",
+    "sprite_constants.asm", "main.asm", "maps/",
+}
+
+#: **Hack knowledge sitting in A or B — named, not excused.** Asserted exactly,
+#: in both directions, so this list can only shrink deliberately.
+#:
+#: Found 2026-08-05, after the user opened one file at random and this test could
+#: not have caught it. Two files, two shapes, and both are a neutral mechanism
+#: with one hack's data baked in beside it:
+#:
+#: * **`shared/paths.py`** — `rom_path` hardcodes prism's two ROM filenames and
+#:   prism's two make targets, so `prism-sym`, one of product A's *own* entry
+#:   points, cannot resolve a `.sym` on a pokecrystal tree. The neutral answer
+#:   already exists here and was never back-ported: `hacks/vanilla/play.py:_roms`
+#:   reads the `Makefile`'s `roms :=` list instead of guessing.
+#: * **`asmedit/regions.py`** — `Layout` is neutral and right; `VANILLA` and
+#:   `POLISHED` are two named hacks in product A, used only by `hacks/vanilla/`.
+#:   This one breaks the house rule directly: *only the mount point knows hack
+#:   names*, and `asmedit/` is not the mount.
+#:
+#: Both scheduled into Phase 5's survey — the phase that asks, per module, "Gen-2
+#: fact or hack fact?" — rather than fixed here, because moving them is a design
+#: decision and this list exists to stop the *next* one arriving unnoticed.
+KNOWN_LEAKS = {
+    ("shared/paths.py", "pokeprism.gbc"),
+    ("shared/paths.py", "pokeprism_nodebug.gbc"),
+    ("shared/paths.py", "prism"),
+    ("shared/paths.py", "Locate pokeprism build artifacts relative to the repo root."),
+    ("shared/paths.py", "Could not find pokeprism repo root from"),
+    ("shared/paths.py", ". Run `make nodebug` or `make prism` first."),
+    ("sym_lookup/__init__.py", "Query the pokeprism .sym file by label or address."),
+    ("asmedit/regions.py",
+     "Do the texts precede the event header? Vanilla yes, polished no."),
 }
 
 _failures = 0
@@ -290,7 +368,70 @@ def test_importing_a_product_loads_nothing_above_it() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 5 · falsified: each check against the mistake it exists to catch             #
+# 5 · A and B know no hack's name — the check imports cannot make               #
+# --------------------------------------------------------------------------- #
+
+def literals_in(folders: tuple[str, ...]) -> set[tuple[str, str]]:
+    """Every short string constant those folders contain, as (file, value).
+
+    Docstrings included on purpose: prose that says "pokeprism" in a library
+    that claims to serve any pret tree is a claim about the code, and it has
+    been wrong before. Long strings are skipped — a paragraph of explanation is
+    not a hack fact, and the cutoff keeps the failure message readable.
+    """
+    out = set()
+    for folder in folders:
+        for f in sorted((PKG / folder).rglob("*.py")):
+            for n in ast.walk(ast.parse(f.read_text())):
+                if isinstance(n, ast.Constant) and isinstance(n.value, str):
+                    v = n.value.strip()
+                    if v and len(v) <= 90 and "\n" not in v:
+                        out.add((str(f.relative_to(PKG)), v))
+    return out
+
+
+def test_the_library_and_contract_name_no_hack(files: list[Path]) -> None:
+    print("\nA and B contain no hack's name and no hack's paths")
+    ab = tuple(PRODUCTS["A"]) + tuple(PRODUCTS["B"])
+
+    found = {(rel, v) for rel, v in literals_in(ab) if HACK_NAMES.search(v)}
+    found = {(rel, v) for rel, v in found
+             if not any(b in v for b in BENIGN_NAMES)}
+    check("the scan sees something at all — a silent scan is broken, not clean",
+          len(literals_in(ab)) > 200, str(len(literals_in(ab))))
+    check("every hack name in A or B is a known leak, named above",
+          found <= KNOWN_LEAKS, f"NEW: {sorted(found - KNOWN_LEAKS)}")
+    check("every known leak is still there — this list is a debt, not a wish",
+          KNOWN_LEAKS <= found, f"gone (shrink the list): {sorted(KNOWN_LEAKS - found)}")
+
+    # The rule the leaks break, stated where it can fail: hack names belong to
+    # the mount and to adapters. A constant named for a tree, in the library, is
+    # the shape both of them share.
+    named = set()
+    for folder in ab:
+        for f in sorted((PKG / folder).rglob("*.py")):
+            for n in ast.parse(f.read_text()).body:
+                if not isinstance(n, (ast.Assign, ast.AnnAssign)):
+                    continue
+                t = n.targets[0] if isinstance(n, ast.Assign) else n.target
+                if isinstance(t, ast.Name) and HACK_NAMES.search(t.id):
+                    named.add((str(f.relative_to(PKG)), t.id))
+    check("no constant in A or B is named for a hack",
+          named == {("asmedit/regions.py", "VANILLA"),
+                    ("asmedit/regions.py", "POLISHED")},
+          f"changed: {sorted(named)}")
+
+    # Phase −1's instrument, which the import scan cannot replace: a repo-relative
+    # path literal is what actually makes a module hack-specific.
+    paths_seen = {(rel, v) for rel, v in literals_in(ab) if REPO_PATH.search(v)}
+    unknown = {(rel, v) for rel, v in paths_seen
+               if v not in PRET_PATHS and (rel, v) not in KNOWN_LEAKS}
+    check("every repo path A or B reads is a declared pret-family path",
+          not unknown, f"undeclared: {sorted(unknown)}")
+
+
+# --------------------------------------------------------------------------- #
+# 6 · falsified: each check against the mistake it exists to catch             #
 # --------------------------------------------------------------------------- #
 
 def test_falsified(files: list[Path]) -> None:
@@ -342,6 +483,7 @@ def main() -> int:
     test_every_cross_product_import_points_down(files)
     test_no_adapter_outside_c_imports_the_ide(files)
     test_importing_a_product_loads_nothing_above_it()
+    test_the_library_and_contract_name_no_hack(files)
     test_falsified(files)
 
     print()
