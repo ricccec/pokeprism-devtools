@@ -38,10 +38,19 @@ that proves it.
 - **Three mutations survived the first fixture, and none was an assertion gap** —
   all three were the fixture's *shape*, which is Phase 1b's finding reproduced
   exactly. → *What the fixture could not tell apart*
-- **A defect, found by the test and pinned before it is fixed**: abandoning a
+- **A defect, found by the test and fixed before anything moves**: abandoning a
   party slot past the end of the party leaves `{}` gaps in `state.json`, and
   `apply._apply_party` refuses them — so the *next launch* dies and the only way
-  out is editing the file by hand. → *The defect the oracle found*
+  out is editing the file by hand. **`Remove slot` had it too**, which only
+  driving both ways out of the editor found. → *The defect the oracle found*
+- **The first fix was wrong and a test caught it** — "drop trailing empties" is
+  not "drop the gaps this call created", and the difference is somebody's
+  hand-written `{}`. → *Step 2b · the fix*
+- **R6 cannot see inside a class**: `surface-snapshot.py` digests `DevServer` as
+  one CONTENT entry, so it cannot tell a commit that touched one method from one
+  that touched all 23. **Step 3 needs a per-method digest**, and that is this
+  phase's one departure from the method of the four before it. → *What R6 cannot
+  see inside a class*
 - **A second thing recorded, not endorsed**: a failed save-patch still spawns the
   emulator, so the game comes up on the old save. → *The defect the oracle found*
 - **`_watch` and `_refresh_inventory_if_stale` are the same logic written
@@ -292,6 +301,39 @@ thing that fixes a bug: `test_abandoning_a_slot_past_the_end_leaves_gaps` record
 today's behaviour, including asking the real `_apply_party` what it does with the
 result, so the fix is a commit with a visible diff and an oracle rather than a
 line changed inside a move.
+
+### Step 2b · the fix, and what it had to be careful about
+
+`_drop_slot_and_its_gaps(party, idx, existing)`, called from **both** ways out of
+the slot editor — backing out without a species, and `Remove slot`. The second
+was not in the report that started this: filling a slot past the end and then
+removing it leaves the same gaps, and only driving both found it.
+
+**The first draft of the fix was wrong and a test caught it.** It dropped
+*trailing* empty slots, which is not the same claim as "the gaps this call
+created": remove slot 3 from a hand-written `[mon, {}, mon]` and the `{}` becomes
+trailing, so a draft aimed at our own mess would have silently deleted somebody
+else's. Passing `existing` — how many slots there were before the editor opened —
+is what makes the function's sentence true. `test_a_hand_written_gap_is_left_alone`
+is the check that says so, and the rejected draft is one of the seeded mutations.
+
+**5 of 5 mutations caught**, including reverting either call site alone.
+
+### What R6 cannot see inside a class
+
+The confinement check on this commit came back with exactly two changed digests —
+`DevServer` and the arriving `_drop_slot_and_its_gaps` — which is the right
+answer and a much weaker one than it looks.
+
+**`scripts/surface-snapshot.py` digests a class as a single CONTENT entry.** For a
+phase whose entire target is one 23-method class, that means R6 cannot tell *"this
+commit touched only `_edit_party_slot`"* from *"it touched all 23 methods"*. Every
+commit from here to step 6 moves the `DevServer` line and says nothing more.
+
+Step 3 needs an instrument the tool does not have: a **per-method** digest, so a
+split can be proved the way Phase 1 proved a move — every body byte-identical,
+only its home changed. That is written here rather than discovered at the commit,
+and it is the one place this phase's method departs from the four before it.
 
 **Also recorded, and not endorsed:** `_patch_and_launch` spawns the emulator even
 when `_patch_save` failed, so the game comes up on the *old* save with nothing on

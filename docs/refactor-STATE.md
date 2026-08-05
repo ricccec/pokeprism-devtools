@@ -416,11 +416,21 @@ is the result, not a deferral.
   quantity it must never carry was invisible, an unset pocket whose stray `[]`
   only reaches disk on the *next* edit, and a flag set twice, which the prompt
   accepts and the fixture never typed.
-- **A defect, found by the test and pinned before it is fixed** — abandoning a
+- **A defect, found by the test and fixed before anything moves** — abandoning a
   party slot past the end of the party appends empty dicts to reach it and pops
   only one, so `state.json` keeps `{}` gaps and `apply._apply_party` refuses them:
   the **next launch** dies and the file must be hand-edited. The code's own
-  comment says it means to drop them.
+  comment says it means to drop them. **`Remove slot` had it too**, found only by
+  driving both ways out of the slot editor.
+- **The first fix was wrong and a test caught it** — "drop trailing empties" is
+  not "drop the gaps this call created", and the difference is a `{}` somebody
+  wrote into state.json by hand, which the draft would have silently deleted.
+  The rejected draft is now one of the seeded mutations.
+- **R6 cannot see inside a class.** `scripts/surface-snapshot.py` digests
+  `DevServer` as one CONTENT entry, so it cannot tell a commit that touched one
+  method from one that touched all 23 — every commit in this phase moves that one
+  line and says no more. **Step 3 needs a per-method digest** to prove the split
+  is a move, and that is this phase's one departure from the four before it.
 - **Recorded, not endorsed**: a failed `patch_save` still spawns the emulator, so
   the game comes up on the old save with nothing on screen to say so.
 - **`_watch` and `_refresh_inventory_if_stale` are the same seven lines** — found
