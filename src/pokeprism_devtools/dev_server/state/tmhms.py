@@ -1,15 +1,15 @@
 """Which TM/HMs the player owns.
 
-    Offered as `TM01 HEADBUTT` and stored as `TM_HEADBUTT`, ordered by the
-    ownership bit rather than by either spelling — the bit is the entry's index
-    in the inventory, which is the engine's `FlagAction` convention.
-    """
+Offered as `TM01 HEADBUTT` and stored as `TM_HEADBUTT`, ordered by the
+ownership bit rather than by either spelling — the bit is the entry's index
+in the inventory, which is the engine's `FlagAction` convention.
+"""
 
 from __future__ import annotations
 
 
-
 class TmhmMenu:
+
     def _edit_tmhms(self) -> None:
         """Add/remove editor for TM/HM ownership, mirroring _edit_flag_group."""
         import questionary

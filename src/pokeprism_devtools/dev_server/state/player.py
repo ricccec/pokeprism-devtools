@@ -1,10 +1,10 @@
 """The player: their name, their money, their badges.
 
-    The three fields the save carries about the trainer rather than about the
-    world. `badges` is one field asked for as three prompts, because the game
-    keeps a bitmask per region and there is no useful way to ask for all of
-    them at once.
-    """
+The three fields the save carries about the trainer rather than about the
+world. `badges` is one field asked for as three prompts, because the game
+keeps a bitmask per region and there is no useful way to ask for all of
+them at once.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from .prompts import _int_in
 
 
 class PlayerMenu:
+
     def _edit_player(self) -> None:
         import questionary
         from questionary import Choice

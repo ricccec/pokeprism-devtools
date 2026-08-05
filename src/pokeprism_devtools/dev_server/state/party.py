@@ -1,10 +1,10 @@
 """The six party slots, and what is in one.
 
-    A slot is reached by number, so opening slot 5 of a two-mon party has to
-    allocate the three in between. `_drop_slot_and_its_gaps` is what takes them
-    back out again: `apply._apply_party` refuses an entry with no species, so a
-    gap left behind is a launch that fails rather than a slot that looks empty.
-    """
+A slot is reached by number, so opening slot 5 of a two-mon party has to
+allocate the three in between. `_drop_slot_and_its_gaps` is what takes them
+back out again: `apply._apply_party` refuses an entry with no species, so a
+gap left behind is a launch that fails rather than a slot that looks empty.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from .prompts import _int_in
 
 
 class PartyMenu:
+
     def _edit_party(self) -> None:
         import questionary
         from questionary import Choice
@@ -49,6 +50,7 @@ class PartyMenu:
                     self._save_state()
                 continue
             self._edit_party_slot(action[1], species_names, move_names)
+
     def _edit_party_slot(
         self, idx: int, species_names: list[str], move_names: list[str]
     ) -> None:
@@ -128,6 +130,7 @@ class PartyMenu:
                 _drop_slot_and_its_gaps(party, idx, existing)
                 self._save_state()
                 return
+
     def _edit_party_moves(self, mon: dict, move_names: list[str]) -> None:
         import questionary
 
