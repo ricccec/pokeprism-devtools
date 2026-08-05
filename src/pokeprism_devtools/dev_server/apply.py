@@ -20,6 +20,8 @@ from pokeprism_devtools.hacks.prism.mapformat import PRISM_FORMAT
 from pokeprism_devtools.shared import symfile
 from pokeprism_devtools.shared.overworld import rebuild
 
+from .pockets import POCKETS
+
 
 def load_state(path: Path, presets_dir: Path) -> dict:
     """Load `state.json`, falling back to `presets/default.json`, then to {}.
@@ -163,16 +165,26 @@ def apply_state(
     return changes
 
 
-# Bag pockets writable via state.json's "items" key. Each pocket region is
-# written as: count byte, entries ([id, qty] pairs, or bare ids for key
-# items), 0xFF terminator, zero fill to the end of the region. The game only
-# reads count/entries/terminator (InitList inits just those); the zero fill
-# keeps writes deterministic for future sram-diffs.
-# (state_key, count_symbol, list_symbol, caps_key, has_qty, pocket_attr)
+# Each pocket region is written as: count byte, entries ([id, qty] pairs, or
+# bare ids for key items), 0xFF terminator, zero fill to the end of the region.
+# The game only reads count/entries/terminator (InitList inits just those); the
+# zero fill keeps writes deterministic for future sram-diffs.
+#
+# The symbols are this module's own fact — where a pocket lives in WRAM is the
+# save format. *Which* pockets exist, and how each behaves, is `pockets.py`,
+# because the TUI's editor needs the same answer and used to keep its own copy.
+_POCKET_SYMBOLS: dict[str, tuple[str, str]] = {
+    "items":     ("wNumItems",    "wItems"),
+    "balls":     ("wNumBalls",    "wBalls"),
+    "key_items": ("wNumKeyItems", "wKeyItems"),
+}
+
+# (state_key, count_symbol, list_symbol, caps_key, has_qty, pocket_attr) — the
+# shape `_apply_items` reads, built rather than restated. A pocket that gained
+# no symbols above is a KeyError here rather than a pocket silently not written.
 _POCKETS: list[tuple[str, str, str, str, bool, str]] = [
-    ("items",     "wNumItems",    "wItems",    "items",     True,  "ITEM"),
-    ("balls",     "wNumBalls",    "wBalls",    "balls",     True,  "BALL"),
-    ("key_items", "wNumKeyItems", "wKeyItems", "key_items", False, "KEY_ITEM"),
+    (p.key, *_POCKET_SYMBOLS[p.key], p.key, p.has_qty, p.attribute)
+    for p in POCKETS
 ]
 
 

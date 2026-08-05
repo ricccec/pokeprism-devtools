@@ -9,19 +9,14 @@ the first.
 
 from __future__ import annotations
 
-from .prompts import _int_in
+from ..pockets import POCKETS
+from .prompts import make_int_range_validator
 
 
 class BagMenu:
-    _BAG_POCKETS = [
-        ("Items",     "items",     True,  "ITEM"),
-        ("Balls",     "balls",     True,  "BALL"),
-        ("Key items", "key_items", False, "KEY_ITEM"),
-    ]
 
     def _edit_items(self) -> None:
         import questionary
-        from questionary import Choice
 
         caps = self.inv.get("bag_caps")
         if not caps:
@@ -30,25 +25,15 @@ class BagMenu:
 
         while True:
             items_state = self.state.get("items") or {}
-            choices: list = []
-            for label, key, has_qty, want_pocket in self._BAG_POCKETS:
-                if key in items_state:
-                    status = f"{len(items_state[key])}/{caps[key]}"
-                else:
-                    status = "(template)"
-                choices.append(
-                    Choice(f"{label + ' pocket':18s} {status}", value=key)
-                )
-            choices.append(Choice("← Back", value="back"))
-
-            choice = questionary.select("Edit items", choices=choices).ask()
+            choice = questionary.select(
+                "Edit items", choices=_build_pocket_menu_rows(items_state, caps)
+            ).ask()
             if choice is None or choice == "back":
                 return
-            label, key, has_qty, want_pocket = next(
-                p for p in self._BAG_POCKETS if p[1] == choice
-            )
+            pocket = next(p for p in POCKETS if p.key == choice)
             self._edit_pocket(
-                label, key, has_qty=has_qty, cap=caps[key], want_pocket=want_pocket
+                pocket.label, pocket.key, has_qty=pocket.has_qty,
+                cap=caps[pocket.key], want_pocket=pocket.attribute,
             )
 
     def _edit_pocket(
@@ -64,12 +49,12 @@ class BagMenu:
         while True:
             items_state = self.state.setdefault("items", {})
             in_state = key in items_state
-            entries = [_normalized(e, has_qty) for e in items_state.get(key, [])]
+            entries = [_normalize_entry(e, has_qty) for e in items_state.get(key, [])]
             items_state[key] = entries  # write back dict-form entries
 
             action = questionary.select(
                 f"{label} pocket — {len(entries)}/{cap}",
-                choices=_pocket_rows(entries, has_qty=has_qty, cap=cap,
+                choices=_build_pocket_rows(entries, has_qty=has_qty, cap=cap,
                                      in_state=in_state),
             ).ask()
             if action is None or action[0] == "back":
@@ -140,7 +125,8 @@ class BagMenu:
         qty = 1
         if has_qty:
             raw = questionary.text(
-                "Quantity (1–99):", default="1", validate=_int_in(1, 99)
+                "Quantity (1–99):", default="1",
+                validate=make_int_range_validator(1, 99),
             ).ask()
             if raw is None:
                 return
@@ -156,7 +142,7 @@ class BagMenu:
         raw = questionary.text(
             f"{entries[i]['name']} quantity (1–99, 0 removes):",
             default=str(entries[i].get("qty", 1)),
-            validate=_int_in(0, 99),
+            validate=make_int_range_validator(0, 99),
         ).ask()
         if raw is None:
             return
@@ -167,7 +153,7 @@ class BagMenu:
         self._save_state()
 
 
-def _normalized(raw, has_qty: bool) -> dict:
+def _normalize_entry(raw, has_qty: bool) -> dict:
     """One pocket entry in dict form.
 
     state.json allows a bare-string shorthand for qty 1. Key items never carry
@@ -178,7 +164,7 @@ def _normalized(raw, has_qty: bool) -> dict:
     return raw
 
 
-def _pocket_rows(entries: list[dict], *, has_qty: bool, cap: int,
+def _build_pocket_rows(entries: list[dict], *, has_qty: bool, cap: int,
                  in_state: bool) -> list:
     """The rows one pocket offers: what is in it, then what can be done to it.
 
@@ -205,4 +191,21 @@ def _pocket_rows(entries: list[dict], *, has_qty: bool, cap: int,
     if in_state:
         rows.append(Choice("Use template's pocket  (remove from state)", value=("template", None)))
     rows.append(Choice("← Back", value=("back", None)))
+    return rows
+
+
+def _build_pocket_menu_rows(items_state: dict, caps: dict) -> list:
+    """One row per pocket, saying how full it is against its cap — or
+    `(template)`, which means this pocket is not overridden at all and the
+    launch will leave whatever the template save holds."""
+    from questionary import Choice
+
+    rows = []
+    for p in POCKETS:
+        if p.key in items_state:
+            status = f"{len(items_state[p.key])}/{caps[p.key]}"
+        else:
+            status = "(template)"
+        rows.append(Choice(f"{p.label + ' pocket':18s} {status}", value=p.key))
+    rows.append(Choice("← Back", value="back"))
     return rows
