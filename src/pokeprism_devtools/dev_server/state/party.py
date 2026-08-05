@@ -55,7 +55,6 @@ class PartyMenu:
         self, idx: int, species_names: list[str], move_names: list[str]
     ) -> None:
         import questionary
-        from questionary import Choice
 
         party = self.state.setdefault("party", [])
         existing = len(party)
@@ -65,23 +64,8 @@ class PartyMenu:
         mon = party[idx]
 
         while True:
-            label_species = mon.get("species", "(unset)")
-            label_level = mon.get("level", "(unset)")
-            label_nick = mon.get("nickname") or "(default)"
-            label_moves = (
-                ", ".join(mon["moves"]) if mon.get("moves") else "(from learnset)"
-            )
-
             choice = questionary.select(
-                f"Edit slot {idx + 1}",
-                choices=[
-                    Choice(f"Species  : {label_species}",   value="species"),
-                    Choice(f"Level    : {label_level}",     value="level"),
-                    Choice(f"Nickname : {label_nick}",      value="nickname"),
-                    Choice(f"Moves    : {label_moves}",     value="moves"),
-                    Choice("Remove slot",                   value="remove"),
-                    Choice("← Back",                        value="back"),
-                ],
+                f"Edit slot {idx + 1}", choices=_slot_rows(mon)
             ).ask()
             if choice is None or choice == "back":
                 # Drop the slot entirely if species was never set.
@@ -91,45 +75,65 @@ class PartyMenu:
                 return
 
             if choice == "species":
-                val = questionary.autocomplete(
-                    "Species (tab to autocomplete):",
-                    choices=species_names,
-                    default=str(mon.get("species", "")),
-                    validate=lambda s: s in species_names or f"unknown species: {s}",
-                ).ask()
-                if val is not None:
-                    mon["species"] = val
-                    # Stamp a sane default level if unset.
-                    mon.setdefault("level", 5)
-                    self._save_state()
+                self._ask_species(mon, species_names)
             elif choice == "level":
-                val = questionary.text(
-                    "Level (1–100):",
-                    default=str(mon.get("level", 5)),
-                    validate=_int_in(1, 100),
-                ).ask()
-                if val is not None:
-                    mon["level"] = int(val)
-                    self._save_state()
+                self._ask_level(mon)
             elif choice == "nickname":
-                val = questionary.text(
-                    "Nickname (blank = species name, max 10 chars):",
-                    default=str(mon.get("nickname") or ""),
-                    validate=lambda s: (len(s) <= 10) or "max 10 chars",
-                ).ask()
-                if val is None:
-                    continue
-                if val == "":
-                    mon.pop("nickname", None)
-                else:
-                    mon["nickname"] = val
-                self._save_state()
+                self._ask_nickname(mon)
             elif choice == "moves":
                 self._edit_party_moves(mon, move_names)
             elif choice == "remove":
                 _drop_slot_and_its_gaps(party, idx, existing)
                 self._save_state()
                 return
+
+    def _ask_species(self, mon: dict, species_names: list[str]) -> None:
+        """Name the slot's species, which is what makes it a slot at all — an
+        entry without one is what `apply` refuses, so a level comes with it."""
+        import questionary
+
+        val = questionary.autocomplete(
+            "Species (tab to autocomplete):",
+            choices=species_names,
+            default=str(mon.get("species", "")),
+            validate=lambda s: s in species_names or f"unknown species: {s}",
+        ).ask()
+        if val is not None:
+            mon["species"] = val
+            # Stamp a sane default level if unset.
+            mon.setdefault("level", 5)
+            self._save_state()
+
+    def _ask_level(self, mon: dict) -> None:
+        import questionary
+
+        val = questionary.text(
+            "Level (1–100):",
+            default=str(mon.get("level", 5)),
+            validate=_int_in(1, 100),
+        ).ask()
+        if val is not None:
+            mon["level"] = int(val)
+            self._save_state()
+
+    def _ask_nickname(self, mon: dict) -> None:
+        """A blank answer removes the key rather than storing an empty string:
+        no nickname means the game shows the species name, and `""` would be a
+        pokemon called nothing."""
+        import questionary
+
+        val = questionary.text(
+            "Nickname (blank = species name, max 10 chars):",
+            default=str(mon.get("nickname") or ""),
+            validate=lambda s: (len(s) <= 10) or "max 10 chars",
+        ).ask()
+        if val is None:
+            return
+        if val == "":
+            mon.pop("nickname", None)
+        else:
+            mon["nickname"] = val
+        self._save_state()
 
     def _edit_party_moves(self, mon: dict, move_names: list[str]) -> None:
         import questionary
@@ -175,3 +179,20 @@ def _drop_slot_and_its_gaps(party: list[dict], idx: int, existing: int) -> None:
     """
     party.pop(idx)
     del party[existing:]
+
+
+def _slot_rows(mon: dict) -> list:
+    """The four fields of one party slot, each labelled with what it holds now
+    — or with where its value comes from when it holds nothing, since "(from
+    learnset)" and "(default)" are answers rather than blanks."""
+    from questionary import Choice
+
+    moves = ", ".join(mon["moves"]) if mon.get("moves") else "(from learnset)"
+    return [
+        Choice(f"Species  : {mon.get('species', '(unset)')}", value="species"),
+        Choice(f"Level    : {mon.get('level', '(unset)')}",   value="level"),
+        Choice(f"Nickname : {mon.get('nickname') or '(default)'}", value="nickname"),
+        Choice(f"Moves    : {moves}",                         value="moves"),
+        Choice("Remove slot",                                 value="remove"),
+        Choice("← Back",                                      value="back"),
+    ]

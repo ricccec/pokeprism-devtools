@@ -70,6 +70,7 @@ class DevServer(
     PlayerMenu, PositionMenu, PartyMenu, BagMenu, FlagMenu, TmhmMenu,
     PresetMenu,
 ):
+
     def __init__(
         self,
         *,
@@ -109,9 +110,9 @@ class DevServer(
         self._lock = threading.RLock()
         self._watcher_stop = threading.Event()
         self._watcher_thread: threading.Thread | None = None
+
     def run(self) -> int:
         import questionary
-        from questionary import Choice, Separator
 
         print()
         print("=" * 56)
@@ -124,43 +125,18 @@ class DevServer(
                 self._refresh_inventory_if_stale()
                 self._print_status_block()
 
-                running = self.emulator.running
                 action = questionary.select(
                     "What now?",
-                    choices=[
-                        Choice(
-                            ("Re-launch" if running else "Launch")
-                            + "  (patch .sav, spawn SameBoy)",
-                            value="launch",
-                        ),
-                        Choice("Edit player...",          value="edit_player"),
-                        Choice("Edit map / position...",  value="edit_map"),
-                        Choice("Reset state from preset...", value="reset_preset"),
-                        Separator(),
-                        Choice("Edit party...",    value="edit_party"),
-                        Choice("Edit items...",    value="edit_items"),
-                        Choice("Edit flags...",    value="edit_flags"),
-                        Choice("Edit TM/HMs...",   value="edit_tmhms"),
-                        Separator(),
-                        Choice("Quit", value="quit"),
-                    ],
+                    choices=_menu_rows(running=self.emulator.running),
                 ).ask()
-
                 if action is None or action == "quit":
                     break
 
-                handler = {
-                    "launch":       self._patch_and_launch,
-                    "edit_player":  self._edit_player,
-                    "edit_map":     self._edit_map,
-                    "edit_party":   self._edit_party,
-                    "edit_items":   self._edit_items,
-                    "edit_flags":   self._edit_flags,
-                    "edit_tmhms":   self._edit_tmhms,
-                    "reset_preset": self._reset_preset,
-                }[action]
+                # An editor that raises must not end the session: this server
+                # is long-lived, and a traceback would take the .sym watcher
+                # and the emulator's handle down with it.
                 try:
-                    handler()
+                    self._handlers()[action]()
                 except Exception as e:
                     print(f"\nerror: {e}", file=sys.stderr)
         except KeyboardInterrupt:
@@ -173,6 +149,22 @@ class DevServer(
         if self.emulator.running:
             print("\nSameBoy is still running — leaving it alone. Close it manually when done.")
         return 0
+
+    def _handlers(self) -> dict:
+        """What each menu entry runs. Keyed by the value `_menu_rows` offers, so
+        an entry that stops being reachable is a `KeyError` here rather than a
+        row that quietly does nothing."""
+        return {
+            "launch":       self._patch_and_launch,
+            "edit_player":  self._edit_player,
+            "edit_map":     self._edit_map,
+            "edit_party":   self._edit_party,
+            "edit_items":   self._edit_items,
+            "edit_flags":   self._edit_flags,
+            "edit_tmhms":   self._edit_tmhms,
+            "reset_preset": self._reset_preset,
+        }
+
     def _print_status_block(self) -> None:
         player = self.state.get("player") or {}
         map_ = self.state.get("map") or {}
@@ -223,6 +215,7 @@ class DevServer(
         print(f"           tmhms:  {tmhms_desc}")
         print(f"  SameBoy: {sb}")
         print()
+
     def _refresh_inventory_if_stale(self) -> bool | None:
         try:
             mtime = self.sym_path.stat().st_mtime
@@ -236,15 +229,18 @@ class DevServer(
             self.inventory_path.write_text(json.dumps(self.inv, indent=2))
             self.sym_mtime = mtime
         return True
+
     def _save_state(self) -> None:
         # Always autosave to the user's state.json, NEVER over presets/.
         self.state_path.write_text(json.dumps(self.state, indent=2) + "\n")
         self.state_source = self.state_path
+
     def _patch_and_launch(self) -> None:
         rom_path = paths.rom_path(self.root, debug=self.debug)
         self._patch_save(rom_path)
         # Run (or re-run) SameBoy
         self._launch_or_relaunch(rom_path)
+
     def _patch_save(self, rom_path: Path) -> None:
         try:
             report = playtest.patch_save(
@@ -265,6 +261,7 @@ class DevServer(
               f"({len(report.changes)} fields changed)")
         for c in report.changes:
             print(f"  {c}")
+
     def _launch_or_relaunch(self, rom_path: Path, *, silent: bool = False) -> None:
         report = self.emulator.launch(rom_path)
         if report.replaced and not silent:
@@ -273,6 +270,7 @@ class DevServer(
             print(f"warning: {w}", file=sys.stderr)
         if report.launched and not silent:
             print(f"Launching {report.command}...")
+
     def _start_rebuild_watcher(self) -> None:
         def _watch() -> None:
             while not self._watcher_stop.wait(2.0):
@@ -293,8 +291,35 @@ class DevServer(
             target=_watch, daemon=True, name="rebuild-watcher"
         )
         self._watcher_thread.start()
+
     def _pretty(self, path: Path) -> str:
         try:
             return str(path.relative_to(self.root))
         except ValueError:
             return str(path)
+
+
+def _menu_rows(*, running: bool) -> list:
+    """The top menu. Grouped by how often you reach for a thing rather than by
+    what it does — launching and the two you retune between launches first, the
+    four bulk editors below the rule.
+
+    The first row is the only one that is not a constant: it says Re-launch once
+    SameBoy is up, because that press terminates the old instance.
+    """
+    from questionary import Choice, Separator
+
+    return [
+        Choice(("Re-launch" if running else "Launch")
+               + "  (patch .sav, spawn SameBoy)", value="launch"),
+        Choice("Edit player...",          value="edit_player"),
+        Choice("Edit map / position...",  value="edit_map"),
+        Choice("Reset state from preset...", value="reset_preset"),
+        Separator(),
+        Choice("Edit party...",    value="edit_party"),
+        Choice("Edit items...",    value="edit_items"),
+        Choice("Edit flags...",    value="edit_flags"),
+        Choice("Edit TM/HMs...",   value="edit_tmhms"),
+        Separator(),
+        Choice("Quit", value="quit"),
+    ]
