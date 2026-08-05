@@ -124,9 +124,9 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        root = paths.repo_root()
-        rom = paths.rom_path(root)
-        sym = paths.sym_path(root)
+        root = paths.find_repo_root()
+        rom = paths.find_built_rom(root)
+        sym = paths.find_built_sym(root)
     except (paths.RepoNotFound, FileNotFoundError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)

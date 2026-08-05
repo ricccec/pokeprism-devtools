@@ -107,7 +107,7 @@ def _measure_script_size(root: Path, spec, sizes, mp: MapFile):
         print(log[-2000:], file=sys.stderr)
         print("error: measurement build failed — see log above.", file=sys.stderr)
         return None
-    return sizes_from_map(MapFile.parse(paths.map_path()), spec, sizes, before=mp)
+    return sizes_from_map(MapFile.parse(paths.find_built_map()), spec, sizes, before=mp)
 
 
 def _pin_placements(root: Path, spec, placements, *, dry_run: bool) -> None:
@@ -193,7 +193,7 @@ def cmd_consolidate(args) -> int:
     pass, freeing the roomy banks they were parked in. Sizes come from the
     current .map (the maps are stable and already built), so no per-map
     measurement build is needed — just one verify build at the end."""
-    root = paths.repo_root()
+    root = paths.find_repo_root()
     specs = [MapSpec.from_toml(Path(s)) for s in args.spec]
     if not _specs_are_consolidatable(root, specs):
         return 2

@@ -35,7 +35,7 @@ from pathlib import Path
 
 from ..contract import Diagnostic, Severity
 from ..shared.devtools import make_devtools_dir
-from ..shared.paths import RepoNotFound, repo_root
+from ..shared.paths import RepoNotFound, find_repo_root
 from ..contract.suppressions import apply_suppressions
 
 BASELINE = ".devtools/maplint-baseline.json"
@@ -127,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     try:
-        root = args.root or repo_root()
+        root = args.root or find_repo_root()
     except RepoNotFound as e:
         print(f"prism-maplint: {e}", file=sys.stderr)
         return 2

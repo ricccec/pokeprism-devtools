@@ -145,7 +145,7 @@ def _blob_sizes(root: Path, tileset_id: int, syms: SymFile | None) -> list[BlobS
 def load_syms(root: Path) -> SymFile | None:
     """The build's .sym table for bank lookups, or None if no ROM was built."""
     try:
-        return SymFile.load(paths.sym_path(root))
+        return SymFile.load(paths.find_built_sym(root))
     except (FileNotFoundError, OSError):
         return None
 

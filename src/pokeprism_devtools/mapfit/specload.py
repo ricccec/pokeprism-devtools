@@ -33,7 +33,7 @@ def _apply_placement_flags(spec: MapSpec, args) -> None:
 
 
 def _load_spec(args) -> tuple[MapSpec, Path]:
-    root = paths.repo_root()
+    root = paths.find_repo_root()
     spec = MapSpec.from_toml(Path(args.spec))
     _apply_placement_flags(spec, args)
     problems = spec.validate(root)
@@ -45,7 +45,7 @@ def _load_spec(args) -> tuple[MapSpec, Path]:
 
 
 def _load_baseline(root: Path, args) -> MapFile:
-    map_path = Path(args.map) if getattr(args, "map", None) else paths.map_path()
+    map_path = Path(args.map) if getattr(args, "map", None) else paths.find_built_map()
     return MapFile.parse(map_path)
 
 

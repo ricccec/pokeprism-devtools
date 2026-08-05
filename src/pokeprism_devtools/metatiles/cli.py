@@ -132,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
     try:
-        root = paths.repo_root()
+        root = paths.find_repo_root()
     except paths.RepoNotFound as e:
         print(f"prism-metatiles: {e}", file=sys.stderr)
         return 2

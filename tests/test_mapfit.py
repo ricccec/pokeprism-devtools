@@ -174,8 +174,8 @@ def test_consolidate_core() -> None:
 def test_freespace_real_map() -> None:
     print("\npacking.FreeSpace (real .map)")
     try:
-        root = paths.repo_root()
-        mp = MapFile.parse(paths.map_path())
+        root = paths.find_repo_root()
+        mp = MapFile.parse(paths.find_built_map())
     except (paths.RepoNotFound, FileNotFoundError) as e:
         skip("free-space from real .map", str(e))
         return
@@ -689,7 +689,7 @@ def test_header_sizes_match_the_macros() -> None:
 def test_lzcomp_sizing() -> None:
     print("\nmapfit.compressed_blk_size (lzcomp)")
     try:
-        root = paths.repo_root()
+        root = paths.find_repo_root()
     except paths.RepoNotFound as e:
         skip("lzcomp sizing", str(e))
         return
@@ -1033,7 +1033,7 @@ def _make_on_path(root: Path, script: str):
 
 
 def _built_artifacts(root: Path) -> None:
-    """What `paths.map_path()` looks for after a build: a ROM and its .map."""
+    """What `paths.find_built_map()` looks for after a build: a ROM and its .map."""
     (root / "pokeprism_nodebug.gbc").write_bytes(bytes(64))
     (root / "pokeprism_nodebug.map").write_text(_BUILT_MAP)
 
