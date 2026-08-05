@@ -1,11 +1,11 @@
 """Where you stand when the game comes up: which map, and which tile.
 
-    The coord bounds are the only arithmetic here and they are the map's, not a
-    constant: a map is `width x height` **blocks**, a block is two tiles per
-    axis, so a coord runs 0..(blocks*2 - 1) from *that axis's own* dimension.
-    A map the inventory has never heard of falls back to a whole byte, which is
-    what a tile coord is.
-    """
+The coord bounds are the only arithmetic here and they are the map's, not a
+constant: a map is `width x height` **blocks**, a block is two tiles per
+axis, so a coord runs 0..(blocks*2 - 1) from *that axis's own* dimension.
+A map the inventory has never heard of falls back to a whole byte, which is
+what a tile coord is.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from .prompts import _int_in
 
 
 class PositionMenu:
+
     def _edit_map(self) -> None:
         import questionary
         from questionary import Choice
@@ -53,6 +54,7 @@ class PositionMenu:
                 if val is not None:
                     map_[choice] = int(val)
                     self._save_state()
+
     def _coord_bound(self, map_: dict, axis: str) -> int:
         """Upper bound for a coord. The map's block grid is `width × height`
         blocks; each block is 2 tiles per axis, so walkable coords run
