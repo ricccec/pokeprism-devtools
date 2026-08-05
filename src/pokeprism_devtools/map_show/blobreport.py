@@ -87,7 +87,7 @@ def gather_blobs(root: Path, spec: MapSpec, mp: MapFile | None) -> list[BlobRow]
 
 def _load_mapfile(args) -> MapFile | None:
     try:
-        p = Path(args.map) if args.map else paths.map_path()
+        p = Path(args.map) if args.map else paths.find_built_map()
         return MapFile.parse(p)
     except (paths.RepoNotFound, FileNotFoundError, OSError, ValueError):
         return None

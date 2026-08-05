@@ -21,6 +21,7 @@ from pathlib import Path
 from ...dev_server import apply as devapply
 from ...dev_server import inventory, playtest as devplay
 from ...shared import make, paths
+from . import roms
 from ...shared.devtools import make_devtools_dir
 from ...contract import PlayError
 
@@ -84,8 +85,9 @@ def boot(root: Path, emulator: devplay.Emulator, const: str, y: int, x: int, *,
     """
     debug = _debug(target)
     try:
-        rom = paths.rom_path(root, debug=debug, fallback=False)
-        sym = paths.sym_path(root, debug=debug, fallback=False)
+        want = roms.prefer_prism_rom(debug)
+        rom = paths.find_built_rom(root, prefer=want, fallback=False)
+        sym = paths.find_built_sym(root, prefer=want, fallback=False)
     except FileNotFoundError as e:
         # Nothing built. Patching a save against a ROM that isn't there would read
         # map headers out of whatever *is* there, which is nothing.

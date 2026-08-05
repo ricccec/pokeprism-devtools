@@ -16,6 +16,7 @@ import sys
 
 from pokeprism_devtools.hacks.prism import (
     eventheader, maps, mapsource, party, render, savefile, species)
+from pokeprism_devtools.hacks.prism import roms as prism_roms
 from pokeprism_devtools.hacks.prism.mapformat import PRISM_FORMAT
 from pokeprism_devtools.shared import constants, lz, paths, symfile
 from pokeprism_devtools.shared.overworld import blockdata, people, spritevram
@@ -29,14 +30,14 @@ def check(label: str, cond: bool, detail: str = "") -> None:
 
 
 def main() -> None:
-    root = paths.repo_root()
+    root = paths.find_repo_root()
     print(f"Repo root: {root}")
 
     print("\npaths.py")
-    rom = paths.rom_path(root)
-    check("rom_path() resolves", rom.exists(), str(rom.name))
-    sym = paths.sym_path(root)
-    check("sym_path() resolves", sym.exists(), str(sym.name))
+    rom = paths.find_built_rom(root)
+    check("find_built_rom() resolves", rom.exists(), str(rom.name))
+    sym = paths.find_built_sym(root)
+    check("find_built_sym() resolves", sym.exists(), str(sym.name))
 
     print("\nsymfile.py")
     syms = symfile.SymFile.load(sym)
@@ -105,7 +106,7 @@ def main() -> None:
         )
 
     print("\nblockdata.py — load")
-    rom = paths.rom_path(root)
+    rom = paths.find_built_rom(root)
     caper = blockdata.load(rom, syms, group=2, map_id=5, name="CAPER_HOUSE",
                            format=PRISM_FORMAT)
     check(
@@ -372,8 +373,9 @@ def main() -> None:
     print("\nspritevram.py — VRAM allocator vs a real game-written save")
     truth = root / "pokeprism_ember_west_79_15.sav"
     try:
-        drom = paths.rom_path(root, debug=True, fallback=False)
-        dsym = paths.sym_path(root, debug=True, fallback=False)
+        want = prism_roms.prefer_prism_rom(True)
+        drom = paths.find_built_rom(root, prefer=want, fallback=False)
+        dsym = paths.find_built_sym(root, prefer=want, fallback=False)
     except FileNotFoundError:
         drom = None
     if truth.exists() and drom is not None and drom.exists():
@@ -603,7 +605,7 @@ def main() -> None:
     check("all pockets are known values", not bad_pockets, str(bad_pockets))
 
     print("\ndev_server — apply items to .sav")
-    rom_file = paths.rom_path(root)
+    rom_file = paths.find_built_rom(root)
     template_sav = rom_file.with_suffix(".sav")
     if not template_sav.exists():
         print(f"  (no template .sav at {template_sav.name} — skipping items apply check)")
@@ -786,7 +788,7 @@ def main() -> None:
 
     print("\nmapfile.py")
     from pokeprism_devtools.shared import mapfile as mapfile_mod
-    mp = mapfile_mod.MapFile.parse(paths.map_path(root))
+    mp = mapfile_mod.MapFile.parse(paths.find_built_map(root))
     rom = mp.rom_banks()
     check("at least 118 ROM banks", len(rom) >= 118, f"{len(rom)}")
     failing = [
@@ -804,7 +806,7 @@ def main() -> None:
 
     # The .map only lists banks the linker touched; the physical cartridge has
     # trailing $ff padding banks rgbfix adds to reach a valid ROM size.
-    total = paths.rom_bank_count(paths.rom_path(root))
+    total = paths.count_rom_banks(paths.find_built_rom(root))
     check("rom_bank_count reads a power-of-two bank count",
           total in (2, 4, 8, 16, 32, 64, 128, 256, 512), f"{total} banks")
     used_before = len(mp.rom_banks())
@@ -832,7 +834,7 @@ def main() -> None:
                   f"{len(pals)} palettes")
 
     # `rom` was reassigned to a list of banks in the mapfile section above.
-    rom_file = paths.rom_path(root)
+    rom_file = paths.find_built_rom(root)
     rmap = next((m for m in map_defs if m.name == "AZALEA_TOWN"), map_defs[0])
     bd = blockdata.load(rom_file, syms, rmap.group, rmap.map_id, name=rmap.name,
                         format=PRISM_FORMAT)

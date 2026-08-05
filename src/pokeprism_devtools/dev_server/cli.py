@@ -33,6 +33,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from pokeprism_devtools.hacks.prism import roms
 from pokeprism_devtools.shared import paths
 from pokeprism_devtools.shared.devtools import make_devtools_dir
 
@@ -102,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = p.parse_args(argv)
 
-    root = paths.repo_root()
+    root = paths.find_repo_root()
     make_devtools_dir(root)
     layout = playtest.Layout.under(root)
     inventory_path = layout.inventory
@@ -110,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     presets_dir = layout.presets
     sav_backups_dir = layout.backups
 
-    sym_path_resolved = paths.sym_path(root, debug=args.debug)
+    sym_path_resolved = paths.find_built_sym(root, prefer=roms.prefer_prism_rom(args.debug))
 
     if args.inventory_only:
         inv = inventory.load_or_build(
@@ -155,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         state_source = "built-in no-op default"
     print(f"State loaded from {state_source}")
 
-    rom_path = paths.rom_path(root, debug=args.debug)
+    rom_path = paths.find_built_rom(root, prefer=roms.prefer_prism_rom(args.debug))
     target_sav = args.out if args.out is not None else rom_path.with_suffix(".sav")
     # Default the template to the ROM's adjacent .sav (the "live" save).
     # That way `--out PATH` alone works as advertised: read the ROM's

@@ -128,7 +128,7 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        root = paths.repo_root()
+        root = paths.find_repo_root()
     except paths.RepoNotFound as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(2)

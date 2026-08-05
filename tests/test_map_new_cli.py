@@ -546,7 +546,7 @@ def test_main_outside_a_repo(tmp: Path) -> None:
     check("exit code 2", rc == 2, f"got {rc}")
     check("stdout is empty", out == "", out)
     check("stderr names the tool",
-          err.startswith("prism-newmap: Could not find pokeprism repo root from "),
+          err.startswith("prism-newmap: Could not find a pret repo root from "),
           repr(err))
 
 

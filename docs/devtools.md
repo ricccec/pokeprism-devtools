@@ -1036,7 +1036,7 @@ All tools share the `pokeprism_devtools` package. To add a new one:
    from pokeprism_devtools import paths, symfile, constants, savefile
    ```
 
-3. Use `paths.repo_root()`, `paths.rom_path()`, `paths.sym_path()` to
+3. Use `paths.find_repo_root()`, `paths.find_built_rom()`, `paths.find_built_sym()` to
    locate the user's pokeprism artifacts — never hardcode paths.
 4. Expose the entry point in `pyproject.toml`:
 

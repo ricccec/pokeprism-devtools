@@ -30,7 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     try:
-        root = paths.repo_root()
+        root = paths.find_repo_root()
         spec = build_spec(root, args.label)
     except (paths.RepoNotFound, MapNotFound) as e:
         print(f"error: {e}", file=sys.stderr)

@@ -316,7 +316,7 @@ def test_cli_outside_a_repo(tmp: Path) -> None:
     check("exit code is 2", rc == 2, f"got {rc}")
     check("stdout is empty", out == "", out)
     check("stderr names the tool and the missing root",
-          err.startswith("prism-maps: Could not find pokeprism repo root from ")
+          err.startswith("prism-maps: Could not find a pret repo root from ")
           and err.endswith("found in any parent directory.\n"), repr(err))
 
 

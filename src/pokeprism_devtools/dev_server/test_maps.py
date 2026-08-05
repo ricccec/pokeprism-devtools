@@ -23,7 +23,7 @@ import sys
 import time
 import traceback
 
-from pokeprism_devtools.hacks.prism import savefile
+from pokeprism_devtools.hacks.prism import roms, savefile
 from pokeprism_devtools.shared import paths, symfile
 from pokeprism_devtools.shared.devtools import make_devtools_dir
 
@@ -49,9 +49,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="force rebuild of inventory.json")
     args = p.parse_args(argv)
 
-    root = paths.repo_root()
-    sym_path = paths.sym_path(root, debug=args.debug)
-    rom_path = paths.rom_path(root, debug=args.debug)
+    root = paths.find_repo_root()
+    want = roms.prefer_prism_rom(args.debug)
+    sym_path = paths.find_built_sym(root, prefer=want)
+    rom_path = paths.find_built_rom(root, prefer=want)
     template_sav = rom_path.with_suffix(".sav")
 
     if not template_sav.exists():

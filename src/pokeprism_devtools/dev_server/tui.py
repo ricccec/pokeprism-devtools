@@ -19,6 +19,7 @@ import sys
 import threading
 from pathlib import Path
 
+from pokeprism_devtools.hacks.prism import roms
 from pokeprism_devtools.shared import paths
 
 from . import apply, inventory, playtest
@@ -117,6 +118,12 @@ class DevServer(
         self._watcher_stop = threading.Event()
         self._watcher_thread: threading.Thread | None = None
 
+    def _prefer_rom(self) -> tuple[str, ...]:
+        """Which of prism's ROMs this session wants, as `find_built_rom` takes
+        it. Declared on prism's side of the seam because the `Makefile` names
+        the two targets but not which one carries symbols."""
+        return roms.prefer_prism_rom(self.debug)
+
     def run(self) -> int:
         import questionary
 
@@ -176,7 +183,7 @@ class DevServer(
         map_ = self.state.get("map") or {}
         sb = "running" if self.emulator.running else "not running"
         sym_when = dt.datetime.fromtimestamp(self.sym_mtime).strftime("%Y-%m-%d %H:%M:%S")
-        rom = paths.rom_path(self.root, debug=self.debug)
+        rom = paths.find_built_rom(self.root, prefer=self._prefer_rom())
 
         print()
         print(f"  Build:   {rom.name}    sym mtime: {sym_when}")
@@ -250,7 +257,7 @@ class DevServer(
         self.state_source = self.state_path
 
     def _patch_and_launch(self) -> None:
-        rom_path = paths.rom_path(self.root, debug=self.debug)
+        rom_path = paths.find_built_rom(self.root, prefer=self._prefer_rom())
         self._patch_save(rom_path)
         # Run (or re-run) SameBoy
         self._launch_or_relaunch(rom_path)
@@ -293,7 +300,8 @@ class DevServer(
                 if self._refresh_inventory_if_stale(announce=False) \
                         and self.auto_relaunch:
                     self._launch_or_relaunch(
-                        paths.rom_path(self.root, debug=self.debug), silent=True)
+                        paths.find_built_rom(self.root, prefer=self._prefer_rom()),
+                        silent=True)
 
         self._watcher_thread = threading.Thread(
             target=_watch, daemon=True, name="rebuild-watcher"

@@ -353,7 +353,7 @@ def test_cli_outside_a_repo(tmp: Path) -> None:
     check("exit code 2", rc == 2, f"got {rc}")
     check("stdout is empty", out == "", out)
     check("stderr reports the missing root",
-          err.startswith("error: Could not find pokeprism repo root from "), repr(err))
+          err.startswith("error: Could not find a pret repo root from "), repr(err))
 
 
 def main() -> int:

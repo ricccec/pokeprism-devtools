@@ -8,7 +8,7 @@ import os
 import sys
 from dataclasses import asdict
 
-from ..shared.paths import RepoNotFound, repo_root
+from ..shared.paths import RepoNotFound, find_repo_root
 from .mapinfo import _NULLABLE_SORTS, _SORT_KEYS, MapInfo, collect_map_info
 from .table import render_table
 
@@ -77,7 +77,7 @@ def main() -> None:
     args = _build_parser().parse_args()
 
     try:
-        root = repo_root()
+        root = find_repo_root()
     except RepoNotFound as e:
         print(f"prism-maps: {e}", file=sys.stderr)
         sys.exit(2)
