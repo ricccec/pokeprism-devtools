@@ -44,6 +44,7 @@ oracle — see [the half that had no test](#the-copy-that-had-no-oracle).
 - **The rename found thirteen docstrings already a year stale** — [reading every hit paid twice](#the-rename-found-what-a-rename-would-have-preserved).
 - **Three of the rename's hits were live guards spelled as strings** — [they would have gone on passing](#three-string-literals-were-guarding-nothing).
 - **A's dependency list was wrong: it has none** — [the packaging measurement](#packaging-measured-not-restated).
+- **The oracle this phase built cannot run in a carved repo, so the carve goes last** — [4 → 5 → 3b](#why-the-carve-goes-last).
 - Re-verified: `contract/` still imports only `shared`; the carve path list still matches — [step 1](#re-verification-step-1).
 
 ## Re-verification (step 1)
@@ -414,6 +415,42 @@ wrong — the seed was prepended *above* `from __future__ import annotations`, s
 three "catches" were `SyntaxError`s rather than guards firing. **A falsification
 needs falsifying too**; the second attempt inserted after the `__future__` line
 and produced three real failures naming `asmedit`.
+
+## Why the carve goes last
+
+**Decided 2026-08-05 by the user**, after Phase 3 closed. `refactor-plan.md` now
+runs **4 → 5 → 3b**; the name `3b` stays because four documents cross-reference it.
+
+The plan said the carve comes *"after 3, never before"*. That is a **floor**, and it
+was being read as a **position**. Three findings move it to the end, and the first
+is a property of the thing this phase just built:
+
+- **Phase 3's oracle cannot run in a carved repo.** `tests/test_products.py` walks
+  `src/pokeprism_devtools/`, requires >100 modules, and asserts every one belongs to
+  one of *four* products. Repo A alone holds ~40 modules and no `contract/`,
+  `studio/` or `hacks/` at all, so the test fails on its first check in every one of
+  the four repos. It is a **monorepo-only instrument by construction** — which means
+  every phase it should be watching has to happen *before* the carve, not after.
+  Carving next would retire the guarantee on the same day it was won.
+- **Phase 5's family port is a D→C migration.** The seven rule modules are 1,410 LOC
+  in `maplint`, which is D, and the plan states that decoupling them *is* the
+  family-rule port — code that ends up serving `hacks/vanilla/lint/`, which is C.
+  In this tree that is an ordinary refactor with one suite under it. After a carve it
+  is a move between two repos with two histories, two ledgers and a version-pinned
+  dependency, and nothing able to see both sides at once.
+- **Phase 0 already measured the cost of carving early.** *"Carving early bought the
+  rehearsal, not the repo"* — the past is immutable and the folders are stable paths,
+  so a later carve reaches the same history, while an earlier one leaves a second
+  copy free to drift through every phase that follows.
+
+Phase 4 does **not** argue either way: its three targets — `studio/session.py` (597),
+`dev_server/tui.py` (914), `studio/app.py` (523) — are each inside one product, so a
+carve would make that phase inconvenient rather than harder.
+
+**What would overturn this**, recorded so it is recognised rather than re-argued: an
+external consumer. Someone needing to `pip install` product A, or to write a
+third-party adapter against B, wants repos more than this repo wants an oracle.
+There is no such consumer today.
 
 ## Packaging, measured not restated
 

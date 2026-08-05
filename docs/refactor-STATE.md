@@ -42,8 +42,9 @@ were taken; re-verify the ones your phase leans on, not all of them (plan →
 **No product exists yet.** What Phase 0 delivered is a proven carve and a correct path
 list: `scripts/carve-product-a.sh` — re-run it, do not re-derive it. Its output sits at
 `~/code/ricccec/pokecrystal-asm-lib-history-2026-08-03` (`main`, 88 commits, 34 files,
-no remote) as a **dated backup only**; Phase 3 re-carves and supersedes it. B, C and D
-still wait on Phase 2, the phase that breaks the `hacks → studio` cycle.
+no remote) as a **dated backup only**; **3b** re-carves and supersedes it. Phases 2
+and 3 removed what blocked B, C and D, so nothing gates the real carve but its
+position — last, after 4 and 5.
 
 - **A naive carve loses A's first month** — 73 commits by folder, 88 with every
   historical spelling; the 15 lost are the birth of the LZ decompressor, the sym
@@ -69,13 +70,13 @@ still wait on Phase 2, the phase that breaks the `hacks → studio` cycle.
 - `--no-local` + `filter-repo` rewrites **every branch**; the carve arrived with four,
   all strict ancestors, checked before pruning.
 - SHAs are rewritten, so any SHA quoted in `docs/` never resolves in A.
-- **A is history plus source and nothing else** — packaging, entry points and all 38
-  tests are outside its four folders. Phase 3 owes A a packaging story.
+- **A is history plus source and nothing else** — packaging, entry points and all 39
+  tests are outside its four folders. Phase 3 paid that with a decision table.
 - **Carving early bought the rehearsal, not the repo** — the plan's own "not
   now-or-never" holds: this repo's past is immutable and A's four folders are stable
-  paths, so Phase 3 re-carves the same history. The snapshot takes **no commits**, the
-  `wiring/` rename moves to Phase 3, and A's code keeps changing **here** — `usage/` is
-  one of Phase 1's six packages.
+  paths, so 3b re-carves the same history. The snapshot takes **no commits**, and A's
+  code keeps changing **here** through Phase 5. This finding is now load-bearing
+  twice — it is one of the three reasons the carve was scheduled last.
 - Re-verified: A imports nothing from `studio`, `hacks` or `maplint` — 25 grep hits,
   **every one in a docstring**. The word says entangled; the import says free.
 
@@ -316,23 +317,6 @@ map and every cross-product arrow. Suite **35/38 → 36/39**. 3b is unblocked.
   `pokeprism_devtools.hacks` entry-point group spans three distributions, which
   makes it a published ABI. Tests divide A 3 · B 3 · C 13 · D 19.
 
-## Phase 3b · carve the remaining products — not started
-
-**Plan:** not written · **Findings:** none yet
-
-Four ledgers, four repos, the import rewrite, the test split, and the packaging
-files. **Unblocked 2026-08-04** — Phase 3 closed all five edges and
-`tests/test_products.py` asserts the split, so a carve can now be proved correct.
-Where the repos go, and whether this repo stays the editable copy through Phases 4
-and 5, is 3b's to ask (deferred by the user 2026-08-04).
-
-What Phase 3 leaves on 3b's desk, all of it written down rather than waiting to be
-discovered: the packaging decision table (Phase 3's PLAN), three files that moved
-into A from outside it and still owe ledger rows (named in
-`scripts/carve-product-a.sh`, which now carries **both** the `wiring` and `asmedit`
-spellings because a history filter reads the old one forever), and the test split —
-A owns 3 of 39, and `test_studio.py`/`test_studio_tui.py` import all four products.
-
 ## Phase 4 · the god objects — not started
 
 **Plan:** not written · **Findings:** none yet
@@ -347,3 +331,32 @@ god objects". Its characterization test is a mandatory prerequisite, not a step.
 Inherits one unanswered question from Phase −1: whether `rules_geometry.py`'s rules
 are Gen-2 facts or prism facts. The seven prism-importing rule modules are listed in
 `refactor-phase--1-STATE.md`.
+
+## Phase 3b · carve the remaining products — **last, after 4 and 5**
+
+**Plan:** not written · **Findings:** none yet
+
+Four ledgers, four repos, the import rewrite, the test split, and the packaging
+files. **Unblocked 2026-08-04** by Phase 3, then **scheduled last 2026-08-05** by
+the user. The name stays `3b` because four documents cross-reference it.
+
+- **The carve goes after Phases 4 and 5, not before** — "after 3, never before" was
+  a floor being read as a position. Three findings move it: Phase 3's
+  `tests/test_products.py` is a **monorepo-only instrument** and fails its first
+  check in all four carved repos, so every phase it should watch must precede it;
+  Phase 5's family port is a **D→C migration**, one refactor here and a two-repo
+  coordination problem after; and Phase 0 measured that an early carve buys the
+  rehearsal, not the repo, leaving a copy free to drift. Phase 4 is neutral — its
+  three targets each sit inside one product. **An external consumer of A or B would
+  overturn this**; there is none. → `refactor-phase-3-STATE.md`, "Why the carve
+  goes last".
+- **This repo stays every product's only editable copy through Phases 4 and 5** —
+  which answers the question deferred on 2026-08-04. Where the four repos finally
+  go is still 3b's to ask.
+
+What Phase 3 leaves on 3b's desk, all of it written down rather than waiting to be
+discovered: the packaging decision table (Phase 3's PLAN), three files that moved
+into A from outside it and still owe ledger rows (named in
+`scripts/carve-product-a.sh`, which now carries **both** the `wiring` and `asmedit`
+spellings because a history filter reads the old one forever), and the test split —
+A owns 3 of 39, and `test_studio.py`/`test_studio_tui.py` import all four products.

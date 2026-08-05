@@ -179,22 +179,18 @@ assignment for every surveyed module, a three-way call per CLI, the B-vs-C
 decision, three measurements that each moved an answer, two defects since fixed on
 the untouched tree, and one question handed to Phase 5.
 
-### Phase 0 — Split the git history · **tooling proven; every carve is Phase 3's**
-Before any file moves. Clone once per product and `git filter-repo --path <dir>` to
-carve history by folder, so each product keeps the "why" behind its code instead of
-starting at one squashed commit. Two corrections to the naive version:
+### Phase 0 — Split the git history · **tooling proven; every carve is 3b's**
+Clone once per product and `git filter-repo --path <dir>`, so each product keeps the
+"why" behind its code instead of starting at one squashed commit. The correction to
+the naive version: **not now-or-never** — `filter-repo` takes multiple `--path`
+arguments, so a folder renamed later still carves whole by naming both spellings.
+Losing history takes forgetting, not moving.
 
-**Not now-or-never:** `filter-repo` takes multiple `--path` arguments, so a folder
-renamed later still carves with full history by naming both paths — losing history
-takes forgetting, not moving. **Only A can split now:** B, C and D are fused by the
-`hacks → studio` cycle, and splitting today produces two repos that import each other.
-
-So A was carved first — zero dependencies, and the carve doubles as proof the tooling
-works — then B/C/D after **Phase 2**, whose acceptance test *is* the cycle being gone.
-**The early carve is a rehearsal, not a
-deliverable:** until Phase 3, **this repo is every
-product's only editable copy**, and the carved repo takes **no commits at all**. A carved repo is named
-`-history-<date>` so its status is legible from the folder name alone.
+A was carved first, having zero dependencies, and that carve is a **rehearsal, not a
+deliverable**: it takes no commits at all, and until 3b **this repo is every
+product's only editable copy**. A carved repo is named `-history-<date>` so its
+status is legible from the folder name alone. Phase 3 closed the last cross-product
+edge, so nothing now blocks the real carve but the order it runs in.
 
 ### Phase 1 — Calibration: the six CLI packages · **done; rules in its PLAN**
 `metatiles`, `mapfit`, `usage`, `map_new`, `map_show`, `map_inspect`. Split
@@ -215,23 +211,18 @@ four bare-verb names. **Test-first — eight of the eleven are executed by nothi
 and shortening those is a rewrite with no oracle, the same objection Phase 4 makes
 below about `DevServer`.
 
-### Phase 2 — The keystone: give `Hack` and its vocabulary one home
+### Phase 2 — The keystone: give `Hack` and its vocabulary one home · **done**
 **Plan: `refactor-phase-2-PLAN.md`** — what the package is, and what is not.
 
 The phase that makes the goal true: the census's tier 1 and the `hacks → studio`
 cycle. `contract/` is a package neither the IDE nor the adapters own; the map
 entities, `Hack` and its six protocols, and the `Action`/`Field` vocabulary all live
-there, split by domain into files named for what they define.
+there, split by domain into files named for what they define. Its acceptance test,
+`tests/test_contract.py`, asserts the arrow statically *and* at runtime.
 
-**Acceptance test, falsifiable:** `tests/test_contract.py` — the arrow, statically
-and at runtime, plus the adapter edges named one by one. The check the seam's
-docstring always invited, pointed at the files where it would have caught something.
-
-### Phase 3 — Make the products separable · **`refactor-phase-3-PLAN.md`**
-Not mechanical: five cross-product edges survive Phase 2, so the folders are not the products yet.
-
-### Phase 3b — Carve them
-Four ledgers, four repos, the import rewrite, the test split — after 3, never before.
+### Phase 3 — Make the products separable · **done; `refactor-phase-3-PLAN.md`**
+Not mechanical: five cross-product edges survived Phase 2, so the folders were not
+the products yet. All five are closed and `tests/test_products.py` asserts it.
 
 ### Phase 4 — The god objects
 Deliberately *after* the keystone, because `Session`'s seams move once the
@@ -252,3 +243,13 @@ Seven rule modules import `hacks.prism`, and decoupling them *is* the family-rul
 port. Gated on a survey — for each rule, Gen-2 fact or prism fact? Same question as
 Phase −1, one layer up. Phase −1 confirmed the seven, carved two neutral modules out
 ahead of the port, and left one module it declined to answer without evidence.
+
+### Phase 3b — Carve them · **last, after 4 and 5** — moved 2026-08-05
+Four ledgers, four repos, the import rewrite, the test split, the packaging files.
+Name stays `3b` for the reason 1b keeps its number: four documents cross-reference
+these. "After 3, never before" was a floor read as a position; the floor holds and
+the position moved, because Phase 3's oracle cannot run in a carved repo, Phase 5's
+family port is a D→C migration, and Phase 0 measured that an early carve buys a
+rehearsal and a copy that drifts — `refactor-phase-3-STATE.md` → "Why the carve
+goes last". **Only an external consumer of A or B outranks that**, and there is
+none yet.
