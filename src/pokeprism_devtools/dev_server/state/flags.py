@@ -46,7 +46,7 @@ class FlagMenu:
 
             action = questionary.select(
                 f"{label} — {len(set_flags)} set",
-                choices=_flag_rows(set_flags, label),
+                choices=_build_flag_rows(set_flags, label),
             ).ask()
             if action is None or action[0] == "back":
                 return
@@ -85,7 +85,7 @@ class FlagMenu:
             self._save_state()
 
 
-def _flag_rows(set_flags: list[str], label: str) -> list:
+def _build_flag_rows(set_flags: list[str], label: str) -> list:
     """The rows one flag group offers. What is set is listed alphabetically and
     each row unsets itself; the picker below is the same job for a list too long
     to walk."""
