@@ -149,9 +149,19 @@ def classify_exit_code(name: str, code: int) -> str:
     return FAIL if code else OK
 
 
+def format_result_line(result: Result) -> str:
+    return (f"  [{result.status:>7}] {result.name}  {result.seconds:.1f}s"
+            f"{'  — ' + result.note if result.note else ''}")
+
+
 def rerun_flaky_alone(results: list[Result], timeout: int) -> None:
     """Re-run failed flaky tests one at a time, in place, and keep the second
-    answer — the batch is over, so nothing else is running now."""
+    answer — the batch is over, so nothing else is running now.
+
+    The retry prints its own line. It has to: the batch line is already on
+    screen saying the test failed, and a second answer that only reaches the
+    exit code leaves a reader looking at a failure the run did not fail on.
+    """
     for i, r in enumerate(results):
         if r.name not in FLAKY_IN_BATCH or not r.is_unexpected:
             continue
@@ -159,6 +169,7 @@ def rerun_flaky_alone(results: list[Result], timeout: int) -> None:
         retry = run_one_test(TESTS / f"{r.name}.py", timeout)
         retry.note = ("passed alone, so the batch failure was the flake"
                       if retry.status == OK else "failed alone too — real")
+        print(format_result_line(retry))
         results[i] = retry
 
 
@@ -168,9 +179,7 @@ def run_all_tests(paths: list[Path], jobs: int, timeout: int) -> list[Result]:
         results = []
         for future in futures:
             result = future.result()
-            print(f"  [{result.status:>7}] {result.name}"
-                  f"  {result.seconds:.1f}s"
-                  f"{'  — ' + result.note if result.note else ''}")
+            print(format_result_line(result))
             results.append(result)
     return results
 
@@ -192,6 +201,9 @@ def print_report(results: list[Result], verbose: bool, skipped_slow: list[str],
         print(f"  skipped: {name} — {note}")
     for name in tally[RED]:
         print(f"  known red: {name} — {KNOWN_RED[name]}")
+    for r in results:
+        if r.note and r.status != SKIPPED:
+            print(f"  re-run alone: {r.name} — {r.note}")
     for name in tally[FIXED]:
         print(f"  FIXED: {name} passes now — delete its KNOWN_RED row")
     for name in tally[FAIL]:
