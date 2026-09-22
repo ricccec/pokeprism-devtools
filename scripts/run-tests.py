@@ -28,11 +28,17 @@ the day the test starts passing nobody notices. So a `KNOWN_RED` test that goes
 green fails this script, and the fix is to delete its row deliberately. That
 shape is why `KNOWN_LEAKS` in `tests/test_products.py` caught six stale rows.
 
-**`test_studio_tui` fails intermittently in a batch and passes alone.** The
-cause is unidentified — separate processes should not share anything — so the
-rule is empirical: a flaky test that fails is re-run by itself, after every
-other test has finished, and the second answer is the one reported. Both are
-printed, because "passed on retry" is a fact about the suite worth seeing.
+**`test_studio` and `test_studio_tui` fail intermittently in a batch and pass
+alone.** The cause is unidentified — separate processes should not share
+anything — so the rule is empirical: a flaky test that fails is re-run by
+itself, after every other test has finished, and the second answer is the one
+reported. Both are printed, because "passed on retry" is a fact about the suite
+worth seeing.
+
+`test_studio` was added to that list on 2026-09-22, after a `--fast` run failed
+it and the next identical run passed. It is the reason the list is a list: the
+first version held only the TUI test, so the one case the retry existed for was
+the one case it did not cover.
 """
 
 from __future__ import annotations
@@ -70,7 +76,7 @@ KNOWN_RED = {
 }
 
 #: Fails in a batch, passes alone. Re-run by itself before being believed.
-FLAKY_IN_BATCH = {"test_studio_tui"}
+FLAKY_IN_BATCH = {"test_studio", "test_studio_tui"}
 
 #: Over two minutes each; the rest of the suite is under a second a file.
 #: `--fast` drops these, and says so rather than quietly shrinking the run.
