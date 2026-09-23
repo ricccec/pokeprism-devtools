@@ -33,7 +33,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from pokeprism_devtools.hacks.prism import roms
+from pokeprism_devtools.hacks.prism import claim, roms
 from pokeprism_devtools.shared import paths
 from pokeprism_devtools.shared.devtools import make_devtools_dir
 
@@ -105,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         root = paths.find_repo_root()
+        claim.require_prism_tree(root)
     except paths.RepoNotFound as e:
         print(f"prism-dev: {e}", file=sys.stderr)
         return 2

@@ -18,6 +18,7 @@ from pathlib import Path
 
 from ...contract import Hack
 from ...contract.mount import NearMiss
+from ...shared.paths import RepoNotFound
 
 #: The two files every prism map parser starts from. Their *presence* is what
 #: makes a tree prism-shaped; every other gen-2 hack keeps these facts elsewhere.
@@ -25,11 +26,30 @@ _LAYOUT = ("maps/second_map_headers.asm",
            "constants/map_dimension_constants.asm")
 
 
+def find_missing_layout(root: Path) -> list[str]:
+    """Which of prism's two layout files this tree lacks — empty if it is prism's."""
+    return [rel for rel in _LAYOUT if not (root / rel).exists()]
+
+
+def require_prism_tree(root: Path) -> None:
+    """Raise :class:`~...shared.paths.RepoNotFound` unless this tree is prism's.
+
+    It raises what `find_repo_root` raises because a CLI asking "where is my
+    tree" has had the same answer either way: there isn't one here. Every
+    caller already guards that call, so the refusal needs no new handler.
+    """
+    missing = find_missing_layout(root)
+    if missing:
+        raise RepoNotFound(
+            f"{root} is a pret tree, but not a pokeprism one — it has no "
+            f"{' and no '.join(missing)}.")
+
+
 def claims(root: Path) -> Hack | NearMiss:
     """Prism's tree, or a near-miss saying which of its two files is missing.
     A tree carrying both is prism's; one carrying neither is simply not prism's
     to claim, and the near-miss says so by naming what prism reads."""
-    missing = [rel for rel in _LAYOUT if not (root / rel).exists()]
+    missing = find_missing_layout(root)
     if not missing:
         return build(root)
     lacks = "neither" if len(missing) == len(_LAYOUT) else f"no {', '.join(missing)}"

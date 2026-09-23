@@ -8,6 +8,7 @@ import os
 import sys
 from pathlib import Path
 
+from ..hacks.prism import claim
 from ..shared import paths
 from ..shared.devtools import make_devtools_dir
 from ..shared.viewer import is_stale, open_images, parse_tileset_id
@@ -133,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         root = paths.find_repo_root()
+        claim.require_prism_tree(root)
     except paths.RepoNotFound as e:
         print(f"prism-metatiles: {e}", file=sys.stderr)
         return 2

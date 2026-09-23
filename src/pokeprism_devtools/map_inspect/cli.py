@@ -8,6 +8,7 @@ import os
 import sys
 from dataclasses import asdict
 
+from ..hacks.prism import claim
 from ..shared.paths import RepoNotFound, find_repo_root
 from .mapinfo import _NULLABLE_SORTS, _SORT_KEYS, MapInfo, collect_map_info
 from .table import render_table
@@ -78,6 +79,7 @@ def main() -> None:
 
     try:
         root = find_repo_root()
+        claim.require_prism_tree(root)
     except RepoNotFound as e:
         print(f"prism-maps: {e}", file=sys.stderr)
         sys.exit(2)
