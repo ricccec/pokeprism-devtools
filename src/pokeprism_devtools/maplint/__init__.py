@@ -35,6 +35,7 @@ from pathlib import Path
 
 from ..contract import Diagnostic, Severity
 from ..shared.devtools import make_devtools_dir
+from ..hacks.prism import claim
 from ..shared.paths import RepoNotFound, find_repo_root
 from ..contract.suppressions import apply_suppressions
 
@@ -128,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         root = args.root or find_repo_root()
+        claim.require_prism_tree(root)
     except RepoNotFound as e:
         print(f"prism-maplint: {e}", file=sys.stderr)
         return 2

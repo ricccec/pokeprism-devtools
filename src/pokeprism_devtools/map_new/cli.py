@@ -6,6 +6,7 @@ import sys
 
 from ..mapfit import mapwire
 from ..shared.devtools import make_devtools_dir
+from ..hacks.prism import claim
 from ..shared.paths import RepoNotFound, find_repo_root
 from .template import place_blk, write_template
 from .wizard import _Aborted, _gather_spec
@@ -81,6 +82,7 @@ def main() -> None:
 
     try:
         root = find_repo_root()
+        claim.require_prism_tree(root)
     except RepoNotFound as e:
         print(f"prism-newmap: {e}", file=sys.stderr)
         sys.exit(2)

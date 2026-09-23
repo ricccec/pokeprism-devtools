@@ -16,7 +16,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from ..hacks.prism import maps
+from ..hacks.prism import claim, maps
 from ..hacks.prism.mapformat import PRISM_FORMAT
 from ..shared import paths, symfile
 from ..shared.devtools import make_devtools_dir
@@ -125,6 +125,7 @@ def main() -> None:
 
     try:
         root = paths.find_repo_root()
+        claim.require_prism_tree(root)
         rom = paths.find_built_rom(root)
         sym = paths.find_built_sym(root)
     except (paths.RepoNotFound, FileNotFoundError) as e:

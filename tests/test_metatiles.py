@@ -246,6 +246,15 @@ def _fixture_repo(tmp: Path) -> Path:
     (root / "Makefile").write_text("all:\n")
     (root / "main.asm").write_text('INCLUDE "constants.asm"\n')
 
+    # The two files whose presence is what makes a tree prism's. `metatiles`
+    # reads neither, but it refuses a tree that is not prism's before it reads
+    # anything — and a fixture standing in for a prism tree should carry what
+    # prism is recognised by.
+    (root / "maps" / "second_map_headers.asm").write_text(
+        "CaperRidge_SecondMapHeader::\n", encoding="utf-8")
+    (root / "constants" / "map_dimension_constants.asm").write_text(
+        "\tmapgroup CaperRidge, 9, 10\n", encoding="utf-8")
+
     (root / "constants" / "tilemap_constants.asm").write_text(
         "const_value = 0\n"
         "\tconst TILESET_CAPER ;0\n"
