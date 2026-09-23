@@ -103,7 +103,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = p.parse_args(argv)
 
-    root = paths.find_repo_root()
+    try:
+        root = paths.find_repo_root()
+    except paths.RepoNotFound as e:
+        print(f"prism-dev: {e}", file=sys.stderr)
+        return 2
+
     make_devtools_dir(root)
     layout = playtest.Layout.under(root)
     inventory_path = layout.inventory
