@@ -30,7 +30,7 @@ import re
 from pathlib import Path
 
 from ..shared.edits import Edit, apply_edits
-from ..hacks.prism.mapspec import INTO, MapSpec
+from ..hacks.prism.maps.mapspec import INTO, MapSpec
 from .asmblocks import (
     WiringError, _append_into_section, _group_block, _label_block,
     _last_match_in, _place, _section_exists,

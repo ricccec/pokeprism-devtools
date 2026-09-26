@@ -13,8 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..hacks.prism.blobsizes import compressed_blk_size, secondary_size
-from ..hacks.prism.mapspec import INTO, MapSpec
+from ..hacks.prism.maps.blobsizes import compressed_blk_size, secondary_size
+from ..hacks.prism.maps.mapspec import INTO, MapSpec
 from ..shared.mapfile import MapFile
 
 

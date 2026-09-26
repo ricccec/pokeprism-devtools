@@ -30,9 +30,14 @@ from functools import cached_property
 from pathlib import Path
 
 from ... import contract
-from . import blocksrc, dialogue, eventheader as eh
-from . import maps as maps_mod
-from . import mapsource, roofs, swatches, textbox, wilddata
+from .maps import blocksrc
+from .dialogue import dialogue
+from .events import eventheader as eh
+from .maps import maps as maps_mod
+from .maps import mapsource
+from .sprites import roofs, swatches
+from .dialogue import textbox
+from .battles import wilddata
 
 TRAINER_TYPES = ("PERSONTYPE_TRAINER", "PERSONTYPE_GENERICTRAINER")
 PICKUP_TYPES = ("PERSONTYPE_ITEMBALL", "PERSONTYPE_TMHMBALL", "PERSONTYPE_FRUITTREE")

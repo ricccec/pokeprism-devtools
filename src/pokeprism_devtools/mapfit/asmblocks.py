@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-from ..hacks.prism.mapspec import INTO
+from ..hacks.prism.maps.mapspec import INTO
 from ..shared.edits import Edit
 
 _SECTION_RE = re.compile(r'^\s*SECTION\s+"([^"]+)"')

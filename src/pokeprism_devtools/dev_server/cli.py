@@ -33,7 +33,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from pokeprism_devtools.hacks.prism import claim, roms
+from pokeprism_devtools.hacks.prism import claim
+
+from pokeprism_devtools.hacks.prism.save import roms
 from pokeprism_devtools.shared import paths
 from pokeprism_devtools.shared.devtools import make_devtools_dir
 

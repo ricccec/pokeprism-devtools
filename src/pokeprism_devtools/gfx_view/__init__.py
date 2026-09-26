@@ -24,7 +24,7 @@ from PIL import Image, ImageDraw
 
 from ..shared import paths
 from ..shared.devtools import make_devtools_dir
-from ..hacks.prism.render import (
+from ..hacks.prism.sprites.render import (
     PALETTE_TABLES, palettes_for_table, render_tileset_sheet)
 from ..shared.viewer import TOD_MAP, TOD_NAMES, is_stale, open_images, parse_tileset_id
 

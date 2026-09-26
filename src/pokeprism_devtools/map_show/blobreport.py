@@ -13,10 +13,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..hacks.prism import mapsource
-from ..hacks.prism.blobsizes import (
+from ..hacks.prism.maps import mapsource
+from ..hacks.prism.maps.blobsizes import (
     PRIMARY_HEADER_GROWTH, compressed_blk_size, secondary_size)
-from ..hacks.prism.mapspec import MapSpec
+from ..hacks.prism.maps.mapspec import MapSpec
 from ..shared import paths
 from ..shared.mapfile import MapFile
 

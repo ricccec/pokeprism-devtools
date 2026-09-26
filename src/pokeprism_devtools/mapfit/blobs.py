@@ -7,7 +7,7 @@ selection survives spelling: `blk` and `blockdata` are one blob, `secondary` and
 
 from __future__ import annotations
 
-from ..hacks.prism.mapspec import MapSpec
+from ..hacks.prism.maps.mapspec import MapSpec
 
 
 # Blob kind -> the spec attribute giving its section name. Aliases collapse to

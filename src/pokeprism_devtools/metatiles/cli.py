@@ -34,7 +34,7 @@ def _render_sheet(root: Path, tileset_id: int, force: bool) -> Path:
     ]
     cache_file = cache_dir / f"tileset_{tid}_outdoor_day.png"
     if is_stale(cache_file, sources, force):
-        from ..hacks.prism.render import palettes_for_table, render_tileset_sheet
+        from ..hacks.prism.sprites.render import palettes_for_table, render_tileset_sheet
         palettes = palettes_for_table(root, "outdoor", 1)
         render_tileset_sheet(root, tileset_id, palettes).save(str(cache_file))
     return cache_file

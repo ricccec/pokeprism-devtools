@@ -13,8 +13,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..hacks.prism import maps as maps_mod
-from ..hacks.prism import mapsource
+from ..hacks.prism.maps import maps as maps_mod
+from ..hacks.prism.maps import mapsource
 
 
 @dataclass

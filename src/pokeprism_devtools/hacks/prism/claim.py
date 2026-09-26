@@ -61,7 +61,7 @@ def claims(root: Path) -> Hack | NearMiss:
 def build(root: Path) -> Hack:
     """The prism :class:`~...contract.Hack`: reader and writer over one linter."""
     from ...maplint.context import LintContext
-    from .play import Player
+    from .save.play import Player
     from .read import Reader
     from .write import Writer
     ctx = LintContext(root)

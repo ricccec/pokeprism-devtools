@@ -16,12 +16,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from ..hacks.prism import claim, maps
-from ..hacks.prism.mapformat import PRISM_FORMAT
+from ..hacks.prism import claim
+
+from ..hacks.prism.maps import maps
+from ..hacks.prism.maps.mapformat import PRISM_FORMAT
 from ..shared import paths, symfile
 from ..shared.devtools import make_devtools_dir
 from ..shared.overworld import blockdata
-from ..hacks.prism.render import PALETTE_TABLES, render_map, table_for_permission
+from ..hacks.prism.sprites.render import PALETTE_TABLES, render_map, table_for_permission
 from ..shared.viewer import TOD_MAP, TOD_NAMES, open_images, parse_tileset_id
 
 

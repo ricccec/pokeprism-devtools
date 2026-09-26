@@ -19,7 +19,7 @@ import sys
 import threading
 from pathlib import Path
 
-from pokeprism_devtools.hacks.prism import roms
+from pokeprism_devtools.hacks.prism.save import roms
 from pokeprism_devtools.shared import paths
 
 from . import apply, inventory, playtest

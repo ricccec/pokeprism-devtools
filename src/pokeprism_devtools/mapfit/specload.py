@@ -12,8 +12,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from ..hacks.prism import mapsource
-from ..hacks.prism.mapspec import BLOBS, MapSpec
+from ..hacks.prism.maps import mapsource
+from ..hacks.prism.maps.mapspec import BLOBS, MapSpec
 from ..shared import paths
 from ..shared.mapfile import MapFile
 

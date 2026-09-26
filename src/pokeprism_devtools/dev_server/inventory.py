@@ -14,7 +14,11 @@ import re
 from dataclasses import asdict
 from pathlib import Path
 
-from pokeprism_devtools.hacks.prism import maps, savefile, species
+from pokeprism_devtools.hacks.prism.battles import species
+
+from pokeprism_devtools.hacks.prism.maps import maps
+
+from pokeprism_devtools.hacks.prism.save import savefile
 from pokeprism_devtools.shared import constants, symfile
 
 

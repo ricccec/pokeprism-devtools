@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from ..hacks.prism import blocksrc
+from ..hacks.prism.maps import blocksrc
 from ..shared import paths
 from .blobreport import _load_mapfile, _print_report, gather_blobs
 from .grid import ZOOMS, print_grid

@@ -12,7 +12,7 @@ import re
 import sys
 from pathlib import Path
 
-from ..hacks.prism.mapspec import MapSpec
+from ..hacks.prism.maps.mapspec import MapSpec
 from .repoquery import _consts, _existing_groups, _existing_labels_consts
 
 _PERMISSIONS = ("TOWN", "ROUTE", "INDOOR", "CAVE", "PERM_5", "GATE", "DUNGEON")
