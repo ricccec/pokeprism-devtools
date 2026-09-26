@@ -35,7 +35,10 @@ from pathlib import Path
 from ...asmedit import warpdel
 from ...asmedit.warpdel import DeadDoor, WarpGrammar, WarpMacro
 from ...contract import Refused
-from . import eventheader, mapsource, spritepack, trainerstats
+from .events import eventheader
+from .maps import mapsource
+from .sprites import spritepack
+from .battles import trainerstats
 
 #: How prism spells a warp reference. Two macros and no more: nothing else in
 #: `macros/` takes a warp id and `data/` does not mention warps at all, so a scan
@@ -111,7 +114,7 @@ class Writer:
 
     # -- what a form may offer ------------------------------------------------ #
     def adders(self, kind: str) -> tuple:
-        from . import edits
+        from .edits import edits
         return edits.ADDERS.get(kind, ())
 
     def form(self, name: str):
@@ -119,20 +122,20 @@ class Writer:
         `newmap` is `a`, `resize` is `s`, `reword` is picking a text under `t`.
         None for a name this adapter does not write, which the view renders as
         the key not existing."""
-        from .content import EditText
-        from .newmap import NewMap
-        from .resize import ResizeMap
+        from .edits.content import EditText
+        from .maps.newmap import NewMap
+        from .maps.resize import ResizeMap
         return {"newmap": NewMap, "resize": ResizeMap,
                 "reword": EditText}.get(name)
 
     def choices(self, kind: str, map_consts: tuple[str, ...],
                 values: dict[str, str] | None = None) -> list[str]:
-        from . import offers
+        from .edits import offers
         return offers.for_kind(self.root, kind, map_consts, values)
 
     def follows(self, action, changed: str,
                 values: dict[str, str]) -> dict[str, str]:
-        from . import offers
+        from .edits import offers
         return offers.follows(self.root, action, changed, values)
 
     def sprite_hint(self, map_const: str, sprite: str) -> str:
@@ -166,12 +169,12 @@ class Writer:
 
     def warm(self) -> None:
         """Read everything a form will want, before a form asks."""
-        from . import offers
+        from .edits import offers
         offers.warm(self.root)
 
     def forget(self) -> None:
         """Something was written: the constants a form offers may have grown."""
-        from . import offers
+        from .edits import offers
         offers.forget()
 
     # -- what a selected row can do ------------------------------------------- #
@@ -188,8 +191,8 @@ class Writer:
         The mirror of :meth:`deletion`, and like it, it refuses by *explaining* —
         an absent key tells you nothing, and the reason is the interesting part.
         """
-        from . import edits, prefill as fill
-        from . import objedit
+        from .edits import edits, prefill as fill
+        from .edits import objedit
         if (action := edits.EDITORS.get(ref.what)) is None:
             raise Refused(edits.NOT_YET.get(
                 ref.what, f"editing a {ref.what} is not wired up yet."))
@@ -206,7 +209,7 @@ class Writer:
         and says *why* — which beats an absent key, because the reason is the
         interesting part.
         """
-        from . import content
+        from .edits import content
         if ref.what == "map":
             raise Refused("deleting a whole map is not something this does.")
 

@@ -10,8 +10,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..hacks.prism import maps as maps_mod
-from ..hacks.prism import mapsource
+from ..hacks.prism.maps import maps as maps_mod
+from ..hacks.prism.maps import mapsource
 
 
 def _consts(path: Path, prefix: str) -> list[str]:

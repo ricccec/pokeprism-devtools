@@ -12,7 +12,11 @@ import shutil
 import sys
 from pathlib import Path
 
-from ..hacks.prism import blocksrc, eventheader, render, swatches
+from ..hacks.prism.events import eventheader
+
+from ..hacks.prism.maps import blocksrc
+
+from ..hacks.prism.sprites import render, swatches
 from ..shared import coords
 
 #: Half-block: the foreground paints the top of the cell, the background the

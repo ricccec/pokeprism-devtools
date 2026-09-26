@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 
-from ..hacks.prism import trainerstats
+from ..hacks.prism.battles import trainerstats
 from .context import LintContext
 from ..contract import Diagnostic, Severity
 

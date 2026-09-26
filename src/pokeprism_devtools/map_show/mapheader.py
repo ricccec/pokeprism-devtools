@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..hacks.prism import maps as maps_mod, mapsource
-from ..hacks.prism.mapspec import MapSpec
+from ..hacks.prism.maps import maps as maps_mod, mapsource
+from ..hacks.prism.maps.mapspec import MapSpec
 
 
 class MapNotFound(RuntimeError):

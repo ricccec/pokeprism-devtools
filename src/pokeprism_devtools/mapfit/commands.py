@@ -13,8 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ..hacks.prism.blobsizes import PRIMARY_HEADER_GROWTH
-from ..hacks.prism.mapspec import MapSpec
+from ..hacks.prism.maps.blobsizes import PRIMARY_HEADER_GROWTH
+from ..hacks.prism.maps.mapspec import MapSpec
 from ..shared import paths
 from ..shared.mapfile import MapFile
 from . import mapwire

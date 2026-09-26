@@ -24,17 +24,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from pokeprism_devtools import maplint  # noqa: E402
 from pokeprism_devtools.maplint import rules_geometry  # noqa: E402
 from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
-from pokeprism_devtools.hacks.prism import eventheader as eh # noqa: E402
+from pokeprism_devtools.hacks.prism.events import eventheader as eh # noqa: E402
 from pokeprism_devtools.hacks.prism import write as PW  # noqa: E402
 from pokeprism_devtools.shared.edits import apply_edits  # noqa: E402
-from pokeprism_devtools.hacks.prism import connections as C, objedit as O  # noqa: E402
+from pokeprism_devtools.hacks.prism.edits import objedit as O  # noqa: E402
+from pokeprism_devtools.hacks.prism.maps import connections as C
 from pokeprism_devtools.asmedit import mapresize as MR  # noqa: E402
 from pokeprism_devtools.contract import ActionError  # noqa: E402
-from pokeprism_devtools.hacks.prism.resize import DIALECT as PRISM_RESIZE  # noqa: E402
-from pokeprism_devtools.hacks.prism import removal as R  # noqa: E402
+from pokeprism_devtools.hacks.prism.maps.resize import DIALECT as PRISM_RESIZE  # noqa: E402
+from pokeprism_devtools.hacks.prism.edits import removal as R  # noqa: E402
 from pokeprism_devtools.asmedit import warpdel as WD  # noqa: E402
-from pokeprism_devtools.hacks.prism import warps as W  # noqa: E402
-from pokeprism_devtools.hacks.prism.scaffold import Object  # noqa: E402
+from pokeprism_devtools.hacks.prism.maps import warps as W  # noqa: E402
+from pokeprism_devtools.hacks.prism.maps.scaffold import Object  # noqa: E402
 
 _failures = 0
 
@@ -796,7 +797,7 @@ def _refusals(root: Path) -> None:
 
 
 def test_editing(root: Path, before: Counter) -> None:
-    """Changing things that are already there — `hacks/prism/objedit.py`.
+    """Changing things that are already there — `hacks/prism/edits/objedit.py`.
 
     The companion to `test_studio.py`'s round-trip, which proves an edit that
     changes nothing writes nothing. This proves the other half: that an edit which

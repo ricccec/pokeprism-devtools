@@ -9,8 +9,8 @@ twice.
 
 from __future__ import annotations
 
-from ..hacks.prism.blobsizes import PRIMARY_HEADER_GROWTH
-from ..hacks.prism.mapspec import INTO, MapSpec
+from ..hacks.prism.maps.blobsizes import PRIMARY_HEADER_GROWTH
+from ..hacks.prism.maps.mapspec import INTO, MapSpec
 from ..shared.mapfile import MapFile
 from .packing import FreeSpace, Item, Placement, pack_into_banks
 from .sizes import Sizes

@@ -23,7 +23,7 @@ import sys
 import time
 import traceback
 
-from pokeprism_devtools.hacks.prism import roms, savefile
+from pokeprism_devtools.hacks.prism.save import roms, savefile
 from pokeprism_devtools.shared import paths, symfile
 from pokeprism_devtools.shared.devtools import make_devtools_dir
 

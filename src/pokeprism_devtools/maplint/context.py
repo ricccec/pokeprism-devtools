@@ -17,10 +17,12 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..hacks.prism import (
-    dialogue, eventflags, eventheader as eh, flagrefs, landmarks, maps, mapsource,
-    spritesets, textbox, trainercite, trainerparty)
-from ..hacks.prism.maps import MapDef
+from ..hacks.prism.battles import trainercite, trainerparty
+from ..hacks.prism.dialogue import dialogue, textbox
+from ..hacks.prism.events import eventflags, eventheader as eh, flagrefs, landmarks
+from ..hacks.prism.maps import maps, mapsource
+from ..hacks.prism.sprites import spritesets
+from ..hacks.prism.maps.maps import MapDef
 
 if TYPE_CHECKING:
     from ..contract import Diagnostic

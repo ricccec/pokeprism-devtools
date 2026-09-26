@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from pokeprism_devtools import map_new  # noqa: E402
 from pokeprism_devtools.map_new import repoquery  # noqa: E402
 from pokeprism_devtools.mapfit import mapwire  # noqa: E402
-from pokeprism_devtools.hacks.prism.mapspec import MapSpec  # noqa: E402
+from pokeprism_devtools.hacks.prism.maps.mapspec import MapSpec  # noqa: E402
 
 _failures = 0
 

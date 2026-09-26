@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ..hacks.prism.mapspec import BLOBS
+from ..hacks.prism.maps.mapspec import BLOBS
 from ..shared import paths
 from . import mapwire
 from .commands import cmd_add, cmd_consolidate, cmd_plan

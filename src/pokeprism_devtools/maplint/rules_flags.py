@@ -1,6 +1,6 @@
 """Rules about event flags — the bits the save file remembers you by.
 
-All three are built on :mod:`..hacks.prism.flagrefs`, which indexes *every* reference
+All three are built on :mod:`..hacks.prism.events.flagrefs`, which indexes *every* reference
 in the repo. That matters more than it sounds. A flag can be named in four
 places, and the obvious one is the least common:
 
@@ -17,7 +17,7 @@ points at. Both were invisible.
 
 from __future__ import annotations
 
-from ..hacks.prism import flagrefs
+from ..hacks.prism.events import flagrefs
 from .context import LintContext
 from ..contract import Diagnostic, Severity
 
@@ -55,7 +55,7 @@ def flag_unused(ctx: LintContext) -> list[Diagnostic]:
     than not it is the residue of content that was deleted while its flag was
     left behind. `prism-maplint` cannot free it for you: flag values are
     save-file bit positions, so it must be rewritten to `const skip` rather than
-    removed (see hacks/prism/removal.py).
+    removed (see hacks/prism/edits/removal.py).
     """
     out = []
     for flag in ctx.flags.flags:

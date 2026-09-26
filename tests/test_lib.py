@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import sys
 
-from pokeprism_devtools.hacks.prism import (
-    eventheader, maps, mapsource, party, render, savefile, species)
-from pokeprism_devtools.hacks.prism import roms as prism_roms
-from pokeprism_devtools.hacks.prism.mapformat import PRISM_FORMAT
+from pokeprism_devtools.hacks.prism.battles import party, species
+from pokeprism_devtools.hacks.prism.events import eventheader
+from pokeprism_devtools.hacks.prism.maps import maps, mapsource
+from pokeprism_devtools.hacks.prism.save import savefile
+from pokeprism_devtools.hacks.prism.sprites import render
+from pokeprism_devtools.hacks.prism.save import roms as prism_roms
+from pokeprism_devtools.hacks.prism.maps.mapformat import PRISM_FORMAT
 from pokeprism_devtools.shared import constants, lz, paths, symfile
 from pokeprism_devtools.shared.overworld import blockdata, people, spritevram
 

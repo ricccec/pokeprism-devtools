@@ -369,7 +369,7 @@ def test_prism_declares_its_own(tmp: Path) -> None:
     """
     print("\nprism's preference, declared on prism's side")
 
-    from pokeprism_devtools.hacks.prism import roms
+    from pokeprism_devtools.hacks.prism.save import roms
 
     root = make_tree(tmp, "prefer_prism", PRISM_MAKEFILE, PRISM_ROMS)
     check("debug resolves the plain name, which is prism's trap",

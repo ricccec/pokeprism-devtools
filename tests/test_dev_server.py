@@ -259,7 +259,7 @@ def _fixture(tmp: Path) -> Path:
     (root / "Makefile").write_text("all:\n")
     (root / "main.asm").write_text('INCLUDE "constants.asm"\n')
     # Named `pokeprism.gbc` because `dev_server` is prism's, and prism declares
-    # that name in `hacks/prism/roms.py` as the build carrying symbols. It is no
+    # that name in `hacks/prism/save/roms.py` as the build carrying symbols. It is no
     # longer a *library* leak: `shared/paths` reads its candidates out of this
     # fixture's Makefile, finds none, and falls back to what is on disk — so a
     # fixture naming its ROM anything at all would resolve. Phase 5, step A2.

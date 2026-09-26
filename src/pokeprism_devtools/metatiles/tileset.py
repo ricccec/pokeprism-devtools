@@ -153,7 +153,7 @@ def load_syms(root: Path) -> SymFile | None:
 def analyze_tileset(
     root: Path, tileset_id: int, uses: list[MapUse], syms: SymFile | None = None
 ) -> TilesetAnalysis:
-    from ..hacks.prism.render import load_tileset_files
+    from ..hacks.prism.sprites.render import load_tileset_files
     metatiles, attributes, gfx = load_tileset_files(root, tileset_id)
     n_defined = max(1, len(metatiles) // _TILES_PER_METATILE)
     usage = metatile_usage(uses, n_defined)
