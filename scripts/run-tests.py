@@ -55,7 +55,22 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 TESTS = REPO / "tests"
-VENV_PYTHON = REPO / ".venv" / "bin" / "python"
+
+
+def find_interpreter() -> Path:
+    """The interpreter to run each test with.
+
+    `<repo>/.venv/bin/python` is this repo's convention and is preferred, so
+    `python3 scripts/run-tests.py` still does the right thing. But it is only a
+    convention: a repo carved out of this one has no `.venv`, and neither does a
+    checkout whose environment lives somewhere else. Falling back to whatever is
+    running this script is both correct and the only portable answer.
+    """
+    conventional = REPO / ".venv" / "bin" / "python"
+    return conventional if conventional.exists() else Path(sys.executable)
+
+
+VENV_PYTHON = find_interpreter()
 
 #: Where a real pokeprism checkout lives. The tests that read the three game
 #: trees spell this path out themselves; this matches their convention rather

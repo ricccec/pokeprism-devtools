@@ -193,44 +193,85 @@ def test_flaky_retry(runner, tmp: Path) -> None:
         (tmp / "test_flaky.marker").unlink(missing_ok=True)
 
 
+#: Prints its own working directory, so the cwd the runner chose is observable
+#: rather than inferred.
+REPORTS_CWD = "from pathlib import Path\nprint(Path.cwd())\n"
+
+
 def test_game_tree_skip(runner, tmp: Path) -> None:
-    """No game tree is *skipped*, never *passed* — the whole point of the row."""
+    """No game tree is *skipped*, never *passed* — the whole point of the row.
+
+    The needy test is seeded, because the claim is about the runner: a name in
+    `NEEDS_GAME_TREE` skips when there is no tree and is given the tree as its
+    cwd when there is one. Pointing this at a real product's file would make it
+    also assert that the file is on disk, which no repo owes the runner.
+    """
     print("\nthe game-tree cwd")
-    real_tree = runner.GAME_TREE
-    runner.GAME_TREE = tmp / "no-such-tree"
+    folder = tmp / "gametree"
+    folder.mkdir()
+    needy = write_test_script(folder, "test_needs_tree", REPORTS_CWD)
+
+    real_tree, real_needs = runner.GAME_TREE, runner.NEEDS_GAME_TREE
+    runner.NEEDS_GAME_TREE = {"test_needs_tree"}
     try:
-        result = runner.run_one_test(REPO / "tests" / "test_lib.py", 30)
+        runner.GAME_TREE = tmp / "no-such-tree"
+        result = runner.run_one_test(needy, 30)
         check("an absent tree skips, and does not pass",
-              result.status == runner.SKIPPED)
-        check("and says why", "needs a game tree" in result.note)
+              result.status == runner.SKIPPED, result.status)
+        check("and says why", "needs a game tree" in result.note, result.note)
+
+        # A directory that exists is all the runner asks for; whether it holds a
+        # Makefile is the test's business, not the runner's.
+        stand_in = tmp / "stand-in-tree"
+        stand_in.mkdir()
+        runner.GAME_TREE = stand_in
+        result = runner.run_one_test(needy, 30)
+        check("a present tree runs it, and from inside the tree",
+              result.status == runner.OK and str(stand_in) in result.output,
+              f"{result.status}: {result.output.strip()[:60]}")
     finally:
-        runner.GAME_TREE = real_tree
-
-    if not runner.GAME_TREE.exists():
-        print(f"  (no game tree at {runner.GAME_TREE}, skipping the other half)")
-        return
-    result = runner.run_one_test(REPO / "tests" / "test_lib.py", 120)
-    check("given the tree, test_lib passes", result.status == runner.OK,
-          "it was never broken — only ever in the wrong directory")
+        runner.GAME_TREE, runner.NEEDS_GAME_TREE = real_tree, real_needs
 
 
-def test_selection(runner) -> None:
+def test_selection(runner, tmp: Path) -> None:
+    """Selection, over a seeded `tests/` — so it holds in any repo.
+
+    `TESTS` and `SLOW` are both patched. Reading the real ones would assert that
+    this repo carries the files they name, and `SLOW <= every` is then false in
+    any repo that does not — a fact about the checkout, not about the selection
+    logic under test.
+    """
     print("\nselection")
-    every = [p.stem for p in runner.select_test_files(None, False)]
-    fast = [p.stem for p in runner.select_test_files(None, True)]
-    check("a full run collects the slow ones", set(runner.SLOW) <= set(every))
-    check("--fast drops them", not set(runner.SLOW) & set(fast))
-    check("and drops nothing else", set(every) - set(fast) == set(runner.SLOW))
-    check("-k filters by filename",
-          runner.select_test_files("paths", False)[0].stem == "test_paths")
+    folder = tmp / "selection"
+    folder.mkdir()
+    seeded = {"test_alpha", "test_beta", "test_slowpoke"}
+    for name in sorted(seeded):
+        write_test_script(folder, name, PASSES)
+
+    real_tests, real_slow = runner.TESTS, runner.SLOW
+    runner.TESTS, runner.SLOW = folder, {"test_slowpoke"}
+    try:
+        every = {p.stem for p in runner.select_test_files(None, False)}
+        fast = {p.stem for p in runner.select_test_files(None, True)}
+        check("a full run collects every test file", every == seeded,
+              f"{sorted(every)} != {sorted(seeded)}")
+        check("a full run collects the slow ones", set(runner.SLOW) <= every)
+        check("--fast drops them", not set(runner.SLOW) & fast)
+        check("and drops nothing else", every - fast == set(runner.SLOW),
+              f"also dropped {sorted(every - fast - set(runner.SLOW))}")
+        check("-k filters by filename",
+              [p.stem for p in runner.select_test_files("beta", False)]
+              == ["test_beta"])
+    finally:
+        runner.TESTS, runner.SLOW = real_tests, real_slow
 
 
 if __name__ == "__main__":
     runner = load_runner()
     test_classification(runner)
-    test_selection(runner)
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
+        test_selection(runner, tmp)
         test_seeded_failure(runner, tmp)
         test_fixed_row(runner, tmp)
         test_timeout(runner, tmp)
