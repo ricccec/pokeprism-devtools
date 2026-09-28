@@ -14,7 +14,7 @@ thing:
   * **that no hack is named** — the bug this file was written for. `rom_path`
     used to spell prism's two ROM filenames out, so a fully-built pokecrystal
     tree resolved nothing and the error named a file that tree had never heard
-    of; `prism-sym`, one of product A's *own* entry points, could not read a
+    of; `pret-sym`, one of product A's *own* entry points, could not read a
     `.sym` on a pokecrystal checkout. The candidates now come from the tree's
     own `Makefile`, and which one a caller wants crosses the seam as data.
 
@@ -316,7 +316,7 @@ def test_no_hack_is_named(tmp: Path) -> None:
     `rom_path` used to spell `pokeprism.gbc` and `pokeprism_nodebug.gbc` out, so
     a fully-built pokecrystal tree resolved nothing and the error named a file
     that tree had never heard of. Every function reaching through it — the
-    `.sym` and `.map` finders — inherited it, which is why `prism-sym`, an entry
+    `.sym` and `.map` finders — inherited it, which is why `pret-sym`, an entry
     point of the library this module belongs to, was prism-only in practice.
 
     Now all three dialects resolve. Named in `test_products.py::KNOWN_LEAKS`
