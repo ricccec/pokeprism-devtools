@@ -12,11 +12,20 @@ on.
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+#: The prism checkout, resolved absolutely and never relative to this repo — a
+#: path that walks above it answers differently depending on where the repo sits.
+#: The skip below is the reason that matters: an absent tree prints `all checks
+#: passed` for a file whose real half never ran.
+PRISM = Path(os.environ.get("POKEPRISM_TREE",
+                            Path.home() / "code/ricccec/pokeprism"))
+
 
 from pokeprism_devtools.hacks.prism.events import eventheader as eh # noqa: E402
 from pokeprism_devtools.hacks.prism.events.eventheader import (  # noqa: E402
@@ -287,9 +296,9 @@ def _line_with(text: str, needle: str) -> str:
 # --------------------------------------------------------------------------- #
 
 def test_real_repo() -> None:
-    root = Path(__file__).resolve().parent.parent.parent / "pokeprism"
+    root = PRISM
     if not (root / "maps").is_dir():
-        print("\n(skipping gold test — ../pokeprism not found)")
+        print(f"\n(skipping gold test — no prism tree at {PRISM})")
         return
 
     print("\ngold test: every real map parses and re-emits byte-identically")

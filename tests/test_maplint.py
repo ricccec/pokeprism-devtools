@@ -14,12 +14,21 @@ stay within the triaged baseline.
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+#: The prism checkout, resolved absolutely and never relative to this repo — a
+#: path that walks above it answers differently depending on where the repo sits.
+#: The skip below is the reason that matters: an absent tree prints `all checks
+#: passed` for a file whose real half never ran.
+PRISM = Path(os.environ.get("POKEPRISM_TREE",
+                            Path.home() / "code/ricccec/pokeprism"))
+
 
 from pokeprism_devtools import maplint  # noqa: E402
 from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
@@ -717,9 +726,9 @@ def test_baseline(root: Path, tmp: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 def test_real_repo() -> None:
-    root = Path(__file__).resolve().parent.parent.parent / "pokeprism"
+    root = PRISM
     if not (root / "maps").is_dir():
-        print("\n(skipping real-repo pass — ../pokeprism not found)")
+        print(f"\n(skipping real-repo pass — no prism tree at {PRISM})")
         return
 
     print("\nreal repo: findings stay within the triaged baseline")

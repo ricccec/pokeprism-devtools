@@ -12,12 +12,21 @@ change to the width model quietly shifts either cliff, that shows up here.
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+#: The prism checkout, resolved absolutely and never relative to this repo — a
+#: path that walks above it answers differently depending on where the repo sits.
+#: The skip below is the reason that matters: an absent tree prints `all checks
+#: passed` for a file whose real half never ran.
+PRISM = Path(os.environ.get("POKEPRISM_TREE",
+                            Path.home() / "code/ricccec/pokeprism"))
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_maplint import _fixture  # noqa: E402
@@ -165,9 +174,9 @@ def test_sign_context(tmp: Path, root: Path) -> None:
 
 def test_real_repo() -> None:
     """The calibration: what pokeprism's 13,900 lines of dialogue actually do."""
-    root = Path(__file__).resolve().parent.parent.parent / "pokeprism"
+    root = PRISM
     if not (root / "maps").is_dir():
-        print("\n(skipping real-repo pass — ../pokeprism not found)")
+        print(f"\n(skipping real-repo pass — no prism tree at {PRISM})")
         return
 
     print("\nreal repo: the corpus agrees with the model")
@@ -238,9 +247,9 @@ def test_the_writer() -> None:
     worse, drops the `cont` that scrolls his box. So: every text block in the
     repo, out and back, byte for byte.
     """
-    root = Path(__file__).resolve().parent.parent.parent / "pokeprism"
+    root = PRISM
     if not (root / "maps").is_dir():
-        print("\n(skipping the writer's round trip — ../pokeprism not found)")
+        print(f"\n(skipping the writer's round trip — no prism tree at {PRISM})")
         return
     print("\nthe writer: what you didn't touch, it doesn't touch")
 
@@ -411,7 +420,7 @@ def test_a_semicolon_is_not_a_comment() -> None:
           dialogue.decomment(r'ctxt "he said \"go;\" and left"')
           == r'ctxt "he said \"go;\" and left"')
 
-    root = Path(__file__).resolve().parent.parent.parent / "pokeprism"
+    root = PRISM
     if not (root / "maps").is_dir():
         return
     block = next(b for b in dialogue.parse(root, root / "maps/AzaleaGym.asm")
