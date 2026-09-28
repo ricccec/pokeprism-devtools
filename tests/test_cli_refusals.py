@@ -11,7 +11,7 @@ Two ways a tree can be wrong, and the same invariant covers both:
     later.
 
 The second case is why the exit code is asserted only for the first. Product A
-is hack-neutral by construction, so `prism-sym` and `prism-usage` **should**
+is hack-neutral by construction, so `pret-sym` and `pret-usage` **should**
 work in a pokecrystal tree; prism's own tools should refuse it. Both satisfy
 *no traceback*, which is the invariant — and asserting a shared exit code would
 force one of the two groups to be wrong.
@@ -46,7 +46,7 @@ FOREIGN_TREE = Path.home() / "code/ricccec/pokecrystal"
 #: The studio is a full-screen TUI: it takes the terminal rather than returning,
 #: so it cannot answer this question in a subprocess. Named, not silently
 #: skipped, so that the day it grows a non-interactive path somebody decides.
-INTERACTIVE = {"prism-studio"}
+INTERACTIVE = {"crystal-studio"}
 
 #: Long enough that a slow import is not a failure, short enough that a CLI
 #: which waits for input is.

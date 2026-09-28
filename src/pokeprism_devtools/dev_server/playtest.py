@@ -1,7 +1,7 @@
 """Patch a save to a state, and boot the ROM into it.
 
 This is the last two steps of `prism-dev` — the ones worth having from somewhere
-other than `prism-dev`. `prism-studio` wants to place an NPC and then stand next
+other than `prism-dev`. `crystal-studio` wants to place an NPC and then stand next
 to it, and the code that does that lived inside a questionary menu, printing to
 stdout, reading its inputs off `DevServer` attributes: none of which a Textual
 app can use.

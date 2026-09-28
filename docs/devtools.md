@@ -12,7 +12,7 @@ in the pokeprism repo.
 Python 3.10+ is required. The only external runtime dependency is
 `questionary` (the `prism-dev` TUI), pulled in automatically by
 `pyproject.toml`. The recommended install is `pipx`, which gives you the
-`prism-dev` and `prism-sym` commands on `$PATH`:
+`prism-dev` and `pret-sym` commands on `$PATH`:
 
 ```bash
 pipx install -e /path/to/pokeprism-devtools
@@ -28,8 +28,8 @@ run from anywhere inside it:
 
 ```bash
 cd /path/to/pokeprism
-prism-sym TryLoadSaveFile                # from repo root
-cd engine && prism-sym TryLoadSaveFile   # works the same
+pret-sym TryLoadSaveFile                # from repo root
+cd engine && pret-sym TryLoadSaveFile   # works the same
 ```
 
 Each tool requires a built ROM — specifically the `.sym` file emitted
@@ -47,7 +47,7 @@ and nothing else.
 
 | Tool                                  | Status     | Purpose                                                          |
 |---------------------------------------|------------|------------------------------------------------------------------|
-| [`prism-sym`](#prism-sym)           | shipped    | Query the `.sym` file by label or address.                       |
+| [`pret-sym`](#pret-sym)           | shipped    | Query the `.sym` file by label or address.                       |
 | [`test_lib.py`](#smoke-test)          | shipped    | Smoke test for the library (run after each rebuild).             |
 | [`test_maps.py`](#map-sweep)          | shipped    | Sweep every map through the `prism-dev` apply pipeline.        |
 | [`prism-dev`](#prism-dev)         | partial    | Inventory + save patcher + map-change support + dev-server TUI + party/items/flags/TM-HM editors shipped. PC items pending. |
@@ -57,7 +57,7 @@ and nothing else.
 | [`prism-map`](#prism-map)             | shipped    | Inspect one map: full report (header fields, section banks, blob sizes) and export its `prism-mapfit` spec TOML. |
 | `sram-diff`                           | planned    | Diff two `.sav` files field-by-field using the SRAM layout.      |
 | `trainer-inspect`                     | planned    | Dump trainer parties from `trainers/*.asm`.                      |
-| [`prism-usage`](#prism-usage)          | shipped    | RGBDS link-map analyzer: bank usage, section sizes, diffs, pre-commit check. |
+| [`pret-usage`](#pret-usage)          | shipped    | RGBDS link-map analyzer: bank usage, section sizes, diffs, pre-commit check. |
 | [`prism-mapfit`](#prism-mapfit)        | shipped    | Find ROM banks for a new map, wire it in, and re-pack maps to fit a near-full ROM. |
 | [`prism-newmap`](#prism-newmap)        | shipped    | Interactive TUI to author a brand-new map's content and wire it into the source files; hands off to `prism-mapfit` for bank placement. |
 | [`prism-mapview`](#prism-mapview)      | shipped    | Render a map to an image and open it. Supports `--tileset`/`--palette` overrides. |
@@ -66,7 +66,7 @@ and nothing else.
 
 ---
 
-## prism-sym
+## pret-sym
 
 Query the RGBDS symbol table that the build emits next to the ROM
 (`pokeprism_nodebug.sym` or `pokeprism.sym`). Useful any time you're looking
@@ -76,13 +76,13 @@ address from a debugger and want to know what it points at.
 ### Synopsis
 
 ```bash
-prism-sym LABEL                  # exact match; falls back to substring search
-prism-sym --addr BB:AAAA         # reverse: address → label(s) at or before
-prism-sym --prefix STR           # list labels starting with STR
-prism-sym --search STR           # case-insensitive substring search
-prism-sym --region SRAM ...      # filter results by memory region
-prism-sym --debug ...            # use the debug ROM's .sym (pokeprism.sym)
-prism-sym -n N                   # cap results at N (default 50; 0 = unlimited)
+pret-sym LABEL                  # exact match; falls back to substring search
+pret-sym --addr BB:AAAA         # reverse: address → label(s) at or before
+pret-sym --prefix STR           # list labels starting with STR
+pret-sym --search STR           # case-insensitive substring search
+pret-sym --region SRAM ...      # filter results by memory region
+pret-sym --debug ...            # use the debug ROM's .sym (pokeprism.sym)
+pret-sym -n N                   # cap results at N (default 50; 0 = unlimited)
 ```
 
 Address format is RGBDS-standard: `BB:AAAA` where `BB` is the bank in hex
@@ -96,7 +96,7 @@ Memory regions: `ROM0`, `ROMX`, `VRAM`, `SRAM`, `WRAM0`, `WRAMX`, `OAM`,
 **Find a function:**
 
 ```text
-$ prism-sym TryLoadSaveFile
+$ pret-sym TryLoadSaveFile
 05:4f9b TryLoadSaveFile
 ```
 
@@ -106,7 +106,7 @@ debugger hookup, that's the canonical format.
 **Reverse lookup (debugger PC → source):**
 
 ```text
-$ prism-sym --addr 01:a020
+$ pret-sym --addr 01:a020
 01:a009 sPlayerData  (+0x17)  [SRAM]
 01:a009 sGameData    (+0x17)  [SRAM]
 ```
@@ -119,7 +119,7 @@ poking inside a struct.
 **Find all related labels:**
 
 ```text
-$ prism-sym --prefix sValidCheck
+$ pret-sym --prefix sValidCheck
 01:a008 sValidCheck1  [SRAM]
 01:ad0f sValidCheck2  [SRAM]
 
@@ -651,7 +651,7 @@ are flagged `*shared*` — `prism-mapfit` can't relocate those independently unt
 they're moved into their own section. Without a `.map` the bank column is
 omitted.
 
-**Exit codes** — matches `prism-sym`:
+**Exit codes** — matches `pret-sym`:
 - `0` — success
 - `2` — usage error, repo not found, or the label isn't a wired map
 
@@ -766,7 +766,7 @@ prism-gfx palettes                              # the full swatch sheet
 
 ---
 
-## prism-usage
+## pret-usage
 
 Parses the RGBDS link-map (`pokeprism_nodebug.map`) and exposes bank usage
 through focused subcommands. Auto-locates the `.map` next to the built ROM;
@@ -775,7 +775,7 @@ use `--map PATH` to override or `--debug` to use the debug build's map.
 **Synopsis**
 
 ```
-prism-usage [--debug] [--map PATH] [SUBCOMMAND [ARGS]]
+pret-usage [--debug] [--map PATH] [SUBCOMMAND [ARGS]]
 ```
 
 **Subcommands**
@@ -791,7 +791,7 @@ prism-usage [--debug] [--map PATH] [SUBCOMMAND [ARGS]]
 | `check [--max-bank-usage P]` | Exit 1 if any ROM bank exceeds P% (default 95). Pre-commit–friendly. |
 | `diff OLD.map NEW.map [--max-bank-usage P]` | Per-bank and per-section deltas between two map files. |
 
-**Exit codes** — matches `prism-sym`:
+**Exit codes** — matches `pret-sym`:
 - `0` — success / all checks pass
 - `1` — no results / threshold exceeded
 - `2` — usage error or file not found
@@ -799,25 +799,25 @@ prism-usage [--debug] [--map PATH] [SUBCOMMAND [ARGS]]
 **Examples**
 
 ```bash
-prism-usage                                   # quick overview
-prism-usage banks                             # visual utilization chart
-prism-usage banks 5 12 $1a                    # just these banks
-prism-usage bank 5                            # what's in ROM bank 5?
-prism-usage bank '$3c'                        # tightest bank by hex
-prism-usage bank 5 12 10-14                   # detail for several banks
-prism-usage largest -n 10                     # 10 biggest sections
-prism-usage free                              # where to put new data
-prism-usage section "Map Scripts"            # find all map-script sections
-prism-usage section "Map Scripts" "battle"   # search multiple names
-prism-usage check --max-bank-usage 98        # exit 1 if any bank > 98%
-prism-usage diff prev.map pokeprism_nodebug.map   # what did my edit cost?
+pret-usage                                   # quick overview
+pret-usage banks                             # visual utilization chart
+pret-usage banks 5 12 $1a                    # just these banks
+pret-usage bank 5                            # what's in ROM bank 5?
+pret-usage bank '$3c'                        # tightest bank by hex
+pret-usage bank 5 12 10-14                   # detail for several banks
+pret-usage largest -n 10                     # 10 biggest sections
+pret-usage free                              # where to put new data
+pret-usage section "Map Scripts"            # find all map-script sections
+pret-usage section "Map Scripts" "battle"   # search multiple names
+pret-usage check --max-bank-usage 98        # exit 1 if any bank > 98%
+pret-usage diff prev.map pokeprism_nodebug.map   # what did my edit cost?
 ```
 
 **Pre-commit hook**
 
 ```bash
 # .git/hooks/pre-commit
-prism-usage check --max-bank-usage 98 || exit 1
+pret-usage check --max-bank-usage 98 || exit 1
 ```
 
 ---
@@ -941,7 +941,7 @@ before re-placing it (so a re-alloc doesn't hunt for new room while ignoring
 the hole it already occupies), and debits the `Map Headers` bank the +9 bytes a
 brand-new primary header adds.
 
-### Exit codes — matches `prism-sym`
+### Exit codes — matches `pret-sym`
 
 - `0` — success
 - `1` — no bank fits a blob (`NoFitError`) / build failed
