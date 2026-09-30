@@ -1,18 +1,33 @@
 # Devtools Reference
 
-User-facing reference for `pokeprism-devtools` — a standalone Python CLI
-suite that sits alongside pokeprism (not inside it). For the rationale,
-roadmap, and architecture decisions, see [`devtools-plan.md`](devtools-plan.md).
-For pokeprism's in-codebase debug menu and the `DEBUG_MODE` build flag,
-see [debug-mode.md](https://github.com/ricccec/pokeprism/blob/main/docs/debug-mode.md)
+User-facing reference for `pokeprism-devtools` — Prism's own command-line tools,
+a standalone Python suite that sits alongside pokeprism (not inside it). For the
+rationale, roadmap, and architecture decisions, see
+[`devtools-plan.md`](devtools-plan.md). For pokeprism's in-codebase debug menu
+and the `DEBUG_MODE` build flag, see
+[debug-mode.md](https://github.com/ricccec/pokeprism/blob/main/docs/debug-mode.md)
 in the pokeprism repo.
+
+**The nine `prism-*` commands documented here are this distribution's.** Three
+more arrive with it and are documented where they are built, because neither
+belongs to Prism:
+
+| command | ships with | reference |
+|---|---|---|
+| `pret-sym`, `pret-usage` | `pret-toolkit` | that repo's `docs/commands.md` |
+| `crystal-studio` | `crystal-studio` | that repo |
+
+The split is not cosmetic. `pret-toolkit` reads any pret/RGBDS Gen-2 tree and
+knows no hack's name; the IDE serves three trees. Only what is genuinely
+Prism-specific is here, which is how `prism-*` stays an honest prefix.
 
 ## Setup
 
-Python 3.10+ is required. The only external runtime dependency is
-`questionary` (the `prism-dev` TUI), pulled in automatically by
-`pyproject.toml`. The recommended install is `pipx`, which gives you the
-`prism-dev` and `pret-sym` commands on `$PATH`:
+Python 3.10+ is required. `pip install` pulls the rest: `questionary` (the
+`prism-dev` TUI) and `Pillow` (map rendering) from PyPI, plus `pret-toolkit`
+and `crystal-studio-plugin-api`, which are the library these tools read trees
+with and the seam the map studio mounts Prism through. The recommended install
+is `pipx`, which puts every command on `$PATH`:
 
 ```bash
 pipx install -e /path/to/pokeprism-devtools
@@ -21,6 +36,9 @@ pipx install -e /path/to/pokeprism-devtools
 The `-e` makes the install editable — changes to source in this repo take
 effect immediately. If you ever change the `[project.scripts]` table,
 re-run with `--force` to refresh the entry-point shims.
+
+Until the four distributions are published, install the siblings from their
+checkouts first, or `pip` will look for them on PyPI and fail.
 
 The tools find your pokeprism checkout by walking up from the current
 working directory until they hit `Makefile` + `main.asm`, so they can be
@@ -47,7 +65,7 @@ and nothing else.
 
 | Tool                                  | Status     | Purpose                                                          |
 |---------------------------------------|------------|------------------------------------------------------------------|
-| [`pret-sym`](#pret-sym)           | shipped    | Query the `.sym` file by label or address.                       |
+| `pret-sym`                            | shipped    | Query the `.sym` file by label or address. **Ships with `pret-toolkit`** — see that repo's `docs/commands.md`. |
 | [`test_lib.py`](#smoke-test)          | shipped    | Smoke test for the library (run after each rebuild).             |
 | [`test_maps.py`](#map-sweep)          | shipped    | Sweep every map through the `prism-dev` apply pipeline.        |
 | [`prism-dev`](#prism-dev)         | partial    | Inventory + save patcher + map-change support + dev-server TUI + party/items/flags/TM-HM editors shipped. PC items pending. |
@@ -57,122 +75,12 @@ and nothing else.
 | [`prism-map`](#prism-map)             | shipped    | Inspect one map: full report (header fields, section banks, blob sizes) and export its `prism-mapfit` spec TOML. |
 | `sram-diff`                           | planned    | Diff two `.sav` files field-by-field using the SRAM layout.      |
 | `trainer-inspect`                     | planned    | Dump trainer parties from `trainers/*.asm`.                      |
-| [`pret-usage`](#pret-usage)          | shipped    | RGBDS link-map analyzer: bank usage, section sizes, diffs, pre-commit check. |
+| `pret-usage`                          | shipped    | RGBDS link-map analyzer. **Ships with `pret-toolkit`** — see that repo's `docs/commands.md`. |
 | [`prism-mapfit`](#prism-mapfit)        | shipped    | Find ROM banks for a new map, wire it in, and re-pack maps to fit a near-full ROM. |
 | [`prism-newmap`](#prism-newmap)        | shipped    | Interactive TUI to author a brand-new map's content and wire it into the source files; hands off to `prism-mapfit` for bank placement. |
 | [`prism-mapview`](#prism-mapview)      | shipped    | Render a map to an image and open it. Supports `--tileset`/`--palette` overrides. |
 | [`prism-gfx`](#prism-gfx)              | shipped    | Visualize tilesets and BG palettes (to pick `prism-mapview` overrides). |
 | `prism-watch`                         | planned    | `fswatch` → `make nodebug` → optional emulator relaunch.         |
-
----
-
-## pret-sym
-
-Query the RGBDS symbol table that the build emits next to the ROM
-(`pokeprism_nodebug.sym` or `pokeprism.sym`). Useful any time you're looking
-for a function, RAM variable, or save data field by name — or you have an
-address from a debugger and want to know what it points at.
-
-### Synopsis
-
-```bash
-pret-sym LABEL                  # exact match; falls back to substring search
-pret-sym --addr BB:AAAA         # reverse: address → label(s) at or before
-pret-sym --prefix STR           # list labels starting with STR
-pret-sym --search STR           # case-insensitive substring search
-pret-sym --region SRAM ...      # filter results by memory region
-pret-sym --debug ...            # use the debug ROM's .sym (pokeprism.sym)
-pret-sym -n N                   # cap results at N (default 50; 0 = unlimited)
-```
-
-Address format is RGBDS-standard: `BB:AAAA` where `BB` is the bank in hex
-and `AAAA` is the GB address in hex (e.g. `05:4f9b`, `01:a009`).
-
-Memory regions: `ROM0`, `ROMX`, `VRAM`, `SRAM`, `WRAM0`, `WRAMX`, `OAM`,
-`IO`, `HRAM`, `ECHO`, `UNUSED`.
-
-### Examples
-
-**Find a function:**
-
-```text
-$ pret-sym TryLoadSaveFile
-05:4f9b TryLoadSaveFile
-```
-
-The output is the raw `BB:AAAA Label` line from the `.sym`. For scripts and
-debugger hookup, that's the canonical format.
-
-**Reverse lookup (debugger PC → source):**
-
-```text
-$ pret-sym --addr 01:a020
-01:a009 sPlayerData  (+0x17)  [SRAM]
-01:a009 sGameData    (+0x17)  [SRAM]
-```
-
-Multiple labels share `01:a009` because `sPlayerData` and `sGameData` are
-defined at the same SECTION boundary in `sram.asm`. `+0x17` is the offset
-from the matched label to the address you asked about — handy when you're
-poking inside a struct.
-
-**Find all related labels:**
-
-```text
-$ pret-sym --prefix sValidCheck
-01:a008 sValidCheck1  [SRAM]
-01:ad0f sValidCheck2  [SRAM]
-
-$ sym-lookup --prefix wPartyMon1 -n 5
-00:c61f wPartyMon1Species  [WRAM0]
-00:c620 wPartyMon1Item     [WRAM0]
-00:c621 wPartyMon1Moves    [WRAM0]
-00:c625 wPartyMon1ID       [WRAM0]
-00:c627 wPartyMon1Exp      [WRAM0]
-... (truncated to 5; pass --limit 0 for all)
-```
-
-**Filter by region:**
-
-```text
-$ sym-lookup --search map --region SRAM -n 5
-00:ba33 sBackupMapData  [SRAM]
-01:a833 sMapData        [SRAM]
-```
-
-**No exact match → falls back to substring search:**
-
-```text
-$ sym-lookup partymon1
-00:c617 wPartyMon1MiscSpecies  [WRAM0]
-00:c617 wPartyMon1Misc         [WRAM0]
-...
-```
-
-### Exit codes
-
-- `0`: at least one result printed
-- `1`: no match found (also when reverse-lookup finds nothing in that bank)
-- `2`: usage error (bad address format, no query, missing `.sym`)
-
-Useful in shell scripts:
-
-```bash
-if addr=$(sym-lookup SomeLabel 2>/dev/null); then
-    echo "found at $addr"
-fi
-```
-
-### When to use it
-
-- **Debugging in an emulator**: SameBoy / mGBA shows you `PC = 05:4f9b`. Run
-  `sym-lookup --addr 05:4f9b` to know what function (or nearest one) that is.
-- **Locating save fields**: trying to figure out where `wPartyMon1Species`
-  lives in SRAM? `sym-lookup wPartyMon1Species` gives you the WRAM address;
-  its SRAM mirror is at `bank 1 + (addr - 0xA009)` offset within
-  `sPlayerData` / `sMapData` / `sPokemonData`.
-- **Exploring related symbols**: `sym-lookup --prefix sBox` lists every save
-  field related to boxes.
 
 ---
 
@@ -763,62 +671,6 @@ prism-gfx palettes                              # the full swatch sheet
 - `0` — image rendered and opened
 - `1` — render failed (e.g. missing tileset files)
 - `2` — pokeprism repo not found
-
----
-
-## pret-usage
-
-Parses the RGBDS link-map (`pokeprism_nodebug.map`) and exposes bank usage
-through focused subcommands. Auto-locates the `.map` next to the built ROM;
-use `--map PATH` to override or `--debug` to use the debug build's map.
-
-**Synopsis**
-
-```
-pret-usage [--debug] [--map PATH] [SUBCOMMAND [ARGS]]
-```
-
-**Subcommands**
-
-| Subcommand | Purpose |
-|---|---|
-| `summary` (default) | Headline ROM/RAM stats, top-5 most-full and most-free ROM banks. |
-| `banks [N ...] [--region R]` | ANSI bar chart of every ROM bank's occupancy (or a RAM region with `--region SRAM\|WRAMX\|…`). Pass one or more bank numbers/ranges to show only those banks. |
-| `bank N [N ...]` | Section-by-section breakdown of one or more banks. N accepts decimal (`60`), `$3c`, `0x3c`, or a range (`10-20`). |
-| `largest [-n N]` | Top-N sections globally by size (default 20; `-n 0` for all). |
-| `free [--region R]` | Banks sorted by free space — answers "where do I put new data?". |
-| `section NAME [NAME ...]` | All banks containing a section. Exact match first, then substring. Repeat to search several names at once. |
-| `check [--max-bank-usage P]` | Exit 1 if any ROM bank exceeds P% (default 95). Pre-commit–friendly. |
-| `diff OLD.map NEW.map [--max-bank-usage P]` | Per-bank and per-section deltas between two map files. |
-
-**Exit codes** — matches `pret-sym`:
-- `0` — success / all checks pass
-- `1` — no results / threshold exceeded
-- `2` — usage error or file not found
-
-**Examples**
-
-```bash
-pret-usage                                   # quick overview
-pret-usage banks                             # visual utilization chart
-pret-usage banks 5 12 $1a                    # just these banks
-pret-usage bank 5                            # what's in ROM bank 5?
-pret-usage bank '$3c'                        # tightest bank by hex
-pret-usage bank 5 12 10-14                   # detail for several banks
-pret-usage largest -n 10                     # 10 biggest sections
-pret-usage free                              # where to put new data
-pret-usage section "Map Scripts"            # find all map-script sections
-pret-usage section "Map Scripts" "battle"   # search multiple names
-pret-usage check --max-bank-usage 98        # exit 1 if any bank > 98%
-pret-usage diff prev.map pokeprism_nodebug.map   # what did my edit cost?
-```
-
-**Pre-commit hook**
-
-```bash
-# .git/hooks/pre-commit
-pret-usage check --max-bank-usage 98 || exit 1
-```
 
 ---
 
