@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pokeprism-devtools"
+version = "0.5.0"
+description = "Crystal Studio support for Pokemon Prism, plus Prism's own command-line tools"
+requires-python = ">=3.10"
+dependencies = ["pret-toolkit", "crystal-studio-plugin-api", "questionary", "Pillow"]
+
+[project.scripts]
+prism-dev       = "pokeprism_devtools.dev_server.cli:main"
+prism-maps      = "pokeprism_devtools.map_inspect:main"
+prism-map       = "pokeprism_devtools.map_show:main"
+prism-mapview   = "pokeprism_devtools.mapview:main"
+prism-gfx       = "pokeprism_devtools.gfx_view:main"
+prism-mapfit    = "pokeprism_devtools.mapfit:main"
+prism-metatiles = "pokeprism_devtools.metatiles:main"
+prism-newmap    = "pokeprism_devtools.map_new:main"
+prism-maplint   = "pokeprism_devtools.maplint:main"
+
+# The mount discovers plugins through this group. The name is the
+# seam's published ABI: every distribution that registers one has to
+# spell it identically, and it is spelled once in code, in
+# `contract/mount._GROUP`. Editing this needs a reinstall to take
+# effect — entry points live in the dist metadata, not the source.
+[project.entry-points."crystal_studio.plugins"]
+prism = "pokeprism_devtools.hacks.prism.claim"
+
+# `namespaces = true` is the whole split: `pokeprism_devtools` is a
+# PEP 420 namespace package with no `__init__.py`, so these
+# distributions install side by side and answer as one package.
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
