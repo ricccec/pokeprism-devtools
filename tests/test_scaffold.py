@@ -15,19 +15,19 @@ from __future__ import annotations
 
 import re
 import shutil
-import os
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from pokeprism_devtools.shared import paths  # noqa: E402
+
 #: The prism checkout, resolved absolutely and never relative to this repo — a
 #: path that walks above it answers differently depending on where the repo sits.
 #: The skip below is the reason that matters: an absent tree prints `all checks
 #: passed` for a file whose real half never ran.
-PRISM = Path(os.environ.get("POKEPRISM_TREE",
-                            Path.home() / "code/pokeprism"))
+PRISM = paths.find_checkout("pokeprism")
 
 
 from pokeprism_devtools.hacks.prism import consts
@@ -656,7 +656,7 @@ def test_removal_leaves_what_it_must(root: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 def _real_repo() -> Path | None:
-    for cand in (Path.home() / "code/pokeprism",
+    for cand in (paths.find_checkout("pokeprism"),
                  PRISM):
         if (cand / "maps/map_headers.asm").exists():
             return cand
@@ -666,7 +666,7 @@ def _real_repo() -> Path | None:
 def test_real_parsers(tmp: Path) -> None:
     root = _real_repo()
     if root is None:
-        print("\n(no pokeprism checkout found — skipping the real-repo checks)")
+        print(f"\n(skipping the real-repo checks: {paths.explain_missing_checkout('pokeprism')})")
         return
 
     print("\nevery real trainer group, read positionally")

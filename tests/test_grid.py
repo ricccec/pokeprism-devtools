@@ -24,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from pokeprism_devtools.shared import paths  # noqa: E402
 from pokeprism_devtools import map_show  # noqa: E402
 from pokeprism_devtools.hacks.prism.events import eventheader
 from pokeprism_devtools.hacks.prism.maps import blocksrc
@@ -32,7 +33,7 @@ from pokeprism_devtools.shared import coords, symfile # noqa: E402
 from pokeprism_devtools.shared.overworld import blockdata  # noqa: E402
 from pokeprism_devtools.hacks.prism.maps.mapformat import PRISM_FORMAT  # noqa: E402
 
-PRISM = Path.home() / "code/pokeprism"
+PRISM = paths.find_checkout("pokeprism")
 FAILED = 0
 
 

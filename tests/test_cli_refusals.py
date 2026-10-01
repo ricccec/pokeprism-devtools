@@ -36,12 +36,13 @@ import sys
 import tempfile
 from importlib.metadata import entry_points
 from pathlib import Path
+from pokeprism_devtools.shared import paths
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 #: A real pret tree that is not prism's. Its absence skips that half rather
 #: than failing it — the trees are a developer's checkout, not a fixture.
-FOREIGN_TREE = Path.home() / "code/pokecrystal"
+FOREIGN_TREE = paths.find_checkout("pokecrystal")
 
 #: The studio is a full-screen TUI: it takes the terminal rather than returning,
 #: so it cannot answer this question in a subprocess. Named, not silently

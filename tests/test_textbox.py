@@ -12,7 +12,6 @@ change to the width model quietly shifts either cliff, that shows up here.
 
 from __future__ import annotations
 
-import os
 import sys
 import tempfile
 from collections import Counter
@@ -20,12 +19,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from pokeprism_devtools.shared import paths  # noqa: E402
+
 #: The prism checkout, resolved absolutely and never relative to this repo — a
 #: path that walks above it answers differently depending on where the repo sits.
 #: The skip below is the reason that matters: an absent tree prints `all checks
 #: passed` for a file whose real half never ran.
-PRISM = Path(os.environ.get("POKEPRISM_TREE",
-                            Path.home() / "code/pokeprism"))
+PRISM = paths.find_checkout("pokeprism")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 

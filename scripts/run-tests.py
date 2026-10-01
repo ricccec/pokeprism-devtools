@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -72,11 +73,33 @@ def find_interpreter() -> Path:
 
 VENV_PYTHON = find_interpreter()
 
-#: Where a real pokeprism checkout lives. The tests that read the three game
-#: trees spell this path out themselves; this matches their convention rather
-#: than inventing a second one, and the environment overrides it.
-GAME_TREE = Path(
-    os.environ.get("POKEPRISM_TREE", Path.home() / "code/pokeprism"))
+#: Where a game tree is looked for when the environment does not say. The same
+#: order as `shared.paths.find_checkout`, and deliberately a second copy of it:
+#: this script has to start in a clone where nothing is installed yet, since
+#: reporting that honestly is the whole job. `test_runner` asserts the two agree.
+TREE_BASES = ("~/code", "~/src", "~", "~/code/*", "~/src/*",
+              "~/Projects/*", "~/projects/*")
+
+
+def find_game_tree(folder: str) -> Path:
+    """The pret checkout named `folder`, from `$<FOLDER>_TREE` or convention."""
+    override = os.environ.get(folder.upper() + "_TREE")
+    if override:
+        return Path(override).expanduser()
+    candidates: list[Path] = []
+    for base in TREE_BASES:
+        head, star, _ = base.partition("/*")
+        parents = (sorted(p for p in Path(head).expanduser().glob("*") if p.is_dir())
+                   if star else [Path(base).expanduser()])
+        candidates.extend(parent / folder for parent in parents)
+    for candidate in candidates:
+        if (candidate / "Makefile").exists() and (candidate / "main.asm").exists():
+            return candidate
+    return candidates[0]
+
+
+#: Where a real pokeprism checkout lives. `$POKEPRISM_TREE` overrides it.
+GAME_TREE = find_game_tree("pokeprism")
 
 #: Run these with the cwd inside a game tree, because they locate the tree by
 #: walking up for a `Makefile` beside a `main.asm`.
@@ -102,6 +125,19 @@ DEFAULT_TIMEOUT = 600
 OK, RED, FAIL, FIXED, SKIPPED = "ok", "red", "FAIL", "FIXED", "skipped"
 
 
+#: A line a test prints when it declines to run a check — almost always a
+#: game tree it could not find. Counted rather than read, because the whole
+#: danger of a skip is that it is reported as a pass: a file whose real half
+#: never ran still prints `all checks passed` and still exits 0.
+_SKIP_LINE = re.compile(r"\bskip(?:ped|ping)?\b", re.I)
+
+#: A line reporting one check's verdict, in either spelling the suite uses.
+#: Excluded from the skip count because a check *about* skipping is a check
+#: that ran: `test_runner` asserts an absent tree skips, and the word in its
+#: own passing output is not a skip of its own.
+_VERDICT_LINE = re.compile(r"^\s*(\[\s*(?:OK|FAIL)\s*\]|ok\s|FAIL\s)")
+
+
 @dataclass
 class Result:
     name: str
@@ -113,6 +149,12 @@ class Result:
     @property
     def is_unexpected(self) -> bool:
         return self.status in (FAIL, FIXED)
+
+    @property
+    def checks_skipped(self) -> int:
+        """How many checks this file said it was not running."""
+        return sum(1 for line in self.output.splitlines()
+                   if _SKIP_LINE.search(line) and not _VERDICT_LINE.match(line))
 
 
 def clear_bytecode_caches() -> int:
@@ -215,6 +257,13 @@ def print_report(results: list[Result], verbose: bool, skipped_slow: list[str],
              for s in (OK, RED, FAIL, FIXED, SKIPPED)}
     print(f"\n{len(tally[OK])}/{len(results)} ok in {wall:.1f}s"
           f" — {len(tally[RED])} known red, {len(tally[SKIPPED])} skipped")
+    partial = [r for r in results if r.checks_skipped]
+    if partial:
+        total = sum(r.checks_skipped for r in partial)
+        print(f"  {total} checks skipped inside {len(partial)} file(s) — a pass "
+              f"here means the checks that ran passed, not that they all ran:")
+        for r in sorted(partial, key=lambda r: -r.checks_skipped):
+            print(f"    {r.name}: {r.checks_skipped}")
     if skipped_slow:
         print(f"  not run (--fast): {', '.join(skipped_slow)}")
     for name in tally[SKIPPED]:

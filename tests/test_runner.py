@@ -233,6 +233,33 @@ def test_game_tree_skip(runner, tmp: Path) -> None:
         runner.GAME_TREE, runner.NEEDS_GAME_TREE = real_tree, real_needs
 
 
+def test_tree_resolution_matches_the_library(runner) -> None:
+    """The runner's own resolver agrees with `shared.paths`, tree for tree.
+
+    The runner carries a second copy on purpose — it must start before anything
+    is installed — and a second copy that is never compared is a fork waiting to
+    happen. Skipped, loudly, where the library is not installed, which is the
+    one situation the duplication exists for.
+    """
+    print("\nthe duplicated tree resolver")
+    try:
+        from pokeprism_devtools.shared import paths
+    except ModuleNotFoundError:
+        print("  --   skipping: pret-toolkit is not installed, which is the "
+              "case this duplication exists to survive")
+        return
+
+    for folder in ("pokeprism", "pokecrystal", "polishedcrystal"):
+        mine: Path = runner.find_game_tree(folder)
+        theirs: Path = paths.find_checkout(folder)
+        check(f"{folder}: the runner and the library resolve the same path",
+              mine == theirs, str(mine) if mine == theirs else f"{mine} vs {theirs}")
+
+    check("and look in the same places, in the same order",
+          tuple(runner.TREE_BASES) == tuple(paths.CHECKOUT_BASES),
+          ", ".join(runner.TREE_BASES))
+
+
 def test_selection(runner, tmp: Path) -> None:
     """Selection, over a seeded `tests/` — so it holds in any repo.
 
@@ -277,5 +304,6 @@ if __name__ == "__main__":
         test_timeout(runner, tmp)
         test_flaky_retry(runner, tmp)
         test_game_tree_skip(runner, tmp)
+    test_tree_resolution_matches_the_library(runner)
     print(f"\n{'FAILURES: ' + str(_failures) if _failures else 'all ok'}")
     sys.exit(1 if _failures else 0)

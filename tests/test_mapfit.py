@@ -33,7 +33,7 @@ from pokeprism_devtools.shared import paths # noqa: E402
 from pokeprism_devtools.shared.mapfile import Bank, MapFile, Section  # noqa: E402
 from pokeprism_devtools.hacks.prism.maps.mapspec import MapSpec  # noqa: E402
 
-PRISM = Path.home() / "code/pokeprism"
+PRISM = paths.find_checkout("pokeprism")
 
 _failures = 0
 
