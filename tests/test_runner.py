@@ -9,7 +9,7 @@ two reds are known, `test_studio_tui` flakes in a batch — and a fact that stop
 being enforced is a fact nobody is told about.
 
 So each of those is seeded here and checked to be caught. **The runner's own
-`KNOWN_RED` and `FLAKY_IN_BATCH` lists are patched, never read**, because this
+`EXPECTED_RED` and `FLAKY_IN_BATCH` lists are patched, never read**, because this
 test asserts the *mechanism*: the day `test_maplint` is fixed and its row
 deleted, this file must not go red with it.
 
@@ -85,7 +85,19 @@ def run_runner_main(runner, tests_dir: Path, argv: list[str]) -> tuple[int, str]
     both what it returned and what it printed — the report is half the
     behaviour, and a status nobody prints is a status nobody acts on."""
     real_tests, real_argv = runner.TESTS, sys.argv
+    # `main()` refuses to run while a list names a test that is not there, and
+    # pointing it at a seeded directory makes the repo's own names absent. Each
+    # list is narrowed to what this directory holds rather than emptied, so a
+    # name the caller seeded for its own case survives and the repo's does not.
+    real_lists = (runner.FLAKY_IN_BATCH, runner.SLOW, runner.NEEDS_GAME_TREE,
+                  runner.KNOWN_RED, runner.LOCAL_RED)
     runner.TESTS = tests_dir
+    here = {path.stem for path in tests_dir.glob("test_*.py")}
+    runner.FLAKY_IN_BATCH = runner.FLAKY_IN_BATCH & here
+    runner.SLOW = runner.SLOW & here
+    runner.NEEDS_GAME_TREE = runner.NEEDS_GAME_TREE & here
+    runner.KNOWN_RED = {k: v for k, v in runner.KNOWN_RED.items() if k in here}
+    runner.LOCAL_RED = {k: v for k, v in runner.LOCAL_RED.items() if k in here}
     sys.argv = ["run-tests.py", *argv]
     buffer = io.StringIO()
     try:
@@ -93,6 +105,8 @@ def run_runner_main(runner, tests_dir: Path, argv: list[str]) -> tuple[int, str]
             code = runner.main()
     finally:
         runner.TESTS, sys.argv = real_tests, real_argv
+        (runner.FLAKY_IN_BATCH, runner.SLOW, runner.NEEDS_GAME_TREE,
+         runner.KNOWN_RED, runner.LOCAL_RED) = real_lists
     return code, buffer.getvalue()
 
 
@@ -104,14 +118,14 @@ def test_classification(runner) -> None:
     check("an unknown test exiting 1 is a FAIL",
           runner.classify_exit_code("test_x", 1) == runner.FAIL)
 
-    runner.KNOWN_RED["test_seeded_red"] = "seeded"
+    runner.EXPECTED_RED["test_seeded_red"] = "seeded"
     try:
         check("a known red exiting 1 is expected",
               runner.classify_exit_code("test_seeded_red", 1) == runner.RED)
         check("a known red exiting 0 is FIXED, not silence",
               runner.classify_exit_code("test_seeded_red", 0) == runner.FIXED)
     finally:
-        del runner.KNOWN_RED["test_seeded_red"]
+        del runner.EXPECTED_RED["test_seeded_red"]
 
     print("\nwhich statuses fail the run")
     for status, unexpected in ((runner.FAIL, True), (runner.FIXED, True),
@@ -140,16 +154,16 @@ def test_fixed_row(runner, tmp: Path) -> None:
     and the run must fail so somebody deletes the row on purpose."""
     print("\na known red that starts passing")
     write_test_script(tmp, "test_seeded", PASSES)
-    runner.KNOWN_RED["test_seeded"] = "seeded"
+    runner.EXPECTED_RED["test_seeded"] = "seeded"
     try:
         result = runner.run_one_test(tmp / "test_seeded.py", 30)
         check("reports FIXED, not ok", result.status == runner.FIXED)
         code, report = run_runner_main(runner, tmp, ["-k", "seeded"])
         check("main() exits non-zero on it", code == 1)
         check("and says to delete the row",
-              "delete its KNOWN_RED row" in report)
+              "delete its row from KNOWN_RED" in report)
     finally:
-        del runner.KNOWN_RED["test_seeded"]
+        del runner.EXPECTED_RED["test_seeded"]
 
 
 def test_timeout(runner, tmp: Path) -> None:
@@ -233,6 +247,54 @@ def test_game_tree_skip(runner, tmp: Path) -> None:
         runner.GAME_TREE, runner.NEEDS_GAME_TREE = real_tree, real_needs
 
 
+def test_local_red_file(runner, tmp: Path) -> None:
+    """A working copy's own reds are read from disk, and a bad file is refused.
+
+    The rows this file holds are the ones that must never be committed: they say
+    a test is expected to fail, which in someone else's clone is a lie that gets
+    their healthy run reported as FIXED. Silently ignoring a malformed file
+    would be the same failure one step earlier — a row you believe is recorded
+    and is not.
+    """
+    print("\nthe local known-red file")
+    real_file = runner.LOCAL_RED_FILE
+    try:
+        runner.LOCAL_RED_FILE = tmp / "absent.json"
+        check("an absent file is the normal case, not an error",
+              runner.read_local_red() == {})
+
+        runner.LOCAL_RED_FILE = tmp / "rows.json"
+        runner.LOCAL_RED_FILE.write_text('{"test_drifted": "my tree, not yours"}')
+        rows = runner.read_local_red()
+        check("a row is read back whole", rows == {"test_drifted": "my tree, not yours"},
+              str(rows))
+
+        runner.LOCAL_RED_FILE.write_text("{not json")
+        refused = False
+        try:
+            runner.read_local_red()
+        except SystemExit as stop:
+            refused = "not valid JSON" in str(stop)
+        check("a malformed file stops the run rather than reading as empty", refused)
+
+        runner.LOCAL_RED_FILE.write_text('["test_drifted"]')
+        refused = False
+        try:
+            runner.read_local_red()
+        except SystemExit as stop:
+            refused = "test name -> reason" in str(stop)
+        check("so does a file of the wrong shape", refused)
+    finally:
+        runner.LOCAL_RED_FILE = real_file
+
+    # A tripwire, not a law: a genuine repo-wide red is allowed, and adding one
+    # means editing this line on purpose. That is the same discipline KNOWN_RED
+    # itself runs on — the row that is never re-examined is the one that rots.
+    check("no red is committed yet; add one here deliberately or not at all",
+          runner.KNOWN_RED == {},
+          f"{runner.KNOWN_RED} — if these are true of every clone, say so here")
+
+
 def test_tree_resolution_matches_the_library(runner) -> None:
     """The runner's own resolver agrees with `shared.paths`, tree for tree.
 
@@ -304,6 +366,7 @@ if __name__ == "__main__":
         test_timeout(runner, tmp)
         test_flaky_retry(runner, tmp)
         test_game_tree_skip(runner, tmp)
+        test_local_red_file(runner, tmp)
     test_tree_resolution_matches_the_library(runner)
     print(f"\n{'FAILURES: ' + str(_failures) if _failures else 'all ok'}")
     sys.exit(1 if _failures else 0)

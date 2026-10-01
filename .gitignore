@@ -11,3 +11,7 @@ dist/
 **/.claude
 # Claude
 CLAUDE.md
+
+# Tests this working copy expects to fail — a live game tree
+# carrying an edit the fixtures predate, not a repo defect.
+.known-red.json

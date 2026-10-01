@@ -44,6 +44,7 @@ the one case it did not cover.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -105,20 +106,48 @@ GAME_TREE = find_game_tree("pokeprism")
 #: walking up for a `Makefile` beside a `main.asm`.
 NEEDS_GAME_TREE = {"test_lib"}
 
-#: Failing before this branch started, for a reason that is not the suite's
-#: fault. Both are the same drift: the live prism tree has an edit the fixtures
-#: predate (MtEmberGateway, db7 against 8, from prism's mt-ember-west edit).
-KNOWN_RED = {
-    "test_eventheader": "live prism tree drift — MtEmberGateway db7 vs 8",
-    "test_maplint": "live prism tree drift — MtEmberGateway db7 vs 8",
-}
+#: Failing for a reason that is not the suite's fault **in every clone**. A row
+#: here is a claim about this repository, so it has to be true of a checkout
+#: nobody has touched. A test that fails because of an edit in *your* game tree
+#: is not that, and belongs in LOCAL_RED_FILE instead.
+KNOWN_RED: dict[str, str] = {}
+
+#: The same thing for reds that are facts about one working copy — most often a
+#: live game tree carrying an edit the fixtures predate. Git-ignored, because
+#: committing one tells every other clone that a test it will watch pass is
+#: expected to fail, and the runner would then report their healthy run as
+#: FIXED and ask them to delete a row that was never about them.
+#:
+#: A JSON object of `{"test_name": "why"}`. Absent is the normal case.
+LOCAL_RED_FILE = REPO / ".known-red.json"
+
+
+def read_local_red() -> dict[str, str]:
+    """Reds recorded for this working copy, or none if the file is absent."""
+    if not LOCAL_RED_FILE.exists():
+        return {}
+    try:
+        rows = json.loads(LOCAL_RED_FILE.read_text())
+    except json.JSONDecodeError as bad:
+        sys.exit(f"{LOCAL_RED_FILE} is not valid JSON: {bad}")
+    if not isinstance(rows, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in rows.items()):
+        sys.exit(f"{LOCAL_RED_FILE} must be an object of test name -> reason")
+    return rows
+
+
+LOCAL_RED = read_local_red()
+
+#: What the runner forgives, from both sources. Kept separate above so a report
+#: can say which one a row came from: deleting the wrong one is a silent loss.
+EXPECTED_RED = {**KNOWN_RED, **LOCAL_RED}
 
 #: Fails in a batch, passes alone. Re-run by itself before being believed.
-FLAKY_IN_BATCH = {"test_studio", "test_studio_tui"}
+FLAKY_IN_BATCH: set[str] = set()
 
 #: Over two minutes each; the rest of the suite is under a second a file.
 #: `--fast` drops these, and says so rather than quietly shrinking the run.
-SLOW = {"test_studio_tui"}
+SLOW: set[str] = set()
 
 DEFAULT_TIMEOUT = 600
 
@@ -207,7 +236,7 @@ def classify_exit_code(name: str, code: int) -> str:
     row that has to be deleted by hand, and this is the only moment anyone will
     be told about it.
     """
-    if name in KNOWN_RED:
+    if name in EXPECTED_RED:
         return RED if code else FIXED
     return FAIL if code else OK
 
@@ -270,14 +299,39 @@ def print_report(results: list[Result], verbose: bool, skipped_slow: list[str],
         note = next(r.note for r in results if r.name == name)
         print(f"  skipped: {name} — {note}")
     for name in tally[RED]:
-        print(f"  known red: {name} — {KNOWN_RED[name]}")
+        where = "local" if name in LOCAL_RED else "committed"
+        print(f"  known red ({where}): {name} — {EXPECTED_RED[name]}")
     for r in results:
         if r.note and r.status != SKIPPED:
             print(f"  re-run alone: {r.name} — {r.note}")
     for name in tally[FIXED]:
-        print(f"  FIXED: {name} passes now — delete its KNOWN_RED row")
+        source = (LOCAL_RED_FILE.name if name in LOCAL_RED else "KNOWN_RED")
+        print(f"  FIXED: {name} passes now — delete its row from {source}")
     for name in tally[FAIL]:
         print(f"  FAIL: {name}")
+
+
+def verify_suite_lists() -> None:
+    """Every name these lists hold must be a test file in this repo.
+
+    They are filtered to the tests present when the suite runs, so a name that
+    is not here costs nothing and says nothing — which is precisely how a list
+    rots: a typo, a row about another repo's test, and a correct row are
+    indistinguishable. Five repos each carried lists naming tests they did not
+    have, and nothing could have told anyone.
+    """
+    present = {path.stem for path in TESTS.glob("test_*.py")}
+    declared = {"KNOWN_RED": set(KNOWN_RED), LOCAL_RED_FILE.name: set(LOCAL_RED),
+                "FLAKY_IN_BATCH": FLAKY_IN_BATCH, "SLOW": SLOW,
+                "NEEDS_GAME_TREE": NEEDS_GAME_TREE}
+    absent = {where: sorted(names - present)
+              for where, names in declared.items() if names - present}
+    if absent:
+        rows = "\n".join(f"  {where}: {', '.join(names)}"
+                          for where, names in sorted(absent.items()))
+        sys.exit(f"these name tests this repo does not have, under {TESTS}:\n"
+                 f"{rows}\nA list that names an absent test is filtered away "
+                 f"in silence, so it can never be wrong out loud.")
 
 
 def main() -> int:
@@ -285,7 +339,8 @@ def main() -> int:
     parser.add_argument("-k", dest="pattern", metavar="TEXT",
                         help="only tests whose filename contains TEXT")
     parser.add_argument("--fast", action="store_true",
-                        help=f"skip the slow ones ({', '.join(sorted(SLOW))})")
+                        help="skip the slow ones ("
+                             + (", ".join(sorted(SLOW)) or "none here") + ")")
     parser.add_argument("-j", dest="jobs", type=int, default=os.cpu_count(),
                         help="tests to run at once (default: one per core)")
     parser.add_argument("-v", dest="verbose", action="store_true",
@@ -294,6 +349,7 @@ def main() -> int:
                         help=f"seconds before a test is called hung "
                              f"(default: {DEFAULT_TIMEOUT})")
     args = parser.parse_args()
+    verify_suite_lists()
 
     if not VENV_PYTHON.exists():
         print(f"No interpreter at {VENV_PYTHON}. "
