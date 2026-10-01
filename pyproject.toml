@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pokeprism-devtools"
 version = "0.5.0"
-description = "Crystal Studio support for Pokemon Prism, plus Prism's own command-line tools"
+description = "Adds Pokémon Prism support to Crystal Studio, plus Prism's own CLI tools"
 requires-python = ">=3.10"
 dependencies = ["pret-toolkit", "crystal-studio-plugin-api", "questionary", "Pillow"]
 
