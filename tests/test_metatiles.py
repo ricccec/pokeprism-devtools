@@ -23,8 +23,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools import metatiles  # noqa: E402
-from pokeprism_devtools.metatiles import (  # noqa: E402
+from pretkit import metatiles  # noqa: E402
+from pretkit.metatiles import (  # noqa: E402
     MapUse,
     TilesetAnalysis,
     blank_unused_metatiles,
@@ -34,12 +34,12 @@ from pokeprism_devtools.metatiles import (  # noqa: E402
     tile_coverage,
     tileset_id_map,
 )
-from pokeprism_devtools.metatiles.tileset import (  # noqa: E402
+from pretkit.metatiles.tileset import (  # noqa: E402
     _blob_sizes,
     _COLLISION_PER_METATILE,
     _TILES_PER_METATILE,
 )
-from pokeprism_devtools.shared.symfile import SymFile, Symbol  # noqa: E402
+from pretkit.shared.symfile import SymFile, Symbol  # noqa: E402
 
 _failures = 0
 

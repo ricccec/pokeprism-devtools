@@ -40,7 +40,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools.dev_server import playtest, tui  # noqa: E402
+from pretkit.dev_server import playtest, tui  # noqa: E402
 
 _failures = 0
 
@@ -285,7 +285,7 @@ def _fixture(tmp: Path) -> Path:
 
 
 def _inventory_schema() -> int:
-    from pokeprism_devtools.dev_server import inventory
+    from pretkit.dev_server import inventory
     return inventory.INVENTORY_SCHEMA
 
 
@@ -784,7 +784,7 @@ def test_a_hand_written_gap_is_left_alone(tmp: Path) -> None:
 def _apply_party_refuses(party: list[dict]) -> bool:
     """What `apply` does with an entry that has no species — asked of the real
     function, so this stays true if its message or its guard changes."""
-    from pokeprism_devtools.dev_server import apply as apply_mod
+    from pretkit.dev_server import apply as apply_mod
     try:
         apply_mod._apply_party(None, party, {"pokemon": [], "moves": [], "items": [],
                                              "species_data": {}, "move_pp": []},
@@ -1403,7 +1403,7 @@ def test_a_newer_sym_refreshes_the_inventory(tmp: Path) -> None:
         rebuilt.append(s)
         return {"schema": _inventory_schema(), "maps": [], "rebuilt": True}
 
-    from pokeprism_devtools.dev_server import inventory
+    from pretkit.dev_server import inventory
     saved = inventory.build
     inventory.build = _fake_build
     try:
@@ -1449,7 +1449,7 @@ def test_the_watcher_thread_picks_up_a_rebuild(tmp: Path) -> None:
             rebuilt.append(s)
             return {"schema": _inventory_schema(), "maps": [], "rebuilt": True}
 
-        from pokeprism_devtools.dev_server import inventory
+        from pretkit.dev_server import inventory
         saved_build, saved_poll = inventory.build, tui.SYM_POLL_SECONDS
         inventory.build = _fake_build
         tui.SYM_POLL_SECONDS = 0.01

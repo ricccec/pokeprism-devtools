@@ -33,8 +33,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools import map_new  # noqa: E402
-from pokeprism_devtools.map_new.wizard import _Aborted, _gather_spec  # noqa: E402
+from pretkit import map_new  # noqa: E402
+from pretkit.map_new.wizard import _Aborted, _gather_spec  # noqa: E402
 
 _failures = 0
 

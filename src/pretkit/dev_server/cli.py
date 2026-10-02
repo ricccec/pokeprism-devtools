@@ -33,11 +33,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from pokeprism_devtools.hacks.prism import claim
+from pretkit.hacks.prism import claim
 
-from pokeprism_devtools.hacks.prism.save import roms
-from pokeprism_devtools.shared import paths
-from pokeprism_devtools.shared.devtools import make_devtools_dir
+from pretkit.hacks.prism.save import roms
+from pretkit.shared import paths
+from pretkit.shared.devtools import make_devtools_dir
 
 from . import apply, inventory, playtest
 

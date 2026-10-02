@@ -21,8 +21,8 @@ import datetime as dt
 from dataclasses import dataclass
 from pathlib import Path
 
-from pokeprism_devtools.hacks.prism.save import savefile
-from pokeprism_devtools.shared import symfile
+from pretkit.hacks.prism.save import savefile
+from pretkit.shared import symfile
 
 from . import apply
 # The emulator is neutral — a SameBoy process, no map dialect — so it lives in

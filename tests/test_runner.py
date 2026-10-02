@@ -305,7 +305,7 @@ def test_tree_resolution_matches_the_library(runner) -> None:
     """
     print("\nthe duplicated tree resolver")
     try:
-        from pokeprism_devtools.shared import paths
+        from pretkit.shared import paths
     except ModuleNotFoundError:
         print("  --   skipping: pret-toolkit is not installed, which is the "
               "case this duplication exists to survive")

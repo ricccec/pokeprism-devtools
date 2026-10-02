@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools.shared import paths  # noqa: E402
+from pretkit.shared import paths  # noqa: E402
 
 #: The prism checkout, resolved absolutely and never relative to this repo — a
 #: path that walks above it answers differently depending on where the repo sits.
@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_maplint import _fixture  # noqa: E402
 
-from pokeprism_devtools.hacks.prism.dialogue import charmap, dialogue, textbox # noqa: E402
+from pretkit.hacks.prism.dialogue import charmap, dialogue, textbox # noqa: E402
 
 _failures = 0
 

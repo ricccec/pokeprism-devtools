@@ -23,7 +23,7 @@ would fail on code that works. A traceback is the defect; the wording is taste.
 
 **The script list is discovered, not written down**, so this file keeps working
 after the products are carved: it asks the installed distributions which
-`pokeprism_devtools` console scripts exist. In this tree that is twelve; in a
+`pretkit` console scripts exist. In this tree that is twelve; in a
 carved repo it is that repo's own.
 
     python tests/test_cli_refusals.py
@@ -36,7 +36,7 @@ import sys
 import tempfile
 from importlib.metadata import entry_points
 from pathlib import Path
-from pokeprism_devtools.shared import paths
+from pretkit.shared import paths
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -70,7 +70,7 @@ def check(label: str, cond: bool, detail: str = "") -> None:
 def find_console_scripts() -> list[str]:
     """The installed `prism-*` scripts that live in this namespace."""
     return sorted(e.name for e in entry_points(group="console_scripts")
-                  if e.value.startswith("pokeprism_devtools."))
+                  if e.value.startswith("pretkit."))
 
 
 def run_in(script: str, cwd: Path) -> tuple[int, str]:
@@ -131,14 +131,14 @@ def test_the_check_can_fail(tmp: Path) -> None:
                               timeout=TIMEOUT_SECONDS).stderr
 
     err = traceback_from(
-        "from pokeprism_devtools.shared import paths; paths.find_repo_root()", tmp)
+        "from pretkit.shared import paths; paths.find_repo_root()", tmp)
     check("an unguarded find_repo_root() tracebacks, so the detector works",
           TRACEBACK in err and "RepoNotFound" in err, err.strip()[-110:])
 
     if (FOREIGN_TREE / "main.asm").exists():
         err = traceback_from(
             "from pathlib import Path\n"
-            "from pokeprism_devtools.hacks.prism import maps\n"
+            "from pretkit.hacks.prism import maps\n"
             f"maps.parse_maps(Path({str(FOREIGN_TREE)!r})"
             " / 'constants/map_dimension_constants.asm')", FOREIGN_TREE)
         check("an unguarded prism read in a foreign tree tracebacks too",

@@ -23,15 +23,15 @@ from pathlib import Path
 # Allow running straight from a clone without installing.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pokeprism_devtools import mapfit  # noqa: E402
-from pokeprism_devtools.mapfit import freespace, mapwire  # noqa: E402
-from pokeprism_devtools.mapfit.packing import (  # noqa: E402
+from pretkit import mapfit  # noqa: E402
+from pretkit.mapfit import freespace, mapwire  # noqa: E402
+from pretkit.mapfit.packing import (  # noqa: E402
     FreeSpace, Item, NoFitError, pack_into_banks,
 )
-from pokeprism_devtools.hacks.prism.maps import blobsizes, mapsource # noqa: E402
-from pokeprism_devtools.shared import paths # noqa: E402
-from pokeprism_devtools.shared.mapfile import Bank, MapFile, Section  # noqa: E402
-from pokeprism_devtools.hacks.prism.maps.mapspec import MapSpec  # noqa: E402
+from pretkit.hacks.prism.maps import blobsizes, mapsource # noqa: E402
+from pretkit.shared import paths # noqa: E402
+from pretkit.shared.mapfile import Bank, MapFile, Section  # noqa: E402
+from pretkit.hacks.prism.maps.mapspec import MapSpec  # noqa: E402
 
 PRISM = paths.find_checkout("pokeprism")
 

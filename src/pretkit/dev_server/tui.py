@@ -19,8 +19,8 @@ import sys
 import threading
 from pathlib import Path
 
-from pokeprism_devtools.hacks.prism.save import roms
-from pokeprism_devtools.shared import paths
+from pretkit.hacks.prism.save import roms
+from pretkit.shared import paths
 
 from . import apply, inventory, playtest
 from .state import (BagMenu, FlagMenu, PartyMenu, PlayerMenu, PositionMenu,

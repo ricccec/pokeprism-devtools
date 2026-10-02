@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Smoke test for the pokeprism_devtools library against a real pokeprism
+"""Smoke test for the pretkit library against a real pokeprism
 build. Run from anywhere inside the pokeprism repo (or with the package
 installed via pipx):
 
-    python -m pokeprism_devtools.tests.test_lib   # if exposed as a module
+    python -m pretkit.tests.test_lib   # if exposed as a module
     python /path/to/pokeprism-devtools/tests/test_lib.py
 
 Exits non-zero on the first failed check. No pytest dependency — just a
@@ -14,15 +14,15 @@ from __future__ import annotations
 
 import sys
 
-from pokeprism_devtools.hacks.prism.battles import party, species
-from pokeprism_devtools.hacks.prism.events import eventheader
-from pokeprism_devtools.hacks.prism.maps import maps, mapsource
-from pokeprism_devtools.hacks.prism.save import savefile
-from pokeprism_devtools.hacks.prism.sprites import render
-from pokeprism_devtools.hacks.prism.save import roms as prism_roms
-from pokeprism_devtools.hacks.prism.maps.mapformat import PRISM_FORMAT
-from pokeprism_devtools.shared import constants, lz, paths, symfile
-from pokeprism_devtools.shared.overworld import blockdata, people, spritevram
+from pretkit.hacks.prism.battles import party, species
+from pretkit.hacks.prism.events import eventheader
+from pretkit.hacks.prism.maps import maps, mapsource
+from pretkit.hacks.prism.save import savefile
+from pretkit.hacks.prism.sprites import render
+from pretkit.hacks.prism.save import roms as prism_roms
+from pretkit.hacks.prism.maps.mapformat import PRISM_FORMAT
+from pretkit.shared import constants, lz, paths, symfile
+from pretkit.shared.overworld import blockdata, people, spritevram
 
 
 def check(label: str, cond: bool, detail: str = "") -> None:
@@ -395,7 +395,7 @@ def main() -> None:
         # Full path: patch a template save to MtEmberWest (15,79) and confirm the
         # instantiated struct matches the game's, on every field the game does not
         # re-derive per frame (step type / walking direction / anim counters do).
-        from pokeprism_devtools.dev_server import apply as devapply, inventory as devinv
+        from pretkit.dev_server import apply as devapply, inventory as devinv
         template = root / "pokeprism.sav"
         if template.exists():
             inv = devinv.build(root, dsym)
@@ -574,8 +574,8 @@ def main() -> None:
           int.from_bytes(char[34:36], "big") == 19)
 
     print("\ndev_server — inventory bag fields")
-    from pokeprism_devtools.dev_server import apply as dev_apply
-    from pokeprism_devtools.dev_server import inventory as dev_inventory
+    from pretkit.dev_server import apply as dev_apply
+    from pretkit.dev_server import inventory as dev_inventory
 
     inv = dev_inventory.build(root, sym)
     check(
@@ -790,7 +790,7 @@ def main() -> None:
         rejects_tmhms("non-string entry", [{"name": "HM_CUT"}])
 
     print("\nmapfile.py")
-    from pokeprism_devtools.shared import mapfile as mapfile_mod
+    from pretkit.shared import mapfile as mapfile_mod
     mp = mapfile_mod.MapFile.parse(paths.find_built_map(root))
     rom = mp.rom_banks()
     check("at least 118 ROM banks", len(rom) >= 118, f"{len(rom)}")

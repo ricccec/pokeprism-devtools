@@ -113,11 +113,11 @@ exceptions.
 
 ```bash
 cd /path/to/pokeprism
-python -m pokeprism_devtools.dev_server.test_maps                # all maps, quiet
-python -m pokeprism_devtools.dev_server.test_maps -v             # also print [OK] lines
-python -m pokeprism_devtools.dev_server.test_maps --map MAP      # one specific map
-python -m pokeprism_devtools.dev_server.test_maps --limit 50     # only first 50 (smoke)
-python -m pokeprism_devtools.dev_server.test_maps --show-traceback
+python -m pretkit.dev_server.test_maps                # all maps, quiet
+python -m pretkit.dev_server.test_maps -v             # also print [OK] lines
+python -m pretkit.dev_server.test_maps --map MAP      # one specific map
+python -m pretkit.dev_server.test_maps --limit 50     # only first 50 (smoke)
+python -m pretkit.dev_server.test_maps --show-traceback
 ```
 
 Useful any time you touch `blockdata.py`, `lz.py`, `people.py`, or
@@ -877,15 +877,15 @@ No flags — run it from inside the pokeprism checkout and answer the prompts.
 
 ## Extending the toolset
 
-All tools share the `pokeprism_devtools` package. To add a new one:
+All tools share the `pretkit` package. To add a new one:
 
-1. Add a module under `src/pokeprism_devtools/`, e.g. `foo.py` (for a
-   single-file tool) or `src/pokeprism_devtools/foo/` (subpackage with
+1. Add a module under `src/pretkit/`, e.g. `foo.py` (for a
+   single-file tool) or `src/pretkit/foo/` (subpackage with
    its own `cli.py`).
 2. At the top, import from the package:
 
    ```python
-   from pokeprism_devtools import paths, symfile, constants, savefile
+   from pretkit import paths, symfile, constants, savefile
    ```
 
 3. Use `paths.find_repo_root()`, `paths.find_built_rom()`, `paths.find_built_sym()` to
@@ -894,7 +894,7 @@ All tools share the `pokeprism_devtools` package. To add a new one:
 
    ```toml
    [project.scripts]
-   foo = "pokeprism_devtools.foo:main"
+   foo = "pretkit.foo:main"
    ```
 
    Run `pipx install --force <repo>` once so the new shim lands on
