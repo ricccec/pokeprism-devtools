@@ -95,7 +95,8 @@ def run_runner_main(runner, tests_dir: Path, argv: list[str]) -> tuple[int, str]
     here = {path.stem for path in tests_dir.glob("test_*.py")}
     runner.FLAKY_IN_BATCH = runner.FLAKY_IN_BATCH & here
     runner.SLOW = runner.SLOW & here
-    runner.NEEDS_GAME_TREE = runner.NEEDS_GAME_TREE & here
+    runner.NEEDS_GAME_TREE = {k: v for k, v in runner.NEEDS_GAME_TREE.items()
+                              if k in here}
     runner.KNOWN_RED = {k: v for k, v in runner.KNOWN_RED.items() if k in here}
     runner.LOCAL_RED = {k: v for k, v in runner.LOCAL_RED.items() if k in here}
     sys.argv = ["run-tests.py", *argv]
@@ -216,35 +217,38 @@ def test_game_tree_skip(runner, tmp: Path) -> None:
     """No game tree is *skipped*, never *passed* — the whole point of the row.
 
     The needy test is seeded, because the claim is about the runner: a name in
-    `NEEDS_GAME_TREE` skips when there is no tree and is given the tree as its
-    cwd when there is one. Pointing this at a real product's file would make it
-    also assert that the file is on disk, which no repo owes the runner.
+    `NEEDS_GAME_TREE` skips when the checkout it asks for is absent, and is given
+    that checkout as its cwd when it is present. Pointing this at a real
+    product's file would make it also assert the file is on disk, which no repo
+    owes the runner — and the checkout it names here is deliberately one no hack
+    is called, because the runner must not care which.
     """
     print("\nthe game-tree cwd")
     folder = tmp / "gametree"
     folder.mkdir()
     needy = write_test_script(folder, "test_needs_tree", REPORTS_CWD)
 
-    real_tree, real_needs = runner.GAME_TREE, runner.NEEDS_GAME_TREE
-    runner.NEEDS_GAME_TREE = {"test_needs_tree"}
+    real_find, real_needs = runner.find_game_tree, runner.NEEDS_GAME_TREE
+    runner.NEEDS_GAME_TREE = {"test_needs_tree": "madeupgame"}
     try:
-        runner.GAME_TREE = tmp / "no-such-tree"
+        runner.find_game_tree = lambda folder: tmp / "no-such-tree"
         result = runner.run_one_test(needy, 30)
         check("an absent tree skips, and does not pass",
               result.status == runner.SKIPPED, result.status)
-        check("and says why", "needs a game tree" in result.note, result.note)
+        check("and says which checkout it wanted",
+              "needs a madeupgame checkout" in result.note, result.note)
 
         # A directory that exists is all the runner asks for; whether it holds a
         # Makefile is the test's business, not the runner's.
         stand_in = tmp / "stand-in-tree"
         stand_in.mkdir()
-        runner.GAME_TREE = stand_in
+        runner.find_game_tree = lambda folder: stand_in
         result = runner.run_one_test(needy, 30)
         check("a present tree runs it, and from inside the tree",
               result.status == runner.OK and str(stand_in) in result.output,
               f"{result.status}: {result.output.strip()[:60]}")
     finally:
-        runner.GAME_TREE, runner.NEEDS_GAME_TREE = real_tree, real_needs
+        runner.find_game_tree, runner.NEEDS_GAME_TREE = real_find, real_needs
 
 
 def test_local_red_file(runner, tmp: Path) -> None:

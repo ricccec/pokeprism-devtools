@@ -99,12 +99,11 @@ def find_game_tree(folder: str) -> Path:
     return candidates[0]
 
 
-#: Where a real pokeprism checkout lives. `$POKEPRISM_TREE` overrides it.
-GAME_TREE = find_game_tree("pokeprism")
-
-#: Run these with the cwd inside a game tree, because they locate the tree by
-#: walking up for a `Makefile` beside a `main.asm`.
-NEEDS_GAME_TREE = {"test_lib"}
+#: Tests that must run with the cwd *inside* a game tree, because they
+#: locate it by walking up for a `Makefile` beside a `main.asm`. Each
+#: names the checkout it needs, so the only repo that spells a hack name
+#: is the one with a test that reads that hack.
+NEEDS_GAME_TREE: dict[str, str] = {"test_lib": "pokeprism"}
 
 #: Failing for a reason that is not the suite's fault **in every clone**. A row
 #: here is a claim about this repository, so it has to be true of a checkout
@@ -209,11 +208,13 @@ def select_test_files(pattern: str | None, skip_slow: bool) -> list[Path]:
 def run_one_test(path: Path, timeout: int) -> Result:
     """Execute one test script and classify its exit code against KNOWN_RED."""
     name = path.stem
-    if name in NEEDS_GAME_TREE and not GAME_TREE.exists():
+    wants = NEEDS_GAME_TREE.get(name)
+    tree = find_game_tree(wants) if wants else None
+    if tree is not None and not tree.exists():
         return Result(name, SKIPPED, 0.0, "",
-                      f"needs a game tree; none at {GAME_TREE}")
+                      f"needs a {wants} checkout; none at {tree}")
 
-    cwd = GAME_TREE if name in NEEDS_GAME_TREE else REPO
+    cwd = tree if tree is not None else REPO
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     started = time.monotonic()
     try:
@@ -323,7 +324,7 @@ def verify_suite_lists() -> None:
     present = {path.stem for path in TESTS.glob("test_*.py")}
     declared = {"KNOWN_RED": set(KNOWN_RED), LOCAL_RED_FILE.name: set(LOCAL_RED),
                 "FLAKY_IN_BATCH": FLAKY_IN_BATCH, "SLOW": SLOW,
-                "NEEDS_GAME_TREE": NEEDS_GAME_TREE}
+                "NEEDS_GAME_TREE": set(NEEDS_GAME_TREE)}
     absent = {where: sorted(names - present)
               for where, names in declared.items() if names - present}
     if absent:
