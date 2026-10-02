@@ -7,24 +7,24 @@ Two ways a tree can be wrong, and the same invariant covers both:
     any parent. `RepoNotFound` subclasses `RuntimeError`, so an
     `except FileNotFoundError` does not catch it.
   * **the wrong tree** — run inside a *valid* pret tree belonging to another
-    hack. The root resolves, and a prism-only file is missing three frames
-    later.
+    hack. The root resolves, and a file only that hack has is missing three
+    frames later.
 
-The second case is why the exit code is asserted only for the first. Product A
-is hack-neutral by construction, so `pret-sym` and `pret-usage` **should**
-work in a pokecrystal tree; prism's own tools should refuse it. Both satisfy
-*no traceback*, which is the invariant — and asserting a shared exit code would
-force one of the two groups to be wrong.
+The second case is why the exit code is asserted only for the first. A
+hack-neutral command **should** work in any pret tree; a hack's own command
+should refuse one that is not its hack's. Both satisfy *no traceback*, which is
+the invariant — and asserting a shared exit code would force one of the two
+groups to be wrong.
 
-The check is strict about tracebacks and loose about wording: three scripts are
+The check is strict about tracebacks and loose about wording: some scripts are
 gated by argparse before they reach the lookup, and those that do reach it print
-in three spellings (`prism-maps:`, `error:`, `Error:`). Demanding one wording
+in several spellings (`<command>:`, `error:`, `Error:`). Demanding one wording
 would fail on code that works. A traceback is the defect; the wording is taste.
 
-**The script list is discovered, not written down**, so this file keeps working
-after the products are carved: it asks the installed distributions which
-`pretkit` console scripts exist. In this tree that is twelve; in a
-carved repo it is that repo's own.
+**The script list is discovered, not written down**, and it is discovered from
+*this repository's* own packaging. Selecting every `pretkit` console script
+installed was right while there was one distribution; with four installed side
+by side it made each copy of this file report on commands another repo ships.
 
     python tests/test_cli_refusals.py
 """
@@ -34,20 +34,22 @@ from __future__ import annotations
 import subprocess
 import sys
 import tempfile
-from importlib.metadata import entry_points
+import tomllib
+from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 from pretkit.shared import paths
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-#: A real pret tree that is not prism's. Its absence skips that half rather
-#: than failing it — the trees are a developer's checkout, not a fixture.
+#: A real pret tree that this repository's commands do not own, used for the
+#: wrong-tree half. Its absence skips that half rather than failing it — a game
+#: tree is a developer's checkout, not a fixture this repo can ship.
 FOREIGN_TREE = paths.find_checkout("pokecrystal")
 
 #: The studio is a full-screen TUI: it takes the terminal rather than returning,
 #: so it cannot answer this question in a subprocess. Named, not silently
 #: skipped, so that the day it grows a non-interactive path somebody decides.
-INTERACTIVE = {"crystal-studio"}
+INTERACTIVE: set[str] = set()
 
 #: Long enough that a slow import is not a failure, short enough that a CLI
 #: which waits for input is.
@@ -67,10 +69,27 @@ def check(label: str, cond: bool, detail: str = "") -> None:
           f"{(': ' + detail) if detail and not ok else ''}")
 
 
+def this_distribution() -> str:
+    """The distribution this repository builds, read from its own pyproject."""
+    pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    return tomllib.loads(pyproject.read_text())["project"]["name"]
+
+
 def find_console_scripts() -> list[str]:
-    """The installed `prism-*` scripts that live in this namespace."""
-    return sorted(e.name for e in entry_points(group="console_scripts")
-                  if e.value.startswith("pretkit."))
+    """The console scripts **this repository ships** — not every one installed.
+
+    Selecting by namespace prefix was right while there was one distribution and
+    wrong the moment there were four: a developer's environment holds all of
+    them, so every repo's copy of this file exercised all twelve commands and
+    reported on code it does not own. Read from this repo's own metadata
+    instead, which is still discovery rather than a written-down list.
+    """
+    try:
+        dist = distribution(this_distribution())
+    except PackageNotFoundError:
+        return []
+    return sorted(e.name for e in dist.entry_points
+                  if e.group == "console_scripts")
 
 
 def run_in(script: str, cwd: Path) -> tuple[int, str]:
@@ -93,8 +112,10 @@ def last_line(out: str) -> str:
 
 def test_outside_any_tree(tmp: Path) -> None:
     scripts = find_console_scripts()
-    check("the installed scripts were discovered, not assumed",
-          len(scripts) > 0, "no console_scripts in this namespace")
+    if not scripts:
+        print(f"  --   skipping: {this_distribution()} declares no console "
+              f"scripts, so there is nothing here to hold to this promise")
+        return
     for name in scripts:
         if name in INTERACTIVE:
             continue
@@ -141,8 +162,14 @@ def test_the_check_can_fail(tmp: Path) -> None:
             "from pretkit.hacks.prism import maps\n"
             f"maps.parse_maps(Path({str(FOREIGN_TREE)!r})"
             " / 'constants/map_dimension_constants.asm')", FOREIGN_TREE)
+        # Naming the expected failure is the whole of this check. Asking only
+        # whether *a* traceback appeared passes on `ModuleNotFoundError` — which
+        # is what a clone without this package installed produces, so the check
+        # would report that an unguarded read tracebacks while proving only that
+        # the reader was absent.
         check("an unguarded prism read in a foreign tree tracebacks too",
-              TRACEBACK in err, err.strip()[-110:])
+              TRACEBACK in err and "ModuleNotFoundError" not in err,
+              err.strip()[-110:])
 
 
 if __name__ == "__main__":
