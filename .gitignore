@@ -15,3 +15,9 @@ CLAUDE.md
 # Tests this working copy expects to fail — a live game tree
 # carrying an edit the fixtures predate, not a repo defect.
 .known-red.json
+
+# Never committed so far, and one careless `git add -A` from being so.
+.env
+.env.*
+.DS_Store
+.idea/
