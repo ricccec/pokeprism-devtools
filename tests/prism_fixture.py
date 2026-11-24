@@ -7,8 +7,8 @@ those counts describe — so a second copy drifts, and the day it does one side 
 asserting numbers the other no longer produces.
 
 It could not stay inside `test_maplint`: a test module is not importable across a
-repo boundary, and the integration repo needs the fixture while carrying no
-linter. Hence a module, present in both repos, changed in both or in neither.
+repo boundary, and a suite outside this repo builds the same tree while carrying
+no linter. Hence a module, present in both, changed in both or in neither.
 
 Nothing here imports a product. It writes `.asm` text, which is the only reason
 one fixture can serve a linter and an editor at once.

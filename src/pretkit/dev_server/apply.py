@@ -7,7 +7,7 @@ template's existing value, including the map cluster (group/number/x/y).
 Map-change side effects (block-data lookup, wScreenSave recompute, player
 struct reset, NPC clear) live here too — they're invoked automatically
 when any of `map.{name,x,y}` is touched. See
-`docs/blockdata-plan.md` for the why.
+`pret-toolkit`'s `docs/blockdata-plan.md` for the why.
 """
 
 from __future__ import annotations

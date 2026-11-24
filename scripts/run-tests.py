@@ -64,8 +64,8 @@ def find_interpreter() -> Path:
 
     `<repo>/.venv/bin/python` is this repo's convention and is preferred, so
     `python3 scripts/run-tests.py` still does the right thing. But it is only a
-    convention: a repo carved out of this one has no `.venv`, and neither does a
-    checkout whose environment lives somewhere else. Falling back to whatever is
+    convention: a fresh clone has no `.venv`, and neither does a checkout
+    whose environment lives somewhere else. Falling back to whatever is
     running this script is both correct and the only portable answer.
     """
     conventional = REPO / ".venv" / "bin" / "python"

@@ -5,10 +5,8 @@ Hermetic — a temp fixture repo and a fake `questionary`, no ROM/build.
 
     python tests/test_map_new_cli.py
 
-`_gather_spec` is 132 lines, the longest function in Phase 1's six packages,
-and under the whole suite it executed exactly one of them — its `def`. `main`
-is 68 and executed one. Nothing pinned what the wizard asks, in what order, or
-what it refuses.
+`_gather_spec` is the longest function in the CLI packages, and nothing else
+pins what the wizard asks, in what order, or what it refuses.
 
 `tests/test_map_new.py` does not cover this: it tests `asmedit/mapnew.py` and
 `hacks/vanilla/newmap.py`, one underscore away and unrelated code.

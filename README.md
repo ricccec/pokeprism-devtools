@@ -12,10 +12,16 @@ and nine commands that work on it directly.
 ## Install
 
 ```bash
-pip install pokeprism-devtools
+pip install git+https://github.com/ricccec/pret-toolkit \
+            git+https://github.com/ricccec/crystal-studio-plugin-api \
+            git+https://github.com/ricccec/pokeprism-devtools
 ```
 
-Requires Python 3.10 or newer. Installing it alongside `crystal-studio` is what
+Not on PyPI yet. Every dependency in this family is named by URL in the
+same command, which is how pip finds the ones PyPI does not have.
+Add `git+https://github.com/ricccec/crystal-studio` to the same command to get the IDE.
+
+Requires Python 3.11 or newer. Installing it alongside `crystal-studio` is what
 makes the IDE recognise a Prism checkout; the adapter registers itself through
 the `crystal_studio.plugins` entry-point group, with no configuration.
 
@@ -43,7 +49,7 @@ The import name is `pretkit`, a [PEP 420][pep420] namespace package shared with
 `pret-toolkit`, `crystal-studio-plugin-api` and `crystal-studio`. This package
 imports the toolkit and the plugin API. It does **not** import `crystal-studio`:
 an adapter must never reach up into the IDE, which is the whole point of the
-plugin seam, and a test in the integration repo asserts it across distributions.
+plugin seam.
 
 [pep420]: https://peps.python.org/pep-0420/
 
@@ -65,6 +71,15 @@ A test that fails because of an edit in *your* game tree is a fact about your
 checkout, not about this repository: record it in `.known-red.json`, which is
 git-ignored. `KNOWN_RED` in the runner is for failures true in every clone, and
 is empty.
+
+## Credits
+
+Pokémon Prism is developed by [RainbowDevs](https://rainbowdevs.com). This
+package is an independent tool for working on its disassembly, and is not
+affiliated with or endorsed by RainbowDevs.
+
+Not affiliated with or endorsed by Nintendo, Game Freak, Creatures or The
+Pokémon Company. Pokémon is a trademark of Nintendo.
 
 ## Licence
 

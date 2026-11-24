@@ -45,7 +45,7 @@ def check(label: str, cond: bool, detail: str = "") -> None:
         _failures += 1
 
 
-#: The fixture moved to a module so the integration repo can build the same
+#: The fixture is a module so a suite outside this repo can build the same
 #: tree; the finding counts below are counts *of it*, so the two cannot
 #: disagree without one of them failing.
 from prism_fixture import _CROWD, _fixture, _text_engine  # noqa: E402,F401

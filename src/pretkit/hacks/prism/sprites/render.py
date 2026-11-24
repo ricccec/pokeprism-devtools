@@ -7,7 +7,7 @@ Renders a map to a PIL RGB Image by compositing:
   - 2bpp tile graphics (gfx/tilesets/<id>.2bpp[.lz])
   - BG palette colors (tilesets/bg.pal and per-tileset overrides)
 
-See docs/map-rendering.md for the full pipeline explanation.
+See https://github.com/ricccec/prism-continued/blob/main/docs/map-rendering.md for the full pipeline explanation.
 """
 
 from __future__ import annotations

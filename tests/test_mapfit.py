@@ -410,7 +410,7 @@ def test_shared_section_detection(tmp: Path) -> None:
 
 
 def test_manual_placement(tmp: Path) -> None:
-    """Phase 2b: auto bank-packing is now optional. A blob can join an existing
+    """Auto bank-packing is optional. A blob can join an existing
     shared section (inheriting its bank, touching no linker pin), or claim its
     own section pinned to a bank you name."""
     print("\nmanual placement: into an existing section")

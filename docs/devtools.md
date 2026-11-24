@@ -1,12 +1,10 @@
 # Devtools Reference
 
 User-facing reference for `pokeprism-devtools` — Prism's own command-line tools,
-a standalone Python suite that sits alongside pokeprism (not inside it). For the
-rationale, roadmap, and architecture decisions, see
-[`devtools-plan.md`](devtools-plan.md). For pokeprism's in-codebase debug menu
-and the `DEBUG_MODE` build flag, see
-[debug-mode.md](https://github.com/ricccec/pokeprism/blob/main/docs/debug-mode.md)
-in the pokeprism repo.
+a standalone Python suite that sits alongside pokeprism (not inside it). For
+pokeprism's in-codebase debug menu and the `DEBUG_MODE` build flag, see
+[debug-mode.md](https://github.com/ricccec/prism-continued/blob/main/docs/debug-mode.md)
+in the Prism repo.
 
 **The nine `prism-*` commands documented here are this distribution's.** Three
 more arrive with it and are documented where they are built, because neither
@@ -129,8 +127,7 @@ in ~0.1s for all 448 maps. Exits non-zero if any map fails.
 ## start-state
 
 The headline tool — launches the game in an arbitrary state (team, map,
-flags) by patching a `.sav` and handing it off to SameBoy. See the deep
-spec in [`devtools-plan.md`](devtools-plan.md#deep-spec-toolsstart-state).
+flags) by patching a `.sav` and handing it off to SameBoy.
 
 ### Phase A — inventory (shipped)
 
@@ -399,8 +396,7 @@ of `--out`, `--no-launch`, `--inventory-only` is set.
 | TM/HMs (101 flags) | Set/unset ownership by name (`TM01 DYNAMICPUNCH`, `HM01 CUT`, ...), tab-autocomplete from the inventory; "Own all", "Clear all", and "Use template's TM/HMs" convenience actions. |
 
 PC item storage is not editable yet; that region stays
-template-driven (see
-[`devtools-plan.md`](devtools-plan.md#future-work--known-v1-limitations)).
+template-driven.
 
 #### Dev-server semantics
 
@@ -697,7 +693,7 @@ it's appended to its `MapGroupN` array in the shared `Map Headers` section.
 > *shared* section (e.g. an `INCLUDE` inside `Map Scripts 7`), the tool refuses
 > with guidance — it can't relocate one map out of a section shared with
 > others without splitting it. See the note in
-> [maps-and-events.md](https://github.com/ricccec/pokeprism/blob/main/docs/maps-and-events.md).
+> [maps-and-events.md](https://github.com/ricccec/prism-continued/blob/main/docs/maps-and-events.md).
 
 It assumes the map *content* already exists (an authored `maps/<Label>.asm` and
 `maps/blk/<Label>.blk`); it does not author maps. The wiring fields

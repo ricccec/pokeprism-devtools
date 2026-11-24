@@ -5,7 +5,6 @@ Hermetic — a temp fixture repo, no ROM/build.
 
     python tests/test_map_show.py
 
-`map_show` is the one of Phase 1's six packages with no test file of its own.
 Its analysis half is covered by `test_grid.py` and `test_mapsource.py`, which
 are named for what they test rather than for the package; the command that
 prints the report was covered by nothing.

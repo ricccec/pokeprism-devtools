@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Tests for `shared/paths.py` — locating a pret repo's build artifacts.
 
-Written **before** the module is changed, and green against it unmodified: this
-is the oracle for Phase 5's step A2, and an oracle written after the edit proves
-nothing about the edit. Two things are pinned and they are not the same kind of
+Written **before** the module was changed, and green against it unmodified,
+because an oracle written after an edit proves nothing about the edit. Two things are pinned and they are not the same kind of
 thing:
 
   * **what must survive** — how a repo root is recognised, how a `.sym` and a
@@ -227,8 +226,8 @@ def test_fallback(tmp: Path) -> None:
     # Both built, so the preference is directly observable. A fixture with only
     # one ROM on disk cannot tell "honoured the request" from "fell back to the
     # only candidate" — the two agree on every answer, and a transposed
-    # preference would sail through. Phase 1b, Phase 4: the survivor is the
-    # fixture's shape, never the missing assertion.
+    # preference would sail through. A surviving mutation is the fixture's
+    # shape, never the missing assertion.
     both = make_tree(tmp, "fallback_both", PRISM_MAKEFILE, PRISM_ROMS)
     check("a preference is honoured when both are on disk",
           paths.find_built_rom(both, prefer=("pokeprism.gbc",)).name
@@ -392,8 +391,8 @@ _survivors: list[str] = []
 def seeded(label: str, patch: dict, run) -> None:
     """Install a mutation, run the checks it should break, restore, report.
 
-    Phase 1b and Phase 4 both measured that a survivor is almost never a missing
-    assertion — it is the fixture's *shape*. So each mutation is applied to the
+    A surviving mutation is almost never a missing assertion — it is the
+    fixture's *shape*. So each mutation is applied to the
     real function and run against the real fixtures.
     """
     global _failures

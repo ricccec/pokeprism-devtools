@@ -26,7 +26,8 @@ actually reads the array out of prism's save and passes it on.
 
 What this does *not* prove is the one thing neither tree can prove yet: that the
 real engine agrees with our still-sprite sizing. No save in either tree points a
-slot at a still sprite, so that half stays unverified — see `docs/save-patch.md`.
+slot at a still sprite, so that half stays unverified — see `pret-toolkit`'s
+`docs/save-patch.md`.
 
     ./.venv/bin/python tests/test_prism_variable_sprites.py
 """

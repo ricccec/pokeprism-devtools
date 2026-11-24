@@ -56,7 +56,7 @@ WRITABLE_FIELDS: dict[str, dict[str, object]] = {
     # Read-only, and read by the sprite-VRAM allocator rather than written: a
     # variable sprite (id >= SPRITE_VARS) names no graphic, so its real type —
     # and therefore its VRAM length — is only knowable from this $100-SPRITE_VARS
-    # = 16-byte array the save carries. See `docs/save-patch.md`.
+    # = 16-byte array the save carries. See `pret-toolkit`'s `docs/save-patch.md`.
     "wVariableSprites": {"size": 16, "block": "PlayerData"},
     # Pokemon block
     "wPartyCount":         {"size": 1,  "block": "PokemonData"},

@@ -11,7 +11,7 @@ Hermetic: a temp repo, a canned `inventory.json`, and a fake `questionary`. No
 import `dev_server` and every one of them reaches `apply`, `inventory` or
 `playtest`; `cli.py` imports `tui` lazily, on the interactive branch only, so
 under the whole suite `tui.py` ran **zero** lines and never entered
-`sys.modules`. Phase 1b's uncovered functions at least ran their `def`.
+`sys.modules`.
 
 `DevServer` reads no stdin — every prompt is a `questionary` call. So the fake
 below is the one `tests/test_map_new_cli.py` installs for the new-map wizard,
@@ -21,8 +21,8 @@ against the answer it is about to hand back, so a scripted run also proves the
 answers are ones the editor would have accepted from a human.
 
 **The fixture's shape is chosen from the mutations it has to be able to fail
-on**, not from what a representative repo looks like — Phase 1b lost ten
-mutations to a fixture whose shape made right and wrong output identical. Every
+on**, not from what a representative repo looks like — a fixture whose shape
+makes right and wrong output identical lets mutations survive. Every
 oddity in `_INVENTORY` and `_STATE` is annotated with the mutation it exists to
 catch.
 """
@@ -169,8 +169,8 @@ _INVENTORY = {
                              # falling through to `build()` and a real .sym
     "maps": [
         # width != height on every map, so `_coord_bound` transposing the axes
-        # cannot pass. Phase 1b was bitten by exactly this with `mapgroup`'s
-        # (H, W), on a fixture that could not tell them apart.
+        # cannot pass. `mapgroup`'s (H, W) was once transposed on a fixture
+        # that could not tell them apart.
         {"name": "CAPER_RIDGE", "width": 20, "height": 9},
         {"name": "CAPER_HOUSE", "width": 4, "height": 6},
     ],
@@ -262,7 +262,7 @@ def _fixture(tmp: Path) -> Path:
     # that name in `hacks/prism/save/roms.py` as the build carrying symbols. It is no
     # longer a *library* leak: `shared/paths` reads its candidates out of this
     # fixture's Makefile, finds none, and falls back to what is on disk — so a
-    # fixture naming its ROM anything at all would resolve. Phase 5, step A2.
+    # fixture naming its ROM anything at all would resolve.
     (root / "pokeprism.gbc").write_bytes(b"")
 
     dev = root / ".devtools"
@@ -620,7 +620,7 @@ def test_the_coord_bounds_come_from_the_map_and_not_from_each_other(tmp: Path) -
     """A block is two tiles per axis, so the coord runs 0..(blocks*2 - 1) —
     **from that axis's own dimension.** The fixture's maps are all
     width != height, because a square map cannot tell a transposition apart,
-    which is the mistake Phase 1b found in `mapgroup`'s (H, W)."""
+    which is the mistake `mapgroup`'s (H, W) once made."""
     print("\n_edit_map — the coord bounds")
     root = _fixture(tmp / "coords")
 

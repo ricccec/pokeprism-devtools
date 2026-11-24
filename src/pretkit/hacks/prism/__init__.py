@@ -10,6 +10,5 @@ RGBDS .map/.sym parsing, coordinate tiles — which an adapter for any hack
 would import unchanged.
 
 Differences between hacks cross the seam above (`studio.session` / `MapData`)
-as declared data, never as an `if hack:` — see docs/adapter-plan.md and
-docs/polished-crystal-feasibility.md, whose Phase 1 this package is.
+as declared data, never as an `if hack:`.
 """

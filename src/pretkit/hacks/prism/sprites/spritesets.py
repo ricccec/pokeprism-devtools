@@ -18,8 +18,8 @@ error. (Indoor maps load from their own objects instead, so they're unaffected.)
 Sets are shared between groups and ``db 0``-terminated.
 
 This module only *reads* those tables. The VRAM packing simulation that decides
-whether a walking sprite lands in a usable tile slot is Phase 1's job — the tile
-costs and capacities it needs are exposed here.
+whether a walking sprite lands in a usable tile slot is `spritepack`'s job — the
+tile costs and capacities it needs are exposed here.
 """
 
 from __future__ import annotations
@@ -84,7 +84,7 @@ class SpriteHeader:
     def walking(self) -> bool:
         """Can animate a walk cycle. Walk frames are fetched at a fixed +$80
         tile offset from the sprite's base tile (data/facings.asm), which is the
-        constraint that makes walkers scarce — see the Phase 1 packer."""
+        constraint that makes walkers scarce — see `spritepack`."""
         return self.type == "WALKING_SPRITE"
 
     @property
