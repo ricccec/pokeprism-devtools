@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pretkit.shared import paths  # noqa: E402
+from pret_toolkit.shared import paths  # noqa: E402
 
 #: The prism checkout, resolved absolutely and never relative to this repo — a
 #: path that walks above it answers differently depending on where the repo sits.
@@ -30,9 +30,9 @@ from pretkit.shared import paths  # noqa: E402
 PRISM = paths.find_checkout("pokeprism")
 
 
-from pretkit import maplint  # noqa: E402
-from pretkit.maplint.context import LintContext  # noqa: E402
-from pretkit.contract import Severity  # noqa: E402
+from pokeprism_devtools import maplint  # noqa: E402
+from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
+from crystal_studio_api import Severity  # noqa: E402
 
 _failures = 0
 

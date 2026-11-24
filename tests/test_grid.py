@@ -24,14 +24,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pretkit.shared import paths  # noqa: E402
-from pretkit import map_show  # noqa: E402
-from pretkit.hacks.prism.events import eventheader
-from pretkit.hacks.prism.maps import blocksrc
-from pretkit.hacks.prism.sprites import render, swatches
-from pretkit.shared import coords, symfile # noqa: E402
-from pretkit.shared.overworld import blockdata  # noqa: E402
-from pretkit.hacks.prism.maps.mapformat import PRISM_FORMAT  # noqa: E402
+from pret_toolkit.shared import paths  # noqa: E402
+from pokeprism_devtools import map_show  # noqa: E402
+from pokeprism_devtools.prism.events import eventheader
+from pokeprism_devtools.prism.maps import blocksrc
+from pokeprism_devtools.prism.sprites import render, swatches
+from pret_toolkit.shared import coords, symfile # noqa: E402
+from pret_toolkit.shared.overworld import blockdata  # noqa: E402
+from pokeprism_devtools.prism.maps.mapformat import PRISM_FORMAT  # noqa: E402
 
 PRISM = paths.find_checkout("pokeprism")
 FAILED = 0
@@ -91,7 +91,7 @@ def test_source_agrees_with_the_rom() -> None:
     print("\nevery map, read from source and from the ROM")
     syms = symfile.SymFile.load(sym)
 
-    from pretkit.hacks.prism.maps import mapsource
+    from pokeprism_devtools.prism.maps import mapsource
     pairs = mapsource.header_pairs(PRISM)
 
     same = 0

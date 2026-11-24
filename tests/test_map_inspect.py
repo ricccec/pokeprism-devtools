@@ -26,7 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pretkit import map_inspect  # noqa: E402
+from pokeprism_devtools import map_inspect  # noqa: E402
 
 _failures = 0
 

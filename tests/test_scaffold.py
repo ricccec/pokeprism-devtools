@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pretkit.shared import paths  # noqa: E402
+from pret_toolkit.shared import paths  # noqa: E402
 
 #: The prism checkout, resolved absolutely and never relative to this repo — a
 #: path that walks above it answers differently depending on where the repo sits.
@@ -30,12 +30,12 @@ from pretkit.shared import paths  # noqa: E402
 PRISM = paths.find_checkout("pokeprism")
 
 
-from pretkit.hacks.prism import consts
-from pretkit.hacks.prism.battles import trainercite as tc, trainerparty as tp, wilddata as wd
-from pretkit.hacks.prism.events import eventheader as eh, landmarks
-from pretkit.shared.edits import StaleEdit, apply_edits  # noqa: E402
-from pretkit.hacks.prism.edits import props as pk, removal as rm
-from pretkit.hacks.prism.maps import scaffold as sc
+from pokeprism_devtools.prism import consts
+from pokeprism_devtools.prism.battles import trainercite as tc, trainerparty as tp, wilddata as wd
+from pokeprism_devtools.prism.events import eventheader as eh, landmarks
+from pret_toolkit.shared.edits import StaleEdit, apply_edits  # noqa: E402
+from pokeprism_devtools.prism.edits import props as pk, removal as rm
+from pokeprism_devtools.prism.maps import scaffold as sc
 
 _failures = 0
 
@@ -719,7 +719,7 @@ def test_real_scaffold(tmp: Path) -> None:
         return
 
     from collections import Counter
-    from pretkit.maplint import (
+    from pokeprism_devtools.maplint import (
         context, rules_content, rules_geometry, rules_objects, rules_sprites,
     )
 

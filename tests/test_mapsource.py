@@ -13,10 +13,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pretkit import map_show  # noqa: E402
-from pretkit.hacks.prism.maps import blobsizes, mapsource # noqa: E402
-from pretkit.shared.mapfile import Bank, MapFile, Section  # noqa: E402
-from pretkit.hacks.prism.maps.mapspec import MapSpec  # noqa: E402
+from pokeprism_devtools import map_show  # noqa: E402
+from pokeprism_devtools.prism.maps import blobsizes, mapsource # noqa: E402
+from pret_toolkit.shared.mapfile import Bank, MapFile, Section  # noqa: E402
+from pokeprism_devtools.prism.maps.mapspec import MapSpec  # noqa: E402
 
 _failures = 0
 

@@ -13,7 +13,7 @@ and nine commands that work on it directly.
 
 ```bash
 pip install git+https://github.com/ricccec/pret-toolkit \
-            git+https://github.com/ricccec/crystal-studio-plugin-api \
+            git+https://github.com/ricccec/crystal-studio-api \
             git+https://github.com/ricccec/pokeprism-devtools
 ```
 
@@ -43,15 +43,13 @@ prism-dev                  # build, patch a save, and boot
 `pret-usage` and `crystal-studio` — arrive with the two packages this one depends
 on, and are documented there.
 
-## The namespace
+## The package
 
-The import name is `pretkit`, a [PEP 420][pep420] namespace package shared with
-`pret-toolkit`, `crystal-studio-plugin-api` and `crystal-studio`. This package
-imports the toolkit and the plugin API. It does **not** import `crystal-studio`:
-an adapter must never reach up into the IDE, which is the whole point of the
-plugin seam.
-
-[pep420]: https://peps.python.org/pep-0420/
+The import name is `pokeprism_devtools`: the adapter and Prism's data model in
+`pokeprism_devtools.prism`, and one package per command beside it. It imports
+`pret_toolkit` and `crystal_studio_api`. It does **not** import
+`crystal_studio`: an adapter must never reach up into the IDE, which is the
+whole point of the plugin seam.
 
 ## Tests
 
@@ -73,7 +71,7 @@ Each tree is pinned to the one commit the tests were written against, in
 - `pokecrystal` — [pret/pokecrystal](https://github.com/pret/pokecrystal) at `31880ea`
 
 `pret-test` checks out a clean copy of each pinned commit into
-`~/.cache/pretkit/` — taken from your own checkout when it has the commit, from
+`~/.cache/pret-toolkit/` — taken from your own checkout when it has the commit, from
 the URL otherwise — so neither your edits nor your branch change the result.
 Your checkout is found the way every command here finds one: `$<NAME>_TREE`
 (`$POKECRYSTAL_TREE`, say), or a conventional place such as `~/code/<name>`.

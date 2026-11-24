@@ -39,7 +39,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pretkit.shared import paths  # noqa: E402
+from pret_toolkit.shared import paths  # noqa: E402
 
 _failures = 0
 
@@ -368,7 +368,7 @@ def test_prism_declares_its_own(tmp: Path) -> None:
     """
     print("\nprism's preference, declared on prism's side")
 
-    from pretkit.hacks.prism.save import roms
+    from pokeprism_devtools.prism.save import roms
 
     root = make_tree(tmp, "prefer_prism", PRISM_MAKEFILE, PRISM_ROMS)
     check("debug resolves the plain name, which is prism's trap",

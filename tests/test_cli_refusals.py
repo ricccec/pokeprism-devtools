@@ -22,9 +22,9 @@ in several spellings (`<command>:`, `error:`, `Error:`). Demanding one wording
 would fail on code that works. A traceback is the defect; the wording is taste.
 
 **The script list is discovered, not written down**, and it is discovered from
-*this repository's* own packaging. Selecting every `pretkit` console script
-installed was right while there was one distribution; with four installed side
-by side it made each copy of this file report on commands another repo ships.
+*this repository's* own packaging. Every console script installed would include
+the commands the other distributions ship, and this file would then report on
+code its repository does not own.
 
     python tests/test_cli_refusals.py
 """
@@ -37,7 +37,7 @@ import tempfile
 import tomllib
 from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
-from pretkit.shared import paths
+from pret_toolkit.shared import paths
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -164,14 +164,14 @@ def test_the_check_can_fail(tmp: Path) -> None:
                               timeout=TIMEOUT_SECONDS).stderr
 
     err = traceback_from(
-        "from pretkit.shared import paths; paths.find_repo_root()", tmp)
+        "from pret_toolkit.shared import paths; paths.find_repo_root()", tmp)
     check("an unguarded find_repo_root() tracebacks, so the detector works",
           TRACEBACK in err and "RepoNotFound" in err, err.strip()[-110:])
 
     if (FOREIGN_TREE / "main.asm").exists():
         err = traceback_from(
             "from pathlib import Path\n"
-            "from pretkit.hacks.prism import maps\n"
+            "from pokeprism_devtools.prism import maps\n"
             f"maps.parse_maps(Path({str(FOREIGN_TREE)!r})"
             " / 'constants/map_dimension_constants.asm')", FOREIGN_TREE)
         # Naming the expected failure is the whole of this check. Asking only

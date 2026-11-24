@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pretkit.shared import paths  # noqa: E402
+from pret_toolkit.shared import paths  # noqa: E402
 
 #: The prism checkout, resolved absolutely and never relative to this repo — a
 #: path that walks above it answers differently depending on where the repo sits.
@@ -30,21 +30,21 @@ from pretkit.shared import paths  # noqa: E402
 PRISM = paths.find_checkout("pokeprism")
 
 
-from pretkit import maplint  # noqa: E402
-from pretkit.maplint import rules_geometry  # noqa: E402
-from pretkit.maplint.context import LintContext  # noqa: E402
-from pretkit.hacks.prism.events import eventheader as eh # noqa: E402
-from pretkit.hacks.prism import write as PW  # noqa: E402
-from pretkit.shared.edits import apply_edits  # noqa: E402
-from pretkit.hacks.prism.edits import objedit as O  # noqa: E402
-from pretkit.hacks.prism.maps import connections as C
-from pretkit.asmedit import mapresize as MR  # noqa: E402
-from pretkit.contract import ActionError  # noqa: E402
-from pretkit.hacks.prism.maps.resize import DIALECT as PRISM_RESIZE  # noqa: E402
-from pretkit.hacks.prism.edits import removal as R  # noqa: E402
-from pretkit.asmedit import warpdel as WD  # noqa: E402
-from pretkit.hacks.prism.maps import warps as W  # noqa: E402
-from pretkit.hacks.prism.maps.scaffold import Object  # noqa: E402
+from pokeprism_devtools import maplint  # noqa: E402
+from pokeprism_devtools.maplint import rules_geometry  # noqa: E402
+from pokeprism_devtools.maplint.context import LintContext  # noqa: E402
+from pokeprism_devtools.prism.events import eventheader as eh # noqa: E402
+from pokeprism_devtools.prism import write as PW  # noqa: E402
+from pret_toolkit.shared.edits import apply_edits  # noqa: E402
+from pokeprism_devtools.prism.edits import objedit as O  # noqa: E402
+from pokeprism_devtools.prism.maps import connections as C
+from pret_toolkit.asmedit import mapresize as MR  # noqa: E402
+from crystal_studio_api import ActionError  # noqa: E402
+from pokeprism_devtools.prism.maps.resize import DIALECT as PRISM_RESIZE  # noqa: E402
+from pokeprism_devtools.prism.edits import removal as R  # noqa: E402
+from pret_toolkit.asmedit import warpdel as WD  # noqa: E402
+from pokeprism_devtools.prism.maps import warps as W  # noqa: E402
+from pokeprism_devtools.prism.maps.scaffold import Object  # noqa: E402
 
 _failures = 0
 
@@ -812,7 +812,7 @@ def _refusals(root: Path) -> None:
 
 
 def test_editing(root: Path, before: Counter) -> None:
-    """Changing things that are already there — `hacks/prism/edits/objedit.py`.
+    """Changing things that are already there — `prism/edits/objedit.py`.
 
     The companion to `test_studio.py`'s round-trip, which proves an edit that
     changes nothing writes nothing. This proves the other half: that an edit which

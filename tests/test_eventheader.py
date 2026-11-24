@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pretkit.shared import paths  # noqa: E402
+from pret_toolkit.shared import paths  # noqa: E402
 
 #: The prism checkout, resolved absolutely and never relative to this repo — a
 #: path that walks above it answers differently depending on where the repo sits.
@@ -27,8 +27,8 @@ from pretkit.shared import paths  # noqa: E402
 PRISM = paths.find_checkout("pokeprism")
 
 
-from pretkit.hacks.prism.events import eventheader as eh # noqa: E402
-from pretkit.hacks.prism.events.eventheader import (  # noqa: E402
+from pokeprism_devtools.prism.events import eventheader as eh # noqa: E402
+from pokeprism_devtools.prism.events.eventheader import (  # noqa: E402
     ListKind, UnparseableHeader)
 
 _failures = 0

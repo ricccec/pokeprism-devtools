@@ -40,15 +40,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from pretkit.shared import paths  # noqa: E402
-from pretkit.dev_server import apply as apply_mod  # noqa: E402
-from pretkit.dev_server import inventory  # noqa: E402
-from pretkit.hacks.prism.maps import maps
-from pretkit.hacks.prism.save import savefile
-from pretkit.hacks.prism.sprites import spritesets  # noqa: E402
-from pretkit.hacks.prism.maps.mapformat import PRISM_FORMAT  # noqa: E402
-from pretkit.shared.overworld import blockdata, people, spritevram  # noqa: E402
-from pretkit.shared.symfile import SymFile  # noqa: E402
+from pret_toolkit.shared import paths  # noqa: E402
+from pokeprism_devtools.dev_server import apply as apply_mod  # noqa: E402
+from pokeprism_devtools.dev_server import inventory  # noqa: E402
+from pokeprism_devtools.prism.maps import maps
+from pokeprism_devtools.prism.save import savefile
+from pokeprism_devtools.prism.sprites import spritesets  # noqa: E402
+from pokeprism_devtools.prism.maps.mapformat import PRISM_FORMAT  # noqa: E402
+from pret_toolkit.shared.overworld import blockdata, people, spritevram  # noqa: E402
+from pret_toolkit.shared.symfile import SymFile  # noqa: E402
 
 PRISM = paths.find_checkout("pokeprism")
 ROM = PRISM / "pokeprism.gbc"
