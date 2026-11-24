@@ -528,7 +528,7 @@ def test_real_repo(tmp: Path) -> None:
         return
 
     print("\ncalibration: the generator vs every connection in the repo")
-    exact = total = 0
+    exact = total = strip_only = 0
     owner = None
     for line in (root / "maps/second_map_headers.asm").read_text().split("\n"):
         m = re.match(r"\s*map_header_2\s+\w+,\s*(\w+),", line)
@@ -548,10 +548,16 @@ def test_real_repo(tmp: Path) -> None:
         total += 1
         if (left.coord, left.offset, left.strip) == (coord, offset, strip):
             exact += 1
+        elif (left.coord, left.offset) == (coord, offset):
+            strip_only += 1
+    # Exact, because the tree is pinned: the generator gaining or losing a match
+    # is a change to it. Prism v0.95.0254 has 86 connections, and 41 of them
+    # come out byte-for-byte.
     check(f"reproduces {exact}/{total} existing connections byte-for-byte from k alone",
-          exact >= 45, f"{exact}")
-    print(f"      the rest differ only in strip length, which is authored loosely — "
-          f"21 of the repo's own connections run past the end of a map")
+          (exact, total) == (41, 86), f"{exact}/{total}")
+    print(f"      of the other {total - exact}, {strip_only} differ only in strip "
+          f"length, which is authored loosely; the rest also start the strip "
+          f"somewhere else")
 
     print("\nend-to-end: wire two real maps in a scratch copy, then lint it")
     scratch = tmp / "pokeprism"

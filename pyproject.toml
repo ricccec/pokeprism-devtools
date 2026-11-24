@@ -42,3 +42,13 @@ Issues = "https://github.com/ricccec/pokeprism-devtools/issues"
 [tool.setuptools.packages.find]
 where = ["src"]
 namespaces = true
+
+[tool.pret-test]
+
+[tool.pret-test.upstreams.pokecrystal]
+url = "https://github.com/pret/pokecrystal"
+commit = "31880ea20ea44f79ebd459b1e735ae1f15db1671"
+
+[tool.pret-test.upstreams.pokeprism]
+url = "https://github.com/ricccec/pokeprism"
+commit = "aafe54a25df4a727a2a6368a4843165cd82649e8"

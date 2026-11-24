@@ -6,8 +6,8 @@ rule must fire on its own bug and stay silent on the clean maps around it. That
 catches both halves of a linter going wrong — a rule that stops working, and a
 rule that starts crying wolf.
 
-If ../pokeprism is present, a real-repo pass also runs: the findings there must
-stay within the triaged baseline.
+Where a Prism tree is found, a real-repo pass also runs: the findings there
+must match the triaged baseline exactly.
 
     python tests/test_maplint.py
 """
@@ -337,11 +337,13 @@ def test_real_repo() -> None:
         print(f"\n(skipping real-repo pass — no prism tree at {PRISM})")
         return
 
-    print("\nreal repo: findings stay within the triaged baseline")
+    print("\nreal repo: findings match the triaged baseline")
     found = maplint.run(LintContext(root))
     counts = Counter(d.code for d in found)
 
-    # Triaged 2026-07-11. Every error here is a real pre-existing bug in
+    # Triaged against Prism v0.95.0254, the tree this suite pins, so every count
+    # is exact: a finding that appears *or disappears* is a change to the linter,
+    # and a pin bump re-triages. Every error here is a real pre-existing bug in
     # pokeprism; the info-level codes are conventions, not defects.
     triaged = {
         "warp-target": 13,          # warps into a slot the destination doesn't have
@@ -355,32 +357,35 @@ def test_real_repo() -> None:
         # the rule says so rather than staying quiet, because a typo looks the same.
         "event-stack": 26,
         "sprite-vram": 0,           # none: standing NPCs in table 2 are fine
-        "sprite-vram-budget": 5,    # info: maps with no walking slots left
-        "blk-size": 6,              # .blk and the declared dimensions disagree
+        # info: SaxifrageIslandSprites fills every walking slot of VRAM table 1,
+        # once for each of the two map groups that use it.
+        "sprite-vram-budget": 2,
+        "blk-size": 7,              # .blk and the declared dimensions disagree
+        # SEVII_ISLAND_1 is 60×21 blocks, over the engine's 1300-block map buffer
+        # once its border is added — and one of the seven blk-size findings too.
+        "map-too-big": 1,
         "conn-missing": 2,          # one-way connections
-        "conn-self": 0,             # ROUTE_69_NORTH's typo, since fixed upstream
+        "conn-self": 0,             # none: no map connects to itself
         "wild-region": 1,           # CAPER_RIDGE's grass is filed under mystery
         "wild-rate": 1,             # LAUREL_FOREST's `db 3` is 1.2%, not 3%
         "trainer-class": 0,         # none: the 7 unbacked classes are all uncited
         "trainer-orphan": 7,        # info: parties nothing references — dead weight
-        # info: 11 classes drawn with a second overworld sprite somewhere —
+        # info: 10 classes drawn with a second overworld sprite somewhere —
         # HIKER as SPRITE_FISHER, LASS as SPRITE_COOLTRAINER_F, and so on. Real
         # inconsistencies, most of them old; a few (BEAUTY's rocket variant) are
         # deliberate. This is the drift the rule exists to stop growing.
-        "trainer-sprite": 28,
+        "trainer-sprite": 21,
         "flag-shared": 9,           # deliberate: one flag gating objects in two maps
         "flag-multi-owner": 2,      # info: EmberBrook's twins, and Provincial Park's PP Ups
         "flag-unused": 200,         # info: declared flags nothing references
         "flag-unknown": 0,          # none: every EVENT_* named in the repo exists
-        "flag-never-set": 17,       # 1 warning (SilphWarehouse's guard never appears)
-        # 3 real overflows, and 13 lines of deliberately-corrupt "Glitch City"
-        # text in PhanceroRoom, which is *supposed* to spill out of the box.
-        #
-        # Was 14 until `dialogue.decomment` landed: the parser used to cut every
-        # line at the first `;`, so a string *containing* one measured as zero
-        # tiles and could not overflow. Two of the glitch lines have one. The
-        # linter was blind to them, not innocent of them.
-        "text-width": 16,
+        "flag-never-set": 16,       # 1 warning (SilphWarehouse's guard never appears)
+        # 1 real overflow (Route77Pokecenter), and 13 lines of deliberately-corrupt
+        # "Glitch City" text in PhanceroRoom, which is *supposed* to spill out of
+        # the box. Two of the glitch lines contain a `;` inside the string, which
+        # is why a comment is stripped by `dialogue.decomment` and not by cutting
+        # at the first `;`: cut there, they measure as zero tiles.
+        "text-width": 14,
         "text-width-name": 0,       # none: no line breaks on a seven-letter name
         "text-rows": 0,             # none: `next` is never used in a speech box
         "text-clobber": 1,          # PhanceroRoom again, same easter egg
@@ -389,8 +394,8 @@ def test_real_repo() -> None:
     }
     for code in sorted(set(counts) | set(triaged)):
         got, want = counts.get(code, 0), triaged.get(code, 0)
-        check(f"{code}: {got}", got <= want,
-              f"{got - want} NEW finding(s) beyond the triaged {want}")
+        check(f"{code}: {got}", got == want,
+              f"{got - want:+d} against the triaged {want}")
 
     errors = sum(1 for d in found if d.severity is Severity.ERROR)
     print(f"      {len(found)} findings, {errors} of them real bugs")

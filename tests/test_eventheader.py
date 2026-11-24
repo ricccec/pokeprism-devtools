@@ -323,7 +323,10 @@ def test_real_repo() -> None:
                                  + (f", {len(lst.undeclared)} of them past the count"
                                     if lst.undeclared else ""))
 
-    check(f"parsed {len(parsed)}/{len(maps)} map files", len(parsed) >= 450, f"{len(parsed)}")
+    # Prism v0.95.0254, the pinned tree, has 458 map files; the 11 that do not
+    # parse are the index and script-include files named in the next check.
+    check(f"parsed {len(parsed)}/{len(maps)} map files", (len(parsed), len(maps)) == (447, 458),
+          f"{len(parsed)}/{len(maps)}")
     check("EVERY parsed map re-emits byte-identically",
           not corrupted, f"{len(corrupted)} corrupted: {corrupted[:3]}")
     check("unmanaged files are only script-includes and index files",

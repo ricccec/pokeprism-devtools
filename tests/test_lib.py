@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Smoke test for the pretkit library against a real pokeprism
-build. Run from anywhere inside the pokeprism repo (or with the package
-installed via pipx):
+"""Smoke test for the pretkit library against a real, built pokeprism.
 
-    python -m pretkit.tests.test_lib   # if exposed as a module
-    python /path/to/pokeprism-devtools/tests/test_lib.py
+    python tests/test_lib.py
 
-Exits non-zero on the first failed check. No pytest dependency — just a
-sanity check that the parsers handle the real files.
+The tree is the one `paths.find_checkout("pokeprism")` finds, and it has to be
+built: every check below reads the ROM or its `.sym`. Without either, the whole
+file skips and says which. Exits non-zero on the first failed check.
 """
 
 from __future__ import annotations
@@ -33,7 +31,15 @@ def check(label: str, cond: bool, detail: str = "") -> None:
 
 
 def main() -> None:
-    root = paths.find_repo_root()
+    root = paths.find_checkout("pokeprism")
+    if not (root / "main.asm").exists():
+        print(f"  --   skipping: {paths.explain_missing_checkout('pokeprism')}")
+        return
+    try:
+        paths.find_built_rom(root)
+    except FileNotFoundError:
+        print(f"  --   skipping: no built ROM in {root} — run `make` there")
+        return
     print(f"Repo root: {root}")
 
     print("\npaths.py")
